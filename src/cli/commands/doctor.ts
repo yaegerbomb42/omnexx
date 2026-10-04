@@ -3,7 +3,9 @@ import pc from 'picocolors';
 import { findAnthropicKey, maskKey } from '../../auth/keys.js';
 import type { OmnexxConfig } from '../../config/schema.js';
 import type { OmnexxPaths } from '../../core/paths.js';
-import { isTrustedJudgeHost } from '../../judge/endpoint.js';
+import { isTrustedJudgeHost, MIN_OLLAMA, versionAtLeast } from '../../judge/endpoint.js';
+
+export { versionAtLeast } from '../../judge/endpoint.js';
 import { println, type CliIO } from '../io.js';
 
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
@@ -29,20 +31,6 @@ export async function binaryVersion(binary: string): Promise<string | undefined>
   const r = await execa(binary, ['--version'], { reject: false, timeout: 10_000, stdin: 'ignore' });
   if (r.failed) return undefined;
   return r.stdout.split('\n')[0]?.trim() ?? '';
-}
-
-export const MIN_OLLAMA = [0, 35, 0] as const;
-
-export function versionAtLeast(version: string, min: readonly number[]): boolean {
-  const parts = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version.trim());
-  if (!parts) return false;
-  const nums = parts.slice(1, 4).map(Number);
-  for (let i = 0; i < min.length; i++) {
-    const a = nums[i] ?? 0;
-    const b = min[i] ?? 0;
-    if (a !== b) return a > b;
-  }
-  return true;
 }
 
 async function fetchJson(
