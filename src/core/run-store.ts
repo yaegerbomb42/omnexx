@@ -71,6 +71,14 @@ const pendingSchema = z.object({
   diffHash: z.string(),
   baseline: baselineSchema.optional(),
   summary: z.string(),
+  /** What the model should see next attempt if this is rejected (failures, violations). */
+  evidence: z.string().default(''),
+  changedFiles: z.array(z.string()).default([]),
+  diffStats: z
+    .object({ files: z.number(), added: z.number(), removed: z.number() })
+    .default({ files: 0, added: 0, removed: 0 }),
+  stuck: z.array(z.string()).default([]),
+  testsPassed: z.number().optional(),
   worker: z.string().optional(),
 });
 export type PendingVerdict = z.infer<typeof pendingSchema>;
@@ -112,6 +120,10 @@ export const stateSchema = z.object({
   lastProgressCycle: z.number().default(0),
   warned: z.array(z.string()).default([]),
   pending: pendingSchema.optional(),
+  /** Result of ACT, persisted so VERIFY can resume after a crash. */
+  act: z
+    .object({ summary: z.string(), end: z.string(), turns: z.number(), usd: z.number() })
+    .optional(),
   recordedCycle: z.number().default(0),
   checkpoints: z
     .array(

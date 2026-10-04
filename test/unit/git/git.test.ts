@@ -81,11 +81,15 @@ describe('worktree + checkpoint + rollback', () => {
     await writeFile(join(wt.path, 'a.txt'), 'broken\n');
     await writeFile(join(wt.path, 'junk.txt'), 'junk\n');
     const patchPath = join(await tempDir(), 'rejected.patch');
-    expect((await rollbackTo(wt.path, sha, patchPath)).savedPatch).toBe(true);
+    expect((await rollbackTo(wt.path, sha, { path: patchPath, redact: (x) => x })).savedPatch).toBe(
+      true,
+    );
     expect(await readFile(patchPath, 'utf8')).toContain('+broken');
     expect(await isClean(wt.path)).toBe(true);
     expect(await readFile(join(wt.path, 'a.txt'), 'utf8')).toBe('two\n');
-    expect((await rollbackTo(wt.path, sha, patchPath)).savedPatch).toBe(false);
+    expect((await rollbackTo(wt.path, sha, { path: patchPath, redact: (x) => x })).savedPatch).toBe(
+      false,
+    );
 
     expect({ head: await headSha(repo), status: await statusPorcelain(repo) }).toEqual(before);
     await removeWorktree(repo, wt.path);
@@ -122,5 +126,16 @@ describe('worktree + checkpoint + rollback', () => {
     await expect(createWorktree(repo, await tempDir(), 'r_20261003_0000_aaaa')).rejects.toThrow(
       /cannot create worktree/,
     );
+  });
+});
+
+describe('sanitizePatch', () => {
+  it('drops credential files and redacts the rest', async () => {
+    const { sanitizePatch } = await import('../../../src/git/rollback.js');
+    const patch =
+      'diff --git a/.env b/.env\n+KEY=abc\ndiff --git a/src/a.ts b/src/a.ts\n+const t = "SECRET";\n';
+    const out = sanitizePatch(patch, (s) => s.replace('SECRET', '[R]'));
+    expect(out).not.toContain('KEY=abc');
+    expect(out).toContain('+const t = "[R]";');
   });
 });
