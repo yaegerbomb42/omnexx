@@ -28,7 +28,9 @@ export function killGroup(pid: number, signal: NodeJS.Signals): void {
   try {
     process.kill(-pid, signal);
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ESRCH') throw err;
+    // ESRCH: already gone. EPERM: macOS reports it for a group whose members are exiting zombies.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ESRCH' && code !== 'EPERM') throw err;
   }
 }
 
