@@ -14,9 +14,9 @@ M2 done. Next: final report (docs/REPORT-M0-M2.md), PR body, mark ready; then th
 - [x] M1 done, pushed, CI green
 - [x] M2 done (incl. hierarchical plan, codemap, checkpoints, report, wrap-up reserve, 24 h budgets, WorkerBackend + lifecycle + fake worker), pushed, CI green
 - [x] Docs written, README honest, no comparative claims
-- [ ] `docs/REPORT-M0-M2.md` written, PR body updated, PR ready (not merged), report copied to Desktop
-- [ ] Landing page built and tested in `~/Desktop/infra/infra/apps/omnexx/`
-- [ ] Three infra config edits made, diffs captured
+- [x] `docs/REPORT-M0-M2.md` written, PR body updated, PR ready (not merged). Desktop copy NOT made: ~/Desktop became unreadable/unwritable mid-session
+- [~] Landing page built and tested in ~/Projects/omnexx-landing/ (infra path not accessible)
+- [ ] Three infra config edits: NOT made (no access); exact edits in the report
 - [ ] Nothing published, nothing pushed to `main`, `~/omnexx-npm` untouched, nothing committed in infra, `deploy.sh` not run
 
 ## Log
