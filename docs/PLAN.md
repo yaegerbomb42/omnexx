@@ -1,31 +1,36 @@
 # Omnexx: Build Plan
 
 > **Set a goal, walk away, come back to commits.**
-> One efficient coding agent that keeps working for days without anyone steering it.
+> Jimmy's personal coding agent: one agent that takes on huge tasks and works for ~24 hours without anyone steering it.
 > Its own checks decide whether each step is kept, and every kept step becomes a git commit.
 
 | | |
 |---|---|
 | Owner | Jimmy (GitHub `yaegerbomb42`) |
-| Status | Plan only. No code written, nothing deployed, no repos changed. |
+| Status | Plan only. No code written, nothing deployed, no repos changed. **Revised Oct 3 (late): personal-use focus (§0, §14) and worker backends (§15).** |
 | Date | Saturday, Oct 3, 2026 |
-| Products | 1) `omnexx` CLI (npm) · 2) one-page site at **omnexx.org** · 3) later: an "ops agent" mode |
+| Products | 1) `omnexx` CLI (npm, for Jimmy's own use) · 2) a simple one-page site at **omnexx.org** · 3) later: an "ops agent" mode |
+| Audience | **Personal use only.** One user (Jimmy), on his Mac and his Oracle VPS. Not a public product: no multi-user features, marketing or public comparison claims. |
 
 ---
 
 ## 0. TL;DR (decisions in one screen)
 
-1. **One agent, strong harness.** The product is the *loop around* the model: a durable plan, fresh context each cycle, real checks as the judge, git checkpoints, rollback, stuck detection, budgets and crash-safe resume. It runs one agent and never a swarm.
+> **Revision (Oct 3, late): personal-use focus.** Omnexx is a single agent **for Jimmy** that should work better than the alternatives on *his* huge tasks, running about **24 hours** on its own. Public-product concerns (multi-user, marketing, public comparison claims, a heavy release process) are dropped or demoted. The npm package and the landing page stay, kept simple. What gets priority is anything that makes long, huge-task runs succeed: a **hierarchical plan**, **sharper long-horizon memory** (lessons file plus a codebase map), **checkpoints**, a **morning-after report**, and **budget defaults tuned for one 24 h run** (§14). New in M3: **worker backends**. Omnexx can hand tightly scoped subtasks to Jimmy's other installed harnesses through their headless modes, and the same gates judge the result (§15).
+
+1. **One agent, strong harness.** The product is the *loop around* the model: a durable plan, fresh context each cycle, real checks as the judge, git checkpoints, rollback, stuck detection, budgets and crash-safe resume. It runs one agent and never a swarm. Optional worker backends (§15) take one delegated subtask at a time by default, and Omnexx stays in charge.
 2. **Commands decide what counts as done, not the LLM.** A step is kept only when the configured gates pass (tests, typecheck, lint, and any custom command) and nothing that passed before has started failing. Otherwise the harness runs `git reset` back to the last green commit.
 3. **Fresh context every cycle (the Ralph-loop idea), plus in-cycle compaction.** Each cycle re-reads `goal.md`, `plan.json` and the tail of `progress.md`. Nothing depends on a single context window surviving for days.
 4. **The agent works in an isolated git worktree on branch `omnexx/<runId>`.** Your checkout and `main` are never touched, and nothing is pushed unless you opt in.
 5. **Efficiency first.** The design uses a cache-friendly stable prompt prefix, small `str_replace` diffs, line-range reads, and command output trimmed by the harness before it reaches the model. A cheap model does routine work and the strong model only plans and handles escalations. No tokens are spent while a command runs.
-6. **Bring your own key.** Anthropic is the primary provider and OpenAI-compatible endpoints (including your LiteLLM proxy) are optional. Omnexx never uses a personal Claude subscription login.
-7. **TypeScript on Node ≥ 22, installed with `npm i -g omnexx`.** Releases go out from a tag through npm trusted publishing (OIDC plus provenance).
-8. **The site is one static HTML file served by your existing `static-landings` nginx on port 8116 through Nginx Proxy Manager.** Before that can happen, the **DWEEBS game must move out of `infra/apps/omnexx/`**, because that is what omnexx.org serves today (see §6.3).
-9. **The efficiency claim has to be measured.** In M4, Omnexx is benchmarked against Claude Code headless on the same model, plus mini-SWE-agent and Aider. The claim is "more efficient than others" only if it wins on cost per solved task without losing on solve rate.
+6. **Bring your own key.** Anthropic is the primary provider and OpenAI-compatible endpoints (including your LiteLLM proxy) are optional. Omnexx's own model calls never use a personal Claude subscription login. Optional worker backends (§15) run as separate programs with whatever auth Jimmy configured in each of them, and Omnexx never reads or handles those credentials.
+7. **TypeScript on Node ≥ 22, installed with `npm i -g omnexx`.** Releases are kept simple: published by hand from a tag, or through one small trusted-publishing workflow (§5.6).
+8. **The site is one static HTML file served by your existing `static-landings` nginx on port 8116 through Nginx Proxy Manager.** (Update Oct 3: DWEEBS has moved out and `infra/apps/omnexx/` is empty. See §6.3.)
+9. **"Better" has to be measured, for Jimmy, not for marketing.** In M4, Omnexx is benchmarked against plain Claude Code headless on the same model (plus mini-SWE-agent and Aider as cheap reference points) on Jimmy's own tasks. It only counts as better if it wins on cost per solved task without losing on solve rate. The results guide Jimmy's defaults; they are not public claims.
 10. **Honest scope.** Multi-day autonomy works on goals the agent can check for itself. It does not replace product judgment.
 11. **Optional fast judge (§13, added Oct 3).** An advisory Nimble 9B decision model on Ollama (usually on the Mac, reached from the VPS over Tailscale) suggests the next move at each cycle boundary and flags drift, repeated failures and risky tool calls. It is off by default, fails open, and never overrides the gates.
+12. **Built for one huge task per ~24 h run (§14).** A hierarchical plan (goal → milestones → tasks), a capped lessons file plus an incrementally maintained codebase map, milestone checkpoints, a morning-after report, and budget defaults sized for one 24 h run.
+13. **Worker backends (§15, M3).** Omnexx stays the single agent in charge but can delegate tightly scoped subtasks to Cline, OpenHands, OpenCode, Aider, Hermes, Pi or Claude Code through their headless modes, using their own quotas. Every worker result is only a candidate diff, judged by the same gates. Each worker is opt-in, all are off by default, and one runs at a time by default.
 
 ---
 
@@ -35,7 +40,7 @@
 
 **What Omnexx is:** a CLI that runs **one** coding agent against **one** repo for hours or days. It keeps working through crashes, reboots, flaky tests and dead ends, and it leaves a clean trail of small, verified commits plus a readable journal of what it did and why.
 
-**Who it's for:** developers who already trust a strong coding agent (Claude Code is the bar) but are tired of babysitting it. They want to hand off a long, *checkable* job at 6 pm and review commits in the morning or on Monday.
+**Who it's for:** Jimmy. (Revised Oct 3: personal use only.) He already trusts a strong coding agent (Claude Code is the bar) but is tired of babysitting it. He wants to hand off one huge, *checkable* job in the evening and review commits plus a morning-after report the next day. Anything that only matters for other users is out of scope.
 
 **Where it works (and where it doesn't), said plainly:**
 
@@ -147,7 +152,7 @@ Each step is a **phase** in `state.json`. Steps are idempotent, so a crash resta
 
 ### 3.5 Planning (the initializer)
 
-- **Cycle 0** uses the **planner (strong) model** with read-only tools. It explores the repo, detects or validates gates, writes `plan.json` (5–200 tasks, each with acceptance checks) and seeds `notes.md`. If `goal.md` points at a spec or checklist, each item becomes a task, and items are never deleted, only marked.
+- **Cycle 0** uses the **planner (strong) model** with read-only tools. It explores the repo, detects or validates gates, writes a **hierarchical** `plan.json` (goal → milestones → tasks; see §14.1; up to ~300 leaf tasks, each with acceptance checks), builds the codebase map (§14.2) and seeds `notes.md`. If `goal.md` points at a spec or checklist, each item becomes a task, and items are never deleted, only marked.
 - **Re-planning happens only** on stuck escalation, when every task is done but a goal-level check still fails, or when you edit `goal.md` (detected by hash). The planner may split, reorder or add tasks, but **may not delete** a task. It can only park one with a reason.
 - **Premature victory is blocked:** the run finishes only when every task is `done` **and** the goal-level gates pass on `lastGreen`. Parked tasks mean the run ends as "finished with N parked", and you get notified.
 
@@ -231,11 +236,12 @@ name = "test";      run = "npm test -- --reporter=json"; timeout = "20m"; parser
 ### 3.11 Budget, token and time guardrails
 
 ```toml
-[budget]
-max_usd          = 40       # whole run
-max_usd_per_day  = 15       # rolling 24 h
-max_hours        = 72       # wall clock
-max_cycles       = 400
+[budget]                     # defaults tuned for ONE ~24 h run (revised Oct 3, see §14.5)
+max_usd          = 50       # whole run
+max_usd_per_day  = 50       # rolling 24 h (equal to max_usd for a single 24 h run)
+max_hours        = 24       # wall clock
+wrapup_reserve   = 0.08     # last 8 % of budget/time: no new tasks; final gates + morning-after report
+max_cycles       = 300
 max_turns_per_cycle   = 40
 max_tokens_per_cycle  = 400_000   # input+output, before cache discount
 max_cmd_timeout  = "30m"
@@ -355,7 +361,8 @@ Every run and every benchmark reports:
 - **B.** A **"Jimmy set"**: 10 real tasks from your repos. For example: migrate a test runner, add types to a JS module, fix every lint error in a package, backfill tests to a coverage target, a dependency major upgrade. Each has a scripted acceptance check.
 - **C.** **One long-horizon run**: a 40–60 item spec checklist with a test per item, run for 24–72 h.
 - **Baselines on the same model wherever possible:** Claude Code headless (`claude -p --bare` with an API key, the same turn and budget caps, and a Ralph-style outer loop for C), mini-SWE-agent, Aider (`--architect --auto-test`), plus Codex CLI on its own model as an "industry" reference.
-- **When the claim is allowed:** "more efficient" goes on the site **only if** Omnexx matches the best same-model baseline's resolve rate within 2 points **and** costs **at least 25% less per resolved task**. The results table, configs and raw logs get committed to `bench/results/`.
+- **Decision rule (personal):** Omnexx becomes Jimmy's default for long runs **only if** it matches the best same-model baseline's resolve rate within 2 points **and** costs **at least 25% less per resolved task**, or clearly wins on the long-horizon run (C). Results, configs and raw logs go in `bench/results/`. They are for Jimmy's decisions and tuning, and the site makes no comparison claims. (Revised Oct 3.)
+- **Extra arms:** worker backends off vs on (§15), and Nimble off vs advise vs steer (§13).
 
 ---
 
@@ -421,6 +428,8 @@ open_pr = false
 - **Tooling:** `tsup` (or `tsdown`) for the build, `vitest` for tests, `eslint` + `typescript-eslint` (strict-type-checked), `prettier`. Package manager: **npm**, to match your infra conventions.
 
 ### 5.6 Release process
+
+> **Demoted (Oct 3, personal use):** keep releases simple. Jimmy publishes by hand from a tag (`npm publish` with 2FA) or through a single small trusted-publishing workflow. Changesets, the Version-Packages bot, the post-publish smoke matrix and an alpha dist-tag are optional and only worth adding if releases become frequent. The steps below are the "full" version, kept for reference.
 
 1. Conventional commits plus **changesets** for versioning and the changelog.
 2. Merging to `main` makes CI build and test. The changesets bot opens a "Version Packages" PR.
@@ -620,7 +629,7 @@ omnexx/
 - Your checkout stays untouched: `git status` and HEAD of the original repo are unchanged during and after the run.
 
 ### M2: Durability and resume
-**Scope:** the multi-cycle supervisor, cycle 0 planner, `plan.json` / `progress.md` / `notes.md`, the phase machine with atomic state, lock, reconcile, `--detach`, `pause/resume/stop`, `status/logs/runs/diff`, heartbeat, ntfy, `service install` (launchd plus systemd), and network-outage backoff.
+**Scope (revised Oct 3, personal-use priorities added):** the multi-cycle supervisor, a cycle 0 planner that writes a **hierarchical plan** (§14.1), the **codebase map** (§14.2), **milestone checkpoints** (§14.3), the **morning-after report** (§14.4), `plan.json` / `progress.md` / `notes.md`, the phase machine with atomic state, lock, reconcile, `--detach`, `pause/resume/stop`, `status/logs/runs/diff`, heartbeat, ntfy, `service install` (launchd plus systemd), and network-outage backoff.
 **Acceptance:**
 - The chaos suite (20 in CI, 200 nightly) passes every invariant in §7.2.
 - A simulated reboot (stop the service, wipe the PID, start the service) resumes from the correct phase within 60 s with no repeated commits.
@@ -628,13 +637,15 @@ omnexx/
 - Editing `goal.md` mid-run is picked up next cycle and logged by hash.
 - ntfy pushes (against a mock server in CI) carry only the allowed fields, and redaction tests cover them.
 - A scripted 30-task scenario runs to completion across 3 forced kills and one 10-minute simulated API outage, with zero manual steps.
+- The hierarchical plan, codebase map, milestone checkpoints and morning-after report behave as specified in §14 (scripted-provider tests).
 
-### M3: Multi-day guardrails and stuck detection
-**Scope:** budgets (total, daily, hours, cycles, per cycle), pre-flight cost estimates, every stuck signal, the strategy ladder, model routing (planner/worker/cheap), in-cycle compaction and tool-result clearing, flaky handling, protected paths, and `sandbox = "docker"`.
+### M3: Long-run guardrails, stuck detection and worker backends
+**Scope:** budgets (total, daily, hours, cycles, per cycle), pre-flight cost estimates, every stuck signal, the strategy ladder (including the new "second opinion" rung, §15.5), model routing (planner/worker/cheap), in-cycle compaction and tool-result clearing, flaky handling, protected paths, `sandbox = "docker"`, and **real worker-backend adapters** (§15). M0–M2 ship only the `WorkerBackend` interface, its types and a fake worker for tests.
 **Acceptance:**
 - Stuck fixtures behave as specified: `impossible-task` is parked after the configured rungs, `oscillation` is caught within one cycle, `flaky-suite` doesn't trigger a false rollback and the flaky test is recorded.
 - A budget cap is never exceeded by more than one turn's cost (property test plus e2e). The daily cap pauses the run and it resumes after the window rolls (simulated clock).
-- **A 48-hour soak:** a real-API run on a 40-item spec-checklist fixture runs on the VPS (or your Mac) in docker sandbox mode for 48 h. It ends `finished` or `finished-with-parked`, with zero human input, zero manual restarts, at least 90% of items done, and spend under its budget. The run report is committed to `bench/results/soak-*.md`.
+- **Worker backends:** every enabled adapter passes its contract tests against a recorded or fake CLI. A worker result goes through the exact same VERIFY/JUDGE path as a native cycle. A timed-out worker is killed with its whole process tree. Quota exhaustion rotates to the next eligible worker. No credentials appear in logs or events (§15.7).
+- **A 24-hour soak** (revised from 48 h): a real-API run on a 40-item spec-checklist fixture runs on the VPS (or your Mac) in docker sandbox mode for 24 h. It ends `finished` or `finished-with-parked`, with zero human input, zero manual restarts, at least 90% of items done, and spend under its budget. The run report is committed to `bench/results/soak-*.md`.
 - Docker sandbox mode passes the safety suite and respects the CPU and memory limits.
 
 ### M4: Efficiency benchmark
@@ -645,7 +656,7 @@ omnexx/
 - **The decision rule is applied:** "more efficient" is claimed only if it's within 2 points on resolve rate and at least 25% lower in $ per resolved task than the best same-model baseline. Otherwise the gaps go into tuning issues and the claim stays off the site.
 
 ### M5: Site and release
-**Scope:** README and docs, `0.1.0` on npm through trusted publishing, and the omnexx.org deploy following §6.3.
+**Scope:** README and docs, `0.1.0` on npm (published by hand or through one small trusted-publishing workflow; see §5.6), and the omnexx.org deploy following §6.3. Kept simple: personal use.
 **Acceptance:**
 - On clean macOS and Ubuntu, `npm i -g omnexx` → `omnexx --version` → `omnexx init` → `omnexx run --plan-only "…"` works with an API key. A provenance badge shows on npmjs.com.
 - https://omnexx.org and https://www.omnexx.org both serve the new page over valid TLS. Lighthouse 100 across the board, page under 10 KB. The copy button works on iOS Safari and Chrome.
@@ -685,22 +696,27 @@ This is **out of scope for M0–M5** and is kept in mind only through the `kind`
 | Runs on the VPS starving production sites | Docker CPU and memory limits, `nice`/`ionice`, or run on the Mac. Your call (§11). |
 | API or model churn (IDs, compaction and edit types) | Aliases plus the pricing table in config, feature flags for edit types, nightly e2e |
 | "More efficient" turning out false | The M4 decision rule. Don't claim it until it's measured. |
-| Scope creep (multi-agent, UI, cloud) | Explicit non-goals: one agent, CLI only, local or self-hosted |
+| Scope creep (multi-agent, UI, cloud, public-product features) | Explicit non-goals: one agent in charge, CLI only, local or self-hosted, personal use |
+| Worker backends breaking third-party terms or leaking credentials | Opt-in per worker, all off by default, Omnexx never reads or logs worker credentials, quota caps, and a ToS warning in `doctor` and the docs (§15.7) |
+| A worker (with its own auto-approve) doing something destructive | Isolated worktree per attempt, pushes disabled through git config overrides, ref-tamper check after each run, docker sandbox recommended, and the result is only a candidate diff (§15.4) |
 
 ## 11. Open questions for Jimmy
 
 1. **DWEEBS currently lives in `infra/apps/omnexx/` and is what omnexx.org serves.** OK to move it to `infra/apps/dweebs/` (dweebs.yaeger.info) and repurpose omnexx.org for the landing page?
 2. **Tracker:** keep the global `yaeger.info/tracker.js` injection on omnexx.org, or opt this site out?
 3. **ntfy:** `ntfy.sh/yaeger` is public and guessable. Keep it (pushes carry no sensitive data), or switch to a random suffix or a token-protected topic?
-4. **Where do multi-day runs live by default:** your Mac (sleeps, so it needs `caffeinate`), the Oracle VPS (always on, but shared with production), or both?
-5. **Default budgets:** is $40 per run, $15 per day and 72 h right for you?
-6. **License:** MIT or Apache-2.0?
-7. Reserve the npm name `omnexx` and create the empty public repo now, before building?
-8. Should the `claude-agent-sdk` engine (Claude Code's loop inside Omnexx's harness) be a first-class option, or a benchmark baseline only?
+4. ~~Where do runs live~~ Decided: the Oracle VPS (systemd first); Nimble runs on the Mac. Original question: your Mac (sleeps, so it needs `caffeinate`), the Oracle VPS (always on, but shared with production), or both?
+5. **Default budgets:** revised to one ~24 h run: $50, 24 h, 300 cycles, an 8% wrap-up reserve (§14.5). Right for you?
+6. ~~License~~ Decided: MIT.
+7. ~~Reserve the npm name and repo~~ Done: the repo exists; a 0.0.1 placeholder is ready to publish.
+8. Should the `claude-agent-sdk` engine (Claude Code's loop inside Omnexx's harness) be a first-class option, or a benchmark baseline only? (Partly covered by the `claude-code` worker backend, §15.)
+9. **Workers:** which workers should be enabled first, and in what priority order? Which of their free tiers are you comfortable automating, given the terms-of-service risk (§15.7)?
 
 ---
 
 ## 12. Handoff prompt for Claude Code (builds M0–M2)
+
+> **Superseded:** the current handoff is `~/Desktop/omnexx-claude-handoff.md`. It covers M0–M2 plus the §13–§15 additions and the landing page. The prompt below is kept for history.
 
 > Before starting, create an empty folder (e.g. `~/code/omnexx`), `git init`, save this whole plan as `docs/PLAN.md`, then open Claude Code there and paste:
 
@@ -843,4 +859,132 @@ breaker_reprobe  = "10m"
 
 ---
 
-*End of plan. Prepared Oct 3, 2026 (CT); §13 added the same day. Planning only: no code, deploys or repo changes were made.*
+## 14. Personal-use focus: making one huge ~24 h run succeed (revised Oct 3)
+
+Omnexx is for Jimmy. Success means: he hands it one **huge** task in the evening and comes back to a long trail of green commits, an honest report, and a run that stayed on track the whole time. Everything in this section takes priority over public-product polish.
+
+### 14.1 Hierarchical plan
+
+- `plan.json` becomes a tree: **goal → milestones → tasks** (and optional **steps** inside a task, used only as hints in the cycle prompt). Every node has `id` (stable, e.g. `M2.T07`), `parentId`, `title`, `why`, `acceptance[]`, `status`, `dependsOn[]`, `size` (`S`/`M`/`L`), `kind` (`feature`/`tests`/`lint`/`refactor`/`migration`/`docs`/`investigate`), `attempts` and `approachesTried[]`.
+- **Leaf tasks** are what cycles execute (≤ ~1–2 h of agent work each). **Milestones** have their own acceptance checks (typically a broader gate run or a group of tests). A milestone is `done` only when all of its children are done **and** its own checks pass on `lastGreen`.
+- The planner writes milestones first, then expands **only the next one or two milestones** into leaf tasks ("rolling-wave" planning). Later milestones stay coarse until they're reached. That keeps the plan accurate as the code changes, and keeps re-planning cheap.
+- Re-planning (stuck rung 3, goal edits, or a milestone's checks failing after its children are done) may split, add or reorder nodes under the affected milestone. It may **never delete** a node; it can only park one with a reason.
+- The cycle context shows a **compact plan view**: the goal, all milestone titles with status, the current milestone's tasks, and the full current task. It never shows the whole tree.
+
+### 14.2 Sharper long-horizon memory
+
+- **Lessons file (`notes.md`)**, as in §3.3, with a hard cap (~1.5k tokens) and add/replace/remove by ID. Entries are typed (`env`, `convention`, `pitfall`, `command`, `flaky`) and dated. At milestone boundaries the cheap model proposes a consolidation (merge duplicates, drop stale entries). It's applied only if the result is shorter and keeps every `env`/`command` fact.
+- **Codebase map (`codemap.md` plus `codemap.json`)** under the run's state directory: a tree of the modules that matter, with one-line purposes, key exports/symbols, entry points, test locations and "how to run X". It's built in cycle 0 and **updated incrementally after every accepted commit** for the files that commit touched: deterministic symbol extraction, plus cheap-model one-liners only for new or changed files. It's capped (~3k tokens) and placed in the cached prefix instead of the raw repo map.
+- **Per-task memory:** `approachesTried[]`, the last failure signatures and the rejected-patch summaries stay attached to the task node and are fed back on retry, so the agent never repeats a dead end.
+- **No transcript memory.** Each cycle still starts fresh (§3.4). Memory lives only in these compact files.
+
+### 14.3 Checkpoints
+
+- Every accepted cycle is a commit with trailers (§3.3, §3.7). In addition, each **completed milestone** gets a lightweight tag `omnexx/<runId>/<milestoneId>`, and a "safe point" record in `state.json`.
+- `omnexx checkpoints [runId]` lists milestone checkpoints with commit, time, tests passing and spend so far. `omnexx diff --since <milestoneId>` shows progress since a checkpoint.
+- If a later milestone's acceptance reveals that an earlier accepted commit broke something the gates didn't cover, the harness can roll back to the last milestone checkpoint, but **only** through the strategy ladder and only within the run worktree. It's logged and shown in the report.
+
+### 14.4 Morning-after report
+
+- `omnexx report [runId]` writes `REPORT.md` in the run's state dir, and it's generated automatically when a run finishes, stops or needs a human. It's the first thing Jimmy reads. It contains:
+  1. **Outcome:** finished / finished-with-parked / needs-human / budget-stop, the reason, and the wall-clock time.
+  2. **Milestones and tasks:** a done/parked/todo tree with one line each. Parked tasks include the reason and the approaches tried.
+  3. **What changed:** the branch, commit count, a diffstat by directory, and the notable commits.
+  4. **Test and gate deltas:** baseline versus final, with new tests added and any known failures fixed.
+  5. **Where it struggled:** stuck events, ladder rungs used, rollbacks, flaky tests, and worker attempts and outcomes (§15).
+  6. **Spend:** $ and tokens by role/model and by worker, cache-hit ratio, and $ per accepted commit.
+  7. **Needs your decision:** questions the agent couldn't settle (ambiguous spec items, parked tasks).
+  8. **How to review and merge:** the exact `git` commands, and the suggested next goal.
+- A short ntfy push points to it (no code, per §3.12). The report is generated deterministically from state and events, with at most one cheap-model call for the summary paragraph.
+
+### 14.5 Budget defaults for one ~24 h run
+
+`max_usd = 50`, `max_usd_per_day = 50`, `max_hours = 24`, `max_cycles = 300`, `max_turns_per_cycle = 40`, `max_tokens_per_cycle = 400k`, `warn_at = 0.8`, and **`wrapup_reserve = 0.08`**. In the last 8% of the budget or time, no new tasks start. The run finishes the current cycle, runs the full gates on `lastGreen`, writes the report and stops cleanly. Jimmy can override any of these per run (`--budget`, `--hours`). Worker backends (§15) don't count against `max_usd` (they use their own quotas), but their time counts against `max_hours`.
+
+### 14.6 Demoted or dropped (personal use)
+
+Dropped or postponed: multi-user concerns, marketing, public comparison claims on the site, the full changesets/Version-Packages release pipeline (see §5.6), and the post-publish smoke matrix. Kept but simple: the npm package and the one-page landing page (§6). Kept as-is: the safety layer, the tests, CI on PRs, and the M4 benchmark (now for Jimmy's own decisions, §4.7).
+
+---
+
+## 15. Worker backends (new, M3)
+
+**Idea:** Omnexx stays the **single agent in charge**: it owns the plan, the judge, git, budgets and memory. For tightly scoped subtasks it can **delegate** to Jimmy's other installed coding harnesses through their headless modes, using their own quotas (often free tiers or subscriptions Jimmy already has). A worker's output is **only a candidate diff**. It goes through exactly the same VERIFY → JUDGE path as a native cycle (gates, ratchet, anti-cheat, protected paths), and is then either committed or rolled back.
+
+### 15.1 Interface
+
+Each worker is a plugin implementing `WorkerBackend` (`src/workers/`):
+
+| Member | Purpose |
+|---|---|
+| `id`, `displayName` | e.g. `aider`, `opencode`, `claude-code` |
+| `detect()` | Is it installed (resolve the binary on `PATH` or a configured path), which version (`--version`), and which capability flags this version supports (e.g. by checking `--help` output). Cached per run. |
+| `buildInvocation(task, ctx)` | Returns `{ argv, env, stdin?, cwd }`. `cwd` is always an **isolated git worktree** created by the harness from `lastGreen`. The prompt is written to a file in the run state dir when the tool supports a file input. |
+| `timeoutMs` | Per-worker wall-clock limit. The harness kills the **whole process tree** on timeout (SIGTERM, then SIGKILL after a grace period). |
+| `quota` | Policy plus live tracking: max runs per hour and day, cooldown after a rate limit, and patterns (exit codes or output regexes) that mean "quota exhausted", "rate limited" or "auth required". State persists in `~/.omnexx/workers/state.json`. |
+| `parseResult(exitCode, stdoutPath, stderrPath)` | Maps output to `{ status: completed / failed / timeout / quota_exhausted / rate_limited / auth_required, summary?, usage? }`. Full stdout and stderr are **captured to `logs/worker-<id>-<cycle>.log`** after redaction. |
+
+The harness, not the plugin, owns: creating and removing the worktree, spawning with `execa` and the timeout, output capture, computing the candidate diff (`git diff lastGreen` including untracked files, after flattening any commits the worker made), the ref-tamper check, and the judge.
+
+### 15.2 Uses
+
+1. **Routing cheap subtasks:** leaf tasks with `size = S` and `kind` in a worker's `route` list (default: `tests`, `lint`, `small-refactor`, `docs`) and a clear acceptance check can go to an enabled worker instead of the native loop.
+2. **"Second opinion" stuck rung:** after rung 1 (retry with evidence) fails, a **different** worker (or the native loop, if a worker failed) gets the same task with the failure evidence. That's cheaper than escalating to the strong model. It's inserted as rung 1b in §3.10.
+3. **Quota rotation:** when a worker reports `quota_exhausted` or `rate_limited`, it goes into cooldown and the next eligible worker in priority order is used. If none is eligible, the native loop takes the task.
+4. **Nimble-assisted choice (optional):** when the judge is on (§13), a `choice` question over the eligible workers (given the task summary plus each worker's recent acceptance rate for that task `kind`) can suggest which worker to use. Rules still decide.
+
+### 15.3 Config
+
+```toml
+[workers]
+max_concurrent = 1            # cap on simultaneously running workers
+priority = ["aider", "opencode", "cline", "pi", "hermes", "openhands", "claude-code"]
+
+[workers.aider]
+enabled = false               # every worker is OFF by default (opt-in, see §15.7)
+path = "aider"                # optional explicit binary path
+timeout = "20m"
+route = ["tests", "lint", "small-refactor"]
+max_runs_per_day = 40
+extra_args = []               # appended verbatim (e.g. a model choice)
+# ... one table per worker
+```
+
+### 15.4 Safety
+
+- **The worker's own auto-approve means Omnexx's command policy does not apply inside it.** Containment comes from the isolated worktree, a scrubbed environment (no `ANTHROPIC_API_KEY` or other supervisor secrets; `HOME` is kept so the tool finds its own config), **push disabled** through per-process git config overrides (`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` setting a dead `pushurl`), and a **ref-tamper check** (snapshot `git for-each-ref` before and after; any change outside the worker's own worktree branch rejects the result and disables that worker for the run). `sandbox = "docker"` (M3) is recommended for unattended worker use.
+- Worker output is treated like any other untrusted tool output: redacted, trimmed, never executed.
+- The worker worktree is deleted after its diff is extracted. Rejected diffs are saved as `rejected/<cycle>-<worker>.patch` like native ones.
+
+### 15.5 Concurrency
+
+`max_concurrent = 1` by default. If it's raised, each running worker gets its own worktree, and candidate diffs are **judged one at a time** against the current `lastGreen`. A candidate that no longer applies cleanly is rejected (and may be retried once on the new base). Omnexx remains the only committer.
+
+### 15.6 Verified headless invocations (checked Oct 3, 2026 against official docs and the versions installed on Jimmy's Mac)
+
+| Worker | Installed on the Mac | Headless invocation (cwd = isolated worktree) | Notes |
+|---|---|---|---|
+| **Claude Code** | 2.1.288 (`/opt/homebrew/bin/claude`) | `claude -p "<task>" --output-format json --permission-mode auto --permission-prompts none --no-session-persistence` | `--output-format json` includes `total_cost_usd`. Uses Jimmy's own Claude Code login unless `--bare` with `ANTHROPIC_API_KEY` (bare never reads OAuth/keychain). SIGTERM exits 143. Source: code.claude.com/docs/en/headless |
+| **Cline** | 3.0.62 (`/opt/homebrew/bin/cline`) | `cline --json --cwd <wt> --timeout <sec> "<task>"` | `--json` forces headless and NDJSON output. Tool auto-approve defaults to `true` (`--auto-approve true` to be explicit). The docs also describe `-y/--yolo`, but the installed 3.0.62 help doesn't list it, so detect it from `--help`. Sources: docs.cline.bot/usage/cli-overview, docs.cline.bot/cli/cli-reference |
+| **OpenHands** | CLI 1.16.0, SDK 1.21.0 (`~/.local/bin/openhands`) | `openhands --headless --json -f <task-file>` (or `-t "<task>"`) | Headless always auto-approves and requires `--task`/`--file`. `--json` streams JSONL events. `OPENHANDS_SUPPRESS_BANNER=1`. `--override-with-envs` reads `LLM_API_KEY`/`LLM_BASE_URL`/`LLM_MODEL`. Source: docs.openhands.dev/openhands/usage/cli/headless |
+| **OpenCode** | 1.18.30 (`/opt/homebrew/bin/opencode`) | `opencode run --dir <wt> --auto --format json "<task>"` | `--auto` auto-approves permissions that aren't explicitly denied. `-m provider/model` is optional. `OPENCODE_DISABLE_AUTOUPDATE=1`. Source: opencode.ai/docs/cli |
+| **Aider** | 0.86.2 (`/opt/homebrew/bin/aider`) | `aider --message-file <task-file> --yes-always --no-auto-commits [files…]` | `--message`/`-m` or `--message-file`/`-f` processes one instruction and exits. The installed version uses `--yes-always` (the scripting docs page still shows the older `--yes`). Optional `--test-cmd`, `--auto-test`, `--lint-cmd`, `--auto-lint`. Avoid `--analytics-disable` in the adapter, since it changes Aider's config permanently. Source: aider.chat/docs/scripting.html, plus `aider --help` |
+| **Hermes Agent** | 0.16.0 (`~/.local/bin/hermes`) | `hermes -z "<task>"` | One-shot: prints only the final response, and approvals are auto-bypassed. Documented exit codes: 0 completed, 2 failed or partial, 130 interrupted, 1 no text (judge the run by its exit code; Omnexx judges by the gates anyway). Alternative: `hermes chat -Q -q "<task>" --max-turns N`. Newer releases need `--oneshot` or `-Q` for `-q` to exit. Source: hermes-agent.nousresearch.com/docs/reference/cli-commands |
+| **Pi** | 0.84.2 (`/opt/homebrew/bin/pi`) | `pi -p --no-session "<task>"` (or `pi --mode json "<task>"` for JSONL events) | Non-interactive modes ignore untrusted project-local resources by default (`-na` forces that). The default provider is `google`, and `--provider`/`--model` are optional. Source: github.com/badlogic/pi-mono, packages/coding-agent/docs/usage.md |
+| *(also installed)* Codex CLI | 0.132.0 | `codex exec -C <wt> -s workspace-write --json --ephemeral -o <last-msg-file> "<task>"` | Not on Jimmy's list. A candidate extra worker. |
+
+Adapters must re-verify flags at runtime (`detect()` parses `--help`/`--version`), because these CLIs change fast.
+
+### 15.7 Terms-of-service and credential caveat
+
+**Automating consumer free tiers or subscriptions can violate those services' terms and put the account at risk.** So every worker is **opt-in individually** and **off by default**. `omnexx doctor` and the first enable of each worker print a one-line warning, and `docs/workers.md` repeats it. Omnexx **never reads, copies, stores or logs any worker's credentials**: they stay in each tool's own config. The worker environment is scrubbed, and worker logs go through the redaction filter. Quota caps (`max_runs_per_day`) default conservatively.
+
+### 15.8 Milestones
+
+- **M0–M2:** the `WorkerBackend` interface and types, the config schema (`[workers]`, all off), and a **working fake worker** (a small script in test fixtures that applies a scripted patch, can simulate timeout, quota exhaustion and ref tampering, and writes output). That's enough to test the harness-side lifecycle: worktree, timeout kill, capture, candidate diff, judge, commit or rollback. **No real adapters.**
+- **M3:** real adapters for Aider, OpenCode, Cline, Pi, Hermes, OpenHands and Claude Code (the priority order is Jimmy's call), quota tracking and rotation, routing, the second-opinion rung, Nimble-assisted choice, and contract tests against recorded CLI outputs. Real-tool smoke tests run only locally with `OMNEXX_WORKER_E2E=1`, never in CI.
+- **M4:** workers off versus on arms in the benchmark.
+
+---
+
+*End of plan. Prepared Oct 3, 2026 (CT); §13–§15 and the personal-use revision added the same day. Planning only: no code, deploys or repo changes were made.*
