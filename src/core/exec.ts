@@ -89,3 +89,66 @@ export async function runShell(command: string, opts: ExecOptions): Promise<Exec
     durationMs: Date.now() - started,
   };
 }
+
+export interface ArgvResult {
+  exitCode: number;
+  timedOut: boolean;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+}
+
+/**
+ * Run a program (no shell) in its own process group with a wall-clock limit; on timeout the
+ * whole tree gets SIGTERM, then SIGKILL after a grace period. Used for worker backends.
+ */
+export async function runArgv(
+  argv: readonly string[],
+  opts: {
+    cwd: string;
+    env: Record<string, string>;
+    timeoutMs: number;
+    killGraceMs?: number;
+    stdin?: string;
+    redact: (s: string) => string;
+    stdoutPath: string;
+    stderrPath: string;
+  },
+): Promise<ArgvResult> {
+  const [file, ...args] = argv;
+  const started = Date.now();
+  const child = execa(file ?? 'false', args, {
+    cwd: opts.cwd,
+    env: opts.env,
+    extendEnv: false,
+    detached: true,
+    reject: false,
+    stripFinalNewline: false,
+    maxBuffer: 64 * 1024 * 1024,
+    ...(opts.stdin !== undefined ? { input: opts.stdin } : { stdin: 'ignore' }),
+  });
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    if (child.pid === undefined) return;
+    const pid = child.pid;
+    killGroup(pid, 'SIGTERM');
+    setTimeout(() => {
+      killGroup(pid, 'SIGKILL');
+    }, opts.killGraceMs ?? 5_000).unref();
+  }, opts.timeoutMs);
+  const r = await child;
+  clearTimeout(timer);
+  if (child.pid !== undefined) killGroup(child.pid, 'SIGKILL');
+  const stdout = opts.redact(typeof r.stdout === 'string' ? r.stdout : '');
+  const stderr = opts.redact(typeof r.stderr === 'string' ? r.stderr : '');
+  await writeFile(opts.stdoutPath, stdout, { mode: 0o600 });
+  await writeFile(opts.stderrPath, stderr, { mode: 0o600 });
+  return {
+    exitCode: r.exitCode ?? 124,
+    timedOut,
+    stdout,
+    stderr,
+    durationMs: Date.now() - started,
+  };
+}

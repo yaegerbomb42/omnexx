@@ -124,7 +124,13 @@ export const stateSchema = z.object({
   pending: pendingSchema.optional(),
   /** Result of ACT, persisted so VERIFY can resume after a crash. */
   act: z
-    .object({ summary: z.string(), end: z.string(), turns: z.number(), usd: z.number() })
+    .object({
+      summary: z.string(),
+      end: z.string(),
+      turns: z.number(),
+      usd: z.number(),
+      worker: z.string().optional(),
+    })
     .optional(),
   recordedCycle: z.number().default(0),
   checkpoints: z

@@ -374,6 +374,7 @@ export async function stepVerify(run: Run): Promise<void> {
     diffStats,
     stuck,
     ...(testsPassed !== undefined ? { testsPassed } : {}),
+    ...(act.worker ? { worker: act.worker } : {}),
   };
   await run.setPhase(verdict === 'accept' ? 'commit' : 'rollback');
 }

@@ -42,7 +42,9 @@ export async function workingTreeDiff(
   await git(cwd, ['read-tree', base], { env: abs });
   await git(cwd, ['add', '-A'], { env: abs });
   const treeHash = (await git(cwd, ['write-tree'], { env: abs })).stdout.trim();
-  const patch = (await git(cwd, ['diff', '--cached', '--binary', '-M', base], { env: abs })).stdout;
+  const raw = (await git(cwd, ['diff', '--cached', '--binary', '-M', base], { env: abs })).stdout;
+  // The git wrapper strips the final newline; `git apply` needs it back.
+  const patch = raw && !raw.endsWith('\n') ? `${raw}\n` : raw;
   const status = (await git(cwd, ['diff', '--cached', '--name-status', '-M', base], { env: abs }))
     .stdout;
   const numstat = (await git(cwd, ['diff', '--cached', '--numstat', '-M', base], { env: abs }))
