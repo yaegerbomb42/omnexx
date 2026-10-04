@@ -53,3 +53,20 @@ jobs:
           omnexx --version
           # Placeholder so the key check passes offline; it is never sent anywhere.
           OMNEXX_ANTHROPIC_API_KEY="sk-ant-ci-placeholder-not-a-key" omnexx doctor --offline
+      - name: Validate the generated systemd unit (ubuntu)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          export OMNEXX_HOME="$(mktemp -d)" OMNEXX_CONFIG_HOME="$(mktemp -d)"
+          dir="$(mktemp -d)"
+          node dist/cli.js service install --dry-run > "$dir/omnexx.service"
+          cat "$dir/omnexx.service"
+          systemd-analyze verify "$dir/omnexx.service"
+      - name: Validate the generated launchd plist (macos)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          export OMNEXX_HOME="$(mktemp -d)" OMNEXX_CONFIG_HOME="$(mktemp -d)"
+          dir="$(mktemp -d)"
+          node dist/cli.js service install --dry-run > "$dir/org.omnexx.supervisor.plist"
+          plutil -lint "$dir/org.omnexx.supervisor.plist"
