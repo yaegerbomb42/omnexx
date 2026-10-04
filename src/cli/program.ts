@@ -3,9 +3,10 @@ import pkg from '../../package.json' with { type: 'json' };
 import { assertProvider, clearKey, storeKey } from '../auth/keys.js';
 import { loadConfig } from '../config/load.js';
 import { resolvePaths } from '../core/paths.js';
-import { describeError, UsageError } from '../errors.js';
+import { describeError, NotImplementedError, UsageError } from '../errors.js';
 import { binaryVersion, renderChecks, runDoctorChecks } from './commands/doctor.js';
 import { runInit } from './commands/init.js';
+import { readGoal, runPlanOnly, type RunFlags } from './commands/run.js';
 import { EXIT } from './exit-codes.js';
 import { println, readSecret, type CliIO } from './io.js';
 
@@ -52,6 +53,34 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
       if (opts.json) println(io.stdout, JSON.stringify({ checks }, null, 2));
       else renderChecks(io, checks);
       if (checks.some((c) => c.status === 'fail')) setExit(EXIT.error);
+    });
+
+  program
+    .command('run')
+    .description(
+      'start a run on this repo: plan, then cycle until done, stuck, stopped or out of budget',
+    )
+    .argument('[goal]', 'what to achieve (or use --goal-file)')
+    .option('--goal-file <path>', 'read the goal from a file (e.g. SPEC.md)')
+    .option('--plan-only', 'run the planner, print the plan, and stop')
+    .option('--budget <usd>', 'run-level spend cap in USD')
+    .option('--hours <n>', 'wall-clock cap in hours')
+    .option(
+      '--gate <command>',
+      'gate command (repeatable)',
+      (v: string, prev: string[] | undefined) => [...(prev ?? []), v],
+    )
+    .option('--sandbox <mode>', 'host | docker')
+    .option('--model-worker <alias>', 'worker model alias, e.g. sonnet')
+    .option('--push <mode>', 'none | branch')
+    .option('--from <ref>', 'branch the run from this ref (default HEAD)')
+    .action(async (goal: string | undefined, opts: RunFlags) => {
+      const text = await readGoal(io, goal, opts.goalFile);
+      if (opts.planOnly) {
+        setExit(await runPlanOnly(io, text, opts));
+        return;
+      }
+      throw new NotImplementedError('multi-cycle runs (`omnexx run` without --plan-only)', 'M2');
     });
 
   const auth = program.command('auth').description('store or clear a provider API key (0600 file)');

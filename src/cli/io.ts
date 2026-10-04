@@ -1,5 +1,7 @@
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
+import type { Clock } from '../core/clock.js';
+import type { Provider } from '../providers/types.js';
 
 /** Everything a command touches in the outside world, injectable so tests drive it directly. */
 export interface CliIO {
@@ -9,6 +11,10 @@ export interface CliIO {
   env: NodeJS.ProcessEnv;
   cwd: string;
   isTTY: boolean;
+  /** Builds the model provider from the API key. Tests inject a scripted provider here. */
+  makeProvider?: (apiKey: string) => Provider;
+  clock?: Clock;
+  fetch?: typeof fetch;
 }
 
 export function processIO(): CliIO {
