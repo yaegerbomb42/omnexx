@@ -13,7 +13,7 @@ import { startTestRun } from '../support/harness.js';
 import { secretCorpus, secretValues } from '../support/secrets.js';
 import { isolatedEnv } from '../support/tmp.js';
 
-const onePlan = (checks: string[] = ['node --test --test-reporter=tap test/']) => ({
+const onePlan = (checks: string[] = ['node --test --test-reporter=tap']) => ({
   milestones: [
     { id: 'M1', title: 'Fix math', tasks: [{ id: 'M1.T01', title: 'Make add() add', checks }] },
   ],
@@ -27,7 +27,7 @@ const fixAdd: Script = ({ turn }) =>
       old_str: 'return a - b;',
       new_str: 'return a + b;',
     }),
-    call('bash', { command: 'node --test test/' }),
+    call('bash', { command: 'node --test' }),
     say('Fixed add() to add; tests pass.'),
   ][turn] ?? say('done');
 
@@ -158,7 +158,7 @@ describe('M1: one full cycle with the scripted provider', () => {
     const t = await startTestRun({
       fixture: 'ratchet',
       provider: new ScriptedProvider(fixAdd),
-      plan: onePlan(['node --test --test-name-pattern="add adds" test/']),
+      plan: onePlan(['node --test --test-name-pattern="add adds"']),
     });
     await runBaseline(t.run);
     expect(t.run.state.baseline?.test?.failureIds.sort()).toEqual([

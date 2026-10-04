@@ -65,7 +65,7 @@ describe.skipIf(process.env.OMNEXX_E2E !== '1')(
                 {
                   id: 'M1.T01',
                   title: 'Make add() in src/math.js add its arguments',
-                  checks: ['node --test test/'],
+                  checks: ['node --test'],
                 },
               ],
             },

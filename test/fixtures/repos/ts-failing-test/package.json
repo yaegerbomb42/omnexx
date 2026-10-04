@@ -1,1 +1,1 @@
-{ "name": "ts-failing-test", "private": true, "type": "module", "scripts": { "test": "node --test --test-reporter=tap test/" } }
+{ "name": "ts-failing-test", "private": true, "type": "module", "scripts": { "test": "node --test --test-reporter=tap" } }

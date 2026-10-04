@@ -13,7 +13,7 @@ import { isolatedEnv, tempRepo } from './tmp.js';
 
 export const NODE_TEST_GATE = {
   name: 'test',
-  run: 'node --test --test-reporter=tap test/',
+  run: 'node --test --test-reporter=tap',
   parser: 'node-test' as const,
   timeout: '2m',
 };

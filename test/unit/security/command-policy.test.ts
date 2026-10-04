@@ -16,7 +16,7 @@ const verdict = (cmd: string, c: Partial<PolicyContext> = {}) =>
 describe('command policy: allowed', () => {
   it.each([
     'npm test',
-    'node --test test/',
+    'node --test',
     'ls -la src',
     'cat src/index.ts | head -n 20',
     'npx tsc --noEmit 2>&1 | tail -50',

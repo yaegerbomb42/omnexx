@@ -1,1 +1,1 @@
-{ "name": "impossible-task", "private": true, "type": "module", "scripts": { "test": "node --test --test-reporter=tap test/" } }
+{ "name": "impossible-task", "private": true, "type": "module", "scripts": { "test": "node --test --test-reporter=tap" } }

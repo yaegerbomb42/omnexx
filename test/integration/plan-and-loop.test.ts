@@ -30,12 +30,12 @@ const planScript: Script = ({ planner, turn }) => {
           {
             id: 'M1',
             title: 'Fix arithmetic',
-            checks: ['node --test test/'],
+            checks: ['node --test'],
             tasks: [
               {
                 id: 'M1.T01',
                 title: 'Make add() add',
-                checks: ['node --test test/'],
+                checks: ['node --test'],
                 size: 'S',
                 kind: 'feature',
               },
@@ -134,7 +134,7 @@ describe('agent loop limits and control inside a cycle', () => {
       {
         id: 'M1',
         title: 'Fix math',
-        tasks: [{ id: 'M1.T01', title: 'Make add() add', checks: ['node --test test/'] }],
+        tasks: [{ id: 'M1.T01', title: 'Make add() add', checks: ['node --test'] }],
       },
     ],
   };
