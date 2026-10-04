@@ -1,4 +1,3 @@
-import { tmpdir } from 'node:os';
 import { basename, resolve } from 'node:path';
 import { parse, type ParseEntry } from 'shell-quote';
 import { isInside, isSecretPath } from './paths.js';
@@ -12,6 +11,8 @@ export interface PolicyContext {
   home: string;
   allowNetwork: boolean;
   extraDeny: readonly string[];
+  /** Scratch dirs outside the worktree that commands may write into (the run's own tmp dir). */
+  scratch: readonly string[];
 }
 
 const ALWAYS_DENY: Record<string, string> = {
@@ -129,10 +130,9 @@ class Checker {
     const a = this.abs(p);
     if (a === this.ctx.root || basename(a) === '.git') return false;
     if (isInside(this.ctx.root, a)) return !isInside(resolve(this.ctx.root, '.git'), a);
-    return [resolve(tmpdir()), '/tmp', '/private/tmp'].some(
-      (t) =>
-        isInside(t, a) && basename(a.slice(t.length + 1).split('/')[0] ?? '').startsWith('omnexx-'),
-    );
+    // Only the run's own scratch dir, never its root: a broad "/tmp/omnexx-*" rule would also
+    // match OMNEXX_HOME under the system temp dir and let `rm -rf ../` reach other worktrees.
+    return this.ctx.scratch.some((s) => isInside(s, a) && a !== s);
   }
 
   private looksLikePath(arg: string): boolean {

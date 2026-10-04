@@ -125,6 +125,7 @@ export class Run {
       home: this.deps.env.HOME ?? '/nonexistent',
       allowNetwork: this.config.policy.allow_network,
       extraDeny: this.config.policy.deny,
+      scratch: [this.tmpDir, `/private${this.tmpDir}`],
     };
   }
 

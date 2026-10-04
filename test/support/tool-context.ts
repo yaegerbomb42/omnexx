@@ -22,7 +22,7 @@ export async function toolContext(
     store,
     events: new EventLog(store.eventsPath, store.runId, new Redactor(), new FakeClock()),
     redactor: new Redactor(),
-    policy: { root, home: '/home/nobody', allowNetwork: false, extraDeny: [] },
+    policy: { root, home: '/home/nobody', allowNetwork: false, extraDeny: [], scratch: [] },
     cycle: 1,
     maxCmdTimeoutMs: 10_000,
     notesMaxTokens: 1_500,
