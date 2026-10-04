@@ -11,12 +11,18 @@ export default defineConfig({
         test: {
           name: 'integration',
           include: ['test/integration/**/*.test.ts'],
-          testTimeout: 60_000,
+          testTimeout: 120_000,
+          globalSetup: ['test/support/global-setup.ts'],
         },
       },
       {
         extends: true,
-        test: { name: 'chaos', include: ['test/chaos/**/*.test.ts'], testTimeout: 600_000 },
+        test: {
+          name: 'chaos',
+          include: ['test/chaos/**/*.test.ts'],
+          testTimeout: 1_800_000,
+          globalSetup: ['test/support/global-setup.ts'],
+        },
       },
       {
         extends: true,

@@ -27,6 +27,7 @@ M2 (durability and resume). Next: docs/milestones/M2.md, then supervisor (select
 - 2026-10-03: M0 done. PR #1 (draft). CI green 4/4.
 
 - 2026-10-04: M1 done (one cycle, safety, judge, budget pre-flight, plan-only). Fixed CI-only bugs: scratch-dir policy hole; Node 22 `node --test <dir>`.
+- 2026-10-04: M2 in progress. Done: lock (serialized takeover), heartbeat, ladder, ntfy, supervisor (resume/guards/milestones/expansion/report/wrap-up), 8 supervisor integration tests. Next: CLI commands + detach + resumeAll, chaos child entry + suite, service units, workers lifecycle + fake worker, 30-task scenario, docs.
 
 ## Notes for future me
 

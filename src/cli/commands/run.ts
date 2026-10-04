@@ -9,7 +9,9 @@ import { compactPlanView } from '../../core/plan.js';
 import { Run } from '../../core/run.js';
 import { UsageError } from '../../errors.js';
 import type { ConfigInput } from '../../config/schema.js';
+import { selfEntry, spawnDetached } from '../../daemon/detach.js';
 import { println, type CliIO } from '../io.js';
+import { superviseForeground } from './control.js';
 import { resolveRunDeps } from '../run-deps.js';
 import { EXIT } from '../exit-codes.js';
 
@@ -89,4 +91,44 @@ export async function runPlanOnly(io: CliIO, goal: string, flags: RunFlags): Pro
     `Planner spend: $${run.state.spend.usd.toFixed(4)}. Plan: ${store.file('plan.json')}`,
   );
   return EXIT.ok;
+}
+
+export interface FullRunFlags extends RunFlags {
+  detach?: boolean;
+  iKnowThereAreNoChecks?: boolean;
+}
+
+/** `omnexx run`: create the run, then supervise it here or in a detached process. */
+export async function runCommand(io: CliIO, goal: string, flags: FullRunFlags): Promise<number> {
+  const { config, paths, clock } = await resolveRunDeps(io, io.cwd, flagsToConfig(flags));
+  if (!config.gates.length && !flags.iKnowThereAreNoChecks) {
+    throw new UsageError(
+      "no gates configured: nothing would check the agent's work",
+      'run `omnexx init`, pass --gate "npm test", or --i-know-there-are-no-checks for a single cycle',
+    );
+  }
+  const store = await createRun({
+    paths,
+    cwd: io.cwd,
+    goal,
+    now: clock.now(),
+    noChecks: !config.gates.length,
+    ...(flags.from ? { from: flags.from } : {}),
+  });
+  if (flags.detach) {
+    const pid = spawnDetached(
+      io.entry ?? selfEntry(),
+      ['supervise', store.runId],
+      store.file('supervisor.log'),
+      io.env,
+    );
+    println(io.stdout, store.runId);
+    println(
+      io.stderr,
+      `supervisor pid ${pid}; \`omnexx status ${store.runId}\`, \`omnexx logs -f ${store.runId}\``,
+    );
+    return EXIT.ok;
+  }
+  println(io.stderr, `run ${store.runId} on ${(await store.readState()).branch}`);
+  return superviseForeground(io, store.runId);
 }

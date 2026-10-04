@@ -89,6 +89,7 @@ class Supervisor {
       case 'act':
         r.events.emit('reconcile.restart_act', { cycle: r.state.cycle, task: r.state.taskId });
         await stepAct(r); // prepareWorktree salvages a dirty tree; attempts are not incremented
+        await stepVerify(r);
         await this.finishCycle();
         return;
       case 'verify':
