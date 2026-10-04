@@ -105,7 +105,7 @@ async function detectNode(root: string): Promise<Detection> {
   if ('vitest' in deps) {
     gates.push({
       name: 'test',
-      run: `${exec(pm, 'vitest')} run --reporter=json`,
+      run: `${exec(pm, 'vitest')} run --reporter=json --outputFile=/dev/stdout`,
       level: 'ratchet',
       parser: 'vitest',
       timeout: '20m',

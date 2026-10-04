@@ -1,0 +1,59 @@
+{
+  "numFailedTestSuites": 1,
+  "numFailedTests": 1,
+  "numPassedTestSuites": 0,
+  "numPassedTests": 2,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 1,
+  "numRuntimeErrorTestSuites": 1,
+  "numTodoTests": 0,
+  "numTotalTestSuites": 2,
+  "numTotalTests": 4,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["cart"],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected)\n\nExpected: 3\nReceived: 2\n    at Object.<anonymous> (/repo/src/cart.test.js:9:20)"
+          ],
+          "fullName": "cart totals",
+          "location": { "column": 3, "line": 8 },
+          "status": "failed",
+          "title": "totals"
+        },
+        {
+          "ancestorTitles": ["cart"],
+          "failureMessages": [],
+          "fullName": "cart empty",
+          "status": "passed",
+          "title": "empty"
+        },
+        {
+          "ancestorTitles": ["cart"],
+          "failureMessages": [],
+          "fullName": "cart later",
+          "status": "pending",
+          "title": "later"
+        },
+        {
+          "ancestorTitles": [],
+          "failureMessages": [],
+          "fullName": "top",
+          "status": "passed",
+          "title": "top"
+        }
+      ],
+      "message": "",
+      "name": "/repo/src/cart.test.js",
+      "status": "failed"
+    },
+    {
+      "assertionResults": [],
+      "message": "  ● Test suite failed to run\n\n    Cannot find module './missing' from 'src/broken.test.js'",
+      "name": "/repo/src/broken.test.js",
+      "status": "failed"
+    }
+  ]
+}
