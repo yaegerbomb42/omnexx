@@ -47,6 +47,7 @@ export function sampleState(over: Partial<RunState> = {}): RunState {
     checkpoints: [],
     disabledWorkers: [],
     noChecks: false,
+    budgetExhausted: false,
     ...over,
   };
 }

@@ -48,6 +48,9 @@ export class Run {
   /** Supervisor start, for elapsed-time accounting together with state.activeMs. */
   readonly startedAt: number;
   plan: Plan | undefined;
+  /** True while the agent loop is blocked on a pause request (shown by the heartbeat). */
+  paused = false;
+  private readonly baseActiveMs: number;
 
   private constructor(
     readonly deps: RunDeps,
@@ -55,6 +58,7 @@ export class Run {
     public state: RunState,
   ) {
     this.startedAt = deps.clock.now();
+    this.baseActiveMs = state.activeMs;
     this.redactor = Redactor.fromEnv(deps.env, deps.secrets ?? []);
     this.events = new EventLog(store.eventsPath, state.runId, this.redactor, deps.clock);
     this.events.cycle = state.cycle;
@@ -135,7 +139,7 @@ export class Run {
 
   /** Wall-clock the run has been active, across supervisor restarts. */
   elapsedMs(): number {
-    return this.state.activeMs + (this.clock.now() - this.startedAt);
+    return this.baseActiveMs + (this.clock.now() - this.startedAt);
   }
 
   requirePlan(): Plan {
@@ -145,6 +149,7 @@ export class Run {
 
   async save(): Promise<void> {
     this.state.updatedAt = this.clock.now();
+    this.state.activeMs = this.elapsedMs();
     await this.store.writeState(this.state);
   }
 

@@ -10,6 +10,13 @@ import { renderCodemap, type Codemap } from './codemap.js';
 import { runAgentLoop } from './loop.js';
 import { PLANNER_SYSTEM } from './prompts.js';
 
+/** The planner loop ended (caps, stop, refusal) before a valid plan was written. */
+export class PlannerIncomplete extends StateError {
+  constructor(readonly end: string) {
+    super(`planner ended (${end}) without a valid plan`, 'see `omnexx logs` for what it tried');
+  }
+}
+
 export type PlannerMode =
   | { kind: 'initial' }
   | { kind: 'expand'; milestoneId: string }
@@ -119,10 +126,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     },
   );
   if (!written) {
-    throw new StateError(
-      `planner ended (${result.end}) without a valid plan`,
-      'see `omnexx logs` for what it tried',
-    );
+    throw new PlannerIncomplete(result.end);
   }
   run.plan = written;
   await run.savePlan();

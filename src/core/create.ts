@@ -58,6 +58,7 @@ export async function createRun(o: CreateRunOptions): Promise<RunStore> {
     checkpoints: [],
     disabledWorkers: [],
     noChecks: o.noChecks ?? false,
+    budgetExhausted: false,
   };
   await store.writeState(state);
   return store;

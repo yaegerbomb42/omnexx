@@ -26,6 +26,7 @@ import { failureSignature, judgeGate } from '../verify/ratchet.js';
 import { readTextOr } from './atomic.js';
 import { runShell } from './exec.js';
 import { renderNotes } from './notes.js';
+import { refreshCodemap } from './milestones.js';
 import { getNode, type PlanNode } from './plan.js';
 import type { PendingVerdict } from './run-store.js';
 import type { Run } from './run.js';
@@ -75,6 +76,7 @@ function gateRunCtx(run: Run, label: string) {
 export async function runBaseline(run: Run): Promise<void> {
   const results = await runGates(run.config.gates, gateRunCtx(run, 'baseline'));
   run.state.baseline = toBaseline(results);
+  run.state.initialBaseline ??= run.state.baseline;
   await run.save();
   run.events.emit('baseline', {
     gates: results.map((r) => ({
@@ -205,8 +207,12 @@ export async function stepAct(run: Run): Promise<void> {
     spentUsd: () => run.state.spend.usd,
     onUsage: (u, usd, model) => run.addSpend(u, usd, model, 'worker'),
     control: () => run.control(),
+    onPauseChange: (p) => {
+      run.paused = p;
+    },
     signal: run.abort.signal,
   });
+  if (result.end === 'max_usd') run.state.budgetExhausted = true;
   run.events.emit('act.end', {
     end: result.end,
     turns: result.turns,
@@ -526,6 +532,7 @@ export async function stepRecord(run: Run): Promise<void> {
         .filter(Boolean)
         .join('\n'),
     );
+    if (p.verdict === 'accept' && p.changedFiles.length) await refreshCodemap(run, p.changedFiles);
     run.events.emit(p.done ? 'task.done' : 'cycle.recorded', {
       task: task.id,
       verdict: p.verdict,

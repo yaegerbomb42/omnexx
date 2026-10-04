@@ -104,6 +104,8 @@ export const stateSchema = z.object({
   activeMs: z.number().default(0),
   goalHash: z.string(),
   baseline: baselineSchema.optional(),
+  /** Baseline at the starting commit, never overwritten (for the report's test deltas). */
+  initialBaseline: baselineSchema.optional(),
   setupDone: z.boolean().default(false),
   spend: z
     .object({
@@ -139,6 +141,8 @@ export const stateSchema = z.object({
     .default([]),
   disabledWorkers: z.array(z.string()).default([]),
   noChecks: z.boolean().default(false),
+  /** Set when a pre-flight check refused a call for max_usd; cleared when a supervisor starts. */
+  budgetExhausted: z.boolean().default(false),
 });
 export type RunState = z.infer<typeof stateSchema>;
 

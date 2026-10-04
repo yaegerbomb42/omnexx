@@ -1,5 +1,5 @@
-import { cp, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { cp, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { defaultConfig } from '../../src/config/load.js';
 import type { ConfigInput, OmnexxConfig } from '../../src/config/schema.js';
 import { createRun } from '../../src/core/create.js';
@@ -38,16 +38,17 @@ export interface TestRun {
 }
 
 export async function startTestRun(opts: {
-  fixture: string;
+  fixture?: string;
   provider: Provider;
-  plan: PlanUpdate;
+  plan?: PlanUpdate;
+  repo?: string;
   config?: ConfigInput;
   env?: NodeJS.ProcessEnv;
   hooks?: RunHooks;
   fetch?: typeof fetch;
   goal?: string;
 }): Promise<TestRun> {
-  const repo = await fixtureRepo(opts.fixture);
+  const repo = opts.repo ?? (await fixtureRepo(opts.fixture ?? 'ts-failing-test'));
   const env = opts.env ?? (await isolatedEnv());
   const config = defaultConfig({ gates: [NODE_TEST_GATE], ...opts.config });
   const clock = new FakeClock();
@@ -66,7 +67,26 @@ export async function startTestRun(opts: {
     },
     store.runId,
   );
-  run.plan = applyPlanUpdate(undefined, opts.plan, goal);
-  await run.savePlan();
+  if (opts.plan) {
+    run.plan = applyPlanUpdate(undefined, opts.plan, goal);
+    await run.savePlan();
+  }
   return { run, repo, env, config, clock };
+}
+
+/** A repo with one passing node test and the given extra files, committed. */
+export async function makeRepo(files: Record<string, string> = {}): Promise<string> {
+  const repo = await tempRepo();
+  const all = {
+    'package.json': '{"type":"module"}\n',
+    'test/ok.test.js': "import { test } from 'node:test';\ntest('ok', () => {});\n",
+    ...files,
+  };
+  for (const [f, c] of Object.entries(all)) {
+    await mkdir(dirname(join(repo, f)), { recursive: true });
+    await writeFile(join(repo, f), c);
+  }
+  await git(repo, ['add', '-A']);
+  await git(repo, ['commit', '-qm', 'seed']);
+  return repo;
 }
