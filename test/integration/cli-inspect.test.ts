@@ -22,7 +22,11 @@ async function cli(argv: string[], env: NodeJS.ProcessEnv, cwd: string) {
   stdout.on('data', (c: Buffer) => (out += c.toString()));
   stderr.on('data', (c: Buffer) => (err += c.toString()));
   const io: CliIO = { stdout, stderr, stdin: Readable.from([]), env, cwd, isTTY: false };
-  return { code: await runCli(argv, io), out, err };
+  const code = await runCli(argv, io);
+  // picocolors enables color when CI is set; compare plain text.
+  // eslint-disable-next-line no-control-regex
+  const plain = (x: string): string => x.replace(/\u001b\[[0-9;]*m/g, '');
+  return { code, out: plain(out), err: plain(err) };
 }
 
 describe('inspection commands on a finished run', () => {
