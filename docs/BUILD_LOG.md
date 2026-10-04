@@ -4,13 +4,13 @@ Read this first after a compaction or restart, together with the handoff (`~/Des
 
 ## Current milestone
 
-M0 (skeleton).
+M1 (single-session agent loop). Next: write docs/milestones/M1.md, then security (redact, jail, policy, env), git worktree/checkpoint/rollback, verify (gates, parsers, ratchet, anticheat), providers (pricing, anthropic, retry), tools, agent loop + context, budget guard, judge, cycle.
 
 ## Checklist (handoff §8)
 
 - [x] Cloned to `~/Projects/omnexx`, branch `feat/m0-m2-core`, `docs/PLAN.md` copied and committed
 - [x] `docs/DECISIONS.md` started with the deliberate deviations
-- [ ] M0 done, pushed, draft PR open, CI green on all 4 cells
+- [x] M0 done, pushed, draft PR open (#1), CI green on all 4 cells
 - [ ] M1 done, pushed, CI green
 - [ ] M2 done (incl. hierarchical plan, codemap, checkpoints, report, wrap-up reserve, 24 h budgets, WorkerBackend + lifecycle + fake worker), pushed, CI green
 - [ ] Docs written, README honest, no comparative claims
@@ -23,6 +23,8 @@ M0 (skeleton).
 
 - 2026-10-03: cloned, branched, plan copied. Toolchain installed (TS 6.0.3, see D2). Pricing checked (D3).
 - 2026-10-03 (late): plan revised (personal use, §14/§15). New PLAN.md committed. Schema adapted (D4). M2 scope grew; workers = interface + lifecycle + fake only.
+
+- 2026-10-03: M0 done. PR #1 (draft). CI green 4/4.
 
 ## Notes for future me
 
