@@ -1,0 +1,242 @@
+import { z } from 'zod';
+import { durationString } from './duration.js';
+
+/**
+ * The whole config surface. Unknown keys are errors (strictObject), so a typo in omnexx.toml
+ * fails loudly instead of being silently ignored. Every section exists from M0 on so later
+ * milestones never change the surface; keys whose behavior ships later say so in docs/config.md.
+ */
+
+export const GATE_PARSERS = [
+  'generic',
+  'vitest',
+  'jest',
+  'node-test',
+  'tsc',
+  'eslint',
+  'pytest',
+  'gotest',
+] as const;
+export type GateParser = (typeof GATE_PARSERS)[number];
+
+export const gateSchema = z.strictObject({
+  name: z.string().regex(/^[A-Za-z0-9_.-]+$/, 'gate names may use letters, digits, _ . -'),
+  run: z.string().min(1),
+  timeout: durationString.default('10m'),
+  level: z.enum(['must-pass', 'ratchet']).default('ratchet'),
+  parser: z.enum(GATE_PARSERS).default('generic'),
+});
+export type GateConfig = z.infer<typeof gateSchema>;
+
+export const budgetSchema = z.strictObject({
+  max_usd: z.number().positive().default(50),
+  /** Accepted now so the surface is stable; enforced from M3 (rolling 24 h pause). */
+  max_usd_per_day: z.number().positive().default(50),
+  max_hours: z.number().positive().default(24),
+  max_cycles: z.number().int().positive().default(300),
+  max_turns_per_cycle: z.number().int().positive().default(40),
+  max_tokens_per_cycle: z.number().int().positive().default(400_000),
+  max_cmd_timeout: durationString.default('30m'),
+  warn_at: z.number().gt(0).lt(1).default(0.8),
+  /** In the last fraction of budget or time, start no new task: finish, verify lastGreen, report, stop. */
+  wrapup_reserve: z.number().min(0).lt(1).default(0.08),
+});
+
+const modelRef = z
+  .string()
+  .regex(/^[a-z][a-z0-9-]*:[A-Za-z0-9._-]+$/, 'expected "<provider>:<alias-or-model-id>"');
+
+export const modelsSchema = z.strictObject({
+  planner: modelRef.default('anthropic:opus'),
+  worker: modelRef.default('anthropic:sonnet'),
+  cheap: modelRef.default('anthropic:haiku'),
+});
+
+export const priceSchema = z.strictObject({
+  id: z.string().min(1),
+  input: z.number().nonnegative(),
+  output: z.number().nonnegative(),
+  cache_write_5m: z.number().nonnegative(),
+  cache_write_1h: z.number().nonnegative(),
+  cache_read: z.number().nonnegative(),
+  max_output_tokens: z.number().int().positive().optional(),
+});
+export type PriceConfig = z.infer<typeof priceSchema>;
+
+export const anthropicSchema = z.strictObject({
+  base_url: z.url().optional(),
+  cache_ttl: z.enum(['5m', '1h']).default('5m'),
+  /** Output cap per turn; also the worst-case output used by the budget pre-flight. */
+  max_tokens: z.number().int().positive().default(16_000),
+  request_timeout: durationString.default('10m'),
+});
+
+export const providersSchema = z.strictObject({
+  anthropic: anthropicSchema.prefault({}),
+});
+
+export const gitSchema = z.strictObject({
+  push: z.enum(['none', 'branch']).default('none'),
+  remote: z.string().default('origin'),
+  /** Opening a PR at the end is planned for M5. `true` fails at run start. */
+  open_pr: z.boolean().default(false),
+});
+
+export const NOTIFY_EVENTS = [
+  'started',
+  'finished',
+  'needs-human',
+  'budget',
+  'crash',
+  'outage',
+  'stopped',
+] as const;
+
+export const ntfySchema = z.strictObject({
+  server: z.url().default('https://ntfy.sh'),
+  topic: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'ntfy topics use letters, digits, _ and -'),
+  token_env: z.string().optional(),
+  events: z
+    .array(z.enum(NOTIFY_EVENTS))
+    .default(['started', 'finished', 'needs-human', 'budget', 'crash', 'outage']),
+  timeout_ms: z.number().int().positive().default(5_000),
+});
+
+export const notifySchema = z.strictObject({
+  ntfy: ntfySchema.optional(),
+});
+
+export const JUDGE_USES = ['next_move', 'drift', 'failure_similarity', 'tool_safety'] as const;
+export type JudgeUse = (typeof JUDGE_USES)[number];
+
+export const nimbleSchema = z.strictObject({
+  url: z.url().default('http://localhost:11434'),
+  model: z.string().default('nimble'),
+  timeout_ms: z.number().int().positive().default(3_000),
+  keep_alive: z.string().default('30m'),
+  breaker_failures: z.number().int().positive().default(3),
+  breaker_reprobe: durationString.default('10m'),
+});
+
+export const judgeSchema = z.strictObject({
+  kind: z.enum(['none', 'nimble', 'llm']).default('none'),
+  fallback: z.enum(['none', 'llm']).default('none'),
+  mode: z.enum(['advise', 'steer']).default('advise'),
+  steer_min_probability: z.number().min(0).max(1).default(0.6),
+  uses: z.array(z.enum(JUDGE_USES)).default([...JUDGE_USES]),
+  nimble: nimbleSchema.prefault({}),
+});
+
+export const stuckSchema = z.strictObject({
+  max_consecutive_rejections: z.number().int().positive().default(3),
+  max_same_signature: z.number().int().positive().default(3),
+  /** A task that has used this many cycles (accepted-partial or rejected) without finishing is stuck. */
+  max_task_cycles: z.number().int().positive().default(8),
+  no_progress_cycles: z.number().int().positive().default(8),
+  no_progress_hours: z.number().positive().default(3),
+  oscillation_window: z.number().int().positive().default(5),
+});
+
+export const contextSchema = z.strictObject({
+  progress_tail: z.number().int().nonnegative().default(5),
+  notes_max_tokens: z.number().int().positive().default(1_500),
+  repo_map_max_tokens: z.number().int().positive().default(3_000),
+});
+
+export const policySchema = z.strictObject({
+  /** Extra command names to deny on top of the built-in list. */
+  deny: z.array(z.string()).default([]),
+  /** Allow `curl` / `wget` (still never piped into a shell). */
+  allow_network: z.boolean().default(false),
+  /** Extra environment variable names passed through to child processes. */
+  env_passthrough: z.array(z.string()).default([]),
+});
+
+export const serviceSchema = z.strictObject({
+  nice: z.number().int().min(-20).max(19).default(10),
+  cpu_quota: z
+    .string()
+    .regex(/^\d+%$/, 'expected a percentage like "150%"')
+    .optional(),
+  memory_max: z
+    .string()
+    .regex(/^\d+[KMGT]?$/, 'expected a size like "4G"')
+    .optional(),
+});
+
+export const DEFAULT_PROTECTED = [
+  'omnexx.toml',
+  '.github/**',
+  '.gitlab-ci.yml',
+  '.circleci/**',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+  'poetry.lock',
+  'Cargo.lock',
+  'go.sum',
+  '.env*',
+  '**/.env*',
+];
+
+/** One table per worker. Unknown IDs are accepted so M3 adapters don't change the surface. */
+export const workerSchema = z.strictObject({
+  enabled: z.boolean().default(false),
+  path: z.string().optional(),
+  timeout: durationString.default('20m'),
+  route: z.array(z.string()).default(['tests', 'lint', 'small-refactor', 'docs']),
+  max_runs_per_hour: z.number().int().positive().default(10),
+  max_runs_per_day: z.number().int().positive().default(40),
+  cooldown: durationString.default('1h'),
+  extra_args: z.array(z.string()).default([]),
+});
+export type WorkerConfig = z.infer<typeof workerSchema>;
+
+const WORKER_TABLE_KEYS = new Set(['max_concurrent', 'priority']);
+
+export const workersSchema = z
+  .looseObject({
+    max_concurrent: z.number().int().positive().default(1),
+    priority: z
+      .array(z.string())
+      .default(['aider', 'opencode', 'cline', 'pi', 'hermes', 'openhands', 'claude-code']),
+  })
+  .transform((raw, ctx) => {
+    const backends: Record<string, WorkerConfig> = {};
+    for (const [id, value] of Object.entries(raw)) {
+      if (WORKER_TABLE_KEYS.has(id)) continue;
+      const parsed = workerSchema.safeParse(value ?? {});
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          ctx.addIssue({ ...issue, path: [id, ...issue.path] });
+        }
+        continue;
+      }
+      backends[id] = parsed.data;
+    }
+    return { max_concurrent: raw.max_concurrent, priority: raw.priority, backends };
+  });
+
+export const configSchema = z.strictObject({
+  setup: z.array(z.string()).default([]),
+  sandbox: z.enum(['host', 'docker']).default('host'),
+  protected: z.array(z.string()).default(DEFAULT_PROTECTED),
+  gates: z.array(gateSchema).default([]),
+  budget: budgetSchema.prefault({}),
+  models: modelsSchema.prefault({}),
+  pricing: z.record(z.string(), priceSchema).default({}),
+  providers: providersSchema.prefault({}),
+  git: gitSchema.prefault({}),
+  notify: notifySchema.prefault({}),
+  judge: judgeSchema.prefault({}),
+  stuck: stuckSchema.prefault({}),
+  context: contextSchema.prefault({}),
+  policy: policySchema.prefault({}),
+  service: serviceSchema.prefault({}),
+  workers: workersSchema.prefault({}),
+});
+
+export type OmnexxConfig = z.infer<typeof configSchema>;
+export type ConfigInput = z.input<typeof configSchema>;
