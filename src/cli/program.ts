@@ -57,10 +57,27 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     styleOptionText: (s) => b.cyan(s),
     styleArgumentText: (s) => b.dim(s),
   });
-  // Bare `omnexx`: splash plus help instead of commander's "missing command" error.
-  program.action(() => {
-    program.outputHelp();
+  // Bare `omnexx`: the interactive session on a terminal, help otherwise.
+  program.option('--no-tui', 'print help instead of opening the interactive session');
+  program.action(async (opts: { tui: boolean }) => {
+    if (!io.isTTY || !opts.tui || io.env.TERM === 'dumb') {
+      program.outputHelp();
+      return;
+    }
+    const { startTui } = await import('../tui/start.js');
+    setExit(await startTui(io, runCli, { version: VERSION }));
   });
+
+  program
+    .command('watch')
+    .alias('attach')
+    .argument('[runId]', 'defaults to the most recent run')
+    .description('open the interactive session attached to a run')
+    .action(async (runId: string | undefined) => {
+      if (!io.isTTY) throw new UsageError('watch needs a terminal', 'use `omnexx logs -f` instead');
+      const { startTui } = await import('../tui/start.js');
+      setExit(await startTui(io, runCli, { version: VERSION, attach: runId ?? true }));
+    });
 
   program
     .command('init')

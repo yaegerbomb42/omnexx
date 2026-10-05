@@ -5,7 +5,7 @@ const gated = { lines: 85 };
 export default defineConfig({
   test: {
     projects: [
-      { extends: true, test: { name: 'unit', include: ['test/unit/**/*.test.ts'] } },
+      { extends: true, test: { name: 'unit', include: ['test/unit/**/*.test.{ts,tsx}'] } },
       {
         extends: true,
         test: {
@@ -31,7 +31,7 @@ export default defineConfig({
     ],
     coverage: {
       provider: 'v8',
-      include: ['src/**/*.ts'],
+      include: ['src/**/*.{ts,tsx}'],
       reporter: ['text-summary', 'json-summary'],
       thresholds: {
         'src/core/**': gated,

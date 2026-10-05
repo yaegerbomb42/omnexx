@@ -8,6 +8,7 @@ export default defineConfig({
   outDir: 'dist',
   clean: true,
   sourcemap: true,
-  splitting: false,
+  // The TUI (React/Ink) loads in its own chunk, only when the interactive session opens.
+  splitting: true,
   banner: { js: '#!/usr/bin/env node' },
 });
