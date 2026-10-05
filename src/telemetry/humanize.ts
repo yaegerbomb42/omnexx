@@ -258,6 +258,21 @@ function lineFor(e: OmnexxEvent): Line | undefined {
       return ['verbose', 'info', 'judge', `next move ${str(e.pick ?? e.move)}`];
     case 'notes.update':
       return ['verbose', 'info', 'lesson', clip(str(e.text ?? e.id), 70)];
+    case 'intent.update':
+      return ['quiet', 'ok', 'intent', clip(str(e.product), 90)];
+    case 'beyond.start':
+      return [
+        'quiet',
+        'info',
+        'beyond',
+        `goal met; planning improvement round ${num(e.round)}/${num(e.maxRounds)}`,
+      ];
+    case 'beyond.round':
+      return num(e.added)
+        ? ['quiet', 'ok', 'beyond', `round ${num(e.round)}: ${num(e.added)} new nodes`]
+        : ['quiet', 'info', 'beyond', `round ${num(e.round)}: nothing worth doing; wrapping up`];
+    case 'beyond.skip':
+      return ['normal', 'info', 'beyond', `skipped: ${str(e.reason)}`];
     case 'goal.changed':
       return ['quiet', 'info', 'steer', 'goal updated; picked up this cycle'];
     case 'codemap.updated':

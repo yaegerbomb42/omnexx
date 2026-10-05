@@ -22,6 +22,7 @@ import {
 } from '../judge/uses.js';
 import { toolSpec, workerTools } from '../tools/registry.js';
 import { cycleRoute } from '../router/classify.js';
+import { readIntent } from '../agent/intent.js';
 import type { ToolContext } from '../tools/types.js';
 import { antiCheat } from '../verify/anticheat.js';
 import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
@@ -251,8 +252,9 @@ export async function stepAct(run: Run): Promise<void> {
 
   const edited = new Set<string>();
   const toolCtx = toolContext(run, edited);
-  const [goal, notes, progressTail, codemap] = await Promise.all([
+  const [goal, intent, notes, progressTail, codemap] = await Promise.all([
     run.store.readGoal(),
+    readIntent(run.store),
     run.store.readNotes(),
     run.store.progressTail(run.config.context.progress_tail),
     loadCodemap(run),
@@ -263,6 +265,7 @@ export async function stepAct(run: Run): Promise<void> {
     systemPrompt: WORKER_SYSTEM,
     codemap,
     goal: goal.text,
+    intent,
     notes: renderNotes(notes),
     plan,
     task,

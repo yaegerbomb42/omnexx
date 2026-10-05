@@ -490,6 +490,32 @@ class Supervisor {
     await r.setPhase('select');
   }
 
+  /**
+   * Beyond mode: the goal is met, so ask the planner for one more round of verified improvements.
+   * True when it added runnable work; false when it's off, out of rounds or budget, or the
+   * planner found nothing worth doing (it returns the plan unchanged).
+   */
+  private async planBeyond(): Promise<boolean> {
+    const r = this.run;
+    const cfg = r.config.beyond;
+    if (!cfg.enabled || r.state.beyondRounds >= cfg.max_rounds) return false;
+    if (
+      r.budgetLeftFraction() < Math.max(cfg.min_budget_left, r.config.budget.wrapup_reserve * 2)
+    ) {
+      r.events.emit('beyond.skip', { reason: 'budget', left: r.budgetLeftFraction() });
+      return false;
+    }
+    const before = r.requirePlan().nodes.length;
+    const round = r.state.beyondRounds + 1;
+    r.events.emit('beyond.start', { round, maxRounds: cfg.max_rounds });
+    await runPlanner(r, { kind: 'beyond', round, maxRounds: cfg.max_rounds });
+    const added = r.requirePlan().nodes.length - before;
+    r.state.beyondRounds = round;
+    await r.save();
+    r.events.emit('beyond.round', { round, added });
+    return added > 0 && runnableTasks(r.requirePlan()).length > 0;
+  }
+
   /** Milestones, rolling-wave expansion, and the end-of-plan decision. Returns a task id or an outcome. */
   private async select(): Promise<string | Outcome> {
     const r = this.run;
@@ -532,10 +558,12 @@ class Supervisor {
       openMilestones.length === 0 &&
       plan.nodes.every((n) => n.status !== 'parked')
     ) {
+      if (await this.planBeyond()) return this.select();
       await this.finalVerify();
+      const rounds = r.state.beyondRounds;
       return {
         status: 'finished',
-        reason: `all ${counts.tasks} tasks and ${counts.milestones} milestones done`,
+        reason: `all ${counts.tasks} tasks and ${counts.milestones} milestones done${rounds ? ` (goal plus ${rounds} improvement round${rounds === 1 ? '' : 's'})` : ''}`,
       };
     }
     const parked = plan.nodes.filter((n) => n.status === 'parked').length;
