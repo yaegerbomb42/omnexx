@@ -17,6 +17,7 @@ Omnexx is the loop around the model:
 - **Budgets.** USD, hours and cycle caps for the run, turn and token caps per cycle, and a pre-flight check before every model call so spend never overshoots by more than one turn. In the last 8% of the budget no new task starts.
 - **Crash-safe.** Atomic state, a phase machine, a lock with boot-id staleness, `--detach`, and a systemd user unit or launchd agent that resumes runs after a reboot.
 - **Checkpoints and a morning-after report.** Each finished milestone is tagged; `omnexx report` writes `REPORT.md` with the outcome, the plan tree, what changed, test deltas, where it struggled, spend, decisions it needs from you, and how to merge.
+- **Optional docker sandbox.** `sandbox = "docker"` runs the agent's commands and your gates in a locked-down container with only the worktree mounted.
 - **Your checkout is never touched.** Work happens in a git worktree on `omnexx/<runId>`; nothing is pushed unless you opt in.
 
 Optional: an advisory **fast judge** (Nimble on Ollama, usually on your Mac over Tailscale) that suggests the next move and flags drift. It's off by default and can never override the gates. See [docs/judge.md](docs/judge.md).
@@ -60,7 +61,6 @@ Exit codes: `0` finished, `2` needs a human, `3` budget stop, `4` stopped by you
 
 Planned for M3 and later, and not in this build:
 
-- Docker sandbox (`sandbox = "docker"` fails with "not implemented"). Host mode's limits are in [docs/safety.md](docs/safety.md).
 - Model routing (planner/worker/cheap per turn), in-cycle compaction and tool-result clearing, flaky-test handling, the rolling daily spend cap (`max_usd_per_day` is accepted but not enforced), in-cycle stuck signals.
 - Ladder rungs 2–4 (escalate model, re-plan a task, different approach). The judge's `split_task` and `switch_to_strong_model` options are logged but can't be acted on yet.
 - Real worker adapters (Aider, OpenCode, Cline, Pi, Hermes, OpenHands, Claude Code). The interface, lifecycle and safety checks exist and are tested with a fake worker; enabling a worker fails with "adapter not available until M3". See [docs/workers.md](docs/workers.md).

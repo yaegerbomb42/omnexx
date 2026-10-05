@@ -1,6 +1,6 @@
 # Safety: what host mode does and doesn't protect against
 
-Omnexx gives an LLM a shell in your repository and leaves it alone for hours. In this build the only mode is `sandbox = "host"`. Be clear about what that means.
+Omnexx gives an LLM a shell in your repository and leaves it alone for hours. There are two modes: `sandbox = "host"` (default) and `sandbox = "docker"`. This page is mostly about host mode; see the end for docker mode.
 
 ## What is enforced
 
@@ -19,7 +19,11 @@ Omnexx gives an LLM a shell in your repository and leaves it alone for hours. In
 - **Resource limits.** On Linux the service unit sets `Nice=10` and optional `CPUQuota`/`MemoryMax`; a foreground run has no limits.
 - **The policy is a list.** It blocks the known-dangerous shapes. It is not a sandbox.
 
-For unattended multi-day runs on a machine you care about, use a dedicated user or VM, or wait for `sandbox = "docker"` (M3): the agent's commands in a container with only the worktree mounted, CPU/memory limits and an optional egress allowlist.
+For unattended runs on a machine you care about, use `sandbox = "docker"` (below) or a dedicated user or VM.
+
+## Docker mode
+
+With `sandbox = "docker"`, every agent `bash` call, gate, check and setup command runs in one container per run: your uid/gid, `--cap-drop ALL`, `no-new-privileges`, read-only root with a tmpfs `/tmp`, CPU/memory/pid limits, and only the worktree and the run's scratch dir mounted read-write (the repo's `.git` read-only). Code the agent writes can no longer read your home directory or write outside the worktree. A timeout kills the process group inside the container. `network = "none"` removes network access entirely; the default `"bridge"` keeps it (needed for `npm ci` and similar). **Not yet:** a per-domain egress allowlist, and running worker backends inside the container (they still run on the host).
 
 ## Worker backends
 

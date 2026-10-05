@@ -24,7 +24,6 @@ export async function resolveRunDeps(
   hooks?: RunHooks,
 ): Promise<ResolvedDeps> {
   const { config } = await loadConfig({ cwd, env: io.env, flags });
-  if (config.sandbox === 'docker') throw new NotImplementedError('sandbox = "docker"', 'M3');
   if (config.git.open_pr) throw new NotImplementedError('git.open_pr', 'M5');
   const enabledWorker = Object.entries(config.workers.backends).find(([, w]) => w.enabled);
   if (enabledWorker) {

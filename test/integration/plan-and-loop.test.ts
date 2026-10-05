@@ -123,8 +123,8 @@ describe('run --plan-only', () => {
       /not both/,
     );
     expect(
-      (await cliRun(['run', '--plan-only', '--sandbox', 'docker', 'x'], repo, env, provider)).err,
-    ).toMatch(/not implemented .*M3/);
+      (await cliRun(['run', '--plan-only', '--sandbox', 'vm', 'x'], repo, env, provider)).err,
+    ).toMatch(/config error.*sandbox/);
   });
 });
 

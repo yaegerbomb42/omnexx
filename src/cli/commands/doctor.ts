@@ -25,6 +25,8 @@ export interface DoctorDeps {
   versionOf: (binary: string) => Promise<string | undefined>;
   fetch: typeof fetch;
   now: () => number;
+  /** Is a docker daemon reachable? Only asked when sandbox = "docker". */
+  dockerReady?: () => Promise<boolean>;
 }
 
 export async function binaryVersion(binary: string): Promise<string | undefined> {
@@ -147,18 +149,21 @@ export async function runDoctorChecks(deps: DoctorDeps): Promise<Check[]> {
   );
   if (deps.config.sandbox === 'docker') {
     const d = await deps.versionOf('docker');
+    const daemon = d ? await (deps.dockerReady ?? (() => Promise.resolve(false)))() : false;
     checks.push(
-      d
-        ? {
-            name: 'docker',
-            status: 'warn',
-            detail: `${d}; sandbox = "docker" itself arrives in M3`,
-          }
-        : {
-            name: 'docker',
-            status: 'fail',
-            detail: 'sandbox = "docker" but docker is not on PATH',
-          },
+      !d
+        ? { name: 'docker', status: 'fail', detail: 'sandbox = "docker" but docker is not on PATH' }
+        : daemon
+          ? {
+              name: 'docker',
+              status: 'ok',
+              detail: `${d}; daemon reachable; image ${deps.config.docker.image}`,
+            }
+          : {
+              name: 'docker',
+              status: 'fail',
+              detail: `${d}, but the docker daemon is not reachable (start Docker)`,
+            },
     );
   }
   if (deps.offline) {

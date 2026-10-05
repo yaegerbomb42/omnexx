@@ -24,7 +24,6 @@ import { antiCheat } from '../verify/anticheat.js';
 import { runGates, toBaseline, type GateResult } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
 import { readTextOr } from './atomic.js';
-import { runShell } from './exec.js';
 import { renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
 import { getNode, type PlanNode } from './plan.js';
@@ -43,7 +42,7 @@ export interface CheckResult {
 export async function runChecks(run: Run, task: PlanNode, label: string): Promise<CheckResult[]> {
   const out: CheckResult[] = [];
   for (const [i, command] of task.checks.entries()) {
-    const r = await runShell(command, {
+    const r = await run.exec(command, {
       cwd: run.worktree,
       env: run.childEnv,
       timeoutMs: Math.min(CHECK_TIMEOUT_MS, run.maxCmdTimeoutMs),
@@ -62,6 +61,7 @@ export async function runChecks(run: Run, task: PlanNode, label: string): Promis
 
 function gateRunCtx(run: Run, label: string) {
   return {
+    exec: run.exec,
     cwd: run.worktree,
     env: run.childEnv,
     logsDir: run.store.logsDir,
@@ -118,6 +118,7 @@ function toolContext(run: Run, edited: Set<string>): ToolContext {
   const { judge } = run;
   return {
     jail: new PathJail(run.worktree),
+    exec: run.exec,
     env: run.childEnv,
     store: run.store,
     events: run.events,

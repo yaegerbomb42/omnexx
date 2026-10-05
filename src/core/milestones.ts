@@ -5,7 +5,6 @@ import { preflight } from '../guard/budget.js';
 import { tagCheckpoint } from '../git/checkpoint.js';
 import { costUsd } from '../providers/pricing.js';
 import { readTextOr, writeJsonAtomic, writeFileAtomic } from './atomic.js';
-import { runShell } from './exec.js';
 import { estimateTokens } from './tokens.js';
 import { noteSchema, renderNotes, type Note } from './notes.js';
 import { childrenOf, milestonesAwaitingCheck, type PlanNode } from './plan.js';
@@ -21,7 +20,7 @@ async function milestoneChecksPass(
 ): Promise<{ pass: boolean; failed: string[] }> {
   const failed: string[] = [];
   for (const [i, command] of m.checks.entries()) {
-    const r = await runShell(command, {
+    const r = await run.exec(command, {
       cwd: run.worktree,
       env: run.childEnv,
       timeoutMs: run.maxCmdTimeoutMs,

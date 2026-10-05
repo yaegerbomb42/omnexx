@@ -1,5 +1,7 @@
 import { PlannerIncomplete, runPlanner } from '../agent/planner.js';
+import { join } from 'node:path';
 import { EXIT } from '../cli/exit-codes.js';
+import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
 import { LockError } from '../errors.js';
 import { inWrapup, runLimitHit, shouldWarn } from '../guard/budget.js';
@@ -20,7 +22,6 @@ import {
   stepRollback,
   stepVerify,
 } from './cycle.js';
-import { runShell } from './exec.js';
 import { startHeartbeat } from './heartbeat.js';
 import { acquireLock, defaultLockEnv, releaseLock, type LockEnv } from './lock.js';
 import { initCodemap, settleMilestones } from './milestones.js';
@@ -295,6 +296,7 @@ class Supervisor {
     const r = this.run;
     await prepareWorktree(r);
     const results = await runGates(r.config.gates, {
+      exec: r.exec,
       cwd: r.worktree,
       env: r.childEnv,
       logsDir: r.store.logsDir,
@@ -316,7 +318,7 @@ class Supervisor {
     const r = this.run;
     if (r.state.setupDone) return;
     for (const command of r.config.setup) {
-      const res = await runShell(command, {
+      const res = await r.exec(command, {
         cwd: r.worktree,
         env: r.childEnv,
         timeoutMs: r.maxCmdTimeoutMs,
@@ -496,6 +498,35 @@ export async function supervise(
   run.state.budgetExhausted = false;
   await run.save();
 
+  let sandbox: DockerSandbox | undefined;
+  if (deps.config.sandbox === 'docker') {
+    sandbox = new DockerSandbox(
+      {
+        name: `omnexx-${runId}`,
+        worktree: run.worktree,
+        tmpDir: run.tmpDir,
+        gitDir: join(run.state.repoRoot, '.git'),
+        docker: deps.config.docker,
+        uid: process.getuid?.() ?? 1000,
+        gid: process.getgid?.() ?? 1000,
+      },
+      deps.env,
+    );
+    try {
+      await sandbox.start();
+    } catch (err) {
+      await sandbox.stop();
+      await releaseLock(run.store.dir, pid);
+      throw err;
+    }
+    run.exec = sandbox.exec;
+    run.events.emit('sandbox.start', {
+      kind: 'docker',
+      image: deps.config.docker.image,
+      network: deps.config.docker.network,
+    });
+  }
+
   const stopHeartbeat = startHeartbeat(run, opts.heartbeatMs);
   const watcher = setInterval(() => {
     void run.control().then((c) => {
@@ -517,6 +548,7 @@ export async function supervise(
       run.events.emit('run.error', { error: (err as Error).message });
       clearInterval(watcher);
       stopHeartbeat();
+      await sandbox?.stop();
       await releaseLock(run.store.dir, pid);
       throw err;
     }
@@ -557,6 +589,7 @@ export async function supervise(
     }),
   );
   stopHeartbeat();
+  await sandbox?.stop();
   await releaseLock(run.store.dir, pid);
   return { ...outcome, exitCode: EXIT_FOR[outcome.status] };
 }

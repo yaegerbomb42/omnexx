@@ -219,9 +219,30 @@ export const workersSchema = z
     return { max_concurrent: raw.max_concurrent, priority: raw.priority, backends };
   });
 
+/** Used when sandbox = "docker". */
+export const dockerSchema = z.strictObject({
+  image: z.string().default('node:22-bookworm'),
+  /** "bridge" lets setup and gates reach package registries; "none" cuts the network off. */
+  network: z.enum(['bridge', 'none']).default('bridge'),
+  cpus: z
+    .string()
+    .regex(/^\d+(\.\d+)?$/)
+    .default('2'),
+  memory: z
+    .string()
+    .regex(/^\d+[kmg]?$/i)
+    .default('4g'),
+  pids_limit: z.number().int().positive().default(1024),
+  tmp_size: z
+    .string()
+    .regex(/^\d+[kmg]?$/i)
+    .default('2g'),
+});
+
 export const configSchema = z.strictObject({
   setup: z.array(z.string()).default([]),
   sandbox: z.enum(['host', 'docker']).default('host'),
+  docker: dockerSchema.prefault({}),
   protected: z.array(z.string()).default(DEFAULT_PROTECTED),
   gates: z.array(gateSchema).default([]),
   budget: budgetSchema.prefault({}),

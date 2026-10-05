@@ -12,6 +12,19 @@ Durations are strings: `"30s"`, `"5m"`, `"2h"`, `"1h30m"`.
 | `sandbox`   | `"host"`                                                                                                                                                                                     | `"host"` only. `"docker"` fails with "not implemented (M3)".                                    |
 | `protected` | `omnexx.toml`, `.github/**`, `.gitlab-ci.yml`, `.circleci/**`, lockfiles (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock[b]`, `poetry.lock`, `Cargo.lock`, `go.sum`), `.env*` | Globs the agent may not change (anti-cheat). A task can lift this with `allow = ["protected"]`. |
 
+## `[docker]` (when `sandbox = "docker"`)
+
+| Key          | Default              | Meaning                                                                             |
+| ------------ | -------------------- | ----------------------------------------------------------------------------------- |
+| `image`      | `"node:22-bookworm"` | Must contain your toolchain (node, python, go…)                                     |
+| `network`    | `"bridge"`           | `"none"` cuts the network off (setup like `npm ci` then needs to happen beforehand) |
+| `cpus`       | `"2"`                |                                                                                     |
+| `memory`     | `"4g"`               |                                                                                     |
+| `pids_limit` | `1024`               |                                                                                     |
+| `tmp_size`   | `"2g"`               | Size of the in-container `/tmp` tmpfs (HOME lives there)                            |
+
+The container runs as your uid/gid with `--cap-drop ALL`, `no-new-privileges`, a read-only root, and only the worktree and the run's scratch dir mounted read-write (plus the repo's `.git` read-only). Worker backends still run on the host.
+
 ## `[[gates]]`
 
 | Key       | Default     | Meaning                                                                                                                                                                                                                   |

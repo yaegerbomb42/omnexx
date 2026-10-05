@@ -15,6 +15,7 @@ import { Redactor } from '../security/redact.js';
 import type { ControlSignal } from '../agent/loop.js';
 import type { Clock } from './clock.js';
 import { EventLog } from './events.js';
+import { runShell, type Executor } from './exec.js';
 import type { OmnexxPaths } from './paths.js';
 import type { Plan } from './plan.js';
 import { RunStore, type Phase, type RunState } from './run-store.js';
@@ -50,6 +51,8 @@ export class Run {
   plan: Plan | undefined;
   /** True while the agent loop is blocked on a pause request (shown by the heartbeat). */
   paused = false;
+  /** Where commands run. The supervisor swaps in the docker sandbox when sandbox = "docker". */
+  exec: Executor = runShell;
   private readonly baseActiveMs: number;
 
   private constructor(

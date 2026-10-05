@@ -149,3 +149,9 @@ Format: date, decision, why, alternatives considered.
 **Decision.** At the owner's request ("your call on all decisions; I want a working CLI and a site that shows the download"), PR #1 was merged, the real-API e2e and one full `omnexx run` were executed (total under $0.10), and the package is versioned `0.1.0` for npm.
 **What the real API found.** The `remember` tool's schema was a top-level union; the Messages API requires `type: "object"` at the top of every tool schema. It's now one flat object with per-action checks in the handler, and a unit test asserts every tool schema is a plain object.
 **Results.** e2e: solved in one cycle, $0.0071, 3 turns, cache-read share 0.90 from turn 3. Full run: planned, fixed, committed, finished in 20 s for $0.06.
+
+## D25 (2026-10-05) Docker sandbox: one long-lived container per run
+
+**Decision.** One container per run (`docker run -d … sleep infinity`), commands via `docker exec`, mounted at the same absolute paths as on the host so logs, parser locations and the path jail agree. Each command runs under `setsid` with its pgid recorded, so a timeout kills it inside the container. Defaults: `node:22-bookworm`, `bridge` network, 2 CPUs, 4 GB, 1024 pids.
+**Why.** A container per command would add seconds to every `bash` call; a shared container keeps `node_modules` and caches warm across a cycle.
+**Not yet.** Per-domain egress allowlist; worker backends inside the container.

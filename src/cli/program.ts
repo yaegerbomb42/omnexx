@@ -23,6 +23,7 @@ import {
 } from './commands/inspect.js';
 import { readGoal, runCommand, runPlanOnly, type FullRunFlags } from './commands/run.js';
 import { serviceCommand } from './commands/service.js';
+import { dockerAvailable } from '../security/sandbox-docker.js';
 import { EXIT } from './exit-codes.js';
 import { println, readSecret, type CliIO } from './io.js';
 
@@ -204,6 +205,7 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
         versionOf: binaryVersion,
         fetch: globalThis.fetch,
         now: Date.now,
+        dockerReady: () => dockerAvailable(io.env),
       });
       if (opts.json) println(io.stdout, JSON.stringify({ checks }, null, 2));
       else renderChecks(io, checks);
