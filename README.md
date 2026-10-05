@@ -62,7 +62,6 @@ Exit codes: `0` finished, `2` needs a human, `3` budget stop, `4` stopped by you
 
 Planned for M3 and later, and not in this build:
 
-- In-cycle stuck signals.
 - Ladder rung 4 (a planner-proposed different approach).
 - Real worker adapters (Aider, OpenCode, Cline, Pi, Hermes, OpenHands, Claude Code). The interface, lifecycle and safety checks exist and are tested with a fake worker; enabling a worker fails with "adapter not available until M3". See [docs/workers.md](docs/workers.md).
 - `open_pr`, the benchmark harness.

@@ -174,6 +174,12 @@ export const stuckSchema = z.strictObject({
   no_progress_cycles: z.number().int().positive().default(8),
   no_progress_hours: z.number().positive().default(3),
   oscillation_window: z.number().int().positive().default(5),
+  /** In-cycle: the same tool call with the same arguments this many times ends the cycle. */
+  repeated_tool_call: z.number().int().min(2).default(3),
+  /** In-cycle: this many turns without a file edit ends the cycle. */
+  no_edit_turns: z.number().int().positive().default(15),
+  /** In-cycle: tokens above this multiple of the median cycle, with no edit yet, end the cycle. */
+  burn_factor: z.number().gt(1).default(3),
 });
 
 export const contextSchema = z.strictObject({

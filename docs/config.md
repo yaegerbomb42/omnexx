@@ -178,14 +178,19 @@ Pushes carry only the run id, repo name, status, a task title, counts and dollar
 
 ## `[stuck]`
 
-| Key                          | Default | Meaning                                                   |
-| ---------------------------- | ------- | --------------------------------------------------------- |
-| `max_consecutive_rejections` | `3`     | Same task rejected N times in a row                       |
-| `max_same_signature`         | `3`     | Same normalized failure N times for a task                |
-| `max_task_cycles`            | `8`     | Cycles spent on one task without finishing it             |
-| `no_progress_cycles`         | `8`     | Run-level: no accepted commit in N cycles → `needs-human` |
-| `no_progress_hours`          | `3`     | Same, by time                                             |
-| `oscillation_window`         | `5`     | How many earlier green commits the A→B→A check looks back |
+| Key                          | Default | Meaning                                                                                                               |
+| ---------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
+| `max_consecutive_rejections` | `3`     | Same task rejected N times in a row                                                                                   |
+| `max_same_signature`         | `3`     | Same normalized failure N times for a task                                                                            |
+| `max_task_cycles`            | `8`     | Cycles spent on one task without finishing it                                                                         |
+| `no_progress_cycles`         | `8`     | Run-level: no accepted commit in N cycles → `needs-human`                                                             |
+| `no_progress_hours`          | `3`     | Same, by time                                                                                                         |
+| `oscillation_window`         | `5`     | How many earlier green commits the A→B→A check looks back                                                             |
+| `repeated_tool_call`         | `3`     | In-cycle: the same tool call with identical arguments this many times ends the cycle                                  |
+| `no_edit_turns`              | `15`    | In-cycle: this many turns since the last file edit (or cycle start) ends the cycle                                    |
+| `burn_factor`                | `3`     | In-cycle: tokens above this × the median of recent cycles, before any edit, end the cycle (needs 3 cycles of history) |
+
+An in-cycle signal ends the cycle as `stuck` (events `stuck.in_cycle`, then `stuck.signal`). Its partial work still goes through VERIFY, so it's committed if the gates pass and rolled back otherwise; the next attempt gets the reason as evidence, and the strategy ladder climbs one rung.
 
 ## `[context]`
 

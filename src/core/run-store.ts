@@ -131,8 +131,11 @@ export const stateSchema = z.object({
       turns: z.number(),
       usd: z.number(),
       worker: z.string().optional(),
+      stuck: z.object({ signal: z.string(), detail: z.string() }).optional(),
     })
     .optional(),
+  /** Token totals of recent cycles, for the in-cycle burn-rate signal. */
+  cycleTokens: z.array(z.number()).default([]),
   recordedCycle: z.number().default(0),
   checkpoints: z
     .array(

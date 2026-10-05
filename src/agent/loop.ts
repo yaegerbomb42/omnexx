@@ -20,6 +20,7 @@ import {
 import type { Tool, ToolContext } from '../tools/types.js';
 import { manageContext, type CompactionSettings, type Summarize } from './compaction.js';
 import { turnRequest } from './context.js';
+import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
 
 /** Thrown inside the retry loop when a pre-flight check refuses the call; ends the cycle, never retried. */
 class BudgetStopSignal extends Error {
@@ -33,7 +34,7 @@ class BudgetStopSignal extends Error {
 
 export type ControlSignal = 'continue' | 'pause' | 'stop' | 'stop-now';
 
-export type LoopEnd = 'done' | 'stop' | 'stop-now' | BudgetStop | 'refusal';
+export type LoopEnd = 'done' | 'stop' | 'stop-now' | BudgetStop | 'refusal' | 'stuck';
 
 export interface LoopResult {
   end: LoopEnd;
@@ -42,6 +43,8 @@ export interface LoopResult {
   usage: Usage;
   usd: number;
   messages: Message[];
+  /** Set when the loop ended as `stuck`. */
+  stuck?: StuckFinding;
 }
 
 export interface LoopDeps {
@@ -73,6 +76,8 @@ export interface LoopDeps {
   signal?: AbortSignal;
   /** In-cycle context control; off when unset. */
   compaction?: { settings: CompactionSettings; summarize?: Summarize };
+  /** In-cycle stuck detection; off when unset. */
+  watch?: InCycleWatch;
 }
 
 function summarizeInput(input: unknown): string {
@@ -285,5 +290,15 @@ export async function runAgentLoop(
       });
     }
     messages.push({ role: 'user', content: results });
+
+    const finding = deps.watch?.afterTurn(turns, cycleTokens, calls);
+    if (finding) {
+      deps.events.emit('stuck.in_cycle', {
+        signal: finding.signal,
+        detail: finding.detail,
+        turn: turns,
+      });
+      return { ...end('stuck'), stuck: finding };
+    }
   }
 }

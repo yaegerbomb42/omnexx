@@ -145,14 +145,18 @@ describe('agent loop limits and control inside a cycle', () => {
           old_str: 'return a - b;',
           new_str: 'return a + b;',
         })
-      : call('bash', { command: 'true' });
+      : call('bash', { command: `true ${turn}` });
 
   it('a tiny max_usd ends the cycle at the pre-flight check; work that passes the gates is still kept', async () => {
     const t = await startTestRun({
       fixture: 'ts-failing-test',
       provider: new ScriptedProvider(fixThenTalk),
       plan,
-      config: { budget: { max_usd: 0.1 }, providers: { anthropic: { max_tokens: 1_000 } } },
+      config: {
+        budget: { max_usd: 0.1 },
+        providers: { anthropic: { max_tokens: 1_000 } },
+        stuck: { no_edit_turns: 1_000 },
+      },
     });
     await runBaseline(t.run);
     const v = await runOneCycle(t.run, 'M1.T01');

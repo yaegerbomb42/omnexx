@@ -12,7 +12,7 @@ import { commitMessage, headSha, isClean, workingTreeDiff } from '../git/repo.js
 import { rollbackTo } from '../git/rollback.js';
 import { parseTrailers } from '../git/trailers.js';
 import { PathJail } from '../security/paths.js';
-import { detectOscillation } from '../guard/stuck.js';
+import { burnThreshold, detectOscillation, InCycleWatch } from '../guard/stuck.js';
 import {
   CONFIDENT_FALSE,
   CONFIDENT_TRUE,
@@ -191,6 +191,8 @@ function toolContext(run: Run, edited: Set<string>): ToolContext {
 }
 
 const SUMMARY_MAX_TOKENS = 2_000;
+/** Cycles of token totals kept for the burn-rate median. */
+const CYCLE_TOKEN_HISTORY = 20;
 
 /** Cheap-model CycleSummary of the turns a compaction drops (plan §3.6). */
 async function summarizeCycle(
@@ -291,6 +293,14 @@ export async function stepAct(run: Run): Promise<void> {
       run.paused = p;
     },
     signal: run.abort.signal,
+    watch: new InCycleWatch(
+      {
+        repeatedToolCall: run.config.stuck.repeated_tool_call,
+        noEditTurns: run.config.stuck.no_edit_turns,
+        burnTokens: burnThreshold(run.state.cycleTokens, run.config.stuck.burn_factor),
+      },
+      () => edited.size,
+    ),
     compaction: {
       settings: {
         clearAt: run.config.context.clear_tool_results_at,
@@ -309,11 +319,20 @@ export async function stepAct(run: Run): Promise<void> {
     usd: result.usd,
     edited: [...edited],
   });
+  const tokens =
+    result.usage.uncached +
+    result.usage.cacheWrite5m +
+    result.usage.cacheWrite1h +
+    result.usage.cacheRead +
+    result.usage.output;
+  if (tokens)
+    run.state.cycleTokens = [...run.state.cycleTokens, tokens].slice(-CYCLE_TOKEN_HISTORY);
   run.state.act = {
     summary: run.redactor.text(result.finalText).slice(0, 2_000),
     end: result.end,
     turns: result.turns,
     usd: result.usd,
+    ...(result.stuck ? { stuck: result.stuck } : {}),
   };
   await run.setPhase('verify');
 }
@@ -356,6 +375,18 @@ export async function stepVerify(run: Run): Promise<void> {
   const label = `c${run.state.cycle}`;
 
   if (act.end === 'stop-now') reasons.push('stopped by user (--now)');
+  if (act.stuck) {
+    // Ended early by an in-cycle signal: partial work is still verified, and the ladder climbs.
+    stuck.push(act.stuck.signal);
+    evidence.push(
+      `The last attempt was cut short: ${act.stuck.detail}. Change approach instead of repeating it.`,
+    );
+    run.events.emit('stuck.signal', {
+      signal: act.stuck.signal,
+      task: task.id,
+      detail: act.stuck.detail,
+    });
+  }
 
   const checks = task.checks.length ? await runChecks(run, task, label) : [];
   const checksPass = checks.every((c) => c.pass);
