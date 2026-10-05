@@ -60,7 +60,7 @@ export async function statusData(store: RunStore, now: number) {
     activeMs: state.activeMs,
     checkpoints: state.checkpoints.length,
     telemetry: (() => {
-      const tel = events.reduce(fold, emptyTelemetry());
+      const tel = events.reduce((acc, e) => fold(acc, e), emptyTelemetry());
       return {
         toolCalls: tel.toolCalls,
         toolErrors: tel.toolErrors,

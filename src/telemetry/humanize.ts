@@ -20,8 +20,7 @@ export interface HumanizeOptions {
   utc?: boolean;
 }
 
-type Level = Verbosity;
-type Line = [level: Level, glyph: Glyph, verb: string, detail: string];
+type Line = [level: Verbosity, glyph: Glyph, verb: string, detail: string];
 type Glyph = 'act' | 'ok' | 'bad' | 'warn' | 'info';
 
 const str = (v: unknown): string =>
@@ -279,22 +278,16 @@ export function humanize(e: OmnexxEvent, opts: HumanizeOptions): string | undefi
   const [level, glyph, verb, detail] = line;
   if (RANK[level] > RANK[opts.verbosity]) return undefined;
   const b = opts.brand;
-  const mark =
-    glyph === 'ok'
-      ? b.green('✓')
-      : glyph === 'bad'
-        ? b.red('✗')
-        : glyph === 'warn'
-          ? b.yellow('!')
-          : glyph === 'act'
-            ? b.cyan('▸')
-            : b.dim('·');
-  const v =
-    glyph === 'ok'
-      ? b.green(verb.padEnd(8))
-      : glyph === 'bad'
-        ? b.red(verb.padEnd(8))
-        : verb.padEnd(8);
+  const marks: Record<Glyph, string> = {
+    ok: b.green('✓'),
+    bad: b.red('✗'),
+    warn: b.yellow('!'),
+    act: b.cyan('▸'),
+    info: b.dim('·'),
+  };
+  const mark = marks[glyph];
+  const paintVerb: Partial<Record<Glyph, (s: string) => string>> = { ok: b.green, bad: b.red };
+  const v = (paintVerb[glyph] ?? String)(verb.padEnd(8));
   const time = opts.clock === false ? '' : `${b.dim(clockOf(e.ts, opts.utc))} `;
   return `${time}${mark} ${v} ${detail}`.trimEnd();
 }
@@ -322,5 +315,7 @@ export function verbosityFrom(f: {
   verbose?: boolean;
   debug?: boolean;
 }): Verbosity {
-  return f.debug ? 'debug' : f.verbose ? 'verbose' : f.quiet ? 'quiet' : 'normal';
+  if (f.debug) return 'debug';
+  if (f.verbose) return 'verbose';
+  return f.quiet ? 'quiet' : 'normal';
 }
