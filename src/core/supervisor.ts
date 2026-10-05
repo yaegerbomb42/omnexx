@@ -5,7 +5,7 @@ import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
 import { LockError } from '../errors.js';
 import { inWrapup, runLimitHit, shouldWarn } from '../guard/budget.js';
-import { climb, escalateModel } from '../guard/ladder.js';
+import { climb, escalateModel, LADDER, park } from '../guard/ladder.js';
 import { taskStuckSignals, type StuckFinding } from '../guard/stuck.js';
 import { decideNextMove } from '../judge/next-move.js';
 import type { AgentStateSummary } from '../judge/state-summary.js';
@@ -137,7 +137,7 @@ class Supervisor {
     const p = r.state.pending;
     const plan = r.requirePlan();
     if (p) {
-      const task = getNode(plan, p.taskId);
+      let task = getNode(plan, p.taskId);
       const findings: StuckFinding[] = taskStuckSignals(task, r.config.stuck);
       if (p.stuck.includes('oscillation'))
         findings.push({ signal: 'oscillation', detail: 'diff reverted earlier accepted work' });
@@ -149,7 +149,8 @@ class Supervisor {
 
       let rule: NextMove = 'continue';
       let allowed = new Set<NextMove>(['continue']);
-      if (p.verdict === 'reject' && task.status !== 'done') {
+      // Climb on a rejection, or when accepted partial progress has stopped converging.
+      if (task.status !== 'done' && (p.verdict === 'reject' || findings.length > 0)) {
         const climbed = findings.length ? climb(task, findings) : undefined;
         if (climbed)
           r.events.emit('ladder.rung', {
@@ -157,9 +158,22 @@ class Supervisor {
             rung: climbed.rung.id,
             detail: climbed.detail,
           });
+        if (climbed?.rung.id === 'replan_task') {
+          const split = await this.splitTask(task.id, findings.map((f) => f.detail).join('; '));
+          task = getNode(r.requirePlan(), p.taskId);
+          if (!split) {
+            r.events.emit('ladder.rung', {
+              task: task.id,
+              rung: 'park',
+              detail: park.apply(task, findings),
+              fallback: 'split produced no tasks',
+            });
+            task.rung = LADDER.indexOf(park);
+          }
+        }
         if (task.status === 'parked') {
-          rule = 'park_and_move_on';
-          allowed = new Set(['park_and_move_on']);
+          rule = task.splitInto.length ? 'split_task' : 'park_and_move_on';
+          allowed = new Set([rule]);
           r.events.emit('task.parked', { task: task.id, reason: task.parkedReason });
         } else {
           rule =
@@ -171,6 +185,7 @@ class Supervisor {
             'revert_to_last_green',
             'park_and_move_on',
             'switch_to_strong_model',
+            'split_task',
           ]);
         }
       }
@@ -194,6 +209,14 @@ class Supervisor {
           detail: escalateModel.apply(task, []),
           source: 'judge',
         });
+      } else if (decision.final === 'split_task' && !task.splitInto.length) {
+        r.events.emit('ladder.rung', {
+          task: task.id,
+          rung: 'replan_task',
+          detail: 'split requested',
+          source: 'judge',
+        });
+        await this.splitTask(task.id, 'the judge suggested splitting it');
       } else if (decision.final === 'retry_different_approach' && decision.final !== rule) {
         task.evidence = [
           ...task.evidence,
@@ -203,6 +226,63 @@ class Supervisor {
       await r.savePlan();
     }
     await r.setPhase('select', { pending: undefined });
+  }
+
+  /**
+   * Ladder rung 3: the planner splits a stuck task into smaller tasks under the same milestone.
+   * The original is parked with `splitInto`; anything that depended on it now depends on the
+   * new tasks; it becomes done once they all are. Returns false when no new task came out.
+   */
+  private async splitTask(taskId: string, reason: string): Promise<boolean> {
+    const r = this.run;
+    await r.savePlan();
+    const before = new Set(r.requirePlan().nodes.map((n) => n.id));
+    const parentId = getNode(r.requirePlan(), taskId).parentId;
+    try {
+      await runPlanner(r, { kind: 'split', taskId, reason });
+    } catch (err) {
+      if (!(err instanceof PlannerIncomplete)) throw err;
+      r.events.emit('planner.incomplete', { end: err.end, mode: 'split' });
+      return false;
+    }
+    const plan = r.requirePlan();
+    const fresh = plan.nodes
+      .filter((n) => n.type === 'task' && n.parentId === parentId && !before.has(n.id))
+      .map((n) => n.id);
+    if (!fresh.length) return false;
+    const task = getNode(plan, taskId);
+    task.splitInto = fresh;
+    task.status = 'parked';
+    task.parkedReason = `split into ${fresh.join(', ')}`;
+    for (const n of plan.nodes) {
+      if (n.dependsOn.includes(taskId) && !fresh.includes(n.id)) {
+        n.dependsOn = [...n.dependsOn.filter((d) => d !== taskId), ...fresh];
+      }
+    }
+    await r.savePlan();
+    r.events.emit('task.split', { task: taskId, into: fresh });
+    return true;
+  }
+
+  /** A split task is done when every task it was split into is done. */
+  private async settleSplits(): Promise<void> {
+    const r = this.run;
+    const plan = r.requirePlan();
+    let changed = false;
+    for (const n of plan.nodes) {
+      if (
+        n.status === 'parked' &&
+        n.splitInto.length &&
+        n.splitInto.every((id) => getNode(plan, id).status === 'done')
+      ) {
+        n.status = 'done';
+        n.doneAtCycle = r.state.cycle;
+        n.parkedReason = undefined;
+        r.events.emit('task.done', { task: n.id, via: 'split' });
+        changed = true;
+      }
+    }
+    if (changed) await r.savePlan();
   }
 
   private summary(taskId: string): AgentStateSummary {
@@ -359,6 +439,7 @@ class Supervisor {
   /** Milestones, rolling-wave expansion, and the end-of-plan decision. Returns a task id or an outcome. */
   private async select(): Promise<string | Outcome> {
     const r = this.run;
+    await this.settleSplits();
     for (const m of await settleMilestones(r)) {
       if (m.attempts >= MAX_MILESTONE_REPLANS) {
         m.status = 'parked';

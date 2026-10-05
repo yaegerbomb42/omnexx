@@ -63,8 +63,9 @@ export function taskStuckSignals(task: PlanNode, stuck: OmnexxConfig['stuck']): 
     if (same >= stuck.max_same_signature)
       out.push({ signal: 'repeated_signature', detail: `same failure ${same} times` });
   }
-  if (task.attempts >= stuck.max_task_cycles && task.status !== 'done') {
-    out.push({ signal: 'task_cycles', detail: `${task.attempts} cycles without finishing` });
+  const onRung = task.attempts - task.rungStartedAt;
+  if (onRung >= stuck.max_task_cycles && task.status !== 'done') {
+    out.push({ signal: 'task_cycles', detail: `${onRung} cycles without finishing` });
   }
   return out;
 }

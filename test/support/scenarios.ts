@@ -34,6 +34,8 @@ export function planner(
   initial: MilestoneSpec[],
   expansions: Record<string, MilestoneSpec['tasks']> = {},
   replans: Record<string, MilestoneSpec['tasks']> = {},
+  /** Tasks to add when the ladder asks to split a stuck task, keyed by that task's id. */
+  splits: Record<string, MilestoneSpec['tasks']> = {},
 ): (m: ScriptMeta) => ScriptedTurn {
   return (m) => {
     if (m.turn > 0) return say('Plan written.');
@@ -41,8 +43,9 @@ export function planner(
     if (text.startsWith('There is no plan yet')) return call('write_plan', { milestones: initial });
     const expand = /Expand milestone (M\d+)/.exec(text)?.[1];
     const replan = /milestone (M\d+)'s tasks are done but its checks fail/.exec(text)?.[1];
-    const target = expand ?? replan ?? '';
-    const extra = (expand ? expansions[target] : replans[target]) ?? [];
+    const split = /Task (M\d+\.T\d+) is stuck/.exec(text)?.[1];
+    const target = expand ?? replan ?? split?.split('.')[0] ?? '';
+    const extra = (split ? splits[split] : expand ? expansions[target] : replans[target]) ?? [];
     const ms = existing(m).map((e) => {
       const spec = initial.find((i) => i.id === e.id);
       const tasks = e.tasks.map((t) => {
@@ -50,6 +53,7 @@ export function planner(
           ...(spec?.tasks ?? []),
           ...Object.values(expansions).flat(),
           ...Object.values(replans).flat(),
+          ...Object.values(splits).flat(),
         ].find((x) => x?.id === t.id);
         return known ?? { id: t.id, title: t.title };
       });

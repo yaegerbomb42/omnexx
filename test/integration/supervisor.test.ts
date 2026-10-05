@@ -158,7 +158,7 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
 });
 
 describe('M2: stuck handling, budget and judge', () => {
-  it('impossible-task: 3 rejections escalate to the strong model, 3 more park it; nothing runnable → needs-human (exit 2) and a push', async () => {
+  it('impossible-task: 3 rejections escalate to the strong model, 3 more ask the planner to split it (it cannot), then it parks; nothing runnable → needs-human (exit 2) and a push', async () => {
     const plan = planner([
       {
         id: 'M1',
@@ -186,6 +186,7 @@ describe('M2: stuck handling, budget and judge', () => {
     expect(types(events, 'rollback')).toHaveLength(6);
     expect(types(events, 'ladder.rung').map((e) => e.rung)).toEqual([
       'escalate_model',
+      'replan_task',
       'park',
       'stop_and_ask',
     ]);
@@ -215,6 +216,63 @@ describe('M2: stuck handling, budget and judge', () => {
     expect(await readFile(t.run.store.file('REPORT.md'), 'utf8')).toMatch(
       /## 7\. Needs your decision\n\n- M1\.T01 Make 2\+2 both 4 and 5: consecutive_rejections/,
     );
+  });
+
+  it('a task that stays stuck on the strong model is split by the planner; the run finishes when the pieces are done', async () => {
+    const plan = planner(
+      [
+        {
+          id: 'M1',
+          title: 'Work',
+          tasks: [
+            { id: 'M1.T01', title: 'Hard task', checks: ['test -f out/hard.txt'] },
+            fileTask('M1.T02', { dependsOn: ['M1.T01'] }),
+          ],
+        },
+      ],
+      {},
+      {},
+      { 'M1.T01': [fileTask('M1.T03'), fileTask('M1.T04', { dependsOn: ['M1.T03'] })] },
+    );
+    // The hard task never succeeds directly; the pieces it is split into do.
+    const worker: Script = (m) =>
+      m.taskId === 'M1.T01'
+        ? m.turn === 0
+          ? call('write_file', { path: 'out/wrong.txt', content: String(m.attempt) })
+          : say(`attempt ${m.attempt}`)
+        : fileWorker(m);
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider: new ScriptedProvider(scenario(plan, worker)),
+      config: { gates: [GATE] },
+    });
+    const out = await superviseTest(t);
+    expect(out.status).toBe('finished');
+    const events = await readEvents(t.run.store.eventsPath);
+    expect(types(events, 'task.split')).toMatchObject([
+      { task: 'M1.T01', into: ['M1.T03', 'M1.T04'] },
+    ]);
+    expect(types(events, 'ladder.rung').map((e) => e.rung)).toEqual([
+      'escalate_model',
+      'replan_task',
+    ]);
+    const final = await t.run.store.readPlan();
+    expect(final && getNode(final, 'M1.T01')).toMatchObject({
+      status: 'done',
+      splitInto: ['M1.T03', 'M1.T04'],
+    });
+    // M1.T02 depended on the hard task; it now waits for the pieces instead.
+    expect(final && getNode(final, 'M1.T02').dependsOn).toEqual(['M1.T03', 'M1.T04']);
+    // The hard task's partial commits come first; after the split, the pieces then its dependent.
+    expect(
+      types(events, 'commit')
+        .map((e) => e.task)
+        .filter((x) => x !== 'M1.T01'),
+    ).toEqual(['M1.T03', 'M1.T04', 'M1.T02']);
+    expect(types(events, 'stuck.signal').map((e) => e.signal)).toEqual([
+      'task_cycles',
+      'task_cycles',
+    ]);
   });
 
   it('oscillation (A→B→A) is detected within one cycle and the rejection names the signal', async () => {
