@@ -42,12 +42,5 @@ export function banner(io: Pick<CliIO, 'env' | 'isTTY'>, columns = 80, version?:
   const b = brand(io);
   const mark = columns >= 60 ? LARGE.map((l) => b.green(l)).join('\n') : b.green('omnexx');
   const ver = version ? ` ${b.dim(`v${version}`)}` : '';
-  return [
-    '',
-    mark,
-    '',
-    `${b.cyan('$ omnexx')}${ver}`,
-    `> ${TAGLINE}`,
-    '',
-  ].join('\n');
+  return ['', mark, '', `${b.cyan('$ omnexx')}${ver}`, `> ${TAGLINE}`, ''].join('\n');
 }

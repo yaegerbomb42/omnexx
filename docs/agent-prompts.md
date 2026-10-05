@@ -31,7 +31,7 @@ Hard rules:
 2. Only create or edit files listed under "You own". Never edit src/cli/program.ts,
    src/config/schema.ts, src/tools/registry.ts or another workstream's files. Register your tool,
    config section or command by adding ONE export line to the matching barrel
-   (src/tools/extra/index.ts, src/config/sections/index.ts, src/cli/commands/registry.ts).
+   (src/tools/extra/index.ts, src/config/sections/index.ts, src/cli/commands/extra/index.ts).
    If you need anything else changed, write it in docs/integration-notes.md under your workstream.
 3. Match the surrounding code style: strict TypeScript, no `any`, zod strictObject for config,
    small pure functions, comments only where intent is not obvious, ESM imports with .js suffix.

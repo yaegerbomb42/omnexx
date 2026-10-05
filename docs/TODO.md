@@ -66,7 +66,7 @@ So that 12 agents can work at once without merge hell:
   `src/tools/extra/index.ts`, where each workstream appends exactly one export line.
 - `src/config/schema.ts` → `src/config/sections/*.ts`, one zod section per workstream, merged
   by a barrel. Strict objects stay strict.
-- `src/cli/program.ts` → `src/cli/commands/registry.ts`: each command file exports
+- `src/cli/program.ts` → `src/cli/commands/extra/index.ts`: each command file exports
   `register(program, io, setExit)`.
 - `src/core/events` → typed event names live in `src/core/event-types/*.ts` per area.
 - `docs/config.md` → split per section under `docs/config/`.
@@ -187,12 +187,12 @@ Read first: `src/core/events*`, `src/cli/commands/inspect.ts` (logs), `docs/arch
       `browser.*`, `mcp.*`, `subagent.*`, `intent.update`, `beyond.task`.
 - [ ] One-line humanizer per event, brand-styled, e.g.
       `     12:04:31 ▸ read   src/auth/session.ts:40-120           (1.2k tok)
-    12:04:32 ▸ route  edit-small → groq:llama-4-70b  nimble p=.91  48ms
-    12:04:35 ▸ edit   src/auth/session.ts  +12 −3
-    12:04:41 ▸ gate   test  ✓ 214 passed  (6.1s)
-    12:04:41 ✓ commit 3f2a1c9  "auth: refresh token on 401"
-    12:04:42 ▸ ctx    62% · cache hit 91% · $0.42 / $50
-    `
+  12:04:32 ▸ route  edit-small → groq:llama-4-70b  nimble p=.91  48ms
+  12:04:35 ▸ edit   src/auth/session.ts  +12 −3
+  12:04:41 ▸ gate   test  ✓ 214 passed  (6.1s)
+  12:04:41 ✓ commit 3f2a1c9  "auth: refresh token on 401"
+  12:04:42 ▸ ctx    62% · cache hit 91% · $0.42 / $50
+  `
 - [ ] Verbosity levels: `quiet` (commits, gates, verdicts), `normal`, `verbose` (every tool call
       with args), `debug` (raw events). `-q/-v/-vv` flags and `/verbose` in TUI.
 - [ ] Line-mode renderer for `omnexx run` without TUI and for `logs -f` (same humanizer).

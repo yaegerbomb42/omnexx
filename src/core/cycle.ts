@@ -20,7 +20,7 @@ import {
   sameFailureQuestion,
   toolSafetyQuestion,
 } from '../judge/uses.js';
-import { WORKER_TOOLS, toolSpec } from '../tools/registry.js';
+import { toolSpec, workerTools } from '../tools/registry.js';
 import type { ToolContext } from '../tools/types.js';
 import { antiCheat } from '../verify/anticheat.js';
 import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
@@ -256,6 +256,7 @@ export async function stepAct(run: Run): Promise<void> {
     run.store.progressTail(run.config.context.progress_tail),
     loadCodemap(run),
   ]);
+  const tools = await workerTools(run.config);
   const ctx = buildCycleContext({
     systemPrompt: WORKER_SYSTEM,
     codemap,
@@ -265,7 +266,7 @@ export async function stepAct(run: Run): Promise<void> {
     task,
     progressTail,
     evidence: task.evidence.slice(-3),
-    tools: WORKER_TOOLS.map(toolSpec),
+    tools: tools.map(toolSpec),
   });
   run.events.emit('cycle.context', {
     task: task.id,
@@ -279,7 +280,7 @@ export async function stepAct(run: Run): Promise<void> {
     coolProvider: (p, ms) => {
       run.coolProvider(p, ms);
     },
-    tools: WORKER_TOOLS,
+    tools,
     toolCtx,
     budget: run.config.budget,
     maxTokens: run.config.providers.anthropic.max_tokens,

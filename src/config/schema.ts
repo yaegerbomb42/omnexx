@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { durationString } from './duration.js';
+import * as extraSections from './sections/index.js';
 
 /**
  * The whole config surface. Unknown keys are errors (strictObject), so a typo in omnexx.toml
@@ -302,6 +303,7 @@ export const configSchema = z.strictObject({
   policy: policySchema.prefault({}),
   service: serviceSchema.prefault({}),
   workers: workersSchema.prefault({}),
+  ...extraSections,
 });
 
 export type OmnexxConfig = z.infer<typeof configSchema>;
