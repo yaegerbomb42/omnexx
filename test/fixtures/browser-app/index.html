@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Omnexx Browser Fixture App</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    .status { margin-top: 1rem; font-weight: bold; }
+    .success { color: green; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+  <h1>Counter & Submission App</h1>
+  <p>Test fixture for browser actions and gates.</p>
+
+  <div>
+    <label for="name-input">User Name:</label>
+    <input id="name-input" data-ref="name-input" type="text" placeholder="Enter your name">
+  </div>
+
+  <div style="margin-top: 1rem;">
+    <!-- Broken button: throws on click initially -->
+    <button id="submit-btn" data-ref="submit-btn" onclick="handleSubmit()">Submit</button>
+  </div>
+
+  <div id="status-message" data-ref="status-message" class="status">Ready</div>
+
+  <script>
+    // Initial buggy state: throws unhandled error and doesn't update status to "Submitted Successfully"
+    function handleSubmit() {
+      // BUG: intentional error
+      console.error("Uncaught TypeError: handler failed");
+      const statusEl = document.getElementById("status-message");
+      statusEl.textContent = "Error: Submission failed";
+      statusEl.className = "status error";
+    }
+  </script>
+</body>
+</html>

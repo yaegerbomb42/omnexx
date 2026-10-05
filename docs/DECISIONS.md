@@ -196,3 +196,12 @@ Plan §3.8 says to re-run only the failing ids. Selecting tests by id differs pe
 ## In-cycle stuck signals end the cycle, they don't reject it (2026-10-05)
 
 The three in-cycle signals from plan §3.10 (repeated identical tool call, no edits after K turns, token burn) stop the agent loop at a turn boundary with end `stuck`. VERIFY still runs: the cycle hard cap already treats partial work as "rolled back unless the gates pass", and the same rule applies here, so a model that fixed the bug and then wandered still gets its commit. The signal goes into the pending verdict like oscillation, so the ladder climbs whether the cycle was accepted or rejected. Burn rate is "no edit yet and tokens above `burn_factor` × the median of the last 20 cycles"; it is off until 3 cycles exist, so the first cycles of a run can't trip it. "Edit" means a file the edit tools touched; changes made through `bash` don't count, which only makes `no_edits` fire sooner.
+
+## D30 (2026-10-05) W5 Browser Tool Backends and Gate DSL
+
+**Decision.**
+
+1. Auto-selection order for browser backends: check `agent-browser` on PATH first (spawn CLI with isolated session per run), then dynamically import `playwright-core` if installed. If neither is available, the tool is omitted from registered extra tools and `browserDoctorCheck()` produces an actionable warning for `omnexx doctor`.
+2. Browser Gate DSL: supports YAML and TOML via a simple zero-dependency YAML step parser and `smol-toml`. Steps include `open`, `click`, `type`, `expect_text`, `expect_selector`, `expect_no_console_errors`, and `wait_ms`.
+3. Process cleanliness: `AgentBrowserBackend` uses explicit sessions and calls `agent-browser close` per run. A process exit hook is registered to prevent orphan processes.
+4. Vision model gating: screenshots return base64 image data only if `supportsVision` is set on the context; otherwise an informative text message is returned.

@@ -261,17 +261,17 @@ Read first: `src/providers/**`, `src/config/schema.ts`, `src/auth/keys.ts`, `doc
 
 Read first: `src/tools/bash.ts`, `src/tools/types.ts`, `src/verify/**`, `src/security/**`.
 
-- [ ] `browser` tool backed by `agent-browser` CLI when present (detect in `doctor`), else
+- [x] `browser` tool backed by `agent-browser` CLI when present (detect in `doctor`), else
       Playwright as an optional dependency (`npx omnexx browser install`).
-- [ ] Actions: `open(url)`, `snapshot()` (accessibility tree, ref ids, trimmed ≤ 4k tokens),
+- [x] Actions: `open(url)`, `snapshot()` (accessibility tree, ref ids, trimmed ≤ 4k tokens),
       `click(ref)`, `type(ref,text)`, `press(key)`, `scroll`, `screenshot()` (vision models only;
       router-aware), `console()` (errors), `network(filter)`, `eval(js)` (off by default), `close`.
-- [ ] Session per run, headless, isolated profile in the run dir; killed on cycle end.
-- [ ] URL allowlist: default `localhost`, `127.0.0.1`, `*.local`; config `[browser] allow = [...]`.
-- [ ] Dev-server helper: `[browser] serve = "npm run dev"`, wait for port, tear down.
-- [ ] Browser gate: `[[gates]] kind = "browser" script = "e2e/omnexx/*.yaml"`: a tiny YAML DSL
+- [x] Session per run, headless, isolated profile in the run dir; killed on cycle end.
+- [x] URL allowlist: default `localhost`, `127.0.0.1`, `*.local`; config `[browser] allow = [...]`.
+- [x] Dev-server helper: `[browser] serve = "npm run dev"`, wait for port, tear down.
+- [x] Browser gate: `[[gates]] kind = "browser" script = "e2e/omnexx/*.yaml"`: a tiny YAML DSL
       (open, expect text/selector, no console errors) so UI acceptance is a real gate.
-- [ ] Context hygiene: old snapshots replaced by one-line stubs (W8 clearing).
+- [x] Context hygiene: old snapshots replaced by one-line stubs (W8 clearing).
 - **Accept:** fixture app where the agent must fix a broken button; browser gate fails before,
   passes after; disallowed URL is refused; no zombie Chromium after 100 cycles.
 

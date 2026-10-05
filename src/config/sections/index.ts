@@ -5,4 +5,5 @@
  * (`z.strictObject({...}).prefault({})`) so configs without the table still parse.
  * Keep lines sorted by export name.
  */
+export { browser } from './browser.js';
 export { router } from './router.js';
