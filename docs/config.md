@@ -71,6 +71,46 @@ cache_read = 0.2
 
 Only the `anthropic:` provider exists in this build. Model routing per turn is M3; the worker model does all cycle work.
 
+## Model chains and endpoints
+
+Each role takes one model or a failover chain:
+
+```toml
+[models]
+planner = "anthropic:opus"
+worker  = ["anthropic:sonnet", "openrouter:or-sonnet", "ollama:qwen3:32b"]
+cheap   = ["anthropic:haiku", "ollama:qwen3:8b"]
+
+[providers.endpoints.openrouter]
+base_url = "https://openrouter.ai/api/v1"
+api_key_env = "OPENROUTER_API_KEY"   # the name of the env var, never the key
+max_usd = 20                         # optional cap for this provider
+max_usd_per_day = 5                  # optional
+
+[providers.endpoints.ollama]
+base_url = "http://localhost:11434/v1"
+free = true                          # $0 for any model unless [pricing] says otherwise
+
+[pricing.or-sonnet]
+id = "anthropic/claude-sonnet-5.5"
+input = 2
+output = 10
+cache_write_5m = 2.5
+cache_write_1h = 4
+cache_read = 0.2
+```
+
+| `[providers.endpoints.<name>]` key | Default    | Meaning                                                        |
+| ---------------------------------- | ---------- | -------------------------------------------------------------- |
+| `kind`                             | `"openai"` | Chat Completions API                                           |
+| `base_url`                         | required   | e.g. `https://api.openai.com/v1`                               |
+| `api_key_env`                      | unset      | Env var holding the key; unset for local endpoints             |
+| `free`                             | `false`    | Price unknown models at $0                                     |
+| `request_timeout`                  | `"10m"`    |                                                                |
+| `max_usd` / `max_usd_per_day`      | unset      | Per-provider caps; also accepted under `[providers.anthropic]` |
+
+Each turn tries the chain in order. Providers over their own caps are skipped; a failing provider cools for 1 minute (transient errors) or 30 minutes (key, quota or unknown model) while the next one takes the call. If every provider is over its cap, the run stops as a budget stop; if every one is failing, the normal outage backoff applies. Events: `provider.failover`; spend per provider in `status --json` (`spend.byProvider`).
+
 ## `[providers.anthropic]`
 
 | Key               | Default     | Meaning                                                               |

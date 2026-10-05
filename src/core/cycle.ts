@@ -201,7 +201,11 @@ export async function stepAct(run: Run): Promise<void> {
   });
   const result = await runAgentLoop(ctx, {
     provider: run.deps.provider,
-    model: task.escalated ? run.models.planner : run.models.worker,
+    models: task.escalated ? run.chains.planner : run.chains.worker,
+    providerBlocked: (p) => run.providerBlocked(p),
+    coolProvider: (p, ms) => {
+      run.coolProvider(p, ms);
+    },
     tools: WORKER_TOOLS,
     toolCtx,
     budget: run.config.budget,
@@ -210,7 +214,7 @@ export async function stepAct(run: Run): Promise<void> {
     events: run.events,
     spentUsd: () => run.state.spend.usd,
     spentTodayUsd: () => run.spentToday(),
-    onUsage: (u, usd, model) => run.addSpend(u, usd, model, 'worker'),
+    onUsage: (u, usd, model, provider) => run.addSpend(u, usd, model, 'worker', provider),
     control: () => run.control(),
     onPauseChange: (p) => {
       run.paused = p;

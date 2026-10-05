@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultConfig } from '../../../src/config/load.js';
-import { ConfigError, NotImplementedError, ProviderError } from '../../../src/errors.js';
+import { ConfigError, ProviderError } from '../../../src/errors.js';
 import { AnthropicProvider, toProviderError } from '../../../src/providers/anthropic.js';
 import {
   BUILTIN_PRICING,
@@ -31,7 +31,7 @@ describe('pricing', () => {
     expect(resolveModel('anthropic:claude-opus-5-5', cfg).alias).toBe('opus');
     expect(resolveModel('anthropic:cheapo', cfg).id).toBe('my-model');
     expect(() => resolveModel('anthropic:gpt-9', cfg)).toThrow(ConfigError);
-    expect(() => resolveModel('openai:gpt', cfg)).toThrow(NotImplementedError);
+    expect(() => resolveModel('openai:gpt', cfg)).toThrow(/unknown provider "openai"/);
   });
   it('costs each token class at its own rate (Opus 5.5 cache read is 0.05x)', () => {
     const p = BUILTIN_PRICING.opus;

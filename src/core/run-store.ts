@@ -114,6 +114,7 @@ export const stateSchema = z.object({
       turns: z.number().default(0),
       llmCalls: z.number().default(0),
       byModel: z.record(z.string(), z.number()).default({}),
+      byProvider: z.record(z.string(), z.number()).default({}),
     })
     .prefault({}),
   acceptedCommits: z.number().default(0),
@@ -152,7 +153,9 @@ export const stateSchema = z.object({
   /** Recent spend with timestamps, for the rolling daily cap (pruned to the last 25 h). */
   /** A call was refused for max_usd_per_day: pause at the next boundary. */
   dailyCapHit: z.boolean().default(false),
-  spendLedger: z.array(z.object({ at: z.number(), usd: z.number() })).default([]),
+  spendLedger: z
+    .array(z.object({ at: z.number(), usd: z.number(), provider: z.string().optional() }))
+    .default([]),
 });
 export type RunState = z.infer<typeof stateSchema>;
 

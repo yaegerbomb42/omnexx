@@ -5,6 +5,8 @@ import { estimateTokens } from '../core/tokens.js';
 import { preflight, type BudgetStop } from '../guard/budget.js';
 import { costUsd, type ResolvedModel } from '../providers/pricing.js';
 import { StopRequested, withRetry } from '../providers/retry.js';
+import { shouldFailover } from '../providers/router.js';
+import { ProviderError } from '../errors.js';
 import {
   totalInput,
   type CompletionResponse,
@@ -17,6 +19,16 @@ import {
 } from '../providers/types.js';
 import type { Tool, ToolContext } from '../tools/types.js';
 import { turnRequest } from './context.js';
+
+/** Thrown inside the retry loop when a pre-flight check refuses the call; ends the cycle, never retried. */
+class BudgetStopSignal extends Error {
+  constructor(
+    readonly stop: BudgetStop,
+    readonly detail: string,
+  ) {
+    super(detail);
+  }
+}
 
 export type ControlSignal = 'continue' | 'pause' | 'stop' | 'stop-now';
 
@@ -33,7 +45,12 @@ export interface LoopResult {
 
 export interface LoopDeps {
   provider: Provider;
-  model: ResolvedModel;
+  /** The role's failover chain: tried in order, skipping providers that are blocked. */
+  models: readonly ResolvedModel[];
+  /** Why a provider can't take a call now (its own caps, cooling after a failure), or undefined. */
+  providerBlocked?: (provider: string) => string | undefined;
+  /** Skip this provider for a while after it failed. */
+  coolProvider?: (provider: string, ms: number) => void;
   tools: readonly Tool[];
   toolCtx: ToolContext;
   budget: OmnexxConfig['budget'];
@@ -45,7 +62,7 @@ export interface LoopDeps {
   /** Spend in the rolling 24 h window, for the daily cap. */
   spentTodayUsd?: () => number;
   /** Persist spend after every call so a crash never forgets money already spent. */
-  onUsage: (usage: Usage, usd: number, model: string) => Promise<void>;
+  onUsage: (usage: Usage, usd: number, model: string, provider: string) => Promise<void>;
   control: () => Promise<ControlSignal>;
   /** How often to re-check control.json while paused. */
   pausePollMs?: number;
@@ -92,25 +109,63 @@ export async function runAgentLoop(
     }
     if (signal === 'stop' || signal === 'stop-now') return end(signal);
 
-    const req = turnRequest(ctx, messages, deps.model.id, deps.maxTokens);
-    const estimate = estimateTokens(JSON.stringify([req.system, req.tools, req.messages]));
-    const pf = preflight(deps.budget, {
-      spentUsd: deps.spentUsd(),
-      ...(deps.spentTodayUsd ? { spentTodayUsd: deps.spentTodayUsd() } : {}),
-      cycle: { turns, tokens: cycleTokens },
-      estimatedInputTokens: estimate,
-      maxOutputTokens: deps.maxTokens,
-      price: deps.model.price,
-    });
-    if (!pf.ok) {
-      deps.events.emit('budget.preflight_stop', { stop: pf.stop, detail: pf.detail, turn: turns });
-      return end(pf.stop);
-    }
-
+    let chosen: ResolvedModel | undefined;
     let res: CompletionResponse;
     try {
       res = await withRetry(
-        () => deps.provider.complete({ ...req, ...(deps.signal ? { signal: deps.signal } : {}) }),
+        async () => {
+          const skipped: string[] = [];
+          let onlyBudget = true;
+          for (const m of deps.models) {
+            const blocked = deps.providerBlocked?.(m.provider);
+            if (blocked) {
+              if (!blocked.includes('max_usd')) onlyBudget = false;
+              skipped.push(`${m.provider}: ${blocked}`);
+              continue;
+            }
+            const req = turnRequest(ctx, messages, m.id, deps.maxTokens);
+            const estimate = estimateTokens(JSON.stringify([req.system, req.tools, req.messages]));
+            const pf = preflight(deps.budget, {
+              spentUsd: deps.spentUsd(),
+              ...(deps.spentTodayUsd ? { spentTodayUsd: deps.spentTodayUsd() } : {}),
+              cycle: { turns, tokens: cycleTokens },
+              estimatedInputTokens: estimate,
+              maxOutputTokens: deps.maxTokens,
+              price: m.price,
+            });
+            if (!pf.ok) throw new BudgetStopSignal(pf.stop, pf.detail);
+            try {
+              const r = await deps.provider.complete({
+                ...req,
+                route: m.provider,
+                ...(deps.signal ? { signal: deps.signal } : {}),
+              });
+              chosen = m;
+              return r;
+            } catch (err) {
+              if (!shouldFailover(err)) throw err;
+              onlyBudget = false;
+              // Transient trouble: retry this provider soon. Key, quota or model problems: much later.
+              deps.coolProvider?.(m.provider, err.retryable ? 60_000 : 30 * 60_000);
+              deps.events.emit('provider.failover', {
+                provider: m.provider,
+                model: m.id,
+                error: err.message,
+                status: err.status,
+              });
+              skipped.push(`${m.provider}: ${err.message}`);
+            }
+          }
+          if (skipped.length && onlyBudget)
+            throw new BudgetStopSignal(
+              'max_usd',
+              `every provider in the chain is over its own cap (${skipped.join('; ')})`,
+            );
+          throw new ProviderError(
+            `no provider in the chain could take the call: ${skipped.join('; ')}`,
+            { retryable: true },
+          );
+        },
         {
           clock: deps.clock,
           shouldStop: async () => {
@@ -137,14 +192,24 @@ export async function runAgentLoop(
       );
     } catch (err) {
       if (err instanceof StopRequested) return end('stop');
+      if (err instanceof BudgetStopSignal) {
+        deps.events.emit('budget.preflight_stop', {
+          stop: err.stop,
+          detail: err.detail,
+          turn: turns,
+        });
+        return end(err.stop);
+      }
       throw err;
     }
+    const model = chosen ?? deps.models[0];
+    if (!model) throw new ProviderError('empty model chain', { retryable: false });
     turns++;
-    const cost = costUsd(res.usage, deps.model.price);
+    const cost = costUsd(res.usage, model.price);
     usd += cost;
     for (const k of Object.keys(usage) as (keyof Usage)[]) usage[k] += res.usage[k];
     cycleTokens += totalInput(res.usage) + res.usage.output;
-    await deps.onUsage(res.usage, cost, res.model);
+    await deps.onUsage(res.usage, cost, res.model, model.provider);
     const input = totalInput(res.usage);
     deps.events.emit('turn', {
       turn: turns,

@@ -121,7 +121,11 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     },
     {
       provider: run.deps.provider,
-      model: run.models.planner,
+      models: run.chains.planner,
+      providerBlocked: (p) => run.providerBlocked(p),
+      coolProvider: (p, ms) => {
+        run.coolProvider(p, ms);
+      },
       tools,
       toolCtx,
       budget: run.config.budget,
@@ -130,7 +134,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       events: run.events,
       spentUsd: () => run.state.spend.usd,
       spentTodayUsd: () => run.spentToday(),
-      onUsage: (u, usd, model) => run.addSpend(u, usd, model, 'planner'),
+      onUsage: (u, usd, model, provider) => run.addSpend(u, usd, model, 'planner', provider),
       control: () => run.control(),
       signal: run.abort.signal,
     },

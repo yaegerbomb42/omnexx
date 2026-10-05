@@ -34,6 +34,8 @@ export interface CompletionRequest {
   /** Indices into `messages` whose last block gets a cache breakpoint. */
   messageBreakpoints: number[];
   toolChoice?: { type: 'auto' } | { type: 'tool'; name: string };
+  /** Which configured provider serves this call (default "anthropic"). */
+  route?: string;
   signal?: AbortSignal;
 }
 
