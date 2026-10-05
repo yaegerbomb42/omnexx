@@ -13,6 +13,7 @@ import type { CompletionRequest, CompletionResponse, Provider, Usage } from '../
 import { scrubEnv } from '../security/env-scrub.js';
 import type { PolicyContext } from '../security/command-policy.js';
 import { Redactor } from '../security/redact.js';
+import { ModelRouter } from '../router/router.js';
 import type { ControlSignal } from '../agent/loop.js';
 import type { Clock } from './clock.js';
 import { EventLog } from './events.js';
@@ -43,6 +44,7 @@ export class Run {
   readonly events: EventLog;
   readonly redactor: Redactor;
   readonly judge: FailOpenJudge;
+  readonly router: ModelRouter;
   readonly childEnv: Record<string, string>;
   readonly tmpDir: string;
   /** First model of each role's chain (single-shot helpers use these). */
@@ -110,6 +112,13 @@ export class Run {
               role: 'judge',
             }),
         }),
+    });
+    this.router = new ModelRouter({
+      config: c,
+      judge: this.judge,
+      roleChains: this.chains,
+      events: this.events,
+      now: () => deps.clock.now(),
     });
   }
 
@@ -216,6 +225,14 @@ export class Run {
 
   coolProvider(provider: string, ms: number): void {
     this.cooling.set(provider, this.clock.now() + ms);
+  }
+
+  /** The smaller of the money and time budgets still left, 0..1 (the router weighs this). */
+  budgetLeftFraction(): number {
+    const b = this.config.budget;
+    const usd = 1 - this.state.spend.usd / b.max_usd;
+    const hours = 1 - this.state.activeMs / (b.max_hours * 3_600_000);
+    return Math.max(0, Math.min(1, usd, hours));
   }
 
   /**

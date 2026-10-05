@@ -21,6 +21,7 @@ import {
   toolSafetyQuestion,
 } from '../judge/uses.js';
 import { toolSpec, workerTools } from '../tools/registry.js';
+import { cycleRoute } from '../router/classify.js';
 import type { ToolContext } from '../tools/types.js';
 import { antiCheat } from '../verify/anticheat.js';
 import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
@@ -257,6 +258,7 @@ export async function stepAct(run: Run): Promise<void> {
     loadCodemap(run),
   ]);
   const tools = await workerTools(run.config);
+  const route = await run.router.pick(cycleRoute(task, run.budgetLeftFraction()));
   const ctx = buildCycleContext({
     systemPrompt: WORKER_SYSTEM,
     codemap,
@@ -275,7 +277,7 @@ export async function stepAct(run: Run): Promise<void> {
   });
   const result = await runAgentLoop(ctx, {
     provider: run.deps.provider,
-    models: task.escalated ? run.chains.planner : run.chains.worker,
+    models: route.chain,
     providerBlocked: (p) => run.providerBlocked(p),
     coolProvider: (p, ms) => {
       run.coolProvider(p, ms);

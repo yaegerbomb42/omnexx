@@ -121,7 +121,13 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     },
     {
       provider: run.deps.provider,
-      models: run.chains.planner,
+      models: (
+        await run.router.pick({
+          action: mode.kind === 'initial' || mode.kind === 'expand' ? 'plan' : mode.kind,
+          needs: { tools: true },
+          facts: { mode: mode.kind },
+        })
+      ).chain,
       providerBlocked: (p) => run.providerBlocked(p),
       coolProvider: (p, ms) => {
         run.coolProvider(p, ms);
