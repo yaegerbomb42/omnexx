@@ -112,24 +112,7 @@ cache_read = 0.2
 
 Each turn tries the chain in order. Providers over their own caps are skipped; a failing provider cools for 1 minute (transient errors) or 30 minutes (key, quota or unknown model) while the next one takes the call. If every provider is over its cap, the run stops as a budget stop; if every one is failing, the normal outage backoff applies. Events: `provider.failover`; spend per provider in `status --json` (`spend.byProvider`).
 
-### Built-in `swarm` pools
-
-A `swarm` endpoint is always present (`https://swarmconnect.site/api/v1`, key from `SWARM_API_KEY`, priced at $0). Each model name is a pool the gateway routes across:
-
-| Model ref            | Pool                        |
-| -------------------- | --------------------------- |
-| `swarm:4.1-pool`     | DeepSeek V4.1               |
-| `swarm:fast-pool`    | sub-500 ms low-latency pool |
-| `swarm:groq-pool`    | Groq accelerated pool       |
-| `swarm:mistral-pool` | Mistral pool                |
-| `swarm:nim-pool`     | NVIDIA NIM pool             |
-
-```toml
-[models]
-cheap = ["swarm:fast-pool", "anthropic:haiku"]
-```
-
-Any other `swarm:` name is a config error. The key is only required (by `run` and `doctor`) when some role's chain uses `swarm:`. Declaring `[providers.endpoints.swarm]` replaces these defaults entirely, including the pool check.
+No endpoints are built in: any OpenAI-compatible server (OpenAI, OpenRouter, Groq, DeepSeek, Together, LiteLLM, vLLM, Ollama, LM Studio, your own gateway) is one `[providers.endpoints.<name>]` block in `omnexx.toml` or `~/.config/omnexx/config.toml`. The block's name becomes the model-ref prefix.
 
 ## `[providers.anthropic]`
 

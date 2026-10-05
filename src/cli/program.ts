@@ -24,6 +24,7 @@ import {
 import { readGoal, runCommand, runPlanOnly, type FullRunFlags } from './commands/run.js';
 import { serviceCommand } from './commands/service.js';
 import { dockerAvailable } from '../security/sandbox-docker.js';
+import { banner, brand } from './brand.js';
 import { EXIT } from './exit-codes.js';
 import { println, readSecret, type CliIO } from './io.js';
 
@@ -40,6 +41,22 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     })
     .exitOverride()
     .showHelpAfterError('(run `omnexx --help` for usage)');
+
+  // Brand the help screen on a terminal; piped output stays plain for scripts.
+  const b = brand(io);
+  const columns = (io.stdout as { columns?: number }).columns ?? 80;
+  if (io.isTTY) program.addHelpText('beforeAll', banner(io, columns, VERSION));
+  program.configureHelp({
+    styleTitle: (s) => b.green(s),
+    styleCommandText: (s) => b.cyan(s),
+    styleSubcommandText: (s) => b.cyan(s),
+    styleOptionText: (s) => b.cyan(s),
+    styleArgumentText: (s) => b.dim(s),
+  });
+  // Bare `omnexx`: splash plus help instead of commander's "missing command" error.
+  program.action(() => {
+    program.outputHelp();
+  });
 
   program
     .command('init')

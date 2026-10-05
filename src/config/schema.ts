@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { durationString } from './duration.js';
-import { SWARM_ENDPOINT, SWARM_PROVIDER } from '../providers/pools.js';
 
 /**
  * The whole config surface. Unknown keys are errors (strictObject), so a typo in omnexx.toml
@@ -104,14 +103,7 @@ export const anthropicSchema = z.strictObject({
 export const providersSchema = z.strictObject({
   anthropic: anthropicSchema.prefault({}),
   /** Named OpenAI-compatible endpoints; the name is the model-ref prefix ("openrouter:…"). */
-  /** The built-in `swarm` endpoint is always present unless the config declares its own. */
-  endpoints: z
-    .record(z.string().regex(/^[a-z][a-z0-9_-]*$/), endpointSchema)
-    .default({})
-    .transform((eps): Record<string, EndpointConfig> => ({
-      [SWARM_PROVIDER]: endpointSchema.parse(SWARM_ENDPOINT),
-      ...eps,
-    })),
+  endpoints: z.record(z.string().regex(/^[a-z][a-z0-9_-]*$/), endpointSchema).default({}),
 });
 
 export const gitSchema = z.strictObject({

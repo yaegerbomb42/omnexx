@@ -10,6 +10,7 @@ import { Run } from '../../core/run.js';
 import { UsageError } from '../../errors.js';
 import type { ConfigInput } from '../../config/schema.js';
 import { selfEntry, spawnDetached } from '../../daemon/detach.js';
+import { brand } from '../brand.js';
 import { println, type CliIO } from '../io.js';
 import { superviseForeground } from './control.js';
 import { resolveRunDeps } from '../run-deps.js';
@@ -129,6 +130,10 @@ export async function runCommand(io: CliIO, goal: string, flags: FullRunFlags): 
     );
     return EXIT.ok;
   }
-  println(io.stderr, `run ${store.runId} on ${(await store.readState()).branch}`);
+  const b = brand(io);
+  println(
+    io.stderr,
+    `${b.green('omnexx')} run ${b.cyan(store.runId)} on ${(await store.readState()).branch}`,
+  );
   return superviseForeground(io, store.runId);
 }

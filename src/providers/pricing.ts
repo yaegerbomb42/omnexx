@@ -1,7 +1,6 @@
 import type { OmnexxConfig, PriceConfig } from '../config/schema.js';
 import { ConfigError } from '../errors.js';
 import type { Usage } from './types.js';
-import { isSwarmPool, SWARM_ENDPOINT, SWARM_POOLS, SWARM_PROVIDER } from './pools.js';
 
 /**
  * USD per million tokens. Source: https://platform.claude.com/docs/en/about-claude/pricing and
@@ -88,16 +87,6 @@ export function resolveModel(ref: string, config: OmnexxConfig): ResolvedModel {
   if (byAlias) return { provider, alias: name, id: byAlias.id, price: byAlias };
   const byId = Object.entries(table).find(([, p]) => p.id === name);
   if (byId) return { provider, alias: byId[0], id: name, price: byId[1] };
-  if (
-    provider === SWARM_PROVIDER &&
-    endpoint?.base_url === SWARM_ENDPOINT.base_url &&
-    !isSwarmPool(name)
-  ) {
-    throw new ConfigError(
-      `unknown swarm pool "${name}" in model "${ref}"`,
-      `use one of: ${Object.keys(SWARM_POOLS).join(', ')}`,
-    );
-  }
   if (endpoint?.free) return { provider, alias: name, id: name, price: { id: name, ...FREE } };
   throw new ConfigError(
     `no price for model "${name}" on ${provider}`,
