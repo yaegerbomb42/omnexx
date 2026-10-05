@@ -27,13 +27,14 @@ The container runs as your uid/gid with `--cap-drop ALL`, `no-new-privileges`, a
 
 ## `[[gates]]`
 
-| Key       | Default     | Meaning                                                                                                                                                                                                                   |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`    | required    | Letters, digits, `_ . -`                                                                                                                                                                                                  |
-| `run`     | required    | Shell command, run in the worktree with a scrubbed env                                                                                                                                                                    |
-| `timeout` | `"10m"`     | Capped by `budget.max_cmd_timeout`                                                                                                                                                                                        |
-| `level`   | `"ratchet"` | `"must-pass"`: exit 0. `"ratchet"`: no new failure ids and no more failures than the baseline                                                                                                                             |
-| `parser`  | `"generic"` | `vitest` (`--reporter=json --outputFile=/dev/stdout`), `jest` (`--json`), `node-test` (`--test-reporter=tap`), `tsc`, `eslint` (`-f json` or default output), `pytest` (`-rf`), `gotest` (`-json`), `generic` (exit code) |
+| Key            | Default     | Meaning                                                                                                                                                                                                                                                      |
+| -------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`         | required    | Letters, digits, `_ . -`                                                                                                                                                                                                                                     |
+| `run`          | required    | Shell command, run in the worktree with a scrubbed env                                                                                                                                                                                                       |
+| `timeout`      | `"10m"`     | Capped by `budget.max_cmd_timeout`                                                                                                                                                                                                                           |
+| `level`        | `"ratchet"` | `"must-pass"`: exit 0. `"ratchet"`: no new failure ids and no more failures than the baseline                                                                                                                                                                |
+| `parser`       | `"generic"` | `vitest` (`--reporter=json --outputFile=/dev/stdout`), `jest` (`--json`), `node-test` (`--test-reporter=tap`), `tsc`, `eslint` (`-f json` or default output), `pytest` (`-rf`), `gotest` (`-json`), `generic` (exit code)                                    |
+| `flaky_reruns` | `1`         | `0`–`3`. When the gate shows new failures the parser can name, run the whole gate again; ids that then pass are flaky (event `verify.flaky`, a `flaky` lesson, a line in the report) and don't fail the cycle. Timeouts and `generic` gates are never re-run |
 
 ## `[budget]` (24 h defaults, plan §14.5)
 

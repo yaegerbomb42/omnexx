@@ -26,6 +26,8 @@ export const gateSchema = z.strictObject({
   timeout: durationString.default('10m'),
   level: z.enum(['must-pass', 'ratchet']).default('ratchet'),
   parser: z.enum(GATE_PARSERS).default('generic'),
+  /** Re-runs of the whole gate when it shows new, named failures; ids that then pass are flaky. */
+  flaky_reruns: z.number().int().min(0).max(3).default(1),
 });
 export type GateConfig = z.infer<typeof gateSchema>;
 

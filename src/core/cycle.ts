@@ -23,10 +23,11 @@ import {
 import { WORKER_TOOLS, toolSpec } from '../tools/registry.js';
 import type { ToolContext } from '../tools/types.js';
 import { antiCheat } from '../verify/anticheat.js';
+import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
 import { runGates, toBaseline, type GateResult } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
 import { readTextOr } from './atomic.js';
-import { renderNotes } from './notes.js';
+import { applyRemember, renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
 import { getNode, type PlanNode } from './plan.js';
 import type { PendingVerdict } from './run-store.js';
@@ -77,6 +78,37 @@ function gateRunCtx(run: Run, label: string) {
     redact: (s: string) => run.redactor.text(s),
     signal: run.abort.signal,
   };
+}
+
+/**
+ * Tests that failed and then passed on a re-run: an event, plus a `flaky` lesson per new id so
+ * later cycles know not to chase them. A full lessons file just skips the note.
+ */
+async function recordFlaky(
+  run: Run,
+  task: PlanNode,
+  flaky: readonly FlakyFinding[],
+): Promise<void> {
+  let notes = await run.store.readNotes();
+  const today = new Date(run.clock.now()).toISOString().slice(0, 10);
+  for (const f of flaky) {
+    run.events.emit('verify.flaky', { task: task.id, gate: f.gate, ids: f.ids });
+    for (const id of f.ids) {
+      if (notes.some((n) => n.type === 'flaky' && n.text.includes(id))) continue;
+      const r = applyRemember(
+        notes,
+        {
+          action: 'add',
+          type: 'flaky',
+          text: `Flaky in gate ${f.gate} (failed, then passed on re-run): ${id}`.slice(0, 400),
+        },
+        run.config.context.notes_max_tokens,
+        today,
+      );
+      if (r.ok) notes = r.notes;
+    }
+  }
+  await run.store.writeNotes(notes);
 }
 
 /** Record which tests and errors already fail at the starting commit (plan §3.8). */
@@ -335,7 +367,12 @@ export async function stepVerify(run: Run): Promise<void> {
     if (budgetCut) reasons.push(INTERRUPTED_BY_BUDGET);
     else if (!(task.checks.length && checksPass)) reasons.push('no changes');
   } else if (!reasons.length) {
-    const results = await runGates(run.config.gates, gateRunCtx(run, label));
+    const { results, flaky } = await runGatesWithFlakyCheck(
+      run.config.gates,
+      gateRunCtx(run, label),
+      run.state.baseline,
+    );
+    if (flaky.length) await recordFlaky(run, task, flaky);
     const verdicts = results.map((r) => judgeGate(r, run.state.baseline));
     for (const v of verdicts) if (!v.pass) reasons.push(`gate ${v.gate}: ${v.reason ?? 'failed'}`);
     const failText = renderFailures(results, verdicts);

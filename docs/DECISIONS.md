@@ -188,3 +188,7 @@ Plan §3.6 prefers Anthropic's server-side context editing and compaction where 
 ## Cheap-model side calls use the whole cheap chain (2026-10-05)
 
 The judge, codemap descriptions and notes consolidation called only the first cheap model, without a route, so a non-Anthropic `cheap` model was sent to Anthropic. They now go through `Run.cheapComplete`, which walks the chain like a worker turn: skip blocked providers, pre-flight each model at its own price, route, fail over, and record spend per provider. Compaction summaries use the same path.
+
+## Flaky tests: re-run the whole gate, not just the failing ids (2026-10-05)
+
+Plan §3.8 says to re-run only the failing ids. Selecting tests by id differs per runner (vitest `-t`, pytest node ids, `go test -run`, node's `--test-name-pattern`) and the parsers' ids don't map back cleanly for all of them, so a wrong filter could "pass" by running nothing. Instead, a gate with new, parser-named failures runs again in full, `flaky_reruns` times (default 1). The verdict comes from the last run, so a persistent or different new failure still rejects. The cost is one extra gate run, paid only on a failing cycle. Ids that recovered are written as `flaky` lessons (deduplicated; skipped when the lessons file is full) and listed in the report. Timeouts and unstructured (`generic`) gates are never re-run, since there is no id to call flaky. The baseline is not re-run: a flaky failure captured at baseline only makes the ratchet more lenient for that id.
