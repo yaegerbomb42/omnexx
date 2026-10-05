@@ -1,0 +1,10 @@
+{"Action":"start","Package":"example.com/m"}
+{"Action":"run","Package":"example.com/m","Test":"TestAdd"}
+{"Action":"output","Package":"example.com/m","Test":"TestAdd","Output":"=== RUN   TestAdd\n"}
+{"Action":"output","Package":"example.com/m","Test":"TestAdd","Output":"    math_test.go:9: add(1,1) = 2, want 3\n"}
+{"Action":"output","Package":"example.com/m","Test":"TestAdd","Output":"--- FAIL: TestAdd (0.00s)\n"}
+{"Action":"fail","Package":"example.com/m","Test":"TestAdd","Elapsed":0}
+{"Action":"run","Package":"example.com/m","Test":"TestSub"}
+{"Action":"pass","Package":"example.com/m","Test":"TestSub","Elapsed":0}
+{"Action":"skip","Package":"example.com/m","Test":"TestLater","Elapsed":0}
+{"Action":"fail","Package":"example.com/m","Elapsed":0.01}

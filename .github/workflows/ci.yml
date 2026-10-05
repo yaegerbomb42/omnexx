@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [22, 24]
+    env:
+      # No workflow uses a real key or calls a paid API. Tests isolate state in temp dirs.
+      OMNEXX_CHAOS_ITERATIONS: '20'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Install ripgrep (ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+      - name: Install ripgrep (macos)
+        if: runner.os == 'macOS'
+        run: brew install ripgrep
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm pack
+      - name: Install the tarball globally into a temp prefix and smoke it
+        shell: bash
+        run: |
+          prefix="$(mktemp -d)"
+          npm i -g --prefix "$prefix" ./omnexx-*.tgz
+          export PATH="$prefix/bin:$PATH" OMNEXX_HOME="$(mktemp -d)" OMNEXX_CONFIG_HOME="$(mktemp -d)"
+          omnexx --help
+          omnexx --version
+          # Placeholder so the key check passes offline; it is never sent anywhere.
+          OMNEXX_ANTHROPIC_API_KEY="sk-ant-ci-placeholder-not-a-key" omnexx doctor --offline
+      - name: Validate the generated systemd unit (ubuntu)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          export OMNEXX_HOME="$(mktemp -d)" OMNEXX_CONFIG_HOME="$(mktemp -d)"
+          dir="$(mktemp -d)"
+          node dist/cli.js service install --dry-run > "$dir/omnexx.service"
+          cat "$dir/omnexx.service"
+          systemd-analyze verify "$dir/omnexx.service"
+      - name: Validate the generated launchd plist (macos)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          export OMNEXX_HOME="$(mktemp -d)" OMNEXX_CONFIG_HOME="$(mktemp -d)"
+          dir="$(mktemp -d)"
+          node dist/cli.js service install --dry-run > "$dir/org.omnexx.supervisor.plist"
+          plutil -lint "$dir/org.omnexx.supervisor.plist"
