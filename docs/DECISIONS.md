@@ -196,3 +196,35 @@ Plan §3.8 says to re-run only the failing ids. Selecting tests by id differs pe
 ## In-cycle stuck signals end the cycle, they don't reject it (2026-10-05)
 
 The three in-cycle signals from plan §3.10 (repeated identical tool call, no edits after K turns, token burn) stop the agent loop at a turn boundary with end `stuck`. VERIFY still runs: the cycle hard cap already treats partial work as "rolled back unless the gates pass", and the same rule applies here, so a model that fixed the bug and then wandered still gets its commit. The signal goes into the pending verdict like oscillation, so the ladder climbs whether the cycle was accepted or rejected. Burn rate is "no edit yet and tokens above `burn_factor` × the median of the last 20 cycles"; it is off until 3 cycles exist, so the first cycles of a run can't trip it. "Edit" means a file the edit tools touched; changes made through `bash` don't count, which only makes `no_edits` fire sooner.
+
+## W10 instructions, skills and hooks (2026-10-05)
+
+**Decision.**
+
+- Instruction precedence is the prompt's list (OMNEXX.md → AGENTS.md → CLAUDE.md →
+  `.cursor/rules/*.mdc` sorted → `.github/copilot-instructions.md`), then nested
+  AGENTS/CLAUDE shallow → deep. The 8k-token budget cuts from the _end_ of that render order
+  (deepest nested first, `OMNEXX.md` last) and every cut file is named in a footer note; a
+  single oversized file keeps its head with a `… (truncated)` marker.
+- `renderInstructions()` keeps the zero-argument signature from the agent prompt:
+  `loadInstructions()` stores its result and render uses it (tests pass an explicit value). An
+  empty render is `''` so the prompt wiring can skip the block.
+- Hook block feedback is the trimmed **2 000-char tail** of the hook's combined output, because
+  the shared `Executor` interleaves stdout and stderr and has no separate stderr channel. A
+  timed-out `pre_*` hook blocks like a non-zero exit.
+- `match` is a `*`/`?` glob over the payload's tool name and is ignored on events without one
+  (`cycle_end`, `run_end`).
+- The `skill` tool always registers (even with zero skills) so the tool list — and with it the
+  cached prompt prefix — does not change when skills appear or disappear; skill names go in the
+  prompt instead, and a repo skill shadows a user skill of the same name.
+- The hooks config is an `[[hooks]]` **array** of strict tables (not an object), matching the
+  TOML syntax the TODO specifies; `timeout` defaults to `30s` per table.
+
+**Why.** Byte-stable rendering is a hard requirement of the cached prefix, so every ordering
+decision above is fixed and tested; the tail-trim keeps the veto reason useful without letting a
+noisy hook flood the agent's context.
+
+**Alternatives.** Dropping lowest-precedence files without a note (hides what the model can't
+see), a separate stderr channel in `ExecOptions` (would touch shared `src/core/exec.ts`), and
+conditionally registering the `skill` tool (would invalidate the prompt cache whenever skills
+changed).
