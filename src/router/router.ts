@@ -93,7 +93,9 @@ export class ModelRouter {
     // Rules: keep the role chain, but skip models that can't do the action when others can.
     const ruleChain = (): RouteDecision => {
       const usable = roleChain.filter((m) => fit.some((c) => same(c.model, m)));
-      const fallback = usable.length ? usable : fit.length ? fit.map((c) => c.model) : roleChain;
+      let fallback = roleChain;
+      if (usable.length) fallback = usable;
+      else if (fit.length) fallback = fit.map((c) => c.model);
       return { action: ctx.action, chain: fallback, by: 'rules', ms: elapsed() };
     };
 
@@ -106,7 +108,7 @@ export class ModelRouter {
       {
         action: ctx.action,
         about: ACTION_HINT[ctx.action],
-        ...(ctx.facts ?? {}),
+        ...ctx.facts,
         models: fit.map(describe),
       },
       [
