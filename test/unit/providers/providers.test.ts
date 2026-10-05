@@ -8,6 +8,7 @@ import {
   resolveModel,
   worstCaseUsd,
 } from '../../../src/providers/pricing.js';
+import { SWARM_POOLS } from '../../../src/providers/pools.js';
 import { StopRequested, withRetry } from '../../../src/providers/retry.js';
 import type { CompletionRequest } from '../../../src/providers/types.js';
 import { FakeClock } from '../../support/clock.js';
@@ -211,5 +212,34 @@ describe('AnthropicProvider against a loopback mock', () => {
     const abort = new Error('a');
     abort.name = 'AbortError';
     expect(toProviderError(abort).message).toBe('request aborted');
+  });
+});
+
+describe('swarm pools', () => {
+  it('ships a built-in swarm endpoint and resolves every hardcoded pool at $0', () => {
+    const cfg = defaultConfig({});
+    expect(cfg.providers.endpoints.swarm).toMatchObject({
+      base_url: 'https://swarmconnect.site/api/v1',
+      api_key_env: 'SWARM_API_KEY',
+      free: true,
+    });
+    for (const pool of Object.keys(SWARM_POOLS)) {
+      expect(resolveModel(`swarm:${pool}`, cfg)).toMatchObject({
+        provider: 'swarm',
+        id: pool,
+        price: { input: 0, output: 0 },
+      });
+    }
+  });
+  it('rejects unknown pools on the built-in endpoint, listing the real ones', () => {
+    const cfg = defaultConfig({});
+    expect(() => resolveModel('swarm:slow-pool', cfg)).toThrow(/unknown swarm pool "slow-pool"/);
+  });
+  it('lets a declared [providers.endpoints.swarm] replace the defaults', () => {
+    const cfg = defaultConfig({
+      providers: { endpoints: { swarm: { base_url: 'http://localhost:9000/v1', free: true } } },
+    });
+    expect(cfg.providers.endpoints.swarm).not.toHaveProperty('api_key_env');
+    expect(resolveModel('swarm:anything', cfg).id).toBe('anything');
   });
 });

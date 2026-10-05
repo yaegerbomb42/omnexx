@@ -159,6 +159,16 @@ describe('doctor: provider endpoints', () => {
     });
     expect(byName['provider ollama']?.detail).toContain('no key needed; free');
   });
+  it('reports the built-in swarm endpoint only when a model chain uses it', async () => {
+    const unused = deps(await isolatedEnv({}));
+    expect((await runDoctorChecks(unused)).map((c) => c.name)).not.toContain('provider swarm');
+    const used = deps(await isolatedEnv({}), { models: { cheap: 'swarm:fast-pool' } });
+    const swarm = (await runDoctorChecks(used)).find((c) => c.name === 'provider swarm');
+    expect(swarm).toMatchObject({
+      status: 'fail',
+      detail: expect.stringContaining('SWARM_API_KEY is not set') as string,
+    });
+  });
 });
 
 describe('helpers', () => {

@@ -6,6 +6,7 @@ import type { OmnexxPaths } from '../../core/paths.js';
 import { isTrustedJudgeHost, MIN_OLLAMA, versionAtLeast } from '../../judge/endpoint.js';
 
 export { versionAtLeast } from '../../judge/endpoint.js';
+import { SWARM_PROVIDER } from '../../providers/pools.js';
 import { println, type CliIO } from '../io.js';
 
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'skip';
@@ -196,7 +197,15 @@ export async function runDoctorChecks(deps: DoctorDeps): Promise<Check[]> {
           detail: 'no gates configured; run `omnexx init` in your repo',
         },
   );
+  const models = deps.config.models;
+  const usedProviders = new Set(
+    [models.planner, models.worker, models.cheap]
+      .flatMap((c) => (typeof c === 'string' ? [c] : c))
+      .map((ref) => ref.slice(0, ref.indexOf(':'))),
+  );
   for (const [name, ep] of Object.entries(deps.config.providers.endpoints)) {
+    // The built-in swarm endpoint is always configured; only report it once something uses it.
+    if (name === SWARM_PROVIDER && !usedProviders.has(name)) continue;
     const key = ep.api_key_env ? deps.env[ep.api_key_env]?.trim() : undefined;
     checks.push(
       ep.api_key_env && !key
