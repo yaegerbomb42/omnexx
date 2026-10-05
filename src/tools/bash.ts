@@ -64,7 +64,7 @@ export const bashTool: Tool<typeof schema> = {
       }
     }
     const id = ctx.nextCommandId();
-    const r = await runShell(input.command, {
+    const r = await (ctx.exec ?? runShell)(input.command, {
       cwd: ctx.jail.root,
       env: ctx.env,
       timeoutMs,

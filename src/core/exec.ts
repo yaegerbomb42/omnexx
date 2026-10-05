@@ -21,7 +21,12 @@ export interface ExecOptions {
   /** Grace period between SIGTERM and SIGKILL of the process group. */
   killGraceMs?: number;
   stdin?: string;
+  /** Extra cleanup when the command is timed out or aborted (e.g. kill it inside a container). */
+  onKill?: () => Promise<void>;
 }
+
+/** Runs one shell command and waits for it: on the host, or inside the run's sandbox. */
+export type Executor = (command: string, opts: ExecOptions) => Promise<ExecResult>;
 
 /** Kill an entire process group. Ignores "no such process". */
 export function killGroup(pid: number, signal: NodeJS.Signals): void {
@@ -59,6 +64,7 @@ export async function runShell(command: string, opts: ExecOptions): Promise<Exec
   const stop = (): void => {
     if (child.pid === undefined) return;
     const pid = child.pid;
+    void opts.onKill?.().catch(() => undefined);
     killGroup(pid, 'SIGTERM');
     setTimeout(() => {
       killGroup(pid, 'SIGKILL');

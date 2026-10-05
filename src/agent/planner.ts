@@ -82,6 +82,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   let n = 0;
   const toolCtx: ToolContext = {
     jail: new PathJail(run.worktree),
+    exec: run.exec,
     env: run.childEnv,
     store: run.store,
     events: run.events,

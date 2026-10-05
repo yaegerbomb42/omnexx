@@ -1,11 +1,14 @@
 import type { z } from 'zod';
 import type { EventLog } from '../core/events.js';
+import type { Executor } from '../core/exec.js';
 import type { RunStore } from '../core/run-store.js';
 import type { PolicyContext } from '../security/command-policy.js';
 import type { PathJail } from '../security/paths.js';
 import type { Redactor } from '../security/redact.js';
 
 export interface ToolContext {
+  /** Where `bash` runs: the host, or the run's sandbox. */
+  exec?: Executor;
   jail: PathJail;
   env: Record<string, string>;
   store: RunStore;
