@@ -158,7 +158,7 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
 });
 
 describe('M2: stuck handling, budget and judge', () => {
-  it('impossible-task is parked after 3 rejections; with nothing runnable the run ends needs-human (exit 2) and pushes', async () => {
+  it('impossible-task: 3 rejections escalate to the strong model, 3 more park it; nothing runnable → needs-human (exit 2) and a push', async () => {
     const plan = planner([
       {
         id: 'M1',
@@ -183,17 +183,33 @@ describe('M2: stuck handling, budget and judge', () => {
     const out = await superviseTest(t, pushes);
     expect(out).toMatchObject({ status: 'needs-human', exitCode: 2 });
     const events = await readEvents(t.run.store.eventsPath);
-    expect(types(events, 'rollback')).toHaveLength(3);
-    expect(types(events, 'ladder.rung').map((e) => e.rung)).toEqual(['park', 'stop_and_ask']);
+    expect(types(events, 'rollback')).toHaveLength(6);
+    expect(types(events, 'ladder.rung').map((e) => e.rung)).toEqual([
+      'escalate_model',
+      'park',
+      'stop_and_ask',
+    ]);
+    // Cycles 1-3 use the worker model; after escalation, cycles 4-6 use the planner model.
+    const models = (t.run.deps.provider as ScriptedProvider).requests
+      .filter((q) => JSON.stringify(q.messages[0]).includes('Work on M1.T01'))
+      .map((q) => q.model);
+    expect(new Set(models.slice(0, 6))).toEqual(new Set(['claude-sonnet-5-5']));
+    expect(new Set(models.slice(6))).toEqual(new Set(['claude-opus-5-5']));
     expect(
       types(events, 'stuck.signal')
         .map((e) => e.signal)
         .sort(),
-    ).toEqual(['consecutive_rejections', 'repeated_signature']);
+    ).toEqual([
+      'consecutive_rejections',
+      'consecutive_rejections',
+      'repeated_signature',
+      'repeated_signature',
+    ]);
     const plan2 = await t.run.store.readPlan();
     expect(plan2 && getNode(plan2, 'M1.T01')).toMatchObject({
       status: 'parked',
-      approachesTried: ['Tried +1', 'Tried +2', 'Tried +3'],
+      escalated: true,
+      approachesTried: ['Tried +1', 'Tried +2', 'Tried +3', 'Tried +4', 'Tried +5', 'Tried +6'],
     });
     expect(pushes.at(-1)).toMatchObject({ kind: 'needs-human', parked: 1 });
     expect(await readFile(t.run.store.file('REPORT.md'), 'utf8')).toMatch(

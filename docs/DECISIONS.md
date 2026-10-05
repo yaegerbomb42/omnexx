@@ -155,3 +155,8 @@ Format: date, decision, why, alternatives considered.
 **Decision.** One container per run (`docker run -d … sleep infinity`), commands via `docker exec`, mounted at the same absolute paths as on the host so logs, parser locations and the path jail agree. Each command runs under `setsid` with its pgid recorded, so a timeout kills it inside the container. Defaults: `node:22-bookworm`, `bridge` network, 2 CPUs, 4 GB, 1024 pids.
 **Why.** A container per command would add seconds to every `bash` call; a shared container keeps `node_modules` and caches warm across a cycle.
 **Not yet.** Per-domain egress allowlist; worker backends inside the container.
+
+## D26 (2026-10-05) Ladder rung 2: escalate to the strong model
+
+**Decision.** The ladder is now retry with evidence → escalate model → park. Escalation sets `escalated` on the task, so its cycles use the planner model, and resets the consecutive-rejection and signature counters so the strong model gets its own three attempts; approaches tried and evidence carry over. `switch_to_strong_model` is now an implemented judge action (steer mode only).
+**Why.** Cheaper than parking a task that a stronger model can solve, and bounded: an escalated task that keeps failing parks after three more rejections, or at `max_task_cycles`.
