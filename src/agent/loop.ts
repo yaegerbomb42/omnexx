@@ -129,6 +129,7 @@ export async function runAgentLoop(
 
     let chosen: ResolvedModel | undefined;
     let res: CompletionResponse;
+    const callStart = deps.clock.now();
     try {
       res = await withRetry(
         async () => {
@@ -232,6 +233,8 @@ export async function runAgentLoop(
     deps.events.emit('turn', {
       turn: turns,
       model: res.model,
+      provider: model.provider,
+      ms: deps.clock.now() - callStart,
       stopReason: res.stopReason,
       tokens: {
         uncached: res.usage.uncached,
@@ -261,6 +264,7 @@ export async function runAgentLoop(
       const tool = byName.get(call.name);
       let content: string;
       let isError: boolean;
+      const toolStart = deps.clock.now();
       if (!tool) {
         content = `unknown tool ${call.name}`;
         isError = true;
@@ -281,6 +285,7 @@ export async function runAgentLoop(
         input: summarizeInput(call.input),
         isError,
         bytes: content.length,
+        ms: deps.clock.now() - toolStart,
       });
       results.push({
         type: 'tool_result',

@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import pc from 'picocolors';
 import { formatDuration } from '../../config/duration.js';
 import { readTextOr } from '../../core/atomic.js';
-import { readEvents, type OmnexxEvent } from '../../core/events.js';
+import { readEvents } from '../../core/events.js';
 import { STALE_AFTER_MS } from '../../core/heartbeat.js';
 import { compactPlanView, planCounts } from '../../core/plan.js';
 import { resolvePaths } from '../../core/paths.js';
@@ -14,6 +14,10 @@ import { UsageError } from '../../errors.js';
 import { EXIT } from '../exit-codes.js';
 import { println, type CliIO } from '../io.js';
 import { pickRun, supervisorAlive } from './control.js';
+import { brand } from '../brand.js';
+import { emptyTelemetry, fold, tokensPerCommit } from '../../telemetry/aggregate.js';
+import { EventTail } from '../../telemetry/feed.js';
+import { humanize, type Verbosity } from '../../telemetry/humanize.js';
 
 export async function statusData(store: RunStore, now: number) {
   const state = await store.readState();
@@ -55,6 +59,20 @@ export async function statusData(store: RunStore, now: number) {
     rejected: state.rejectedCycles,
     activeMs: state.activeMs,
     checkpoints: state.checkpoints.length,
+    telemetry: (() => {
+      const tel = events.reduce((acc, e) => fold(acc, e), emptyTelemetry());
+      return {
+        toolCalls: tel.toolCalls,
+        toolErrors: tel.toolErrors,
+        gateRuns: tel.gateRuns,
+        gatePassRate: tel.gateRuns ? tel.gatePasses / tel.gateRuns : undefined,
+        rollbacks: tel.rollbacks,
+        compactions: tel.compactions,
+        tokensPerCommit: tokensPerCommit(tel),
+        model: tel.model,
+        provider: tel.provider,
+      };
+    })(),
     judge: {
       nextMoveCalls: judge.length,
       agreement: judge.length ? agreed / judge.length : undefined,
@@ -117,36 +135,16 @@ export async function runsCommand(io: CliIO): Promise<number> {
   return EXIT.ok;
 }
 
-function humanEvent(e: OmnexxEvent): string | undefined {
-  const t = new Date(e.ts).toISOString().slice(11, 19);
-  const c = `c${e.cycle}`;
-  switch (e.type) {
-    case 'cycle.start':
-      return `${t} ${c} ${pc.bold('cycle')} task ${String(e.task)}`;
-    case 'tool.call':
-      return `${t} ${c}   ${String(e.tool)} ${String(e.input).slice(0, 100)}${e.isError ? pc.red(' ✗') : ''}`;
-    case 'tool.denied':
-      return `${t} ${c}   ${pc.red('denied')} ${String(e.rule)}: ${String(e.reason)}`;
-    case 'verify.result':
-      return `${t} ${c} ${e.verdict === 'accept' ? pc.green('accept') : pc.red('reject')} ${String(e.task)}${e.done ? ' (done)' : ''} ${Array.isArray(e.reasons) ? e.reasons.join('; ') : ''}`;
-    case 'commit':
-      return `${t} ${c} ${pc.green('commit')} ${String(e.sha).slice(0, 10)}`;
-    case 'rollback':
-      return `${t} ${c} ${pc.yellow('rollback')} to ${String(e.to).slice(0, 10)}`;
-    case 'turn':
-      return `${t} ${c}   turn ${String(e.turn)} $${Number(e.usd).toFixed(4)} cache ${(Number(e.cacheReadShare) * 100).toFixed(0)}%`;
-    case 'phase':
-    case 'notify.sent':
-      return undefined;
-    default:
-      return `${t} ${c} ${e.type}`;
-  }
-}
-
 export async function logsCommand(
   io: CliIO,
   runId: string | undefined,
-  opts: { follow?: boolean; events?: boolean; progress?: boolean; cmd?: string },
+  opts: {
+    follow?: boolean;
+    events?: boolean;
+    progress?: boolean;
+    cmd?: string;
+    verbosity?: Verbosity;
+  },
 ): Promise<number> {
   const store = await pickRun(resolvePaths(io.env), runId);
   if (opts.progress) {
@@ -162,14 +160,14 @@ export async function logsCommand(
     );
     return EXIT.ok;
   }
-  let shown = 0;
+  const tail = new EventTail(store.eventsPath);
+  const b = brand(io);
+  const verbosity = opts.verbosity ?? 'normal';
   const flush = async (): Promise<void> => {
-    const events = await readEvents(store.eventsPath);
-    for (const e of events.slice(shown)) {
-      const line = opts.events ? JSON.stringify(e) : humanEvent(e);
+    for (const e of await tail.read()) {
+      const line = opts.events ? JSON.stringify(e) : humanize(e, { brand: b, verbosity });
       if (line) println(io.stdout, line);
     }
-    shown = events.length;
   };
   await flush();
   if (!opts.follow) return EXIT.ok;

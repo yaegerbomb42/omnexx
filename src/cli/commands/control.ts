@@ -29,6 +29,8 @@ export async function superviseForeground(
   io: CliIO,
   runId: string,
   opts: SuperviseOptions = io.supervise ?? {},
+  /** Runs before the outcome is printed (the live feed flushes and clears its footer). */
+  beforeReport?: () => Promise<void>,
 ): Promise<number> {
   const paths = resolvePaths(io.env);
   const store = new RunStore(paths, runId);
@@ -52,6 +54,7 @@ export async function superviseForeground(
   process.on('SIGINT', onInt);
   try {
     const out = await supervise(deps, runId, opts);
+    await beforeReport?.();
     println(io.stdout, `${pc.bold(out.status)}: ${out.reason}`);
     println(io.stdout, `Report: ${store.file('REPORT.md')}`);
     return out.exitCode;
