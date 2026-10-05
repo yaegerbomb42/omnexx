@@ -105,183 +105,294 @@ function toolLine(e: OmnexxEvent): Line {
   }
 }
 
+type Formatter = (e: OmnexxEvent) => Line | undefined;
+
+const runStartLine: Formatter = (e) => {
+  return ['quiet', 'info', 'start', `run ${e.runId}${e.mode ? ` (${str(e.mode)})` : ''}`];
+};
+
+const runResumeLine: Formatter = (e) => {
+  return ['quiet', 'info', 'resume', `run ${e.runId}`];
+};
+
+const runFinishLine: Formatter = (e) => {
+  return [
+    'quiet',
+    e.status === 'finished' || e.status === 'planned' ? 'ok' : 'warn',
+    'finish',
+    `${str(e.status)}${e.reason ? `: ${str(e.reason)}` : ''} · ${fmtUsd(num(e.usd))}`,
+  ];
+};
+
+const runErrorLine: Formatter = (e) => {
+  return ['quiet', 'bad', 'error', clip(str(e.message ?? e.error), 100)];
+};
+
+const plannerStartLine: Formatter = () => {
+  return ['normal', 'act', 'plan', 'reading the repo and writing the plan'];
+};
+
+const planWrittenLine: Formatter = (e) => {
+  return [
+    'quiet',
+    'ok',
+    'plan',
+    `${num(e.nodes)} nodes (${str(e.mode)}) · ${num(e.turns)} turns · ${fmtUsd(num(e.usd))}`,
+  ];
+};
+
+const cycleStartLine: Formatter = (e) => {
+  return ['quiet', 'info', `cycle ${e.cycle}`, `task ${str(e.task)}`];
+};
+
+const f8: Formatter = (e) => {
+  const t = (e.tokens ?? {}) as Record<string, unknown>;
+  const input = num(t.uncached) + num(t.cacheWrite) + num(t.cacheRead);
+  const via = e.provider ? `${str(e.provider)}:` : '';
+  return [
+    'verbose',
+    'info',
+    'model',
+    `${via}${str(e.model)}  in ${fmtTokens(input)} out ${fmtTokens(num(t.output))} · cache ${Math.round(num(e.cacheReadShare) * 100)}% · ${fmtUsd(num(e.usd))}${e.ms ? ` · ${fmtMs(num(e.ms))}` : ''}`,
+  ];
+};
+
+const routeDecisionLine: Formatter = (e) => {
+  return [
+    'normal',
+    'info',
+    'route',
+    `${str(e.action)} → ${str(e.model)}${e.by ? `  ${str(e.by)}` : ''}${e.probability !== undefined ? ` p=${num(e.probability).toFixed(2)}` : ''}${e.ms !== undefined ? `  ${fmtMs(num(e.ms))}` : ''}`,
+  ];
+};
+
+const toolDeniedLine: Formatter = (e) => {
+  return ['normal', 'bad', 'denied', `${str(e.rule)}: ${clip(str(e.reason), 80)}`];
+};
+
+const verifyGatesLine: Formatter = (e) => {
+  const gates = Array.isArray(e.gates) ? (e.gates as Record<string, unknown>[]) : [];
+  return [
+    'normal',
+    gates.every((g) => num(g.exitCode) === 0) ? 'ok' : 'bad',
+    'gates',
+    gates
+      .map((g) => {
+        const t = g.tests as Record<string, unknown> | undefined;
+        const mark = num(g.exitCode) === 0 ? '✓' : '✗';
+        const counts = t ? ` ${num(t.passed)}/${num(t.total)}` : '';
+        const fresh = num(g.newFailures) ? ` +${num(g.newFailures)} new` : '';
+        return `${str(g.gate)} ${mark}${counts}${fresh} (${fmtMs(num(g.durationMs))})`;
+      })
+      .join('  '),
+  ];
+};
+
+const verifyFlakyLine: Formatter = (e) => {
+  return ['normal', 'warn', 'flaky', clip(JSON.stringify(e.ids ?? e.tests ?? ''), 80)];
+};
+
+const verifyResultLine: Formatter = (e) => {
+  const accepted = e.verdict === 'accept';
+  const reasons = Array.isArray(e.reasons) ? e.reasons.map(str).join('; ') : '';
+  return [
+    accepted ? 'normal' : 'quiet',
+    accepted ? 'ok' : 'bad',
+    accepted ? 'accept' : 'reject',
+    `${str(e.task)}${e.done ? ' (done)' : ''}${reasons ? `  ${clip(reasons, 80)}` : ''}`,
+  ];
+};
+
+const f14: Formatter = (e) => {
+  const d = (e.diff ?? {}) as Record<string, unknown>;
+  const stats =
+    d.files !== undefined ? `  ${num(d.files)} files +${num(d.added)} −${num(d.removed)}` : '';
+  return ['quiet', 'ok', 'commit', `${str(e.sha).slice(0, 7)}  ${str(e.task)}${stats}`];
+};
+
+const f15: Formatter = (e) => {
+  return ['quiet', 'warn', 'rollback', `to ${str(e.to).slice(0, 7)}`];
+};
+
+const taskDoneLine: Formatter = (e) => {
+  return ['normal', 'ok', 'done', `task ${str(e.task)}`];
+};
+
+const taskParkedLine: Formatter = (e) => {
+  return ['quiet', 'warn', 'parked', `${str(e.task)}: ${clip(str(e.reason), 80)}`];
+};
+
+const taskSplitLine: Formatter = (e) => {
+  return ['normal', 'info', 'split', str(e.task)];
+};
+
+const milestoneDoneLine: Formatter = (e) => {
+  return ['quiet', 'ok', 'milestone', `${str(e.milestone)} ✓ (${num(e.tasks)} tasks)`];
+};
+
+const ladderRungLine: Formatter = (e) => {
+  return ['normal', 'warn', 'ladder', `${str(e.rung)}${e.task ? ` on ${str(e.task)}` : ''}`];
+};
+
+const stuckSignalLine: Formatter = (e) => {
+  return [
+    'normal',
+    'warn',
+    'stuck',
+    `${str(e.signal)}${e.detail ? `: ${clip(str(e.detail), 70)}` : ''}`,
+  ];
+};
+
+const cycleContextLine: Formatter = (e) => {
+  const t = (e.tokens ?? {}) as Record<string, number>;
+  const parts = Object.entries(t)
+    .sort(([, a], [, b]) => b - a)
+    .map(([k, v]) => `${k} ${fmtTokens(v)}`);
+  const total = Object.values(t).reduce((a, b) => a + b, 0);
+  return [
+    'verbose',
+    'info',
+    'ctx',
+    parts.length ? `${fmtTokens(total)}: ${parts.join(' · ')}` : '',
+  ];
+};
+
+const contextClearedLine: Formatter = (e) => {
+  return [
+    'verbose',
+    'info',
+    'ctx',
+    `cleared ${num(e.cleared)} old results  ${fmtTokens(num(e.tokensBefore))} → ${fmtTokens(num(e.tokensAfter))}`,
+  ];
+};
+
+const contextCompactedLine: Formatter = (e) => {
+  return [
+    'normal',
+    'info',
+    'compact',
+    `${num(e.turnsSummarized)} turns  ${fmtTokens(num(e.tokensBefore))} → ${fmtTokens(num(e.tokensAfter))}`,
+  ];
+};
+
+const contextCompactFailedLine: Formatter = (e) => {
+  return ['verbose', 'warn', 'compact', `skipped: ${clip(str(e.reason), 70)}`];
+};
+
+const providerFailoverLine: Formatter = (e) => {
+  return [
+    'normal',
+    'warn',
+    'failover',
+    `${str(e.provider)}:${str(e.model)}  ${clip(str(e.error), 60)}`,
+  ];
+};
+
+const providerRetryLine: Formatter = (e) => {
+  return ['verbose', 'warn', 'retry', `attempt ${num(e.attempt)} in ${fmtMs(num(e.delayMs))}`];
+};
+
+const providerOutageLine: Formatter = (e) => {
+  return ['quiet', 'bad', 'outage', `providers down for ${fmtMs(num(e.outageMs))}; backing off`];
+};
+
+const providerRecoveredLine: Formatter = (e) => {
+  return ['quiet', 'ok', 'recovered', `after ${fmtMs(num(e.outageMs))}`];
+};
+
+const budgetWarnLine: Formatter = (e) => {
+  return ['quiet', 'warn', 'budget', `${Math.round(num(e.warnAt) * 100)}% used`];
+};
+
+const budgetStopLine: Formatter = (e) => {
+  return ['quiet', 'bad', 'budget', `stop: ${str(e.stop)} ${clip(str(e.detail), 60)}`];
+};
+
+const budgetDailyPauseLine: Formatter = () => {
+  return ['quiet', 'warn', 'budget', 'daily cap reached; pausing'];
+};
+
+const budgetDailyResumeLine: Formatter = () => {
+  return ['quiet', 'info', 'budget', 'daily window rolled; resuming'];
+};
+
+const controlPausedLine: Formatter = () => {
+  return ['quiet', 'warn', 'paused', ''];
+};
+
+const controlResumedLine: Formatter = () => {
+  return ['quiet', 'info', 'resumed', ''];
+};
+
+const judgeNextMoveLine: Formatter = (e) => {
+  return ['verbose', 'info', 'judge', `next move ${str(e.pick ?? e.move)}`];
+};
+
+const notesUpdateLine: Formatter = (e) => {
+  return ['verbose', 'info', 'lesson', clip(str(e.text ?? e.id), 70)];
+};
+
+const goalChangedLine: Formatter = () => {
+  return ['quiet', 'info', 'steer', 'goal updated; picked up this cycle'];
+};
+
+const codemapUpdatedLine: Formatter = (e) => {
+  return ['verbose', 'info', 'codemap', `${num(e.files)} files`];
+};
+
+/** One formatter per event type; types not listed are debug-only. */
+const FORMATTERS: Partial<Record<string, Formatter>> = {
+  'run.start': runStartLine,
+  'run.resume': runResumeLine,
+  'run.finish': runFinishLine,
+  'run.error': runErrorLine,
+  'planner.start': plannerStartLine,
+  'plan.written': planWrittenLine,
+  'cycle.start': cycleStartLine,
+  turn: f8,
+  'route.decision': routeDecisionLine,
+  'tool.denied': toolDeniedLine,
+  'verify.gates': verifyGatesLine,
+  'verify.flaky': verifyFlakyLine,
+  'verify.result': verifyResultLine,
+  commit: f14,
+  rollback: f15,
+  'task.done': taskDoneLine,
+  'task.parked': taskParkedLine,
+  'task.split': taskSplitLine,
+  'milestone.done': milestoneDoneLine,
+  'ladder.rung': ladderRungLine,
+  'stuck.signal': stuckSignalLine,
+  'stuck.in_cycle': stuckSignalLine,
+  'cycle.context': cycleContextLine,
+  'context.cleared': contextClearedLine,
+  'context.compacted': contextCompactedLine,
+  'context.compact_failed': contextCompactFailedLine,
+  'provider.failover': providerFailoverLine,
+  'provider.retry': providerRetryLine,
+  'provider.outage': providerOutageLine,
+  'provider.recovered': providerRecoveredLine,
+  'budget.warn': budgetWarnLine,
+  'budget.stop': budgetStopLine,
+  'budget.preflight_stop': budgetStopLine,
+  'budget.daily_pause': budgetDailyPauseLine,
+  'budget.daily_resume': budgetDailyResumeLine,
+  'control.paused': controlPausedLine,
+  'control.resumed': controlResumedLine,
+  'judge.next_move': judgeNextMoveLine,
+  'notes.update': notesUpdateLine,
+  'goal.changed': goalChangedLine,
+  'codemap.updated': codemapUpdatedLine,
+};
+
+/** Internal events that never show, even at debug (debug prints them raw). */
+const HIDDEN = new Set(['phase', 'notify.sent', 'cycle.recorded']);
+
 function lineFor(e: OmnexxEvent): Line | undefined {
   if (e.type === 'tool.call') return toolLine(e);
-  switch (e.type) {
-    case 'run.start':
-      return ['quiet', 'info', 'start', `run ${e.runId}${e.mode ? ` (${str(e.mode)})` : ''}`];
-    case 'run.resume':
-      return ['quiet', 'info', 'resume', `run ${e.runId}`];
-    case 'run.finish':
-      return [
-        'quiet',
-        e.status === 'finished' || e.status === 'planned' ? 'ok' : 'warn',
-        'finish',
-        `${str(e.status)}${e.reason ? `: ${str(e.reason)}` : ''} · ${fmtUsd(num(e.usd))}`,
-      ];
-    case 'run.error':
-      return ['quiet', 'bad', 'error', clip(str(e.message ?? e.error), 100)];
-    case 'planner.start':
-      return ['normal', 'act', 'plan', 'reading the repo and writing the plan'];
-    case 'plan.written':
-      return [
-        'quiet',
-        'ok',
-        'plan',
-        `${num(e.nodes)} nodes (${str(e.mode)}) · ${num(e.turns)} turns · ${fmtUsd(num(e.usd))}`,
-      ];
-    case 'cycle.start':
-      return ['quiet', 'info', `cycle ${e.cycle}`, `task ${str(e.task)}`];
-    case 'turn': {
-      const t = (e.tokens ?? {}) as Record<string, unknown>;
-      const input = num(t.uncached) + num(t.cacheWrite) + num(t.cacheRead);
-      const via = e.provider ? `${str(e.provider)}:` : '';
-      return [
-        'verbose',
-        'info',
-        'model',
-        `${via}${str(e.model)}  in ${fmtTokens(input)} out ${fmtTokens(num(t.output))} · cache ${Math.round(num(e.cacheReadShare) * 100)}% · ${fmtUsd(num(e.usd))}${e.ms ? ` · ${fmtMs(num(e.ms))}` : ''}`,
-      ];
-    }
-    case 'route.decision':
-      return [
-        'normal',
-        'info',
-        'route',
-        `${str(e.action)} → ${str(e.model)}${e.by ? `  ${str(e.by)}` : ''}${e.probability !== undefined ? ` p=${num(e.probability).toFixed(2)}` : ''}${e.ms !== undefined ? `  ${fmtMs(num(e.ms))}` : ''}`,
-      ];
-    case 'tool.denied':
-      return ['normal', 'bad', 'denied', `${str(e.rule)}: ${clip(str(e.reason), 80)}`];
-    case 'verify.gates': {
-      const gates = Array.isArray(e.gates) ? (e.gates as Record<string, unknown>[]) : [];
-      return [
-        'normal',
-        gates.every((g) => num(g.exitCode) === 0) ? 'ok' : 'bad',
-        'gates',
-        gates
-          .map((g) => {
-            const t = g.tests as Record<string, unknown> | undefined;
-            const mark = num(g.exitCode) === 0 ? '✓' : '✗';
-            const counts = t ? ` ${num(t.passed)}/${num(t.total)}` : '';
-            const fresh = num(g.newFailures) ? ` +${num(g.newFailures)} new` : '';
-            return `${str(g.gate)} ${mark}${counts}${fresh} (${fmtMs(num(g.durationMs))})`;
-          })
-          .join('  '),
-      ];
-    }
-    case 'verify.flaky':
-      return ['normal', 'warn', 'flaky', clip(JSON.stringify(e.ids ?? e.tests ?? ''), 80)];
-    case 'verify.result': {
-      const accepted = e.verdict === 'accept';
-      const reasons = Array.isArray(e.reasons) ? e.reasons.map(str).join('; ') : '';
-      return [
-        accepted ? 'normal' : 'quiet',
-        accepted ? 'ok' : 'bad',
-        accepted ? 'accept' : 'reject',
-        `${str(e.task)}${e.done ? ' (done)' : ''}${reasons ? `  ${clip(reasons, 80)}` : ''}`,
-      ];
-    }
-    case 'commit': {
-      const d = (e.diff ?? {}) as Record<string, unknown>;
-      const stats =
-        d.files !== undefined ? `  ${num(d.files)} files +${num(d.added)} −${num(d.removed)}` : '';
-      return ['quiet', 'ok', 'commit', `${str(e.sha).slice(0, 7)}  ${str(e.task)}${stats}`];
-    }
-    case 'rollback':
-      return ['quiet', 'warn', 'rollback', `to ${str(e.to).slice(0, 7)}`];
-    case 'task.done':
-      return ['normal', 'ok', 'done', `task ${str(e.task)}`];
-    case 'task.parked':
-      return ['quiet', 'warn', 'parked', `${str(e.task)}: ${clip(str(e.reason), 80)}`];
-    case 'task.split':
-      return ['normal', 'info', 'split', str(e.task)];
-    case 'milestone.done':
-      return ['quiet', 'ok', 'milestone', `${str(e.milestone)} ✓ (${num(e.tasks)} tasks)`];
-    case 'ladder.rung':
-      return ['normal', 'warn', 'ladder', `${str(e.rung)}${e.task ? ` on ${str(e.task)}` : ''}`];
-    case 'stuck.signal':
-    case 'stuck.in_cycle':
-      return [
-        'normal',
-        'warn',
-        'stuck',
-        `${str(e.signal)}${e.detail ? `: ${clip(str(e.detail), 70)}` : ''}`,
-      ];
-    case 'cycle.context': {
-      const t = (e.tokens ?? {}) as Record<string, number>;
-      const parts = Object.entries(t)
-        .sort(([, a], [, b]) => b - a)
-        .map(([k, v]) => `${k} ${fmtTokens(v)}`);
-      const total = Object.values(t).reduce((a, b) => a + b, 0);
-      return [
-        'verbose',
-        'info',
-        'ctx',
-        parts.length ? `${fmtTokens(total)}: ${parts.join(' · ')}` : '',
-      ];
-    }
-    case 'context.cleared':
-      return [
-        'verbose',
-        'info',
-        'ctx',
-        `cleared ${num(e.cleared)} old results  ${fmtTokens(num(e.tokensBefore))} → ${fmtTokens(num(e.tokensAfter))}`,
-      ];
-    case 'context.compacted':
-      return [
-        'normal',
-        'info',
-        'compact',
-        `${num(e.turnsSummarized)} turns  ${fmtTokens(num(e.tokensBefore))} → ${fmtTokens(num(e.tokensAfter))}`,
-      ];
-    case 'context.compact_failed':
-      return ['verbose', 'warn', 'compact', `skipped: ${clip(str(e.reason), 70)}`];
-    case 'provider.failover':
-      return [
-        'normal',
-        'warn',
-        'failover',
-        `${str(e.provider)}:${str(e.model)}  ${clip(str(e.error), 60)}`,
-      ];
-    case 'provider.retry':
-      return ['verbose', 'warn', 'retry', `attempt ${num(e.attempt)} in ${fmtMs(num(e.delayMs))}`];
-    case 'provider.outage':
-      return [
-        'quiet',
-        'bad',
-        'outage',
-        `providers down for ${fmtMs(num(e.outageMs))}; backing off`,
-      ];
-    case 'provider.recovered':
-      return ['quiet', 'ok', 'recovered', `after ${fmtMs(num(e.outageMs))}`];
-    case 'budget.warn':
-      return ['quiet', 'warn', 'budget', `${Math.round(num(e.warnAt) * 100)}% used`];
-    case 'budget.stop':
-    case 'budget.preflight_stop':
-      return ['quiet', 'bad', 'budget', `stop: ${str(e.stop)} ${clip(str(e.detail), 60)}`];
-    case 'budget.daily_pause':
-      return ['quiet', 'warn', 'budget', 'daily cap reached; pausing'];
-    case 'budget.daily_resume':
-      return ['quiet', 'info', 'budget', 'daily window rolled; resuming'];
-    case 'control.paused':
-      return ['quiet', 'warn', 'paused', ''];
-    case 'control.resumed':
-      return ['quiet', 'info', 'resumed', ''];
-    case 'judge.next_move':
-      return ['verbose', 'info', 'judge', `next move ${str(e.pick ?? e.move)}`];
-    case 'notes.update':
-      return ['verbose', 'info', 'lesson', clip(str(e.text ?? e.id), 70)];
-    case 'goal.changed':
-      return ['quiet', 'info', 'steer', 'goal updated; picked up this cycle'];
-    case 'codemap.updated':
-      return ['verbose', 'info', 'codemap', `${num(e.files)} files`];
-    case 'phase':
-    case 'notify.sent':
-    case 'cycle.recorded':
-      return undefined;
-    default:
-      return ['debug', 'info', clip(e.type, 10), ''];
-  }
+  if (HIDDEN.has(e.type)) return undefined;
+  const format = FORMATTERS[e.type];
+  return format ? format(e) : ['debug', 'info', clip(e.type, 10), ''];
 }
 
 export function humanize(e: OmnexxEvent, opts: HumanizeOptions): string | undefined {

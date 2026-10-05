@@ -19,6 +19,12 @@ export interface ResolvedDeps {
   deps: RunDeps;
 }
 
+/** "auto" = 1h for runs longer than an hour (gates between cycles outlast 5 minutes). */
+export function prefixTtl(setting: 'auto' | '5m' | '1h', maxHours: number): '5m' | '1h' {
+  if (setting !== 'auto') return setting;
+  return maxHours > 1 ? '1h' : '5m';
+}
+
 /** Config + key + provider for any command that talks to the model. The key never leaves this process. */
 export async function resolveRunDeps(
   io: CliIO,
@@ -60,12 +66,7 @@ export async function resolveRunDeps(
         apiKey: key.key,
         ...(anthropic.base_url ? { baseURL: anthropic.base_url } : {}),
         cacheTtl: anthropic.cache_ttl,
-        prefixTtl:
-          anthropic.prefix_cache_ttl === 'auto'
-            ? config.budget.max_hours > 1
-              ? '1h'
-              : '5m'
-            : anthropic.prefix_cache_ttl,
+        prefixTtl: prefixTtl(anthropic.prefix_cache_ttl, config.budget.max_hours),
         timeoutMs: parseDuration(anthropic.request_timeout),
       }),
     );

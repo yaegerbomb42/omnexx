@@ -52,7 +52,7 @@ export const readTool: Tool<typeof schema> = {
     const out = `${body}${more}`;
     if (ctx.reads) {
       const key = `${input.path}:${start}-${end}`;
-      const hash = createHash('sha1').update(out).digest('hex');
+      const hash = createHash('sha256').update(out).digest('hex');
       if (ctx.reads.get(key) === hash) {
         return ok(
           `${input.path}:${start}-${end} is unchanged since you read it earlier this cycle; that result is still in your context above.`,
