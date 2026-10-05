@@ -25,3 +25,12 @@ config section name is the TOML table name. Keep barrel lines sorted to avoid me
 ```
 
 ## Pending
+
+### W6 + W7 MCP client & web tools (branch ws/6-mcp-web)
+
+- Where: `src/core/run.ts` or supervisor lifecycle teardown
+- What: Call `resetMcpManager()` from `src/tools/extra/mcp.js` when a run terminates
+- Why: Ensures background stdio child processes for MCP servers are cleanly stopped on run end
+- Where: `test/unit/package.test.ts`, approved dependencies test
+- What: Add `@modelcontextprotocol/sdk`, `@mozilla/readability`, and `linkedom` to approved runtime dependencies list (per DECISIONS.md D30 and agent prompts W6/W7)
+- Why: Allow W6 and W7 approved packages in package.json dependencies without failing the package unit test

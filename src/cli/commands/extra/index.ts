@@ -3,4 +3,4 @@
  *   export { register as providers } from '../providers.js';
  * Each export is a CommandRegistrar (see ./types.ts). Keep lines sorted by export name.
  */
-export { register as steer } from '../steer.js';
+export { register as mcp } from '../mcp.js';
