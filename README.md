@@ -4,7 +4,7 @@
 
 Omnexx is a personal coding agent harness: one agent works on one huge task in one repo for about 24 hours with no one steering it. Your tests, typecheck and lint decide what's kept; every kept step is a small git commit on its own branch, and you get a report in the morning.
 
-> **Alpha.** `0.1.0` is the first release: a personal tool, not a product. It uses your own Anthropic API key and spends your money. Verified against the real API: a one-task run (plan, fix, commit, report) cost $0.06; a single fix cycle cost $0.007 with a 90% cache-read share.
+> **Alpha.** `0.2.0` (docker sandbox, model escalation; `0.1.0` was the first release): a personal tool, not a product. It uses your own Anthropic API key and spends your money. Verified against the real API: a one-task run (plan, fix, commit, report) cost $0.06; a single fix cycle cost $0.007 with a 90% cache-read share.
 
 ## What it does
 
