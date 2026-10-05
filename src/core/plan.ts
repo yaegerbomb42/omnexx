@@ -48,6 +48,8 @@ export const planNodeSchema = nodeInputSchema.extend({
   parkedReason: z.string().optional(),
   /** Index into the strategy ladder for this task. */
   rung: z.number().int().nonnegative().default(0),
+  /** Cycles on this task use the planner (strong) model instead of the worker model. */
+  escalated: z.boolean().default(false),
   doneAtCycle: z.number().int().optional(),
   evidence: z.array(z.string()).default([]),
 });

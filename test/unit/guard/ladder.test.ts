@@ -4,9 +4,9 @@ import { climb, LADDER } from '../../../src/guard/ladder.js';
 
 describe('strategy ladder', () => {
   it('is an ordered list of implemented rungs only', () => {
-    expect(LADDER.map((r) => r.id)).toEqual(['retry_with_evidence', 'park']);
+    expect(LADDER.map((r) => r.id)).toEqual(['retry_with_evidence', 'escalate_model', 'park']);
   });
-  it('no findings → no rung; a finding climbs one rung (retry → park) and parks with the reason', () => {
+  it('no findings → no rung; findings climb retry → escalate (counters reset) → park with the reason', () => {
     const t = planNodeSchema.parse({
       id: 'M1.T01',
       title: 'task',
@@ -15,11 +15,22 @@ describe('strategy ladder', () => {
       approachesTried: ['tried X'],
     });
     expect(climb(t, [])).toBeUndefined();
+    t.consecutiveRejections = 3;
+    t.failureSignatures = ['s', 's', 's'];
+    const e = climb(t, [{ signal: 'consecutive_rejections', detail: '3 rejections in a row' }]);
+    expect(e?.rung.id).toBe('escalate_model');
+    expect(t).toMatchObject({
+      escalated: true,
+      consecutiveRejections: 0,
+      failureSignatures: [],
+      status: 'todo',
+      approachesTried: ['tried X'],
+    });
     const r = climb(t, [{ signal: 'consecutive_rejections', detail: '3 rejections in a row' }]);
     expect(r?.rung.id).toBe('park');
     expect(t).toMatchObject({
       status: 'parked',
-      rung: 1,
+      rung: 2,
       parkedReason: 'consecutive_rejections: 3 rejections in a row',
     });
   });

@@ -3,11 +3,11 @@ import type { StuckFinding } from './stuck.js';
 
 /**
  * The strategy ladder (plan §3.10) as an ordered list of rung objects. A task starts on rung 0;
- * every stuck finding moves it one rung up. Rungs that aren't implemented (escalate model,
- * re-plan, different approach: M3) are simply not in the list.
+ * every stuck finding moves it one rung up. Rungs that aren't implemented yet (re-plan the task,
+ * different approach) are simply not in the list.
  */
 export interface Rung {
-  id: 'retry_with_evidence' | 'park';
+  id: 'retry_with_evidence' | 'escalate_model' | 'park';
   /** Mutates the task; returns a short description for the event log. */
   apply(task: PlanNode, findings: readonly StuckFinding[]): string;
 }
@@ -23,6 +23,24 @@ export const retryWithEvidence: Rung = {
   },
 };
 
+/**
+ * Rung 2: move the task to the planner (strong) model. The stuck counters restart so the strong
+ * model gets its own budget of attempts before the next rung; approaches tried and evidence stay.
+ */
+export const escalateModel: Rung = {
+  id: 'escalate_model',
+  apply(task) {
+    task.escalated = true;
+    task.consecutiveRejections = 0;
+    task.failureSignatures = [];
+    task.evidence = [
+      ...task.evidence,
+      'This task is now handled by a stronger model after repeated failures. Re-read the evidence and take a different approach.',
+    ].slice(-3);
+    return 'escalated to the planner model';
+  },
+};
+
 export const park: Rung = {
   id: 'park',
   apply(task, findings) {
@@ -33,7 +51,7 @@ export const park: Rung = {
   },
 };
 
-export const LADDER: readonly Rung[] = [retryWithEvidence, park];
+export const LADDER: readonly Rung[] = [retryWithEvidence, escalateModel, park];
 
 /** Apply the next rung when stuck signals fired; returns the rung applied, if any. */
 export function climb(

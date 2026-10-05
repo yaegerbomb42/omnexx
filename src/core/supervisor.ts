@@ -5,7 +5,7 @@ import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
 import { LockError } from '../errors.js';
 import { inWrapup, runLimitHit, shouldWarn } from '../guard/budget.js';
-import { climb } from '../guard/ladder.js';
+import { climb, escalateModel } from '../guard/ladder.js';
 import { taskStuckSignals, type StuckFinding } from '../guard/stuck.js';
 import { decideNextMove } from '../judge/next-move.js';
 import type { AgentStateSummary } from '../judge/state-summary.js';
@@ -162,11 +162,15 @@ class Supervisor {
           allowed = new Set(['park_and_move_on']);
           r.events.emit('task.parked', { task: task.id, reason: task.parkedReason });
         } else {
-          rule = 'retry_different_approach';
-          allowed = new Set([
+          rule =
+            climbed?.rung.id === 'escalate_model'
+              ? 'switch_to_strong_model'
+              : 'retry_different_approach';
+          allowed = new Set<NextMove>([
             'retry_different_approach',
             'revert_to_last_green',
             'park_and_move_on',
+            'switch_to_strong_model',
           ]);
         }
       }
@@ -183,6 +187,13 @@ class Supervisor {
         task.status = 'parked';
         task.parkedReason = `judge (steer) suggested parking with p=${decision.probability?.toFixed(2) ?? '?'}`;
         r.events.emit('task.parked', { task: task.id, reason: task.parkedReason });
+      } else if (decision.final === 'switch_to_strong_model' && !task.escalated) {
+        r.events.emit('ladder.rung', {
+          task: task.id,
+          rung: 'escalate_model',
+          detail: escalateModel.apply(task, []),
+          source: 'judge',
+        });
       } else if (decision.final === 'retry_different_approach' && decision.final !== rule) {
         task.evidence = [
           ...task.evidence,

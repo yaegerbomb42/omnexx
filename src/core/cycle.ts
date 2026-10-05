@@ -198,7 +198,7 @@ export async function stepAct(run: Run): Promise<void> {
   });
   const result = await runAgentLoop(ctx, {
     provider: run.deps.provider,
-    model: run.models.worker,
+    model: task.escalated ? run.models.planner : run.models.worker,
     tools: WORKER_TOOLS,
     toolCtx,
     budget: run.config.budget,
