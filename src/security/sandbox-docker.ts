@@ -72,8 +72,11 @@ export function runArgs(s: SandboxSpec): string[] {
     '--read-only',
     '--tmpfs',
     `/tmp:rw,exec,nosuid,size=${d.tmp_size}`,
+    // HOME and pid files live on their own owner-only tmpfs, not in the shared /tmp.
+    '--tmpfs',
+    `/omnexx:rw,exec,nosuid,size=256m,mode=0700,uid=${s.uid},gid=${s.gid}`,
     '-e',
-    'HOME=/tmp/home',
+    'HOME=/omnexx/home',
     '-w',
     s.worktree,
     ...mounts,
@@ -126,7 +129,16 @@ export class DockerSandbox {
         'run `omnexx doctor`; is the docker daemon running?',
       );
     }
-    await this.docker(['exec', this.spec.name, 'mkdir', '-p', '/tmp/home', '/tmp/omnexx-exec']);
+    await this.docker([
+      'exec',
+      this.spec.name,
+      'mkdir',
+      '-p',
+      '-m',
+      '700',
+      '/omnexx/home',
+      '/omnexx/exec',
+    ]);
     this.started = true;
   }
 
@@ -139,7 +151,7 @@ export class DockerSandbox {
   /** Run one command inside the container; on timeout/abort the in-container process group dies too. */
   readonly exec: Executor = (command: string, opts: ExecOptions): Promise<ExecResult> => {
     const id = randomBytes(6).toString('hex');
-    const pidFile = `/tmp/omnexx-exec/${id}.pid`;
+    const pidFile = `/omnexx/exec/${id}.pid`;
     // setsid gives the command its own process group inside the container, recorded in pidFile.
     const inner = `setsid sh -c ${quote([command])} & p=$!; echo $p > ${pidFile}; wait $p; s=$?; rm -f ${pidFile}; exit $s`;
     const envArgs = Object.entries(opts.env)
