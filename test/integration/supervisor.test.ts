@@ -350,6 +350,43 @@ describe('M2: stuck handling, budget and judge', () => {
     expect(types(await readEvents(t.run.store.eventsPath), 'run.resume')).toHaveLength(1);
   });
 
+  it('daily cap: the run pauses when the rolling 24 h spend nears the cap, then resumes and finishes', async () => {
+    const plan = planner([
+      {
+        id: 'M1',
+        title: 'Files',
+        tasks: [fileTask('M1.T01'), fileTask('M1.T02'), fileTask('M1.T03'), fileTask('M1.T04')],
+      },
+    ]);
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider: new ScriptedProvider(scenario(plan, fileWorker)),
+      config: {
+        gates: [GATE],
+        budget: { max_usd_per_day: 0.03, max_hours: 2 },
+        providers: { anthropic: { max_tokens: 500 } },
+      },
+    });
+    const pushes: NotifyPayload[] = [];
+    const out = await superviseTest(t, pushes);
+    expect(out.status).toBe('finished');
+    const events = await readEvents(t.run.store.eventsPath);
+    const pauses = types(events, 'budget.daily_pause');
+    expect(pauses.length).toBeGreaterThanOrEqual(1);
+    expect(types(events, 'budget.daily_resume')).toHaveLength(pauses.length);
+    expect(pushes.some((x) => x.kind === 'budget' && (x.hint ?? '').includes('daily cap'))).toBe(
+      true,
+    );
+    // The pauses lasted a simulated day or more, yet max_hours = 2 didn't stop the run.
+    expect(t.clock.now() - 1_700_000_000_000).toBeGreaterThan(20 * 3_600_000);
+    const state = await t.run.store.readState();
+    expect(state.acceptedCommits).toBe(4);
+    // A cycle cut by the cap before any change is not an attempt.
+    const final = await t.run.store.readPlan();
+    for (const id of ['M1.T01', 'M1.T02', 'M1.T03', 'M1.T04'])
+      expect(final && getNode(final, id).consecutiveRejections).toBe(0);
+  });
+
   it('wrap-up reserve: no new task starts in the reserve window; report written, lastGreen clean', async () => {
     const plan = planner([
       {

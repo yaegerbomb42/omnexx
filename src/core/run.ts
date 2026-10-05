@@ -6,7 +6,7 @@ import { StateError } from '../errors.js';
 import { createJudge } from '../judge/factory.js';
 import type { FailOpenJudge } from '../judge/fail-open.js';
 import { LlmJudge } from '../judge/llm.js';
-import { preflight } from '../guard/budget.js';
+import { preflight, spentInWindow } from '../guard/budget.js';
 import { costUsd, resolveModel, type ResolvedModel } from '../providers/pricing.js';
 import type { Provider, Usage } from '../providers/types.js';
 import { scrubEnv } from '../security/env-scrub.js';
@@ -54,6 +54,8 @@ export class Run {
   /** Where commands run. The supervisor swaps in the docker sandbox when sandbox = "docker". */
   exec: Executor = runShell;
   private readonly baseActiveMs: number;
+  /** Waiting time that doesn't count as active (daily-cap pauses). */
+  private excludedMs = 0;
 
   private constructor(
     readonly deps: RunDeps,
@@ -142,7 +144,7 @@ export class Run {
 
   /** Wall-clock the run has been active, across supervisor restarts. */
   elapsedMs(): number {
-    return this.baseActiveMs + (this.clock.now() - this.startedAt);
+    return this.baseActiveMs + (this.clock.now() - this.startedAt) - this.excludedMs;
   }
 
   requirePlan(): Plan {
@@ -175,6 +177,16 @@ export class Run {
     return c.request === 'pause' ? 'pause' : c.request;
   }
 
+  /** Don't count `ms` of waiting towards max_hours. */
+  excludeFromActive(ms: number): void {
+    this.excludedMs += ms;
+  }
+
+  /** Spend in the rolling 24 h window. */
+  spentToday(): number {
+    return spentInWindow(this.state.spendLedger, this.clock.now());
+  }
+
   async addSpend(usage: Usage, usd: number, model: string, role = 'worker'): Promise<void> {
     const s = this.state.spend;
     s.usd += usd;
@@ -186,6 +198,11 @@ export class Run {
     s.tokens.output += usage.output;
     const key = `${role}:${model}`;
     s.byModel[key] = (s.byModel[key] ?? 0) + usd;
+    const now = this.clock.now();
+    this.state.spendLedger = [
+      ...this.state.spendLedger.filter((e) => e.at > now - 25 * 3_600_000),
+      { at: now, usd },
+    ];
     await this.save();
   }
 }

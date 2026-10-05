@@ -14,7 +14,7 @@ Omnexx is the loop around the model:
 - **Hierarchical, rolling-wave plan.** The planner writes milestones, then expands only the next one or two into small tasks. Nodes are never deleted, only parked with a reason.
 - **Your commands are the judge.** Gates (tests, typecheck, lint, your own commands) run against a recorded baseline with a ratchet: no new failures, and the known-failure count can't go up. Anti-cheat rejects deleted tests, new `.skip`/`.only`/`@ts-ignore`/`eslint-disable`, snapshot rewrites and edits to protected files. A failed cycle is rolled back to the last green commit.
 - **Stuck detection.** Repeated rejections, repeated failure signatures and A→B→A oscillation move a task up a strategy ladder (retry with evidence, then the strong model, then a planner split into smaller tasks, then park). When nothing runnable is left, the run stops as `needs-human`.
-- **Budgets.** USD, hours and cycle caps for the run, turn and token caps per cycle, and a pre-flight check before every model call so spend never overshoots by more than one turn. In the last 8% of the budget no new task starts.
+- **Budgets.** USD, hours and cycle caps for the run, a rolling daily cap that pauses and resumes, turn and token caps per cycle, and a pre-flight check before every model call so spend never overshoots by more than one turn. In the last 8% of the budget no new task starts.
 - **Crash-safe.** Atomic state, a phase machine, a lock with boot-id staleness, `--detach`, and a systemd user unit or launchd agent that resumes runs after a reboot.
 - **Checkpoints and a morning-after report.** Each finished milestone is tagged; `omnexx report` writes `REPORT.md` with the outcome, the plan tree, what changed, test deltas, where it struggled, spend, decisions it needs from you, and how to merge.
 - **Optional docker sandbox.** `sandbox = "docker"` runs the agent's commands and your gates in a locked-down container with only the worktree mounted.
@@ -61,7 +61,7 @@ Exit codes: `0` finished, `2` needs a human, `3` budget stop, `4` stopped by you
 
 Planned for M3 and later, and not in this build:
 
-- Model routing (planner/worker/cheap per turn), in-cycle compaction and tool-result clearing, flaky-test handling, the rolling daily spend cap (`max_usd_per_day` is accepted but not enforced), in-cycle stuck signals.
+- In-cycle compaction and tool-result clearing, flaky-test handling, in-cycle stuck signals.
 - Ladder rung 4 (a planner-proposed different approach).
 - Real worker adapters (Aider, OpenCode, Cline, Pi, Hermes, OpenHands, Claude Code). The interface, lifecycle and safety checks exist and are tested with a fake worker; enabling a worker fails with "adapter not available until M3". See [docs/workers.md](docs/workers.md).
 - OpenAI-compatible providers, `open_pr`, the benchmark harness, npm publishing.

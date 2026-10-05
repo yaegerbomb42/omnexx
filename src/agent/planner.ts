@@ -129,6 +129,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       clock: run.clock,
       events: run.events,
       spentUsd: () => run.state.spend.usd,
+      spentTodayUsd: () => run.spentToday(),
       onUsage: (u, usd, model) => run.addSpend(u, usd, model, 'planner'),
       control: () => run.control(),
       signal: run.abort.signal,

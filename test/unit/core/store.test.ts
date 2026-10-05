@@ -48,6 +48,8 @@ export function sampleState(over: Partial<RunState> = {}): RunState {
     disabledWorkers: [],
     noChecks: false,
     budgetExhausted: false,
+    spendLedger: [],
+    dailyCapHit: false,
     ...over,
   };
 }

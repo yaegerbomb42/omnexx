@@ -165,3 +165,8 @@ Format: date, decision, why, alternatives considered.
 
 **Decision.** After the strong model also gets stuck, the planner splits the task into 2–4 new tasks under the same milestone. The original is parked with `splitInto` and marked done when all of them are; tasks that depended on it now depend on the new ones. If the planner produces nothing, the task parks. `split_task` is now an implemented judge action.
 **Bug fixed on the way.** The ladder only climbed on rejections, so a task that kept landing accepted-but-unfinished commits looped until the budget ran out. It now also climbs when the cycles-per-task signal fires on accepted partials, and that signal counts cycles since the task reached its current rung (`rungStartedAt`), so each rung gets its own allowance.
+
+## D28 (2026-10-05) Rolling daily cap
+
+**Decision.** Spend is recorded with timestamps (`spendLedger`, last 25 h). Every model call is pre-flighted against `max_usd_per_day` over the rolling 24 h window. At 90% of the cap, or after a call was refused for it, the supervisor pauses at the next cycle boundary until at least half the cap has rolled out of the window, then resumes. Pause time is excluded from `max_hours`. A cycle cut short by a budget cap before it changed anything is recorded as "interrupted": not an attempt, not a rejection, not a lack of progress.
+**Why.** Refusing calls without pausing made every following cycle end before its first call, which the stuck detector then read as failure.

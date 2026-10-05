@@ -37,17 +37,17 @@ The container runs as your uid/gid with `--cap-drop ALL`, `no-new-privileges`, a
 
 ## `[budget]` (24 h defaults, plan §14.5)
 
-| Key                    | Default  | Meaning                                                                                                                                  |
-| ---------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `max_usd`              | `50`     | Run total. The pre-flight check before every call keeps spend under it. Hitting it → `budget-stop` (exit 3), resumable after raising it. |
-| `max_usd_per_day`      | `50`     | Accepted; **not enforced until M3** (rolling 24 h pause).                                                                                |
-| `max_hours`            | `24`     | Active wall-clock across restarts.                                                                                                       |
-| `max_cycles`           | `300`    |                                                                                                                                          |
-| `max_turns_per_cycle`  | `40`     |                                                                                                                                          |
-| `max_tokens_per_cycle` | `400000` | Input + output of every call in a cycle, before cache discounts.                                                                         |
-| `max_cmd_timeout`      | `"30m"`  | Upper bound for every gate, check and `bash` call.                                                                                       |
-| `warn_at`              | `0.8`    | ntfy `budget` warning at this fraction of the tightest of USD / hours / cycles.                                                          |
-| `wrapup_reserve`       | `0.08`   | In the last 8%: no new task, verify `lastGreen`, report, stop. `0` disables.                                                             |
+| Key                    | Default  | Meaning                                                                                                                                                                                                                                     |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `max_usd`              | `50`     | Run total. The pre-flight check before every call keeps spend under it. Hitting it → `budget-stop` (exit 3), resumable after raising it.                                                                                                    |
+| `max_usd_per_day`      | `50`     | Rolling 24 h cap. Each call is pre-flighted against it; at 90%, or when a call is refused, the run pauses (status `paused`, ntfy `budget`) until half the cap is free, then resumes on its own. The wait does not count toward `max_hours`. |
+| `max_hours`            | `24`     | Active wall-clock across restarts.                                                                                                                                                                                                          |
+| `max_cycles`           | `300`    |                                                                                                                                                                                                                                             |
+| `max_turns_per_cycle`  | `40`     |                                                                                                                                                                                                                                             |
+| `max_tokens_per_cycle` | `400000` | Input + output of every call in a cycle, before cache discounts.                                                                                                                                                                            |
+| `max_cmd_timeout`      | `"30m"`  | Upper bound for every gate, check and `bash` call.                                                                                                                                                                                          |
+| `warn_at`              | `0.8`    | ntfy `budget` warning at this fraction of the tightest of USD / hours / cycles.                                                                                                                                                             |
+| `wrapup_reserve`       | `0.08`   | In the last 8%: no new task, verify `lastGreen`, report, stop. `0` disables.                                                                                                                                                                |
 
 ## `[models]` and `[pricing.<alias>]`
 

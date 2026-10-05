@@ -4,7 +4,13 @@ import { EXIT } from '../cli/exit-codes.js';
 import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
 import { LockError } from '../errors.js';
-import { inWrapup, runLimitHit, shouldWarn } from '../guard/budget.js';
+import {
+  dailyPauseThreshold,
+  inWrapup,
+  runLimitHit,
+  shouldWarn,
+  windowRollsAt,
+} from '../guard/budget.js';
 import { climb, escalateModel, LADDER, park } from '../guard/ladder.js';
 import { taskStuckSignals, type StuckFinding } from '../guard/stuck.js';
 import { decideNextMove } from '../judge/next-move.js';
@@ -285,6 +291,48 @@ class Supervisor {
     if (changed) await r.savePlan();
   }
 
+  /**
+   * Rolling daily cap (plan §3.11): at 90% of `max_usd_per_day` in the last 24 h the run pauses
+   * until enough spend has rolled out of the window, then resumes on its own. A stop request
+   * still ends it.
+   */
+  private async dailyCapPause(): Promise<Outcome | undefined> {
+    const r = this.run;
+    const threshold = dailyPauseThreshold(r.config.budget);
+    const today = r.spentToday();
+    if (today < threshold && !r.state.dailyCapHit) return undefined;
+    // Wait until at least half the cap is free again, so the next calls fit.
+    const until = windowRollsAt(
+      r.state.spendLedger,
+      r.clock.now(),
+      r.config.budget.max_usd_per_day * 0.5,
+    );
+    r.state.status = 'paused';
+    r.state.statusReason = `daily cap: ${today.toFixed(2)} of ${r.config.budget.max_usd_per_day} in 24 h; resumes at ${new Date(until).toISOString()}`;
+    await r.save();
+    r.events.emit('budget.daily_pause', {
+      spentToday: today,
+      cap: r.config.budget.max_usd_per_day,
+      until,
+    });
+    await this.notify('budget', { hint: r.state.statusReason });
+    const pausedAt = r.clock.now();
+    while (r.clock.now() < until) {
+      const c = await r.control();
+      if (c === 'stop' || c === 'stop-now')
+        return { status: 'user-stop', reason: 'stopped during the daily-cap pause' };
+      await r.clock.sleep(Math.min(60_000, until - r.clock.now()));
+    }
+    r.excludeFromActive(r.clock.now() - pausedAt);
+    r.state.dailyCapHit = false;
+    r.state.lastProgressAt = r.clock.now();
+    r.state.status = 'running';
+    r.state.statusReason = undefined;
+    await r.save();
+    r.events.emit('budget.daily_resume', { spentToday: r.spentToday() });
+    return undefined;
+  }
+
   private summary(taskId: string): AgentStateSummary {
     const r = this.run;
     const t = getNode(r.requirePlan(), taskId);
@@ -339,6 +387,8 @@ class Supervisor {
         reason: `max_usd reached (${r.state.spend.usd.toFixed(2)} of ${r.config.budget.max_usd}; the next call could exceed it)`,
       };
     }
+    const paused = await this.dailyCapPause();
+    if (paused) return paused;
     const limits = { spentUsd: r.state.spend.usd, elapsedMs: r.elapsedMs(), cycles: r.state.cycle };
     const hit = runLimitHit(r.config.budget, limits);
     if (hit) {

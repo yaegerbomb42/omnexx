@@ -1,7 +1,8 @@
 import type { OmnexxConfig, PriceConfig } from '../config/schema.js';
 import { worstCaseUsd } from '../providers/pricing.js';
 
-export type BudgetStop = 'max_usd' | 'max_turns_per_cycle' | 'max_tokens_per_cycle';
+export type BudgetStop =
+  'max_usd' | 'max_usd_per_day' | 'max_turns_per_cycle' | 'max_tokens_per_cycle';
 
 export interface CycleUsage {
   turns: number;
@@ -10,6 +11,8 @@ export interface CycleUsage {
 }
 
 export interface PreflightInput {
+  /** Spend in the rolling 24 h window, for the daily cap. */
+  spentTodayUsd?: number;
   spentUsd: number;
   cycle: CycleUsage;
   estimatedInputTokens: number;
@@ -49,8 +52,46 @@ export function preflight(budget: OmnexxConfig['budget'], i: PreflightInput): Pr
       detail: `$${i.spentUsd.toFixed(4)} spent; next call could cost up to $${worst.toFixed(4)} (cap $${budget.max_usd})`,
     };
   }
+  if (i.spentTodayUsd !== undefined && i.spentTodayUsd + worst > budget.max_usd_per_day) {
+    return {
+      ok: false,
+      stop: 'max_usd_per_day',
+      detail: `${i.spentTodayUsd.toFixed(4)} spent in the last 24 h; next call could cost up to ${worst.toFixed(4)} (daily cap ${budget.max_usd_per_day})`,
+    };
+  }
   return { ok: true, worstCaseUsd: worst };
 }
+
+export interface SpendEntry {
+  at: number;
+  usd: number;
+}
+
+export const DAY_MS = 24 * 3_600_000;
+
+/** Spend in the rolling 24 h window ending at `now`. */
+export function spentInWindow(ledger: readonly SpendEntry[], now: number): number {
+  return ledger.reduce((sum, e) => (e.at > now - DAY_MS ? sum + e.usd : sum), 0);
+}
+
+/**
+ * When the rolling-window spend will have dropped to `target` or below: the moment the oldest
+ * entries that must expire fall out of the window. Returns `now` if it already has.
+ */
+export function windowRollsAt(ledger: readonly SpendEntry[], now: number, target: number): number {
+  const inWindow = ledger.filter((e) => e.at > now - DAY_MS).sort((a, b) => a.at - b.at);
+  let sum = inWindow.reduce((s, e) => s + e.usd, 0);
+  for (const e of inWindow) {
+    if (sum <= target) break;
+    sum -= e.usd;
+    if (sum <= target) return e.at + DAY_MS;
+  }
+  return now;
+}
+
+/** Pause below the daily cap with headroom for at least one more call. */
+export const dailyPauseThreshold = (budget: OmnexxConfig['budget']): number =>
+  budget.max_usd_per_day * 0.9;
 
 export interface RunLimits {
   spentUsd: number;

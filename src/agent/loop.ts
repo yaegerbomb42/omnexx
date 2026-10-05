@@ -42,6 +42,8 @@ export interface LoopDeps {
   events: EventLog;
   /** Spend so far across the run, before this call. */
   spentUsd: () => number;
+  /** Spend in the rolling 24 h window, for the daily cap. */
+  spentTodayUsd?: () => number;
   /** Persist spend after every call so a crash never forgets money already spent. */
   onUsage: (usage: Usage, usd: number, model: string) => Promise<void>;
   control: () => Promise<ControlSignal>;
@@ -94,6 +96,7 @@ export async function runAgentLoop(
     const estimate = estimateTokens(JSON.stringify([req.system, req.tools, req.messages]));
     const pf = preflight(deps.budget, {
       spentUsd: deps.spentUsd(),
+      ...(deps.spentTodayUsd ? { spentTodayUsd: deps.spentTodayUsd() } : {}),
       cycle: { turns, tokens: cycleTokens },
       estimatedInputTokens: estimate,
       maxOutputTokens: deps.maxTokens,
