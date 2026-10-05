@@ -11,6 +11,7 @@ export default tseslint.config(
       'test/fixtures/**',
       'test/.build/**',
       'eslint.config.js',
+      'bench/**',
     ],
   },
   eslint.configs.recommended,

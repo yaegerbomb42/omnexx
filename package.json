@@ -33,6 +33,7 @@
     "test:chaos": "vitest run --project chaos",
     "test:e2e": "vitest run --project e2e",
     "coverage": "vitest run --coverage",
+    "bench": "node --loader ts-node/esm bench/run.ts",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build"
   },
   "keywords": [
@@ -60,6 +61,7 @@
     "@vitest/coverage-v8": "5.0.3",
     "eslint": "10.12.0",
     "prettier": "3.9.9",
+    "ts-node": "^10.9.2",
     "tsup": "8.5.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.0",

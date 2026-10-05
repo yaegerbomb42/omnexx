@@ -1,29 +1,45 @@
 # omnexx
 
+```
+ ██████╗ ███╗   ███╗███╗   ██╗███████╗██╗  ██╗██╗  ██╗
+██╔═══██╗████╗ ████║████╗  ██║██╔════╝╚██╗██╔╝╚██╗██╔╝
+██║   ██║██╔████╔██║██╔██╗ ██║█████╗   ╚███╔╝  ╚███╔╝
+██║   ██║██║╚██╔╝██║██║╚██╗██║██╔══╝   ██╔██╗  ██╔██╗
+╚██████╔╝██║ ╚═╝ ██║██║ ╚═══╝███████╗██╔╝ ██╗██╔╝ ██╗
+ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝
+```
+
 **Set a goal, walk away, come back to commits.**
 
 Omnexx is a personal coding agent harness: one agent works on one huge task in one repo for about 24 hours with no one steering it. Your tests, typecheck and lint decide what's kept; every kept step is a small git commit on its own branch, and you get a report in the morning.
 
 > **Alpha.** `0.2.0` (docker sandbox, model escalation; `0.1.0` was the first release): a personal tool, not a product. It uses your own Anthropic API key and spends your money. Verified against the real API: a one-task run (plan, fix, commit, report) cost $0.06; a single fix cycle cost $0.007 with a 90% cache-read share.
 
-## What it does
+## Why omnexx over Claude Code?
 
-Omnexx is the loop around the model:
+```
+claude code / codex / opencode     omnexx
+─────────────────────────────      ────────────────────────────────────────────
+you drive, turn by turn             one prompt, then it drives, for hours or days
+stops when the context fills        fresh context every cycle; never runs out
+"done" = the model says so          done = your tests, types, lint and a browser
+                                     check all pass, and nothing regressed
+stops at the literal ask            infers the intended build, ships it, then
+                                     hardens, tests, documents, optimises
+one model per session               a local Nimble router picks the right model
+                                     for every single action
+you watch a spinner                 a live telemetry feed of what it is doing
+                                     and why, in a dark, quiet, pretty terminal
+```
 
-- **Fresh context every cycle.** Each cycle starts a new conversation built only from compact files on disk: the goal, a compact view of the plan, the last few progress entries, a capped lessons file and a codebase map. No transcript carries over.
-- **Hierarchical, rolling-wave plan.** The planner writes milestones, then expands only the next one or two into small tasks. Nodes are never deleted, only parked with a reason.
-- **Your commands are the judge.** Gates (tests, typecheck, lint, your own commands) run against a recorded baseline with a ratchet: no new failures, and the known-failure count can't go up. Anti-cheat rejects deleted tests, new `.skip`/`.only`/`@ts-ignore`/`eslint-disable`, snapshot rewrites and edits to protected files. A failed cycle is rolled back to the last green commit.
-- **Stuck detection.** Repeated rejections, repeated failure signatures and A→B→A oscillation move a task up a strategy ladder (retry with evidence, then the strong model, then a planner split into smaller tasks, then park). When nothing runnable is left, the run stops as `needs-human`.
-- **Budgets.** USD, hours and cycle caps for the run, a rolling daily cap that pauses and resumes, turn and token caps per cycle, and a pre-flight check before every model call so spend never overshoots by more than one turn. In the last 8% of the budget no new task starts.
-- **Crash-safe.** Atomic state, a phase machine, a lock with boot-id staleness, `--detach`, and a systemd user unit or launchd agent that resumes runs after a reboot.
-- **Checkpoints and a morning-after report.** Each finished milestone is tagged; `omnexx report` writes `REPORT.md` with the outcome, the plan tree, what changed, test deltas, where it struggled, spend, decisions it needs from you, and how to merge.
-- **Optional docker sandbox.** `sandbox = "docker"` runs the agent's commands and your gates in a locked-down container with only the worktree mounted.
-- **Any provider, with failover.** Anthropic plus any OpenAI-compatible endpoint (OpenAI, OpenRouter, LiteLLM, Ollama). Each role can list a chain of models; a failing or capped provider hands the call to the next. Per-provider spend caps.
-- **Your checkout is never touched.** Work happens in a git worktree on `omnexx/<runId>`; nothing is pushed unless you opt in.
+**Non-negotiables that make the claim true:**
 
-Optional: an advisory **fast judge** (Nimble on Ollama, usually on your Mac over Tailscale) that suggests the next move and flags drift. It's off by default and can never override the gates. See [docs/judge.md](docs/judge.md).
+1. Gates (real commands) decide acceptance; the model never does.
+2. Every accepted step is a git commit on `omnexx/<runId>`; every rejected step is rolled back.
+3. Token efficiency is measured and published (benchmarks), not asserted.
+4. Providers and models are 100% user-configurable; nothing vendor-specific is hardcoded beyond the Anthropic default.
 
-## Try it
+## Quickstart (3 commands)
 
 ```bash
 npm i -g omnexx
@@ -32,17 +48,31 @@ omnexx --version && omnexx doctor
 cd <a repo with tests>
 omnexx init                   # detects package manager and gates, asks before writing omnexx.toml
 export ANTHROPIC_API_KEY=...  # or: omnexx auth set anthropic
-omnexx run --plan-only "Port src/legacy to strict TypeScript"
 omnexx run --detach --budget 5 --hours 2 "Port src/legacy to strict TypeScript"
 omnexx status && omnexx logs -f
 omnexx report                 # in the morning
 ```
 
-Requires Node 22+, git and (recommended) ripgrep.
+Requires Node 22+, git and (recommended) ripgrep (`rg`).
+
+## How it works
+
+1. **Fresh context every cycle.** Each cycle starts a new conversation built only from compact files on disk: the goal, a compact view of the plan, the last few progress entries, a capped lessons file and a codebase map. No transcript carries over.
+2. **Hierarchical, rolling-wave plan.** The planner writes milestones, then expands only the next one or two into small tasks. Nodes are never deleted, only parked with a reason.
+3. **Your commands are the judge.** Gates (tests, typecheck, lint, your own commands) run against a recorded baseline with a ratchet: no new failures, and the known-failure count can't go up. Anti-cheat rejects deleted tests, new `.skip`/`.only`/`@ts-ignore`/`eslint-disable`, snapshot rewrites and edits to protected files. A failed cycle is rolled back to the last green commit.
+4. **Stuck detection.** Repeated rejections, repeated failure signatures and A→B→A oscillation move a task up a strategy ladder (retry with evidence, then the strong model, then a planner split into smaller tasks, then park). When nothing runnable is left, the run stops as `needs-human`.
+5. **Budgets.** USD, hours and cycle caps for the run, a rolling daily cap that pauses and resumes, turn and token caps per cycle, and a pre-flight check before every model call so spend never overshoots by more than one turn. In the last 8% of the budget no new task starts.
+6. **Crash-safe.** Atomic state, a phase machine, a lock with boot-id staleness, `--detach`, and a systemd user unit or launchd agent that resumes runs after a reboot.
+7. **Checkpoints and a morning-after report.** Each finished milestone is tagged; `omnexx report` writes `REPORT.md` with the outcome, the plan tree, what changed, test deltas, where it struggled, spend, decisions it needs from you, and how to merge.
+8. **Optional docker sandbox.** `sandbox = "docker"` runs the agent's commands and your gates in a locked-down container with only the worktree mounted.
+9. **Any provider, with failover.** Anthropic plus any OpenAI-compatible endpoint (OpenAI, OpenRouter, LiteLLM, Ollama). Each role can list a chain of models; a failing or capped provider hands the call to the next. Per-provider spend caps.
+10. **Your checkout is never touched.** Work happens in a git worktree on `omnexx/<runId>`; nothing is pushed unless you opt in.
+
+Optional: an advisory **fast judge** (Nimble on Ollama, usually on your Mac over Tailscale) that suggests the next move and flags drift. It's off by default and can never override the gates. See [docs/judge.md](docs/judge.md).
 
 ## Commands
 
-| Command                                                                 |                                                                                                                                                                          |
+| Command                                                                 | Description                                                                                                                                                              |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `omnexx init [--yes]`                                                   | Detect gates, write `omnexx.toml`                                                                                                                                        |
 | `omnexx run "<goal>"`                                                   | Plan, then cycle. `--goal-file`, `--detach`, `--budget`, `--hours`, `--gate`, `--model-worker`, `--push branch`, `--from`, `--plan-only`, `--i-know-there-are-no-checks` |
@@ -55,6 +85,7 @@ Requires Node 22+, git and (recommended) ripgrep.
 | `omnexx service install\|uninstall\|status [--dry-run]`                 | systemd user unit (Linux) or launchd agent (macOS)                                                                                                                       |
 | `omnexx doctor [--offline] [--json]`                                    | Environment checks; never prints your key                                                                                                                                |
 | `omnexx auth set\|clear anthropic`                                      | Store the key in a 0600 file                                                                                                                                             |
+| `omnexx providers add\|list\|test`                                      | Manage LLM providers                                                                                                                                                     |
 
 Exit codes: `0` finished, `2` needs a human, `3` budget stop, `4` stopped by you, `1` error.
 
@@ -66,9 +97,21 @@ Planned for M3 and later, and not in this build:
 - Real worker adapters (Aider, OpenCode, Cline, Pi, Hermes, OpenHands, Claude Code). The interface, lifecycle and safety checks exist and are tested with a fake worker; enabling a worker fails with "adapter not available until M3". See [docs/workers.md](docs/workers.md).
 - `open_pr`, the benchmark harness.
 
+## Benchmarks
+
+```bash
+# Run the jimmy10 suite (3 example tasks + 7 stubs)
+npm run bench -- --suite jimmy10 --agents omnexx,claude-code,codex --out bench/results/
+
+# Run the lite50 suite (SWE-bench Lite loader stub)
+npm run bench -- --suite lite50 --agents omnexx --out bench/results/
+```
+
+Metrics tracked: resolve rate, $/resolved, tokens/resolved, wall time, cache hit %, human interventions, regressions introduced. Results written as markdown table + raw JSONL.
+
 ## Docs
 
-[Architecture](docs/architecture.md) · [Config](docs/config.md) · [Safety](docs/safety.md) · [Judge](docs/judge.md) · [Workers](docs/workers.md) · [VPS quickstart](docs/deploy-vps.md) · [Decisions](docs/DECISIONS.md) · [Plan](docs/PLAN.md)
+[Quickstart](docs/quickstart.md) · [Providers Guide](docs/providers-guide.md) · [Why omnexx?](docs/why-omnexx.md) · [Configuration](docs/config.md) · [Architecture](docs/architecture.md) · [Safety](docs/safety.md) · [Judge](docs/judge.md) · [Workers](docs/workers.md) · [VPS Quickstart](docs/deploy-vps.md) · [Decisions](docs/DECISIONS.md) · [Plan](docs/PLAN.md)
 
 ## License
 
