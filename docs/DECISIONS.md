@@ -196,3 +196,18 @@ Plan §3.8 says to re-run only the failing ids. Selecting tests by id differs pe
 ## In-cycle stuck signals end the cycle, they don't reject it (2026-10-05)
 
 The three in-cycle signals from plan §3.10 (repeated identical tool call, no edits after K turns, token burn) stop the agent loop at a turn boundary with end `stuck`. VERIFY still runs: the cycle hard cap already treats partial work as "rolled back unless the gates pass", and the same rule applies here, so a model that fixed the bug and then wandered still gets its commit. The signal goes into the pending verdict like oscillation, so the ladder climbs whether the cycle was accepted or rejected. Burn rate is "no edit yet and tokens above `burn_factor` × the median of the last 20 cycles"; it is off until 3 cycles exist, so the first cycles of a run can't trip it. "Edit" means a file the edit tools touched; changes made through `bash` don't count, which only makes `no_edits` fire sooner.
+
+## W12 & W14 Worker Adapters, Headless Execution, and Secret Scanner (2026-10-05)
+
+**Decision.**
+
+1. **Worker Backend Adapters:** Implemented adapters for `claude-code`, `codex`, `opencode`, `aider`, `gemini-cli`, `qwen-code`, and `cline`.
+   - Each adapter strictly builds argv arrays (never shell strings).
+   - Each adapter executes within the isolated throwaway worktree prepared by `runWorkerCycle`.
+   - Headless execution for Cline CLI is supported via `cline --json --auto-approve true --cwd <wt> <prompt>`. Detection verifies support for non-interactive JSON execution.
+   - Credentials of the tools are never accessed, copied, or logged; the environment passed to workers is scrubbed of all supervisor secrets.
+   - Exit codes and outputs are mapped to canonical quota and status types (`completed`, `failed`, `timeout`, `quota_exhausted`, `rate_limited`, `auth_required`).
+2. **Secret Scanner:** Candidate commits are scanned before commit via regex patterns for common key structures (Anthropic, OpenAI, GitHub classic/PAT, AWS, Slack, NPM, JWT, Google AI, GitLab, Stripe, HuggingFace, PEM) plus Shannon entropy analysis on added diff lines (`+` lines).
+   - An allowlist config section `[security] secret_allow = ["path-glob"]` is provided to exempt known test fixtures or sample data.
+   - Tested to ensure zero false positives across all existing omnexx source code while detecting all seeded secret tokens.
+3. **Extra Tool Policies:** Extended policies prohibit browser JavaScript evaluation (`eval` / `execute_script`) by default, require policy approval for destructive MCP tools, and verify that worker backends execute exclusively in isolated worktrees.
