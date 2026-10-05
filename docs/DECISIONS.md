@@ -143,3 +143,9 @@ Format: date, decision, why, alternatives considered.
 ## D23 (2026-10-04) Risk noted: Haiku 4.5 retirement
 
 `claude-haiku-4-5-20251001` is the `cheap` default; Anthropic lists its retirement as "not sooner than October 15, 2026". Override `[models] cheap` or `[pricing.haiku]` when it's retired.
+
+## D24 (2026-10-04) Owner delegated release decisions; first real-API run; 0.1.0
+
+**Decision.** At the owner's request ("your call on all decisions; I want a working CLI and a site that shows the download"), PR #1 was merged, the real-API e2e and one full `omnexx run` were executed (total under $0.10), and the package is versioned `0.1.0` for npm.
+**What the real API found.** The `remember` tool's schema was a top-level union; the Messages API requires `type: "object"` at the top of every tool schema. It's now one flat object with per-action checks in the handler, and a unit test asserts every tool schema is a plain object.
+**Results.** e2e: solved in one cycle, $0.0071, 3 turns, cache-read share 0.90 from turn 3. Full run: planned, fixed, committed, finished in 20 s for $0.06.

@@ -259,3 +259,21 @@ describe('registry', () => {
     );
   });
 });
+
+describe('tool schemas the API accepts', () => {
+  it('every tool spec is a plain object schema at the top level (no top-level union)', () => {
+    for (const spec of WORKER_TOOLS.map(toolSpec)) {
+      expect(spec.inputSchema.type, spec.name).toBe('object');
+      for (const k of ['oneOf', 'anyOf', 'allOf'])
+        expect(spec.inputSchema, `${spec.name}.${k}`).not.toHaveProperty(k);
+    }
+  });
+
+  it('remember enforces per-action fields', async () => {
+    const ctx = await toolContext(await repo());
+    expect((await rememberTool.run({ action: 'add', text: 'no type' }, ctx)).content).toMatch(
+      /add needs type and text/,
+    );
+    expect((await rememberTool.run({ action: 'remove' }, ctx)).isError).toBe(true);
+  });
+});
