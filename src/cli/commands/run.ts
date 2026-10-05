@@ -11,6 +11,8 @@ import { UsageError } from '../../errors.js';
 import type { ConfigInput } from '../../config/schema.js';
 import { selfEntry, spawnDetached } from '../../daemon/detach.js';
 import { brand } from '../brand.js';
+import { EventTail, LiveFeed } from '../../telemetry/feed.js';
+import { verbosityFrom } from '../../telemetry/humanize.js';
 import { println, type CliIO } from '../io.js';
 import { superviseForeground } from './control.js';
 import { resolveRunDeps } from '../run-deps.js';
@@ -97,6 +99,9 @@ export async function runPlanOnly(io: CliIO, goal: string, flags: RunFlags): Pro
 export interface FullRunFlags extends RunFlags {
   detach?: boolean;
   iKnowThereAreNoChecks?: boolean;
+  quiet?: boolean;
+  verbose?: boolean;
+  debug?: boolean;
 }
 
 /** `omnexx run`: create the run, then supervise it here or in a detached process. */
@@ -135,5 +140,17 @@ export async function runCommand(io: CliIO, goal: string, flags: FullRunFlags): 
     io.stderr,
     `${b.green('omnexx')} run ${b.cyan(store.runId)} on ${(await store.readState()).branch}`,
   );
-  return superviseForeground(io, store.runId);
+  // The live feed tails the run's own event log, so it shows exactly what `logs -f` would.
+  const feed = new LiveFeed(new EventTail(store.eventsPath), {
+    out: io.stderr,
+    brand: b,
+    verbosity: verbosityFrom(flags),
+    footer: io.isTTY,
+  });
+  feed.start();
+  try {
+    return await superviseForeground(io, store.runId, undefined, () => feed.stop());
+  } finally {
+    await feed.stop();
+  }
 }

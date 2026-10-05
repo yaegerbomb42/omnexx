@@ -4,6 +4,8 @@ import type { CliIO } from './io.js';
 const GREEN = [0, 255, 65] as const;
 const CYAN = [0, 229, 255] as const;
 const GRAY = [102, 102, 102] as const;
+const RED = [255, 59, 48] as const;
+const YELLOW = [255, 204, 0] as const;
 
 const LARGE = [
   ' ██████╗ ███╗   ███╗███╗   ██╗███████╗██╗  ██╗██╗  ██╗',
@@ -20,6 +22,8 @@ export interface Brand {
   green: (s: string) => string;
   cyan: (s: string) => string;
   dim: (s: string) => string;
+  red: (s: string) => string;
+  yellow: (s: string) => string;
 }
 
 /** Colors only on a TTY, never with NO_COLOR; truecolor when the terminal says so, else 16-color. */
@@ -34,7 +38,13 @@ export function brand(io: Pick<CliIO, 'env' | 'isTTY'>): Brand {
       const open = truecolor ? `38;2;${rgb.join(';')}` : String(fallback);
       return `\x1b[${open}m${s}\x1b[39m`;
     };
-  return { green: paint(GREEN, 92), cyan: paint(CYAN, 96), dim: paint(GRAY, 90) };
+  return {
+    green: paint(GREEN, 92),
+    cyan: paint(CYAN, 96),
+    dim: paint(GRAY, 90),
+    red: paint(RED, 91),
+    yellow: paint(YELLOW, 93),
+  };
 }
 
 /** The splash: big wordmark when the terminal is wide enough, the plain lowercase name otherwise. */

@@ -28,6 +28,7 @@ import { serviceCommand } from './commands/service.js';
 import { dockerAvailable } from '../security/sandbox-docker.js';
 import { banner, brand } from './brand.js';
 import { EXIT } from './exit-codes.js';
+import { verbosityFrom } from '../telemetry/humanize.js';
 import { println, readSecret, type CliIO } from './io.js';
 
 export const VERSION: string = pkg.version;
@@ -90,6 +91,9 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .option('--push <mode>', 'none | branch')
     .option('--from <ref>', 'branch the run from this ref (default HEAD)')
     .option('--i-know-there-are-no-checks', 'allow a run without gates (limited to one cycle)')
+    .option('-q, --quiet', 'feed: only commits, verdicts and stops')
+    .option('--verbose', 'feed: every model turn and tool call')
+    .option('--debug', 'feed: every raw event')
     .action(async (goal: string | undefined, opts: FullRunFlags) => {
       const text = await readGoal(io, goal, opts.goalFile);
       setExit(opts.planOnly ? await runPlanOnly(io, text, opts) : await runCommand(io, text, opts));
@@ -119,13 +123,24 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .option('--events', 'raw JSONL events')
     .option('--progress', 'the progress journal')
     .option('--cmd <id>', 'a full command or gate log, e.g. cmd-3-1')
-    .description('human view of the event log')
+    .option('-q, --quiet', 'only commits, verdicts and stops')
+    .option('--verbose', 'every model turn and tool call')
+    .option('--debug', 'every raw event')
+    .description('live feed of what the agent is doing (-f to follow)')
     .action(
       async (
         runId: string | undefined,
-        opts: { follow?: boolean; events?: boolean; progress?: boolean; cmd?: string },
+        opts: {
+          follow?: boolean;
+          events?: boolean;
+          progress?: boolean;
+          cmd?: string;
+          quiet?: boolean;
+          verbose?: boolean;
+          debug?: boolean;
+        },
       ) => {
-        setExit(await logsCommand(io, runId, opts));
+        setExit(await logsCommand(io, runId, { ...opts, verbosity: verbosityFrom(opts) }));
       },
     );
 
