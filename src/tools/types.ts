@@ -26,6 +26,12 @@ export interface ToolContext {
   onBash?: (command: string) => void;
   /** Files the agent edited this cycle (for "no edits after K turns" and reporting). */
   edited: Set<string>;
+  /**
+   * Content hashes of what `read` has already returned this cycle, by path and range. A repeat
+   * read of unchanged content gets a one-line pointer instead of the same text again. Cleared
+   * whenever old tool results are elided or compacted, since the earlier copy is then gone.
+   */
+  reads?: Map<string, string>;
 }
 
 export interface ToolOutput {

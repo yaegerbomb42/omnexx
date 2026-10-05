@@ -207,6 +207,19 @@ function lineFor(e: OmnexxEvent): Line | undefined {
         'stuck',
         `${str(e.signal)}${e.detail ? `: ${clip(str(e.detail), 70)}` : ''}`,
       ];
+    case 'cycle.context': {
+      const t = (e.tokens ?? {}) as Record<string, number>;
+      const parts = Object.entries(t)
+        .sort(([, a], [, b]) => b - a)
+        .map(([k, v]) => `${k} ${fmtTokens(v)}`);
+      const total = Object.values(t).reduce((a, b) => a + b, 0);
+      return [
+        'verbose',
+        'info',
+        'ctx',
+        parts.length ? `${fmtTokens(total)}: ${parts.join(' · ')}` : '',
+      ];
+    }
     case 'context.cleared':
       return [
         'verbose',
@@ -264,7 +277,6 @@ function lineFor(e: OmnexxEvent): Line | undefined {
       return ['verbose', 'info', 'codemap', `${num(e.files)} files`];
     case 'phase':
     case 'notify.sent':
-    case 'cycle.context':
     case 'cycle.recorded':
       return undefined;
     default:

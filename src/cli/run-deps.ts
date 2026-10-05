@@ -60,6 +60,12 @@ export async function resolveRunDeps(
         apiKey: key.key,
         ...(anthropic.base_url ? { baseURL: anthropic.base_url } : {}),
         cacheTtl: anthropic.cache_ttl,
+        prefixTtl:
+          anthropic.prefix_cache_ttl === 'auto'
+            ? config.budget.max_hours > 1
+              ? '1h'
+              : '5m'
+            : anthropic.prefix_cache_ttl,
         timeoutMs: parseDuration(anthropic.request_timeout),
       }),
     );

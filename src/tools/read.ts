@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { OmnexxError } from '../errors.js';
@@ -48,6 +49,17 @@ export const readTool: Tool<typeof schema> = {
       .map((l, i) => `${String(start + i).padStart(5)}  ${l}`)
       .join('\n');
     const more = end < lines.length ? `\n(lines ${end + 1}-${lines.length} not shown)` : '';
-    return ok(`${body}${more}`);
+    const out = `${body}${more}`;
+    if (ctx.reads) {
+      const key = `${input.path}:${start}-${end}`;
+      const hash = createHash('sha1').update(out).digest('hex');
+      if (ctx.reads.get(key) === hash) {
+        return ok(
+          `${input.path}:${start}-${end} is unchanged since you read it earlier this cycle; that result is still in your context above.`,
+        );
+      }
+      ctx.reads.set(key, hash);
+    }
+    return ok(out);
   },
 };
