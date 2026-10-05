@@ -196,3 +196,11 @@ Plan §3.8 says to re-run only the failing ids. Selecting tests by id differs pe
 ## In-cycle stuck signals end the cycle, they don't reject it (2026-10-05)
 
 The three in-cycle signals from plan §3.10 (repeated identical tool call, no edits after K turns, token burn) stop the agent loop at a turn boundary with end `stuck`. VERIFY still runs: the cycle hard cap already treats partial work as "rolled back unless the gates pass", and the same rule applies here, so a model that fixed the bug and then wandered still gets its commit. The signal goes into the pending verdict like oscillation, so the ladder climbs whether the cycle was accepted or rejected. Burn rate is "no edit yet and tokens above `burn_factor` × the median of the last 20 cycles"; it is off until 3 cycles exist, so the first cycles of a run can't trip it. "Edit" means a file the edit tools touched; changes made through `bash` don't count, which only makes `no_edits` fire sooner.
+
+## 2026-10-05: Ink + React for the interactive TUI (W1)
+
+`ink` 8 and `react` 19 are runtime dependencies for the interactive session (bare `omnexx`,
+`omnexx watch`). Ink is what Claude Code and most modern agent CLIs use; a hand-rolled ANSI
+renderer would cost weeks for the input editing, layout, resize and `<Static>` scrollback we get
+for free. The TUI is a separate chunk loaded by dynamic import, so non-interactive commands
+(`run`, `status`, `logs`, services) never parse React.

@@ -7,7 +7,7 @@ const GRAY = [102, 102, 102] as const;
 const RED = [255, 59, 48] as const;
 const YELLOW = [255, 204, 0] as const;
 
-const LARGE = [
+export const WORDMARK = [
   ' ██████╗ ███╗   ███╗███╗   ██╗███████╗██╗  ██╗██╗  ██╗',
   '██╔═══██╗████╗ ████║████╗  ██║██╔════╝╚██╗██╔╝╚██╗██╔╝',
   '██║   ██║██╔████╔██║██╔██╗ ██║█████╗   ╚███╔╝  ╚███╔╝ ',
@@ -50,7 +50,7 @@ export function brand(io: Pick<CliIO, 'env' | 'isTTY'>): Brand {
 /** The splash: big wordmark when the terminal is wide enough, the plain lowercase name otherwise. */
 export function banner(io: Pick<CliIO, 'env' | 'isTTY'>, columns = 80, version?: string): string {
   const b = brand(io);
-  const mark = columns >= 60 ? LARGE.map((l) => b.green(l)).join('\n') : b.green('omnexx');
+  const mark = columns >= 60 ? WORDMARK.map((l) => b.green(l)).join('\n') : b.green('omnexx');
   const ver = version ? ` ${b.dim(`v${version}`)}` : '';
   return ['', mark, '', `${b.cyan('$ omnexx')}${ver}`, `> ${TAGLINE}`, ''].join('\n');
 }
