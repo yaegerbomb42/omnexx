@@ -32,6 +32,9 @@ import type { Run } from './run.js';
 
 const CHECK_TIMEOUT_MS = 10 * 60_000;
 
+/** Rejection reason for a cycle a budget cap cut short before it changed anything: not an attempt. */
+export const INTERRUPTED_BY_BUDGET = 'interrupted by a budget cap before any change';
+
 export interface CheckResult {
   command: string;
   pass: boolean;
@@ -198,7 +201,11 @@ export async function stepAct(run: Run): Promise<void> {
   });
   const result = await runAgentLoop(ctx, {
     provider: run.deps.provider,
-    model: task.escalated ? run.models.planner : run.models.worker,
+    models: task.escalated ? run.chains.planner : run.chains.worker,
+    providerBlocked: (p) => run.providerBlocked(p),
+    coolProvider: (p, ms) => {
+      run.coolProvider(p, ms);
+    },
     tools: WORKER_TOOLS,
     toolCtx,
     budget: run.config.budget,
@@ -206,7 +213,8 @@ export async function stepAct(run: Run): Promise<void> {
     clock: run.clock,
     events: run.events,
     spentUsd: () => run.state.spend.usd,
-    onUsage: (u, usd, model) => run.addSpend(u, usd, model, 'worker'),
+    spentTodayUsd: () => run.spentToday(),
+    onUsage: (u, usd, model, provider) => run.addSpend(u, usd, model, 'worker', provider),
     control: () => run.control(),
     onPauseChange: (p) => {
       run.paused = p;
@@ -214,6 +222,7 @@ export async function stepAct(run: Run): Promise<void> {
     signal: run.abort.signal,
   });
   if (result.end === 'max_usd') run.state.budgetExhausted = true;
+  if (result.end === 'max_usd_per_day') run.state.dailyCapHit = true;
   run.events.emit('act.end', {
     end: result.end,
     turns: result.turns,
@@ -273,8 +282,10 @@ export async function stepVerify(run: Run): Promise<void> {
   for (const c of checks.filter((x) => !x.pass))
     evidence.push(`Check failed: \`${c.command}\`\n${c.output}`);
 
+  const budgetCut = act.end === 'max_usd' || act.end === 'max_usd_per_day';
   if (!changes.length) {
-    if (!(task.checks.length && checksPass)) reasons.push('no changes');
+    if (budgetCut) reasons.push(INTERRUPTED_BY_BUDGET);
+    else if (!(task.checks.length && checksPass)) reasons.push('no changes');
   } else if (!reasons.length) {
     const results = await runGates(run.config.gates, gateRunCtx(run, label));
     const verdicts = results.map((r) => judgeGate(r, run.state.baseline));
@@ -470,7 +481,17 @@ export async function stepRecord(run: Run): Promise<void> {
   if (!p) throw new StateError('record phase without a pending verdict');
   const plan = run.requirePlan();
   const task = getNode(plan, p.taskId);
-  if (run.state.recordedCycle !== run.state.cycle) {
+  const interrupted = p.reasons.length === 1 && p.reasons[0] === INTERRUPTED_BY_BUDGET;
+  if (run.state.recordedCycle !== run.state.cycle && interrupted) {
+    run.events.emit('cycle.recorded', {
+      task: task.id,
+      verdict: 'interrupted',
+      attempts: task.attempts,
+    });
+    // Waiting on a budget cap isn't a lack of progress.
+    run.state.lastProgressCycle = run.state.cycle;
+    run.state.recordedCycle = run.state.cycle;
+  } else if (run.state.recordedCycle !== run.state.cycle) {
     task.attempts++;
     if (p.verdict === 'accept') {
       task.consecutiveRejections = 0;

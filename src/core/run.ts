@@ -6,8 +6,8 @@ import { StateError } from '../errors.js';
 import { createJudge } from '../judge/factory.js';
 import type { FailOpenJudge } from '../judge/fail-open.js';
 import { LlmJudge } from '../judge/llm.js';
-import { preflight } from '../guard/budget.js';
-import { costUsd, resolveModel, type ResolvedModel } from '../providers/pricing.js';
+import { preflight, spentInWindow } from '../guard/budget.js';
+import { costUsd, resolveChain, type ResolvedModel } from '../providers/pricing.js';
 import type { Provider, Usage } from '../providers/types.js';
 import { scrubEnv } from '../security/env-scrub.js';
 import type { PolicyContext } from '../security/command-policy.js';
@@ -44,7 +44,12 @@ export class Run {
   readonly judge: FailOpenJudge;
   readonly childEnv: Record<string, string>;
   readonly tmpDir: string;
+  /** First model of each role's chain (single-shot helpers use these). */
   readonly models: { planner: ResolvedModel; worker: ResolvedModel; cheap: ResolvedModel };
+  /** Each role's failover chain, in order. */
+  readonly chains: { planner: ResolvedModel[]; worker: ResolvedModel[]; cheap: ResolvedModel[] };
+  /** Providers that just failed: skipped until the timestamp. */
+  private readonly cooling = new Map<string, number>();
   readonly abort = new AbortController();
   /** Supervisor start, for elapsed-time accounting together with state.activeMs. */
   readonly startedAt: number;
@@ -54,6 +59,8 @@ export class Run {
   /** Where commands run. The supervisor swaps in the docker sandbox when sandbox = "docker". */
   exec: Executor = runShell;
   private readonly baseActiveMs: number;
+  /** Waiting time that doesn't count as active (daily-cap pauses). */
+  private excludedMs = 0;
 
   private constructor(
     readonly deps: RunDeps,
@@ -71,10 +78,20 @@ export class Run {
       set: { TMPDIR: this.tmpDir },
     });
     const c = deps.config;
+    this.chains = {
+      planner: resolveChain(c.models.planner, c),
+      worker: resolveChain(c.models.worker, c),
+      cheap: resolveChain(c.models.cheap, c),
+    };
+    const first = (chain: ResolvedModel[]): ResolvedModel => {
+      const m = chain[0];
+      if (!m) throw new StateError('empty model chain');
+      return m;
+    };
     this.models = {
-      planner: resolveModel(c.models.planner, c),
-      worker: resolveModel(c.models.worker, c),
-      cheap: resolveModel(c.models.cheap, c),
+      planner: first(this.chains.planner),
+      worker: first(this.chains.worker),
+      cheap: first(this.chains.cheap),
     };
     this.judge = createJudge({
       config: c,
@@ -142,7 +159,7 @@ export class Run {
 
   /** Wall-clock the run has been active, across supervisor restarts. */
   elapsedMs(): number {
-    return this.baseActiveMs + (this.clock.now() - this.startedAt);
+    return this.baseActiveMs + (this.clock.now() - this.startedAt) - this.excludedMs;
   }
 
   requirePlan(): Plan {
@@ -175,7 +192,50 @@ export class Run {
     return c.request === 'pause' ? 'pause' : c.request;
   }
 
-  async addSpend(usage: Usage, usd: number, model: string, role = 'worker'): Promise<void> {
+  /** Don't count `ms` of waiting towards max_hours. */
+  excludeFromActive(ms: number): void {
+    this.excludedMs += ms;
+  }
+
+  /** Spend in the rolling 24 h window. */
+  spentToday(): number {
+    return spentInWindow(this.state.spendLedger, this.clock.now());
+  }
+
+  /** Why this provider can't take a call right now (its own caps, or cooling after a failure). */
+  providerBlocked(provider: string): string | undefined {
+    const until = this.cooling.get(provider) ?? 0;
+    if (until > this.clock.now())
+      return `cooling down after a failure until ${new Date(until).toISOString()}`;
+    const cfg =
+      provider === 'anthropic'
+        ? this.config.providers.anthropic
+        : this.config.providers.endpoints[provider];
+    const spent = this.state.spend.byProvider[provider] ?? 0;
+    if (cfg?.max_usd !== undefined && spent >= cfg.max_usd)
+      return `provider max_usd reached (${spent.toFixed(2)} of ${cfg.max_usd})`;
+    if (cfg?.max_usd_per_day !== undefined) {
+      const now = this.clock.now();
+      const day = this.state.spendLedger
+        .filter((e) => e.provider === provider && e.at > now - 86_400_000)
+        .reduce((s, e) => s + e.usd, 0);
+      if (day >= cfg.max_usd_per_day)
+        return `provider max_usd_per_day reached (${day.toFixed(2)} of ${cfg.max_usd_per_day})`;
+    }
+    return undefined;
+  }
+
+  coolProvider(provider: string, ms: number): void {
+    this.cooling.set(provider, this.clock.now() + ms);
+  }
+
+  async addSpend(
+    usage: Usage,
+    usd: number,
+    model: string,
+    role = 'worker',
+    provider = 'anthropic',
+  ): Promise<void> {
     const s = this.state.spend;
     s.usd += usd;
     s.llmCalls++;
@@ -186,6 +246,12 @@ export class Run {
     s.tokens.output += usage.output;
     const key = `${role}:${model}`;
     s.byModel[key] = (s.byModel[key] ?? 0) + usd;
+    s.byProvider[provider] = (s.byProvider[provider] ?? 0) + usd;
+    const now = this.clock.now();
+    this.state.spendLedger = [
+      ...this.state.spendLedger.filter((e) => e.at > now - 25 * 3_600_000),
+      { at: now, usd, provider },
+    ];
     await this.save();
   }
 }

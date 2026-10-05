@@ -37,17 +37,17 @@ The container runs as your uid/gid with `--cap-drop ALL`, `no-new-privileges`, a
 
 ## `[budget]` (24 h defaults, plan §14.5)
 
-| Key                    | Default  | Meaning                                                                                                                                  |
-| ---------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `max_usd`              | `50`     | Run total. The pre-flight check before every call keeps spend under it. Hitting it → `budget-stop` (exit 3), resumable after raising it. |
-| `max_usd_per_day`      | `50`     | Accepted; **not enforced until M3** (rolling 24 h pause).                                                                                |
-| `max_hours`            | `24`     | Active wall-clock across restarts.                                                                                                       |
-| `max_cycles`           | `300`    |                                                                                                                                          |
-| `max_turns_per_cycle`  | `40`     |                                                                                                                                          |
-| `max_tokens_per_cycle` | `400000` | Input + output of every call in a cycle, before cache discounts.                                                                         |
-| `max_cmd_timeout`      | `"30m"`  | Upper bound for every gate, check and `bash` call.                                                                                       |
-| `warn_at`              | `0.8`    | ntfy `budget` warning at this fraction of the tightest of USD / hours / cycles.                                                          |
-| `wrapup_reserve`       | `0.08`   | In the last 8%: no new task, verify `lastGreen`, report, stop. `0` disables.                                                             |
+| Key                    | Default  | Meaning                                                                                                                                                                                                                                     |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `max_usd`              | `50`     | Run total. The pre-flight check before every call keeps spend under it. Hitting it → `budget-stop` (exit 3), resumable after raising it.                                                                                                    |
+| `max_usd_per_day`      | `50`     | Rolling 24 h cap. Each call is pre-flighted against it; at 90%, or when a call is refused, the run pauses (status `paused`, ntfy `budget`) until half the cap is free, then resumes on its own. The wait does not count toward `max_hours`. |
+| `max_hours`            | `24`     | Active wall-clock across restarts.                                                                                                                                                                                                          |
+| `max_cycles`           | `300`    |                                                                                                                                                                                                                                             |
+| `max_turns_per_cycle`  | `40`     |                                                                                                                                                                                                                                             |
+| `max_tokens_per_cycle` | `400000` | Input + output of every call in a cycle, before cache discounts.                                                                                                                                                                            |
+| `max_cmd_timeout`      | `"30m"`  | Upper bound for every gate, check and `bash` call.                                                                                                                                                                                          |
+| `warn_at`              | `0.8`    | ntfy `budget` warning at this fraction of the tightest of USD / hours / cycles.                                                                                                                                                             |
+| `wrapup_reserve`       | `0.08`   | In the last 8%: no new task, verify `lastGreen`, report, stop. `0` disables.                                                                                                                                                                |
 
 ## `[models]` and `[pricing.<alias>]`
 
@@ -70,6 +70,46 @@ cache_read = 0.2
 ```
 
 Only the `anthropic:` provider exists in this build. Model routing per turn is M3; the worker model does all cycle work.
+
+## Model chains and endpoints
+
+Each role takes one model or a failover chain:
+
+```toml
+[models]
+planner = "anthropic:opus"
+worker  = ["anthropic:sonnet", "openrouter:or-sonnet", "ollama:qwen3:32b"]
+cheap   = ["anthropic:haiku", "ollama:qwen3:8b"]
+
+[providers.endpoints.openrouter]
+base_url = "https://openrouter.ai/api/v1"
+api_key_env = "OPENROUTER_API_KEY"   # the name of the env var, never the key
+max_usd = 20                         # optional cap for this provider
+max_usd_per_day = 5                  # optional
+
+[providers.endpoints.ollama]
+base_url = "http://localhost:11434/v1"
+free = true                          # $0 for any model unless [pricing] says otherwise
+
+[pricing.or-sonnet]
+id = "anthropic/claude-sonnet-5.5"
+input = 2
+output = 10
+cache_write_5m = 2.5
+cache_write_1h = 4
+cache_read = 0.2
+```
+
+| `[providers.endpoints.<name>]` key | Default    | Meaning                                                        |
+| ---------------------------------- | ---------- | -------------------------------------------------------------- |
+| `kind`                             | `"openai"` | Chat Completions API                                           |
+| `base_url`                         | required   | e.g. `https://api.openai.com/v1`                               |
+| `api_key_env`                      | unset      | Env var holding the key; unset for local endpoints             |
+| `free`                             | `false`    | Price unknown models at $0                                     |
+| `request_timeout`                  | `"10m"`    |                                                                |
+| `max_usd` / `max_usd_per_day`      | unset      | Per-provider caps; also accepted under `[providers.anthropic]` |
+
+Each turn tries the chain in order. Providers over their own caps are skipped; a failing provider cools for 1 minute (transient errors) or 30 minutes (key, quota or unknown model) while the next one takes the call. If every provider is over its cap, the run stops as a budget stop; if every one is failing, the normal outage backoff applies. Events: `provider.failover`; spend per provider in `status --json` (`spend.byProvider`).
 
 ## `[providers.anthropic]`
 

@@ -48,6 +48,7 @@ export async function createRun(o: CreateRunOptions): Promise<RunStore> {
       turns: 0,
       llmCalls: 0,
       byModel: {},
+      byProvider: {},
     },
     acceptedCommits: 0,
     rejectedCycles: 0,
@@ -59,6 +60,8 @@ export async function createRun(o: CreateRunOptions): Promise<RunStore> {
     disabledWorkers: [],
     noChecks: o.noChecks ?? false,
     budgetExhausted: false,
+    spendLedger: [],
+    dailyCapHit: false,
   };
   await store.writeState(state);
   return store;

@@ -165,3 +165,14 @@ Format: date, decision, why, alternatives considered.
 
 **Decision.** After the strong model also gets stuck, the planner splits the task into 2–4 new tasks under the same milestone. The original is parked with `splitInto` and marked done when all of them are; tasks that depended on it now depend on the new ones. If the planner produces nothing, the task parks. `split_task` is now an implemented judge action.
 **Bug fixed on the way.** The ladder only climbed on rejections, so a task that kept landing accepted-but-unfinished commits looped until the budget ran out. It now also climbs when the cycles-per-task signal fires on accepted partials, and that signal counts cycles since the task reached its current rung (`rungStartedAt`), so each rung gets its own allowance.
+
+## D28 (2026-10-05) Rolling daily cap
+
+**Decision.** Spend is recorded with timestamps (`spendLedger`, last 25 h). Every model call is pre-flighted against `max_usd_per_day` over the rolling 24 h window. At 90% of the cap, or after a call was refused for it, the supervisor pauses at the next cycle boundary until at least half the cap has rolled out of the window, then resumes. Pause time is excluded from `max_hours`. A cycle cut short by a budget cap before it changed anything is recorded as "interrupted": not an attempt, not a rejection, not a lack of progress.
+**Why.** Refusing calls without pausing made every following cycle end before its first call, which the stuck detector then read as failure.
+
+## D29 (2026-10-05) OpenAI-compatible endpoints, model chains and failover
+
+**Decision.** `[providers.endpoints.<name>]` declares an OpenAI-compatible Chat Completions endpoint (OpenAI, OpenRouter, LiteLLM, Ollama, vLLM): `base_url`, `api_key_env` (the env var name, never the key), `free`, and optional `max_usd` / `max_usd_per_day` (also available on `[providers.anthropic]`). Each role in `[models]` takes one model or a chain. Every turn tries the chain in order, skipping providers over their own caps or cooling down. A provider that fails cools for 1 minute (transient) or 30 minutes (key, quota, unknown model), and the call moves to the next. A 400 means our request is wrong and is not retried elsewhere. When every provider is over its cap, the cycle ends as a budget stop. When all are failing, the normal outage backoff applies.
+**Scope.** Prompt caching on OpenAI-compatible endpoints is whatever they do on their own: no breakpoints are sent; reported cached tokens bill at the cache-read rate. Single-shot helpers (judge, codemap purposes, notes consolidation) use the first model of the `cheap` chain without failover.
+**Why no SDK.** One `fetch` adapter covers every compatible endpoint, and the runtime dependency list stays fixed.

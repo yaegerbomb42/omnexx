@@ -132,6 +132,35 @@ describe('doctor checks', () => {
   });
 });
 
+describe('doctor: provider endpoints', () => {
+  it('reports each endpoint and whether its key is set, masked', async () => {
+    const key = 'sk-or-' + 'v1-' + 'q'.repeat(30);
+    const d = deps(await isolatedEnv({ OPENROUTER_API_KEY: key }), {
+      providers: {
+        endpoints: {
+          openrouter: {
+            base_url: 'https://openrouter.ai/api/v1',
+            api_key_env: 'OPENROUTER_API_KEY',
+          },
+          groq: { base_url: 'https://api.groq.com/openai/v1', api_key_env: 'GROQ_API_KEY' },
+          ollama: { base_url: 'http://localhost:11434/v1', free: true },
+        },
+      },
+    });
+    const byName = Object.fromEntries((await runDoctorChecks(d)).map((c) => [c.name, c]));
+    expect(byName['provider openrouter']).toMatchObject({
+      status: 'ok',
+      detail: expect.stringContaining('key present (sk-…qqqq)') as string,
+    });
+    expect(JSON.stringify(byName)).not.toContain(key);
+    expect(byName['provider groq']).toMatchObject({
+      status: 'fail',
+      detail: expect.stringContaining('GROQ_API_KEY is not set') as string,
+    });
+    expect(byName['provider ollama']?.detail).toContain('no key needed; free');
+  });
+});
+
 describe('helpers', () => {
   it('versionAtLeast', () => {
     expect(versionAtLeast('0.35.0', [0, 35, 0])).toBe(true);

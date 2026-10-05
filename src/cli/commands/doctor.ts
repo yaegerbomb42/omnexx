@@ -196,6 +196,22 @@ export async function runDoctorChecks(deps: DoctorDeps): Promise<Check[]> {
           detail: 'no gates configured; run `omnexx init` in your repo',
         },
   );
+  for (const [name, ep] of Object.entries(deps.config.providers.endpoints)) {
+    const key = ep.api_key_env ? deps.env[ep.api_key_env]?.trim() : undefined;
+    checks.push(
+      ep.api_key_env && !key
+        ? {
+            name: `provider ${name}`,
+            status: 'fail',
+            detail: `${ep.base_url}; ${ep.api_key_env} is not set`,
+          }
+        : {
+            name: `provider ${name}`,
+            status: 'ok',
+            detail: `${ep.base_url}${key ? `; key present (${maskKey(key)})` : '; no key needed'}${ep.free ? '; free' : ''}`,
+          },
+    );
+  }
   if (deps.config.judge.kind === 'nimble') checks.push(...(await judgeChecks(deps)));
   for (const [id, w] of Object.entries(deps.config.workers.backends)) {
     if (w.enabled) {

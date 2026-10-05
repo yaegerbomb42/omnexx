@@ -44,12 +44,16 @@ export const budgetSchema = z.strictObject({
 
 const modelRef = z
   .string()
-  .regex(/^[a-z][a-z0-9-]*:[A-Za-z0-9._-]+$/, 'expected "<provider>:<alias-or-model-id>"');
+  .regex(/^[a-z][a-z0-9_-]*:\S+$/, 'expected "<provider>:<alias-or-model-id>"');
+
+/** One model, or a failover chain tried in order (e.g. ["anthropic:sonnet", "openrouter:sonnet"]). */
+const modelChain = z.union([modelRef, z.array(modelRef).min(1).max(8)]);
+export type ModelChainInput = z.infer<typeof modelChain>;
 
 export const modelsSchema = z.strictObject({
-  planner: modelRef.default('anthropic:opus'),
-  worker: modelRef.default('anthropic:sonnet'),
-  cheap: modelRef.default('anthropic:haiku'),
+  planner: modelChain.default('anthropic:opus'),
+  worker: modelChain.default('anthropic:sonnet'),
+  cheap: modelChain.default('anthropic:haiku'),
 });
 
 export const priceSchema = z.strictObject({
@@ -63,7 +67,30 @@ export const priceSchema = z.strictObject({
 });
 export type PriceConfig = z.infer<typeof priceSchema>;
 
+/** Optional per-provider spend caps, on top of the run-level budget. */
+const providerBudget = {
+  max_usd: z.number().positive().optional(),
+  max_usd_per_day: z.number().positive().optional(),
+};
+
+/** An OpenAI-compatible Chat Completions endpoint: OpenAI, OpenRouter, LiteLLM, Ollama, vLLM. */
+export const endpointSchema = z.strictObject({
+  kind: z.literal('openai').default('openai'),
+  base_url: z.url(),
+  /** Name of the env var holding the key (never the key itself). Optional for local endpoints. */
+  api_key_env: z
+    .string()
+    .regex(/^[A-Z_][A-Z0-9_]*$/)
+    .optional(),
+  /** Price every model on this endpoint at $0 unless [pricing] says otherwise (local models). */
+  free: z.boolean().default(false),
+  request_timeout: durationString.default('10m'),
+  ...providerBudget,
+});
+export type EndpointConfig = z.infer<typeof endpointSchema>;
+
 export const anthropicSchema = z.strictObject({
+  ...providerBudget,
   base_url: z.url().optional(),
   cache_ttl: z.enum(['5m', '1h']).default('5m'),
   /** Output cap per turn; also the worst-case output used by the budget pre-flight. */
@@ -73,6 +100,8 @@ export const anthropicSchema = z.strictObject({
 
 export const providersSchema = z.strictObject({
   anthropic: anthropicSchema.prefault({}),
+  /** Named OpenAI-compatible endpoints; the name is the model-ref prefix ("openrouter:…"). */
+  endpoints: z.record(z.string().regex(/^[a-z][a-z0-9_-]*$/), endpointSchema).default({}),
 });
 
 export const gitSchema = z.strictObject({

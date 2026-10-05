@@ -1,5 +1,5 @@
 import type { OmnexxConfig, PriceConfig } from '../config/schema.js';
-import { ConfigError, NotImplementedError } from '../errors.js';
+import { ConfigError } from '../errors.js';
 import type { Usage } from './types.js';
 
 /**
@@ -51,30 +51,55 @@ export const BUILTIN_PRICING: Record<string, PriceConfig> = {
 };
 
 export interface ResolvedModel {
-  provider: 'anthropic';
+  /** "anthropic" or the name of a configured endpoint. */
+  provider: string;
   alias: string;
   id: string;
   price: PriceConfig;
 }
 
-/** `anthropic:sonnet` → concrete id + prices. A raw model id works if it is in the table (by id). */
+const FREE: Omit<PriceConfig, 'id'> = {
+  input: 0,
+  output: 0,
+  cache_write_5m: 0,
+  cache_write_1h: 0,
+  cache_read: 0,
+};
+
+/**
+ * `anthropic:sonnet` or `openrouter:anthropic/claude-sonnet-5.5` → provider, concrete id and
+ * prices. The part after the first colon is an alias from the pricing table, a model id in it,
+ * or (on an endpoint marked `free`) any model id at $0.
+ */
 export function resolveModel(ref: string, config: OmnexxConfig): ResolvedModel {
-  const [provider, name = ''] = ref.split(':', 2);
-  if (provider !== 'anthropic') {
-    throw new NotImplementedError(
-      `model provider "${provider ?? ''}" (only "anthropic" is supported)`,
-      'a later milestone',
+  const cut = ref.indexOf(':');
+  const provider = ref.slice(0, cut);
+  const name = ref.slice(cut + 1);
+  const endpoint = config.providers.endpoints[provider];
+  if (provider !== 'anthropic' && !endpoint) {
+    throw new ConfigError(
+      `unknown provider "${provider}" in model "${ref}"`,
+      `use anthropic, or add [providers.endpoints.${provider}] with base_url`,
     );
   }
-  const table = { ...BUILTIN_PRICING, ...config.pricing };
+  const table = { ...(provider === 'anthropic' ? BUILTIN_PRICING : {}), ...config.pricing };
   const byAlias = table[name];
   if (byAlias) return { provider, alias: name, id: byAlias.id, price: byAlias };
   const byId = Object.entries(table).find(([, p]) => p.id === name);
   if (byId) return { provider, alias: byId[0], id: name, price: byId[1] };
+  if (endpoint?.free) return { provider, alias: name, id: name, price: { id: name, ...FREE } };
   throw new ConfigError(
-    `no price for model "${name}"`,
-    `add [pricing.${name.replace(/[^A-Za-z0-9_-]/g, '_')}] with id and per-MTok rates, or use one of: ${Object.keys(table).join(', ')}`,
+    `no price for model "${name}" on ${provider}`,
+    `add [pricing.<alias>] with id = "${name}" and per-MTok rates${endpoint ? ', or set free = true on the endpoint' : ''}`,
   );
+}
+
+/** A role's failover chain, in order. */
+export function resolveChain(
+  refs: string | readonly string[],
+  config: OmnexxConfig,
+): ResolvedModel[] {
+  return (typeof refs === 'string' ? [refs] : refs).map((r) => resolveModel(r, config));
 }
 
 const M = 1_000_000;

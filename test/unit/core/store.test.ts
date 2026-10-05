@@ -38,6 +38,7 @@ export function sampleState(over: Partial<RunState> = {}): RunState {
       turns: 0,
       llmCalls: 0,
       byModel: {},
+      byProvider: {},
     },
     acceptedCommits: 0,
     rejectedCycles: 0,
@@ -48,6 +49,8 @@ export function sampleState(over: Partial<RunState> = {}): RunState {
     disabledWorkers: [],
     noChecks: false,
     budgetExhausted: false,
+    spendLedger: [],
+    dailyCapHit: false,
     ...over,
   };
 }

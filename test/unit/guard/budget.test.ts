@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { defaultConfig } from '../../../src/config/load.js';
 import {
   budgetFraction,
+  dailyPauseThreshold,
   inWrapup,
   preflight,
   runLimitHit,
   shouldWarn,
+  spentInWindow,
+  windowRollsAt,
 } from '../../../src/guard/budget.js';
 import { BUILTIN_PRICING, costUsd } from '../../../src/providers/pricing.js';
 
@@ -113,5 +116,37 @@ describe('run limits, warn and wrap-up', () => {
     expect(inWrapup(budget, at(0.91))).toBe(false);
     expect(inWrapup(budget, at(0.93))).toBe(true);
     expect(inWrapup(defaultConfig({ budget: { wrapup_reserve: 0 } }).budget, at(0.99))).toBe(false);
+  });
+});
+
+describe('rolling daily cap', () => {
+  const H = 3_600_000;
+  const ledger = [
+    { at: 0, usd: 4 },
+    { at: 2 * H, usd: 3 },
+    { at: 10 * H, usd: 2 },
+  ];
+  it('sums only the last 24 h', () => {
+    expect(spentInWindow(ledger, 12 * H)).toBe(9);
+    expect(spentInWindow(ledger, 25 * H)).toBe(5);
+    expect(spentInWindow(ledger, 35 * H)).toBe(0);
+  });
+  it('finds when enough spend has rolled out of the window', () => {
+    expect(windowRollsAt(ledger, 12 * H, 6)).toBe(24 * H); // the $4 entry expires
+    expect(windowRollsAt(ledger, 12 * H, 2)).toBe(26 * H); // both early entries must expire
+    expect(windowRollsAt(ledger, 12 * H, 10)).toBe(12 * H); // already under
+  });
+  it('pre-flight refuses a call that could cross the daily cap', () => {
+    const budget = defaultConfig({ budget: { max_usd_per_day: 1 } }).budget;
+    const r = preflight(budget, {
+      spentUsd: 0,
+      spentTodayUsd: 0.999,
+      cycle: { turns: 0, tokens: 0 },
+      estimatedInputTokens: 10_000,
+      maxOutputTokens: 1_000,
+      price,
+    });
+    expect(r).toMatchObject({ ok: false, stop: 'max_usd_per_day' });
+    expect(dailyPauseThreshold(budget)).toBe(0.9);
   });
 });
