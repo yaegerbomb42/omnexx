@@ -116,12 +116,13 @@ No endpoints are built in: any OpenAI-compatible server (OpenAI, OpenRouter, Gro
 
 ## `[providers.anthropic]`
 
-| Key               | Default     | Meaning                                                               |
-| ----------------- | ----------- | --------------------------------------------------------------------- |
-| `base_url`        | API default | e.g. a proxy                                                          |
-| `cache_ttl`       | `"5m"`      | `"5m"` or `"1h"` cache writes                                         |
-| `max_tokens`      | `16000`     | Output cap per turn; also the worst case used by the pre-flight check |
-| `request_timeout` | `"10m"`     | Per request                                                           |
+| Key                | Default     | Meaning                                                                              |
+| ------------------ | ----------- | ------------------------------------------------------------------------------------ |
+| `base_url`         | API default | e.g. a proxy                                                                         |
+| `cache_ttl`        | `"5m"`      | `"5m"` or `"1h"` cache writes for in-cycle message breakpoints                       |
+| `prefix_cache_ttl` | `"auto"`    | Stable-prefix breakpoint: `"auto"` = `"1h"` when `budget.max_hours > 1`, else `"5m"` |
+| `max_tokens`       | `16000`     | Output cap per turn; also the worst case used by the pre-flight check                |
+| `request_timeout`  | `"10m"`     | Per request                                                                          |
 
 ## `[git]`
 

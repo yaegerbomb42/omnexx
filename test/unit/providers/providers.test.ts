@@ -172,6 +172,18 @@ describe('AnthropicProvider against a loopback mock', () => {
       true,
     ]);
     expect(body.messages[1]?.content[0]?.type).toBe('thinking');
+    // Without prefixTtl both use cacheTtl.
+    expect(body.system[1]?.cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
+    const params = new AnthropicProvider({
+      apiKey: 'k',
+      cacheTtl: '5m',
+      prefixTtl: '1h',
+      timeoutMs: 1,
+    }).buildParams(req());
+    const sys = params.system as { cache_control?: { ttl?: string } }[];
+    expect(sys[1]?.cache_control?.ttl).toBe('1h');
+    const msgs = params.messages as { content: { cache_control?: { ttl?: string } }[] }[];
+    expect(msgs[0]?.content.at(-1)?.cache_control?.ttl).toBe('5m');
     expect(body.messages[2]?.content[0]?.is_error).toBe(true);
   });
 

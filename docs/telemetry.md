@@ -27,3 +27,14 @@ rate, rollbacks, compactions, tokens per accepted commit, and the active model a
 
 Glyphs: `▸` action · `✓` success · `✗` failure · `!` warning · `·` info. Colors follow the brand
 palette and are off when piped, under `NO_COLOR`, or with `TERM=dumb`.
+
+## Context breakdown
+
+At `--verbose`, each cycle starts with a line showing where its starting context goes, largest
+first, so token waste is visible instead of guessed:
+
+```
+· ctx      14.2k: codemap 3.0k · tools 2.4k · system 2.1k · notes 1.2k · state 900 · goal 400
+```
+
+The same numbers are in the `cycle.context` event's `tokens` field.

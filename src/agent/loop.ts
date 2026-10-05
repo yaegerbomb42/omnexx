@@ -123,7 +123,11 @@ export async function runAgentLoop(
         ctx.first,
         deps.compaction.settings,
         deps.compaction.summarize,
-        ({ kind, ...rest }) => deps.events.emit(`context.${kind}`, { turn: turns, ...rest }),
+        ({ kind, ...rest }) => {
+          // Earlier read results are gone from the context now; let `read` return them again.
+          if (kind === 'cleared' || kind === 'compacted') deps.toolCtx.reads?.clear();
+          deps.events.emit(`context.${kind}`, { turn: turns, ...rest });
+        },
       );
     }
 

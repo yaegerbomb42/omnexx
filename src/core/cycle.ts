@@ -153,6 +153,21 @@ export async function prepareWorktree(run: Run): Promise<void> {
   });
 }
 
+/** Estimated tokens per segment of the cycle's starting context, in prefix order. */
+export function contextBreakdown(ctx: {
+  system: { text: string }[];
+  first: Message;
+  tools: unknown[];
+}): Record<string, number> {
+  const labels = ['system', 'codemap', 'goal', 'notes'];
+  const out: Record<string, number> = { tools: estimateTokens(JSON.stringify(ctx.tools)) };
+  ctx.system.forEach((b, i) => {
+    out[labels[i] ?? `block${i}`] = estimateTokens(b.text);
+  });
+  out.state = estimateTokens(JSON.stringify(ctx.first));
+  return out;
+}
+
 function toolContext(run: Run, edited: Set<string>): ToolContext {
   let n = 0;
   const { judge } = run;
@@ -171,6 +186,7 @@ function toolContext(run: Run, edited: Set<string>): ToolContext {
     signal: run.abort.signal,
     nextCommandId: () => `cmd-${run.state.cycle}-${++n}`,
     edited,
+    reads: new Map(),
     // Advisory, log-only, never awaited by the tool, skipped while the breaker is open.
     ...(judge.enabled('tool_safety') && judge.breakerState !== 'open'
       ? {
@@ -274,6 +290,7 @@ export async function stepAct(run: Run): Promise<void> {
     task: task.id,
     prefixBytes: ctx.system.reduce((n, b) => n + b.text.length, 0),
     stateBytes: JSON.stringify(ctx.first).length,
+    tokens: contextBreakdown(ctx),
   });
   const result = await runAgentLoop(ctx, {
     provider: run.deps.provider,

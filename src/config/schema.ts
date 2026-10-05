@@ -112,6 +112,11 @@ export const anthropicSchema = z.strictObject({
   ...providerBudget,
   base_url: z.url().optional(),
   cache_ttl: z.enum(['5m', '1h']).default('5m'),
+  /**
+   * TTL for the stable prefix (tools, system, codemap, goal, notes). "auto" = 1h on runs longer
+   * than an hour: gates between cycles often outlast 5 minutes, and a 1h write is reread every cycle.
+   */
+  prefix_cache_ttl: z.enum(['auto', '5m', '1h']).default('auto'),
   /** Output cap per turn; also the worst-case output used by the budget pre-flight. */
   max_tokens: z.number().int().positive().default(16_000),
   request_timeout: durationString.default('10m'),

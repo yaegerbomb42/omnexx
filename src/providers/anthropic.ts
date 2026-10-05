@@ -19,6 +19,8 @@ export interface AnthropicOptions {
   apiKey: string;
   baseURL?: string;
   cacheTtl: '5m' | '1h';
+  /** TTL for system-prompt breakpoints; defaults to cacheTtl. Never shorter than cacheTtl. */
+  prefixTtl?: '5m' | '1h';
   timeoutMs: number;
   /** Injectable for tests (a loopback mock); defaults to the global fetch. */
   fetch?: typeof fetch;
@@ -46,10 +48,13 @@ export class AnthropicProvider implements Provider {
 
   buildParams(req: CompletionRequest): MessageCreateParamsNonStreaming {
     const cache = { type: 'ephemeral' as const, ttl: this.opts.cacheTtl };
+    // Longer TTLs must come before shorter ones; the prefix always precedes the messages.
+    const prefixTtl = this.opts.cacheTtl === '1h' ? '1h' : (this.opts.prefixTtl ?? '5m');
+    const prefixCache = { type: 'ephemeral' as const, ttl: prefixTtl };
     const system: TextBlockParam[] = req.system.map((b) => ({
       type: 'text',
       text: b.text,
-      ...(b.cacheBreakpoint ? { cache_control: cache } : {}),
+      ...(b.cacheBreakpoint ? { cache_control: prefixCache } : {}),
     }));
     const tools: Tool[] = [...req.tools]
       .sort((a, b) => a.name.localeCompare(b.name))
