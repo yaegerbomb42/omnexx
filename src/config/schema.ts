@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { durationString } from './duration.js';
+import * as extraSections from './sections/index.js';
 
 /**
  * The whole config surface. Unknown keys are errors (strictObject), so a typo in omnexx.toml
@@ -25,6 +26,8 @@ export const gateSchema = z.strictObject({
   timeout: durationString.default('10m'),
   level: z.enum(['must-pass', 'ratchet']).default('ratchet'),
   parser: z.enum(GATE_PARSERS).default('generic'),
+  /** Re-runs of the whole gate when it shows new, named failures; ids that then pass are flaky. */
+  flaky_reruns: z.number().int().min(0).max(3).default(1),
 });
 export type GateConfig = z.infer<typeof gateSchema>;
 
@@ -164,12 +167,26 @@ export const stuckSchema = z.strictObject({
   no_progress_cycles: z.number().int().positive().default(8),
   no_progress_hours: z.number().positive().default(3),
   oscillation_window: z.number().int().positive().default(5),
+  /** In-cycle: the same tool call with the same arguments this many times ends the cycle. */
+  repeated_tool_call: z.number().int().min(2).default(3),
+  /** In-cycle: this many turns without a file edit ends the cycle. */
+  no_edit_turns: z.number().int().positive().default(15),
+  /** In-cycle: tokens above this multiple of the median cycle, with no edit yet, end the cycle. */
+  burn_factor: z.number().gt(1).default(3),
 });
 
 export const contextSchema = z.strictObject({
   progress_tail: z.number().int().nonnegative().default(5),
   notes_max_tokens: z.number().int().positive().default(1_500),
   repo_map_max_tokens: z.number().int().positive().default(3_000),
+  /** In-cycle: past this many context tokens, elide old large tool results. */
+  clear_tool_results_at: z.number().int().positive().default(60_000),
+  /** The newest tool results that are never cleared. */
+  keep_tool_results: z.number().int().nonnegative().default(6),
+  /** In-cycle: past this many context tokens, summarize older turns with the cheap model. */
+  compact_at: z.number().int().positive().default(100_000),
+  /** Recent assistant turns kept verbatim through a compaction. */
+  compact_keep_turns: z.number().int().positive().default(4),
 });
 
 export const policySchema = z.strictObject({
@@ -286,6 +303,7 @@ export const configSchema = z.strictObject({
   policy: policySchema.prefault({}),
   service: serviceSchema.prefault({}),
   workers: workersSchema.prefault({}),
+  ...extraSections,
 });
 
 export type OmnexxConfig = z.infer<typeof configSchema>;

@@ -1,9 +1,7 @@
 import { z } from 'zod';
 import { buildCodemap, setPurposes, updateCodemap, type Codemap } from '../agent/codemap.js';
 import { describeFiles } from '../agent/describe.js';
-import { preflight } from '../guard/budget.js';
 import { tagCheckpoint } from '../git/checkpoint.js';
-import { costUsd } from '../providers/pricing.js';
 import { readTextOr, writeJsonAtomic, writeFileAtomic } from './atomic.js';
 import { estimateTokens } from './tokens.js';
 import { noteSchema, renderNotes, type Note } from './notes.js';
@@ -86,39 +84,31 @@ const consolidationSchema = z.object({ notes: z.array(noteSchema.omit({ date: tr
 export async function consolidateNotes(run: Run): Promise<boolean> {
   const notes = await run.store.readNotes();
   if (notes.length < 6) return false;
-  const model = run.models.cheap;
   const text = renderNotes(notes);
-  if (
-    !preflight(run.config.budget, {
-      spentUsd: run.state.spend.usd,
-      cycle: { turns: 0, tokens: 0 },
-      estimatedInputTokens: estimateTokens(text) + 400,
-      maxOutputTokens: 2_000,
-      price: model.price,
-    }).ok
-  )
-    return false;
   try {
-    const res = await run.deps.provider.complete({
-      model: model.id,
-      system: [
-        {
-          text: 'You consolidate a lessons file: merge duplicates, drop stale entries, keep ids of kept entries. Keep every env and command entry verbatim.',
-        },
-      ],
-      tools: [
-        {
-          name: 'answer',
-          description: 'Submit consolidated notes',
-          inputSchema: z.toJSONSchema(consolidationSchema),
-        },
-      ],
-      toolChoice: { type: 'tool', name: 'answer' },
-      messages: [{ role: 'user', content: [{ type: 'text', text }] }],
-      maxTokens: 2_000,
-      messageBreakpoints: [],
-    });
-    await run.addSpend(res.usage, costUsd(res.usage, model.price), res.model, 'cheap');
+    const done = await run.cheapComplete(
+      {
+        system: [
+          {
+            text: 'You consolidate a lessons file: merge duplicates, drop stale entries, keep ids of kept entries. Keep every env and command entry verbatim.',
+          },
+        ],
+        tools: [
+          {
+            name: 'answer',
+            description: 'Submit consolidated notes',
+            inputSchema: z.toJSONSchema(consolidationSchema),
+          },
+        ],
+        toolChoice: { type: 'tool', name: 'answer' },
+        messages: [{ role: 'user', content: [{ type: 'text', text }] }],
+        maxTokens: 2_000,
+        messageBreakpoints: [],
+      },
+      { estimatedInputTokens: estimateTokens(text) + 400, maxOutputTokens: 2_000, role: 'cheap' },
+    );
+    if (!done) return false;
+    const { res } = done;
     const call = res.content.find((b) => b.type === 'tool_use');
     const parsed = consolidationSchema.safeParse(
       call?.type === 'tool_use' ? call.input : undefined,

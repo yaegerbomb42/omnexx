@@ -1,4 +1,6 @@
 import { join } from 'node:path';
+import { z } from 'zod';
+import { cycleSummarySchema, transcriptFor, type CycleSummary } from '../agent/compaction.js';
 import { buildCycleContext } from '../agent/context.js';
 import { renderCodemap, type Codemap } from '../agent/codemap.js';
 import { runAgentLoop } from '../agent/loop.js';
@@ -10,7 +12,7 @@ import { commitMessage, headSha, isClean, workingTreeDiff } from '../git/repo.js
 import { rollbackTo } from '../git/rollback.js';
 import { parseTrailers } from '../git/trailers.js';
 import { PathJail } from '../security/paths.js';
-import { detectOscillation } from '../guard/stuck.js';
+import { burnThreshold, detectOscillation, InCycleWatch } from '../guard/stuck.js';
 import {
   CONFIDENT_FALSE,
   CONFIDENT_TRUE,
@@ -18,17 +20,20 @@ import {
   sameFailureQuestion,
   toolSafetyQuestion,
 } from '../judge/uses.js';
-import { WORKER_TOOLS, toolSpec } from '../tools/registry.js';
+import { toolSpec, workerTools } from '../tools/registry.js';
 import type { ToolContext } from '../tools/types.js';
 import { antiCheat } from '../verify/anticheat.js';
+import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
 import { runGates, toBaseline, type GateResult } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
 import { readTextOr } from './atomic.js';
-import { renderNotes } from './notes.js';
+import { applyRemember, renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
 import { getNode, type PlanNode } from './plan.js';
 import type { PendingVerdict } from './run-store.js';
 import type { Run } from './run.js';
+import { estimateTokens } from './tokens.js';
+import type { Message } from '../providers/types.js';
 
 const CHECK_TIMEOUT_MS = 10 * 60_000;
 
@@ -73,6 +78,37 @@ function gateRunCtx(run: Run, label: string) {
     redact: (s: string) => run.redactor.text(s),
     signal: run.abort.signal,
   };
+}
+
+/**
+ * Tests that failed and then passed on a re-run: an event, plus a `flaky` lesson per new id so
+ * later cycles know not to chase them. A full lessons file just skips the note.
+ */
+async function recordFlaky(
+  run: Run,
+  task: PlanNode,
+  flaky: readonly FlakyFinding[],
+): Promise<void> {
+  let notes = await run.store.readNotes();
+  const today = new Date(run.clock.now()).toISOString().slice(0, 10);
+  for (const f of flaky) {
+    run.events.emit('verify.flaky', { task: task.id, gate: f.gate, ids: f.ids });
+    for (const id of f.ids) {
+      if (notes.some((n) => n.type === 'flaky' && n.text.includes(id))) continue;
+      const r = applyRemember(
+        notes,
+        {
+          action: 'add',
+          type: 'flaky',
+          text: `Flaky in gate ${f.gate} (failed, then passed on re-run): ${id}`.slice(0, 400),
+        },
+        run.config.context.notes_max_tokens,
+        today,
+      );
+      if (r.ok) notes = r.notes;
+    }
+  }
+  await run.store.writeNotes(notes);
 }
 
 /** Record which tests and errors already fail at the starting commit (plan §3.8). */
@@ -154,6 +190,43 @@ function toolContext(run: Run, edited: Set<string>): ToolContext {
   };
 }
 
+const SUMMARY_MAX_TOKENS = 2_000;
+/** Cycles of token totals kept for the burn-rate median. */
+const CYCLE_TOKEN_HISTORY = 20;
+
+/** Cheap-model CycleSummary of the turns a compaction drops (plan §3.6). */
+async function summarizeCycle(
+  run: Run,
+  task: PlanNode,
+  head: readonly Message[],
+): Promise<CycleSummary | undefined> {
+  const prompt = `Summarize this part of a coding agent's work on task ${task.id} ("${task.title}") so it can continue without the transcript. Be concrete: file paths, commands, exact error text. Reply only by calling the answer tool.\n\n${run.redactor.text(transcriptFor(head))}`;
+  const done = await run.cheapComplete(
+    {
+      system: [{ text: 'You compress a coding agent transcript into a structured summary.' }],
+      tools: [
+        {
+          name: 'answer',
+          description: 'Submit the summary',
+          inputSchema: z.toJSONSchema(cycleSummarySchema),
+        },
+      ],
+      toolChoice: { type: 'tool', name: 'answer' },
+      messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
+      maxTokens: SUMMARY_MAX_TOKENS,
+      messageBreakpoints: [],
+    },
+    {
+      estimatedInputTokens: estimateTokens(prompt) + 400,
+      maxOutputTokens: SUMMARY_MAX_TOKENS,
+      role: 'cheap',
+    },
+  );
+  const call = done?.res.content.find((b) => b.type === 'tool_use');
+  const parsed = cycleSummarySchema.safeParse(call?.type === 'tool_use' ? call.input : undefined);
+  return parsed.success ? parsed.data : undefined;
+}
+
 /** ACT: zero-cost preflight on the task's checks, then the agent loop with a fresh context. */
 export async function stepAct(run: Run): Promise<void> {
   const plan = run.requirePlan();
@@ -183,6 +256,7 @@ export async function stepAct(run: Run): Promise<void> {
     run.store.progressTail(run.config.context.progress_tail),
     loadCodemap(run),
   ]);
+  const tools = await workerTools(run.config);
   const ctx = buildCycleContext({
     systemPrompt: WORKER_SYSTEM,
     codemap,
@@ -192,7 +266,7 @@ export async function stepAct(run: Run): Promise<void> {
     task,
     progressTail,
     evidence: task.evidence.slice(-3),
-    tools: WORKER_TOOLS.map(toolSpec),
+    tools: tools.map(toolSpec),
   });
   run.events.emit('cycle.context', {
     task: task.id,
@@ -206,7 +280,7 @@ export async function stepAct(run: Run): Promise<void> {
     coolProvider: (p, ms) => {
       run.coolProvider(p, ms);
     },
-    tools: WORKER_TOOLS,
+    tools,
     toolCtx,
     budget: run.config.budget,
     maxTokens: run.config.providers.anthropic.max_tokens,
@@ -220,6 +294,23 @@ export async function stepAct(run: Run): Promise<void> {
       run.paused = p;
     },
     signal: run.abort.signal,
+    watch: new InCycleWatch(
+      {
+        repeatedToolCall: run.config.stuck.repeated_tool_call,
+        noEditTurns: run.config.stuck.no_edit_turns,
+        burnTokens: burnThreshold(run.state.cycleTokens, run.config.stuck.burn_factor),
+      },
+      () => edited.size,
+    ),
+    compaction: {
+      settings: {
+        clearAt: run.config.context.clear_tool_results_at,
+        keepToolResults: run.config.context.keep_tool_results,
+        compactAt: run.config.context.compact_at,
+        keepTurns: run.config.context.compact_keep_turns,
+      },
+      summarize: (head) => summarizeCycle(run, task, head),
+    },
   });
   if (result.end === 'max_usd') run.state.budgetExhausted = true;
   if (result.end === 'max_usd_per_day') run.state.dailyCapHit = true;
@@ -229,11 +320,20 @@ export async function stepAct(run: Run): Promise<void> {
     usd: result.usd,
     edited: [...edited],
   });
+  const tokens =
+    result.usage.uncached +
+    result.usage.cacheWrite5m +
+    result.usage.cacheWrite1h +
+    result.usage.cacheRead +
+    result.usage.output;
+  if (tokens)
+    run.state.cycleTokens = [...run.state.cycleTokens, tokens].slice(-CYCLE_TOKEN_HISTORY);
   run.state.act = {
     summary: run.redactor.text(result.finalText).slice(0, 2_000),
     end: result.end,
     turns: result.turns,
     usd: result.usd,
+    ...(result.stuck ? { stuck: result.stuck } : {}),
   };
   await run.setPhase('verify');
 }
@@ -276,6 +376,18 @@ export async function stepVerify(run: Run): Promise<void> {
   const label = `c${run.state.cycle}`;
 
   if (act.end === 'stop-now') reasons.push('stopped by user (--now)');
+  if (act.stuck) {
+    // Ended early by an in-cycle signal: partial work is still verified, and the ladder climbs.
+    stuck.push(act.stuck.signal);
+    evidence.push(
+      `The last attempt was cut short: ${act.stuck.detail}. Change approach instead of repeating it.`,
+    );
+    run.events.emit('stuck.signal', {
+      signal: act.stuck.signal,
+      task: task.id,
+      detail: act.stuck.detail,
+    });
+  }
 
   const checks = task.checks.length ? await runChecks(run, task, label) : [];
   const checksPass = checks.every((c) => c.pass);
@@ -287,7 +399,12 @@ export async function stepVerify(run: Run): Promise<void> {
     if (budgetCut) reasons.push(INTERRUPTED_BY_BUDGET);
     else if (!(task.checks.length && checksPass)) reasons.push('no changes');
   } else if (!reasons.length) {
-    const results = await runGates(run.config.gates, gateRunCtx(run, label));
+    const { results, flaky } = await runGatesWithFlakyCheck(
+      run.config.gates,
+      gateRunCtx(run, label),
+      run.state.baseline,
+    );
+    if (flaky.length) await recordFlaky(run, task, flaky);
     const verdicts = results.map((r) => judgeGate(r, run.state.baseline));
     for (const v of verdicts) if (!v.pass) reasons.push(`gate ${v.gate}: ${v.reason ?? 'failed'}`);
     const failText = renderFailures(results, verdicts);

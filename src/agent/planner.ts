@@ -4,7 +4,7 @@ import { applyPlanUpdate, compactPlanView, planUpdateSchema, type Plan } from '.
 import type { Run } from '../core/run.js';
 import { OmnexxError, StateError } from '../errors.js';
 import { PathJail } from '../security/paths.js';
-import { READ_ONLY_TOOLS, toolSpec } from '../tools/registry.js';
+import { readOnlyTools, toolSpec } from '../tools/registry.js';
 import { fail, ok, type Tool, type ToolContext } from '../tools/types.js';
 import { renderCodemap, type Codemap } from './codemap.js';
 import { runAgentLoop } from './loop.js';
@@ -81,7 +81,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       }
     },
   };
-  const tools = [...READ_ONLY_TOOLS, writePlan as Tool];
+  const tools = [...(await readOnlyTools(run.config)), writePlan as Tool];
   const codemapText = await readTextOr(run.store.file('codemap.json'), '');
   const codemap = codemapText
     ? renderCodemap(JSON.parse(codemapText) as Codemap, run.config.context.repo_map_max_tokens)

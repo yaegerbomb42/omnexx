@@ -4,7 +4,80 @@ import type { FileChange } from '../git/repo.js';
 import { blobAt, hashWorkingFile } from '../git/repo.js';
 
 export type StuckSignal =
-  'consecutive_rejections' | 'repeated_signature' | 'task_cycles' | 'oscillation';
+  'consecutive_rejections' | 'repeated_signature' | 'task_cycles' | 'oscillation' | InCycleSignal;
+
+/** Signals the agent loop raises mid-cycle (plan §3.10); each ends the cycle early. */
+export const IN_CYCLE_SIGNALS = ['repeated_tool_call', 'no_edits', 'token_burn'] as const;
+export type InCycleSignal = (typeof IN_CYCLE_SIGNALS)[number];
+
+export function isInCycleSignal(s: string): s is InCycleSignal {
+  return (IN_CYCLE_SIGNALS as readonly string[]).includes(s);
+}
+
+export interface InCycleLimits {
+  repeatedToolCall: number;
+  noEditTurns: number;
+  /** Absolute token threshold for burn, or undefined until there's enough cycle history. */
+  burnTokens: number | undefined;
+}
+
+/**
+ * Tracks one cycle's tool calls and edits. `afterTurn` returns a finding once a limit is hit.
+ */
+export class InCycleWatch {
+  private readonly calls = new Map<string, number>();
+  private lastEditTurn = 0;
+  private lastEdits = 0;
+
+  constructor(
+    private readonly limits: InCycleLimits,
+    private readonly editCount: () => number,
+  ) {}
+
+  afterTurn(
+    turn: number,
+    cycleTokens: number,
+    calls: readonly { name: string; input: unknown }[],
+  ): (StuckFinding & { signal: InCycleSignal }) | undefined {
+    const edits = this.editCount();
+    if (edits > this.lastEdits) {
+      this.lastEdits = edits;
+      this.lastEditTurn = turn;
+    }
+    for (const c of calls) {
+      const key = `${c.name} ${JSON.stringify(c.input)}`;
+      const n = (this.calls.get(key) ?? 0) + 1;
+      this.calls.set(key, n);
+      if (n >= this.limits.repeatedToolCall)
+        return {
+          signal: 'repeated_tool_call',
+          detail: `called ${c.name} with the same arguments ${n} times: ${key.slice(0, 200)}`,
+        };
+    }
+    if (turn - this.lastEditTurn >= this.limits.noEditTurns)
+      return {
+        signal: 'no_edits',
+        detail: `${turn - this.lastEditTurn} turns without editing a file`,
+      };
+    const burn = this.limits.burnTokens;
+    if (burn !== undefined && edits === 0 && cycleTokens > burn)
+      return {
+        signal: 'token_burn',
+        detail: `${cycleTokens} tokens with no edit, over the ${burn}-token burn limit`,
+      };
+    return undefined;
+  }
+}
+
+/** Burn threshold from earlier cycles' token totals; needs at least 3 of them. */
+export function burnThreshold(history: readonly number[], factor: number): number | undefined {
+  if (history.length < 3) return undefined;
+  const sorted = [...history].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median =
+    sorted.length % 2 ? (sorted[mid] ?? 0) : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
+  return Math.round(median * factor);
+}
 
 export interface StuckFinding {
   signal: StuckSignal;

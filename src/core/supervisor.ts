@@ -12,7 +12,7 @@ import {
   windowRollsAt,
 } from '../guard/budget.js';
 import { climb, escalateModel, LADDER, park } from '../guard/ladder.js';
-import { taskStuckSignals, type StuckFinding } from '../guard/stuck.js';
+import { isInCycleSignal, taskStuckSignals, type StuckFinding } from '../guard/stuck.js';
 import { decideNextMove } from '../judge/next-move.js';
 import type { AgentStateSummary } from '../judge/state-summary.js';
 import type { NextMove } from '../judge/uses.js';
@@ -147,8 +147,12 @@ class Supervisor {
       const findings: StuckFinding[] = taskStuckSignals(task, r.config.stuck);
       if (p.stuck.includes('oscillation'))
         findings.push({ signal: 'oscillation', detail: 'diff reverted earlier accepted work' });
+      // Already logged as stuck.signal in VERIFY, like oscillation.
+      const inCycle = p.stuck.filter(isInCycleSignal);
+      for (const signal of inCycle)
+        findings.push({ signal, detail: `cycle ended early: ${signal.replace(/_/g, ' ')}` });
       for (const f of findings)
-        if (f.signal !== 'oscillation')
+        if (f.signal !== 'oscillation' && !isInCycleSignal(f.signal))
           r.events.emit('stuck.signal', { signal: f.signal, task: task.id, detail: f.detail });
       if (p.stuck.includes('judge_drift'))
         r.events.emit('stuck.secondary', { signal: 'judge_drift', task: task.id });

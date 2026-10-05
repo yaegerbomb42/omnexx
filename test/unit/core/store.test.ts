@@ -51,6 +51,7 @@ export function sampleState(over: Partial<RunState> = {}): RunState {
     budgetExhausted: false,
     spendLedger: [],
     dailyCapHit: false,
+    cycleTokens: [],
     ...over,
   };
 }

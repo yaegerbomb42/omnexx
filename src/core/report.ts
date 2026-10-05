@@ -25,6 +25,14 @@ const MARK: Record<PlanNode['status'], string> = {
 };
 const count = (events: readonly OmnexxEvent[], type: string): number =>
   events.filter((e) => e.type === type).length;
+const flakyIds = (events: readonly OmnexxEvent[]): string => {
+  const ids = new Set(
+    events
+      .filter((e) => e.type === 'verify.flaky')
+      .flatMap((e) => (Array.isArray(e.ids) ? e.ids.map(String) : [])),
+  );
+  return ids.size ? `${ids.size} (${[...ids].slice(0, 10).join(', ')})` : 'none';
+};
 const usd = (n: number): string => `$${n.toFixed(2)}`;
 
 function planTree(plan: Plan | undefined): string[] {
@@ -160,6 +168,7 @@ export async function writeReport(
     `- Rollbacks: ${count(events, 'rollback')}`,
     `- Stuck signals: ${stuck.length}${stuck.length ? ` (${[...new Set(stuck.map((e) => String(e.signal)))].join(', ')})` : ''}`,
     `- Ladder rungs used: ${rungs.length ? rungs.map((e) => `${String(e.task)} → ${String(e.rung)}`).join(', ') : 'none'}`,
+    `- Flaky tests (passed on re-run): ${flakyIds(events)}`,
     `- Anti-cheat rejections: ${events.filter((e) => e.type === 'verify.result' && JSON.stringify(e.reasons).includes('anti-cheat')).length}`,
     `- Provider retries: ${count(events, 'provider.retry')}, outages over 15 min: ${count(events, 'provider.outage')}`,
     `- Crash recoveries: ${count(events, 'run.resume')}`,

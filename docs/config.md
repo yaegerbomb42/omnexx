@@ -27,13 +27,14 @@ The container runs as your uid/gid with `--cap-drop ALL`, `no-new-privileges`, a
 
 ## `[[gates]]`
 
-| Key       | Default     | Meaning                                                                                                                                                                                                                   |
-| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`    | required    | Letters, digits, `_ . -`                                                                                                                                                                                                  |
-| `run`     | required    | Shell command, run in the worktree with a scrubbed env                                                                                                                                                                    |
-| `timeout` | `"10m"`     | Capped by `budget.max_cmd_timeout`                                                                                                                                                                                        |
-| `level`   | `"ratchet"` | `"must-pass"`: exit 0. `"ratchet"`: no new failure ids and no more failures than the baseline                                                                                                                             |
-| `parser`  | `"generic"` | `vitest` (`--reporter=json --outputFile=/dev/stdout`), `jest` (`--json`), `node-test` (`--test-reporter=tap`), `tsc`, `eslint` (`-f json` or default output), `pytest` (`-rf`), `gotest` (`-json`), `generic` (exit code) |
+| Key            | Default     | Meaning                                                                                                                                                                                                                                                      |
+| -------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`         | required    | Letters, digits, `_ . -`                                                                                                                                                                                                                                     |
+| `run`          | required    | Shell command, run in the worktree with a scrubbed env                                                                                                                                                                                                       |
+| `timeout`      | `"10m"`     | Capped by `budget.max_cmd_timeout`                                                                                                                                                                                                                           |
+| `level`        | `"ratchet"` | `"must-pass"`: exit 0. `"ratchet"`: no new failure ids and no more failures than the baseline                                                                                                                                                                |
+| `parser`       | `"generic"` | `vitest` (`--reporter=json --outputFile=/dev/stdout`), `jest` (`--json`), `node-test` (`--test-reporter=tap`), `tsc`, `eslint` (`-f json` or default output), `pytest` (`-rf`), `gotest` (`-json`), `generic` (exit code)                                    |
+| `flaky_reruns` | `1`         | `0`–`3`. When the gate shows new failures the parser can name, run the whole gate again; ids that then pass are flaky (event `verify.flaky`, a `flaky` lesson, a line in the report) and don't fail the cycle. Timeouts and `generic` gates are never re-run |
 
 ## `[budget]` (24 h defaults, plan §14.5)
 
@@ -111,6 +112,8 @@ cache_read = 0.2
 
 Each turn tries the chain in order. Providers over their own caps are skipped; a failing provider cools for 1 minute (transient errors) or 30 minutes (key, quota or unknown model) while the next one takes the call. If every provider is over its cap, the run stops as a budget stop; if every one is failing, the normal outage backoff applies. Events: `provider.failover`; spend per provider in `status --json` (`spend.byProvider`).
 
+No endpoints are built in: any OpenAI-compatible server (OpenAI, OpenRouter, Groq, DeepSeek, Together, LiteLLM, vLLM, Ollama, LM Studio, your own gateway) is one `[providers.endpoints.<name>]` block in `omnexx.toml` or `~/.config/omnexx/config.toml`. The block's name becomes the model-ref prefix.
+
 ## `[providers.anthropic]`
 
 | Key               | Default     | Meaning                                                               |
@@ -158,22 +161,33 @@ Pushes carry only the run id, repo name, status, a task title, counts and dollar
 
 ## `[stuck]`
 
-| Key                          | Default | Meaning                                                   |
-| ---------------------------- | ------- | --------------------------------------------------------- |
-| `max_consecutive_rejections` | `3`     | Same task rejected N times in a row                       |
-| `max_same_signature`         | `3`     | Same normalized failure N times for a task                |
-| `max_task_cycles`            | `8`     | Cycles spent on one task without finishing it             |
-| `no_progress_cycles`         | `8`     | Run-level: no accepted commit in N cycles → `needs-human` |
-| `no_progress_hours`          | `3`     | Same, by time                                             |
-| `oscillation_window`         | `5`     | How many earlier green commits the A→B→A check looks back |
+| Key                          | Default | Meaning                                                                                                               |
+| ---------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
+| `max_consecutive_rejections` | `3`     | Same task rejected N times in a row                                                                                   |
+| `max_same_signature`         | `3`     | Same normalized failure N times for a task                                                                            |
+| `max_task_cycles`            | `8`     | Cycles spent on one task without finishing it                                                                         |
+| `no_progress_cycles`         | `8`     | Run-level: no accepted commit in N cycles → `needs-human`                                                             |
+| `no_progress_hours`          | `3`     | Same, by time                                                                                                         |
+| `oscillation_window`         | `5`     | How many earlier green commits the A→B→A check looks back                                                             |
+| `repeated_tool_call`         | `3`     | In-cycle: the same tool call with identical arguments this many times ends the cycle                                  |
+| `no_edit_turns`              | `15`    | In-cycle: this many turns since the last file edit (or cycle start) ends the cycle                                    |
+| `burn_factor`                | `3`     | In-cycle: tokens above this × the median of recent cycles, before any edit, end the cycle (needs 3 cycles of history) |
+
+An in-cycle signal ends the cycle as `stuck` (events `stuck.in_cycle`, then `stuck.signal`). Its partial work still goes through VERIFY, so it's committed if the gates pass and rolled back otherwise; the next attempt gets the reason as evidence, and the strategy ladder climbs one rung.
 
 ## `[context]`
 
-| Key                   | Default                                      |
-| --------------------- | -------------------------------------------- |
-| `progress_tail`       | `5` progress entries in each cycle's context |
-| `notes_max_tokens`    | `1500` (lessons file cap)                    |
-| `repo_map_max_tokens` | `3000` (codebase map cap)                    |
+| Key                     | Default                                                                   |
+| ----------------------- | ------------------------------------------------------------------------- |
+| `progress_tail`         | `5` progress entries in each cycle's context                              |
+| `notes_max_tokens`      | `1500` (lessons file cap)                                                 |
+| `repo_map_max_tokens`   | `3000` (codebase map cap)                                                 |
+| `clear_tool_results_at` | `60000` estimated context tokens: elide old tool results over 1,000 chars |
+| `keep_tool_results`     | `6` newest tool results never cleared                                     |
+| `compact_at`            | `100000` estimated context tokens: summarize older turns                  |
+| `compact_keep_turns`    | `4` recent assistant turns kept verbatim                                  |
+
+In-cycle context control runs before each turn and works on every provider. Past `clear_tool_results_at`, old large tool results become a one-line note telling the model to re-run the tool. If the context is still past `compact_at`, the cheap chain summarizes the older turns into a structured summary (done, in progress, files touched, last error, next step) that is appended to the cycle's first message; at least two older turns are needed, so it never re-compacts on consecutive turns. A failed or budget-refused summary leaves the context as is, and `max_tokens_per_cycle` still ends a cycle that outgrows both. Events: `context.cleared`, `context.compacted`, `context.compact_failed`. Keep `compact_at` under the smallest context window in your worker chain.
 
 ## `[policy]`
 

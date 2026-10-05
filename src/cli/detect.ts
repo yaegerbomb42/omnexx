@@ -210,6 +210,30 @@ export function renderProjectToml(d: Detection): string {
       '',
     );
   }
-  lines.push('[budget]', 'max_usd = 50', 'max_hours = 24', '', '[git]', 'push = "none"', '');
+  lines.push(
+    '[budget]',
+    'max_usd = 50',
+    'max_hours = 24',
+    '',
+    '[git]',
+    'push = "none"',
+    '',
+    '# Models default to Anthropic (ANTHROPIC_API_KEY). Any OpenAI-compatible endpoint works too:',
+    '# [models]',
+    '# planner = "openrouter:anthropic/claude-opus-5.5"',
+    '# worker  = ["openrouter:deepseek/deepseek-v4", "local:qwen3-coder"]',
+    '# cheap   = "local:qwen3-coder"',
+    '#',
+    '# [providers.endpoints.openrouter]',
+    '# base_url = "https://openrouter.ai/api/v1"',
+    '# api_key_env = "OPENROUTER_API_KEY"',
+    '#',
+    '# [providers.endpoints.local]',
+    '# base_url = "http://localhost:11434/v1"',
+    '# free = true',
+    '#',
+    '# Paid models outside Anthropic need a [pricing.<alias>] entry: see docs/config.md.',
+    '',
+  );
   return lines.join('\n');
 }

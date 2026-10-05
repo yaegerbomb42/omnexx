@@ -62,6 +62,7 @@ export async function createRun(o: CreateRunOptions): Promise<RunStore> {
     budgetExhausted: false,
     spendLedger: [],
     dailyCapHit: false,
+    cycleTokens: [],
   };
   await store.writeState(state);
   return store;

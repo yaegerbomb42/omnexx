@@ -22,12 +22,16 @@ import {
   statusCommand,
 } from './commands/inspect.js';
 import { readGoal, runCommand, runPlanOnly, type FullRunFlags } from './commands/run.js';
+import * as extraCommands from './commands/extra/index.js';
+import type { CommandRegistrar } from './commands/extra/types.js';
 import { serviceCommand } from './commands/service.js';
 import { dockerAvailable } from '../security/sandbox-docker.js';
+import { banner, brand } from './brand.js';
 import { EXIT } from './exit-codes.js';
 import { println, readSecret, type CliIO } from './io.js';
 
 export const VERSION: string = pkg.version;
+const EXTRA_COMMANDS: Record<string, CommandRegistrar> = extraCommands;
 
 /** Build the commander program. Actions report their exit code through `setExit`. */
 export function createProgram(io: CliIO, setExit: (code: number) => void): Command {
@@ -40,6 +44,22 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     })
     .exitOverride()
     .showHelpAfterError('(run `omnexx --help` for usage)');
+
+  // Brand the help screen on a terminal; piped output stays plain for scripts.
+  const b = brand(io);
+  const columns = (io.stdout as { columns?: number }).columns ?? 80;
+  if (io.isTTY) program.addHelpText('beforeAll', banner(io, columns, VERSION));
+  program.configureHelp({
+    styleTitle: (s) => b.green(s),
+    styleCommandText: (s) => b.cyan(s),
+    styleSubcommandText: (s) => b.cyan(s),
+    styleOptionText: (s) => b.cyan(s),
+    styleArgumentText: (s) => b.dim(s),
+  });
+  // Bare `omnexx`: splash plus help instead of commander's "missing command" error.
+  program.action(() => {
+    program.outputHelp();
+  });
 
   program
     .command('init')
@@ -230,6 +250,10 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
       const removed = await clearKey(resolvePaths(io.env), assertProvider(provider));
       println(io.stdout, removed ? 'Stored key removed.' : 'No stored key.');
     });
+
+  for (const [, register] of Object.entries(EXTRA_COMMANDS).sort(([a], [b]) => (a < b ? -1 : 1))) {
+    register(program, io, setExit);
+  }
 
   return program;
 }

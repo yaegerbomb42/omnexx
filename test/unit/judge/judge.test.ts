@@ -15,7 +15,7 @@ import {
 } from '../../../src/judge/types.js';
 import { driftQuestion, nextMoveQuestion, NEXT_MOVES } from '../../../src/judge/uses.js';
 import { BUILTIN_PRICING } from '../../../src/providers/pricing.js';
-import type { CompletionResponse, Provider } from '../../../src/providers/types.js';
+import type { CompletionResponse } from '../../../src/providers/types.js';
 import { Redactor } from '../../../src/security/redact.js';
 import { FakeClock } from '../../support/clock.js';
 import { json, mockServer } from '../../support/mock-http.js';
@@ -328,19 +328,21 @@ describe('LlmJudge', () => {
     model: 'm',
   });
   const make = (input: unknown, allow = true) => {
-    const provider: Provider = { name: 'scripted', complete: () => Promise.resolve(resp(input)) };
+    const model = {
+      provider: 'anthropic',
+      alias: 'haiku',
+      id: 'claude-haiku-4-5-20251001',
+      price: BUILTIN_PRICING.haiku ?? ({} as never),
+    };
     const spent: number[] = [];
     const judge = new LlmJudge({
-      provider,
-      model: {
-        provider: 'anthropic',
-        alias: 'haiku',
-        id: 'claude-haiku-4-5-20251001',
-        price: BUILTIN_PRICING.haiku ?? ({} as never),
-      },
       clock: new FakeClock(),
-      beforeCall: () => allow,
-      afterCall: (r) => spent.push(r.usage.output),
+      complete: () => {
+        if (!allow) return Promise.resolve(undefined);
+        const res = resp(input);
+        spent.push(res.usage.output);
+        return Promise.resolve({ res, model });
+      },
     });
     return { judge, spent };
   };
@@ -385,16 +387,8 @@ describe('LlmJudge', () => {
       ]),
     ).toMatchObject({ reason: expect.stringMatching(/no probability/) as string });
     const broken = new LlmJudge({
-      provider: { name: 'x', complete: () => Promise.reject(new Error('down')) },
-      model: {
-        provider: 'anthropic',
-        alias: 'haiku',
-        id: 'h',
-        price: BUILTIN_PRICING.haiku ?? ({} as never),
-      },
       clock: new FakeClock(),
-      beforeCall: () => true,
-      afterCall: () => undefined,
+      complete: () => Promise.reject(new Error('down')),
     });
     expect(await broken.ask('drift', {}, [driftQuestion])).toMatchObject({
       reason: expect.stringMatching(/provider error/) as string,

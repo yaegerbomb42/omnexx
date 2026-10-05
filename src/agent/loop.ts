@@ -18,7 +18,9 @@ import {
   type Usage,
 } from '../providers/types.js';
 import type { Tool, ToolContext } from '../tools/types.js';
+import { manageContext, type CompactionSettings, type Summarize } from './compaction.js';
 import { turnRequest } from './context.js';
+import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
 
 /** Thrown inside the retry loop when a pre-flight check refuses the call; ends the cycle, never retried. */
 class BudgetStopSignal extends Error {
@@ -32,7 +34,7 @@ class BudgetStopSignal extends Error {
 
 export type ControlSignal = 'continue' | 'pause' | 'stop' | 'stop-now';
 
-export type LoopEnd = 'done' | 'stop' | 'stop-now' | BudgetStop | 'refusal';
+export type LoopEnd = 'done' | 'stop' | 'stop-now' | BudgetStop | 'refusal' | 'stuck';
 
 export interface LoopResult {
   end: LoopEnd;
@@ -41,6 +43,8 @@ export interface LoopResult {
   usage: Usage;
   usd: number;
   messages: Message[];
+  /** Set when the loop ended as `stuck`. */
+  stuck?: StuckFinding;
 }
 
 export interface LoopDeps {
@@ -70,6 +74,10 @@ export interface LoopDeps {
   onPauseChange?: (paused: boolean) => void;
   retry?: { baseDelayMs?: number; maxDelayMs?: number; onOutage?: (ms: number) => void };
   signal?: AbortSignal;
+  /** In-cycle context control; off when unset. */
+  compaction?: { settings: CompactionSettings; summarize?: Summarize };
+  /** In-cycle stuck detection; off when unset. */
+  watch?: InCycleWatch;
 }
 
 function summarizeInput(input: unknown): string {
@@ -86,7 +94,7 @@ export async function runAgentLoop(
   ctx: { system: SystemBlock[]; first: Message; tools: ToolSpec[] },
   deps: LoopDeps,
 ): Promise<LoopResult> {
-  const messages: Message[] = [ctx.first];
+  let messages: Message[] = [ctx.first];
   const usage: Usage = { uncached: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0, output: 0 };
   let usd = 0;
   let turns = 0;
@@ -108,6 +116,16 @@ export async function runAgentLoop(
       deps.events.emit('control.resumed', { turn: turns });
     }
     if (signal === 'stop' || signal === 'stop-now') return end(signal);
+
+    if (deps.compaction && turns > 0) {
+      messages = await manageContext(
+        messages,
+        ctx.first,
+        deps.compaction.settings,
+        deps.compaction.summarize,
+        ({ kind, ...rest }) => deps.events.emit(`context.${kind}`, { turn: turns, ...rest }),
+      );
+    }
 
     let chosen: ResolvedModel | undefined;
     let res: CompletionResponse;
@@ -272,5 +290,15 @@ export async function runAgentLoop(
       });
     }
     messages.push({ role: 'user', content: results });
+
+    const finding = deps.watch?.afterTurn(turns, cycleTokens, calls);
+    if (finding) {
+      deps.events.emit('stuck.in_cycle', {
+        signal: finding.signal,
+        detail: finding.detail,
+        turn: turns,
+      });
+      return { ...end('stuck'), stuck: finding };
+    }
   }
 }
