@@ -161,6 +161,17 @@ describe('doctor: provider endpoints', () => {
   });
 });
 
+describe('doctor: anthropic key is optional when no role uses it', () => {
+  it('skips instead of failing', async () => {
+    const d = deps(await isolatedEnv(), {
+      models: { planner: 'local:m', worker: 'local:m', cheap: 'local:m' },
+      providers: { endpoints: { local: { base_url: 'http://localhost:11434/v1', free: true } } },
+    });
+    const byName = Object.fromEntries((await runDoctorChecks(d)).map((c) => [c.name, c]));
+    expect(byName['anthropic key']?.status).toBe('skip');
+  });
+});
+
 describe('helpers', () => {
   it('versionAtLeast', () => {
     expect(versionAtLeast('0.35.0', [0, 35, 0])).toBe(true);

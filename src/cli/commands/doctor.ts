@@ -110,6 +110,13 @@ async function judgeChecks(deps: DoctorDeps): Promise<Check[]> {
   return checks;
 }
 
+/** Does any role's model chain use Anthropic? */
+function usesAnthropic(config: OmnexxConfig): boolean {
+  return [config.models.planner, config.models.worker, config.models.cheap]
+    .flatMap((c) => (typeof c === 'string' ? [c] : c))
+    .some((ref) => ref.startsWith('anthropic:'));
+}
+
 export async function runDoctorChecks(deps: DoctorDeps): Promise<Check[]> {
   const checks: Check[] = [];
   checks.push(
@@ -143,7 +150,8 @@ export async function runDoctorChecks(deps: DoctorDeps): Promise<Check[]> {
         }
       : {
           name: 'anthropic key',
-          status: 'fail',
+          // Only an error when some role's model chain actually uses Anthropic.
+          status: usesAnthropic(deps.config) ? 'fail' : 'skip',
           detail: 'missing: set ANTHROPIC_API_KEY or run `omnexx auth set anthropic`',
         },
   );
