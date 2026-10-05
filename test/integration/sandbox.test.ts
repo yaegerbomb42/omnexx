@@ -84,7 +84,8 @@ describe.skipIf(!available)('docker sandbox (real containers)', () => {
     await new Promise((res) => setTimeout(res, 1_500));
     // The slim image has no `ps`: count through /proc so a missing tool can't make this pass.
     const ps = await s.exec(
-      'n=0; for c in /proc/[0-9]*/comm; do [ "$(cat $c 2>/dev/null)" = sleep ] && n=$((n+1)); done; echo $n',
+      // Only the test's `sleep 300` processes count; the container's own `sleep infinity` stays.
+      'n=0; for c in /proc/[0-9]*/cmdline; do [ "$(tr "\\0" " " < $c 2>/dev/null)" = "sleep 300 " ] && n=$((n+1)); done; echo $n',
       { cwd: worktree, env: {}, timeoutMs: 20_000 },
     );
     expect(ps.output.trim()).toBe('0');

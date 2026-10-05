@@ -162,13 +162,7 @@ export class DockerSandbox {
       env: clientEnv(this.env),
       onKill: async () => {
         await this.docker(
-          [
-            'exec',
-            this.spec.name,
-            'sh',
-            '-c',
-            `[ -f ${pidFile} ] && kill -KILL -- -$(cat ${pidFile})`,
-          ],
+          ['exec', this.spec.name, 'sh', '-c', `[ -f ${pidFile} ] && kill -9 -$(cat ${pidFile})`],
           10_000,
         );
       },
