@@ -178,6 +178,14 @@ export const contextSchema = z.strictObject({
   progress_tail: z.number().int().nonnegative().default(5),
   notes_max_tokens: z.number().int().positive().default(1_500),
   repo_map_max_tokens: z.number().int().positive().default(3_000),
+  /** In-cycle: past this many context tokens, elide old large tool results. */
+  clear_tool_results_at: z.number().int().positive().default(60_000),
+  /** The newest tool results that are never cleared. */
+  keep_tool_results: z.number().int().nonnegative().default(6),
+  /** In-cycle: past this many context tokens, summarize older turns with the cheap model. */
+  compact_at: z.number().int().positive().default(100_000),
+  /** Recent assistant turns kept verbatim through a compaction. */
+  compact_keep_turns: z.number().int().positive().default(4),
 });
 
 export const policySchema = z.strictObject({

@@ -180,3 +180,11 @@ Format: date, decision, why, alternatives considered.
 ## Built-in swarm model pools (2026-10-05)
 
 Jimmy asked for his swarm gateway's model pools to be hardcoded. `src/providers/pools.ts` lists the five pools and a default `swarm` endpoint that the config schema always injects, so `swarm:<pool>` works with no endpoint block. The key comes only from `SWARM_API_KEY`; the sample client's fallback key was not copied, because no key lives in code. The pools are priced at $0 (`free = true`), so they count against no USD cap; add `[pricing.<pool>]` if that changes. Unknown pool names fail at config resolution rather than at the first request. A user-declared `[providers.endpoints.swarm]` wins over the default.
+
+## In-cycle compaction is local, not server-side (2026-10-05)
+
+Plan §3.6 prefers Anthropic's server-side context editing and compaction where available. Chains now mix Anthropic with OpenAI-compatible endpoints (swarm pools, OpenRouter, Ollama), so a turn can fail over mid-cycle to a provider without those features. The harness therefore does both steps itself, before each turn, on the provider-neutral message list: elide old tool results past `clear_tool_results_at`, then have the cheap chain write a `CycleSummary` past `compact_at`. Server-side edits can be added later as an Anthropic-only optimization. Compaction needs at least two older turns, which stops a summary call on every turn once a long tail sits near the threshold (found by the integration test). Token counts are the existing 3 chars/token estimate, so thresholds err on the early side.
+
+## Cheap-model side calls use the whole cheap chain (2026-10-05)
+
+The judge, codemap descriptions and notes consolidation called only the first cheap model, without a route, so a non-Anthropic `cheap` model was sent to Anthropic. They now go through `Run.cheapComplete`, which walks the chain like a worker turn: skip blocked providers, pre-flight each model at its own price, route, fail over, and record spend per provider. Compaction summaries use the same path.

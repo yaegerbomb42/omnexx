@@ -2,13 +2,14 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseDuration } from '../config/duration.js';
 import type { OmnexxConfig } from '../config/schema.js';
-import { StateError } from '../errors.js';
+import { ProviderError, StateError } from '../errors.js';
 import { createJudge } from '../judge/factory.js';
 import type { FailOpenJudge } from '../judge/fail-open.js';
 import { LlmJudge } from '../judge/llm.js';
 import { preflight, spentInWindow } from '../guard/budget.js';
 import { costUsd, resolveChain, type ResolvedModel } from '../providers/pricing.js';
-import type { Provider, Usage } from '../providers/types.js';
+import { shouldFailover } from '../providers/router.js';
+import type { CompletionRequest, CompletionResponse, Provider, Usage } from '../providers/types.js';
 import { scrubEnv } from '../security/env-scrub.js';
 import type { PolicyContext } from '../security/command-policy.js';
 import { Redactor } from '../security/redact.js';
@@ -101,25 +102,13 @@ export class Run {
       fetch: deps.fetch,
       llm: () =>
         new LlmJudge({
-          provider: deps.provider,
-          model: this.models.cheap,
           clock: deps.clock,
-          beforeCall: (input, out) =>
-            preflight(c.budget, {
-              spentUsd: this.state.spend.usd,
-              cycle: { turns: 0, tokens: 0 },
-              estimatedInputTokens: input,
-              maxOutputTokens: out,
-              price: this.models.cheap.price,
-            }).ok,
-          afterCall: (res) => {
-            void this.addSpend(
-              res.usage,
-              costUsd(res.usage, this.models.cheap.price),
-              res.model,
-              'judge',
-            );
-          },
+          complete: (req, estimate, maxOut) =>
+            this.cheapComplete(req, {
+              estimatedInputTokens: estimate,
+              maxOutputTokens: maxOut,
+              role: 'judge',
+            }),
         }),
     });
   }
@@ -227,6 +216,64 @@ export class Run {
 
   coolProvider(provider: string, ms: number): void {
     this.cooling.set(provider, this.clock.now() + ms);
+  }
+
+  /**
+   * One side call on the cheap chain (judge, summaries, codemap, compaction): tried in order like
+   * a worker turn, skipping blocked providers, pre-flighted against each model's own price, and
+   * routed to that model's provider. Returns undefined when the budget refuses the call; throws
+   * when every provider failed.
+   */
+  async cheapComplete(
+    req: Omit<CompletionRequest, 'model' | 'route'>,
+    opts: { estimatedInputTokens: number; maxOutputTokens: number; role: string },
+  ): Promise<{ res: CompletionResponse; model: ResolvedModel } | undefined> {
+    const errors: string[] = [];
+    for (const model of this.chains.cheap) {
+      const blocked = this.providerBlocked(model.provider);
+      if (blocked) {
+        errors.push(`${model.provider}: ${blocked}`);
+        continue;
+      }
+      const pf = preflight(this.config.budget, {
+        spentUsd: this.state.spend.usd,
+        spentTodayUsd: this.spentToday(),
+        cycle: { turns: 0, tokens: 0 },
+        estimatedInputTokens: opts.estimatedInputTokens,
+        maxOutputTokens: opts.maxOutputTokens,
+        price: model.price,
+      });
+      if (!pf.ok) return undefined;
+      try {
+        const res = await this.deps.provider.complete({
+          ...req,
+          model: model.id,
+          route: model.provider,
+        });
+        await this.addSpend(
+          res.usage,
+          costUsd(res.usage, model.price),
+          res.model,
+          opts.role,
+          model.provider,
+        );
+        return { res, model };
+      } catch (err) {
+        if (!shouldFailover(err)) throw err;
+        this.coolProvider(model.provider, err.retryable ? 60_000 : 30 * 60_000);
+        this.events.emit('provider.failover', {
+          provider: model.provider,
+          model: model.id,
+          error: err.message,
+          status: err.status,
+          role: opts.role,
+        });
+        errors.push(`${model.provider}: ${err.message}`);
+      }
+    }
+    throw new ProviderError(`no cheap model could take the call: ${errors.join('; ')}`, {
+      retryable: true,
+    });
   }
 
   async addSpend(

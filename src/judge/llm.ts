@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { JudgeUse } from '../config/schema.js';
 import type { Clock } from '../core/clock.js';
 import type { ResolvedModel } from '../providers/pricing.js';
-import type { CompletionResponse, Provider } from '../providers/types.js';
+import type { CompletionRequest, CompletionResponse } from '../providers/types.js';
 import {
   answersMatch,
   validateQuestions,
@@ -13,12 +13,16 @@ import {
 } from './types.js';
 
 export interface LlmJudgeOptions {
-  provider: Provider;
-  model: ResolvedModel;
   clock: Clock;
-  /** Budget gate: returns false to refuse the call (the judge then abstains). Records spend after. */
-  beforeCall: (estimatedInputTokens: number, maxOutputTokens: number) => boolean;
-  afterCall: (res: CompletionResponse) => void;
+  /**
+   * Runs the call on the cheap chain: budget-gated, routed, spend recorded. Undefined means the
+   * budget refused it (the judge then abstains).
+   */
+  complete: (
+    req: Omit<CompletionRequest, 'model' | 'route'>,
+    estimatedInputTokens: number,
+    maxOutputTokens: number,
+  ) => Promise<{ res: CompletionResponse; model: ResolvedModel } | undefined>;
   maxTokens?: number;
 }
 
@@ -68,30 +72,32 @@ export class LlmJudge implements Judge {
       .join('\n');
     const prompt = `You are a terse decision function for an autonomous coding harness (use: ${use}). Answer every question using only the state.\n\nState:\n${stateText}\n\nQuestions:\n${qText}`;
     const maxTokens = this.opts.maxTokens ?? 1_024;
-    if (!this.opts.beforeCall(Math.ceil(prompt.length / 3) + 400, maxTokens))
-      return abstain('budget');
     const started = this.opts.clock.now();
-    let res: CompletionResponse;
+    let done: { res: CompletionResponse; model: ResolvedModel } | undefined;
     try {
-      res = await this.opts.provider.complete({
-        model: this.opts.model.id,
-        system: [{ text: 'Reply only by calling the answer tool.' }],
-        tools: [
-          {
-            name: 'answer',
-            description: 'Submit answers',
-            inputSchema: z.toJSONSchema(answerSchema),
-          },
-        ],
-        toolChoice: { type: 'tool', name: 'answer' },
-        messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
+      done = await this.opts.complete(
+        {
+          system: [{ text: 'Reply only by calling the answer tool.' }],
+          tools: [
+            {
+              name: 'answer',
+              description: 'Submit answers',
+              inputSchema: z.toJSONSchema(answerSchema),
+            },
+          ],
+          toolChoice: { type: 'tool', name: 'answer' },
+          messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
+          maxTokens,
+          messageBreakpoints: [],
+        },
+        Math.ceil(prompt.length / 3) + 400,
         maxTokens,
-        messageBreakpoints: [],
-      });
+      );
     } catch (err) {
       return abstain(`provider error: ${(err as Error).message}`);
     }
-    this.opts.afterCall(res);
+    if (!done) return abstain('budget');
+    const { res, model } = done;
     const call = res.content.find((b) => b.type === 'tool_use');
     const parsed = answerSchema.safeParse(call?.type === 'tool_use' ? call.input : undefined);
     if (!parsed.success) return abstain('malformed tool answer');
@@ -131,9 +137,9 @@ export class LlmJudge implements Judge {
       answers,
       judge: this.kind,
       latencyMs: this.opts.clock.now() - started,
-      model: this.opts.model.id,
+      model: model.id,
       inputBytes: Buffer.byteLength(prompt),
-      endpointHost: 'api.anthropic.com',
+      endpointHost: model.provider === 'anthropic' ? 'api.anthropic.com' : model.provider,
     };
   }
 }

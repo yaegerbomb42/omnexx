@@ -1,4 +1,6 @@
 import { join } from 'node:path';
+import { z } from 'zod';
+import { cycleSummarySchema, transcriptFor, type CycleSummary } from '../agent/compaction.js';
 import { buildCycleContext } from '../agent/context.js';
 import { renderCodemap, type Codemap } from '../agent/codemap.js';
 import { runAgentLoop } from '../agent/loop.js';
@@ -29,6 +31,8 @@ import { refreshCodemap } from './milestones.js';
 import { getNode, type PlanNode } from './plan.js';
 import type { PendingVerdict } from './run-store.js';
 import type { Run } from './run.js';
+import { estimateTokens } from './tokens.js';
+import type { Message } from '../providers/types.js';
 
 const CHECK_TIMEOUT_MS = 10 * 60_000;
 
@@ -154,6 +158,41 @@ function toolContext(run: Run, edited: Set<string>): ToolContext {
   };
 }
 
+const SUMMARY_MAX_TOKENS = 2_000;
+
+/** Cheap-model CycleSummary of the turns a compaction drops (plan §3.6). */
+async function summarizeCycle(
+  run: Run,
+  task: PlanNode,
+  head: readonly Message[],
+): Promise<CycleSummary | undefined> {
+  const prompt = `Summarize this part of a coding agent's work on task ${task.id} ("${task.title}") so it can continue without the transcript. Be concrete: file paths, commands, exact error text. Reply only by calling the answer tool.\n\n${run.redactor.text(transcriptFor(head))}`;
+  const done = await run.cheapComplete(
+    {
+      system: [{ text: 'You compress a coding agent transcript into a structured summary.' }],
+      tools: [
+        {
+          name: 'answer',
+          description: 'Submit the summary',
+          inputSchema: z.toJSONSchema(cycleSummarySchema),
+        },
+      ],
+      toolChoice: { type: 'tool', name: 'answer' },
+      messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
+      maxTokens: SUMMARY_MAX_TOKENS,
+      messageBreakpoints: [],
+    },
+    {
+      estimatedInputTokens: estimateTokens(prompt) + 400,
+      maxOutputTokens: SUMMARY_MAX_TOKENS,
+      role: 'cheap',
+    },
+  );
+  const call = done?.res.content.find((b) => b.type === 'tool_use');
+  const parsed = cycleSummarySchema.safeParse(call?.type === 'tool_use' ? call.input : undefined);
+  return parsed.success ? parsed.data : undefined;
+}
+
 /** ACT: zero-cost preflight on the task's checks, then the agent loop with a fresh context. */
 export async function stepAct(run: Run): Promise<void> {
   const plan = run.requirePlan();
@@ -220,6 +259,15 @@ export async function stepAct(run: Run): Promise<void> {
       run.paused = p;
     },
     signal: run.abort.signal,
+    compaction: {
+      settings: {
+        clearAt: run.config.context.clear_tool_results_at,
+        keepToolResults: run.config.context.keep_tool_results,
+        compactAt: run.config.context.compact_at,
+        keepTurns: run.config.context.compact_keep_turns,
+      },
+      summarize: (head) => summarizeCycle(run, task, head),
+    },
   });
   if (result.end === 'max_usd') run.state.budgetExhausted = true;
   if (result.end === 'max_usd_per_day') run.state.dailyCapHit = true;
