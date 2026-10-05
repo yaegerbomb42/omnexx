@@ -4,9 +4,14 @@ import { climb, LADDER } from '../../../src/guard/ladder.js';
 
 describe('strategy ladder', () => {
   it('is an ordered list of implemented rungs only', () => {
-    expect(LADDER.map((r) => r.id)).toEqual(['retry_with_evidence', 'escalate_model', 'park']);
+    expect(LADDER.map((r) => r.id)).toEqual([
+      'retry_with_evidence',
+      'escalate_model',
+      'replan_task',
+      'park',
+    ]);
   });
-  it('no findings → no rung; findings climb retry → escalate (counters reset) → park with the reason', () => {
+  it('no findings → no rung; findings climb retry → escalate (counters reset) → replan → park with the reason', () => {
     const t = planNodeSchema.parse({
       id: 'M1.T01',
       title: 'task',
@@ -26,11 +31,15 @@ describe('strategy ladder', () => {
       status: 'todo',
       approachesTried: ['tried X'],
     });
+    expect(climb(t, [{ signal: 'consecutive_rejections', detail: 'x' }])?.rung.id).toBe(
+      'replan_task',
+    );
+    expect(t.status).toBe('todo');
     const r = climb(t, [{ signal: 'consecutive_rejections', detail: '3 rejections in a row' }]);
     expect(r?.rung.id).toBe('park');
     expect(t).toMatchObject({
       status: 'parked',
-      rung: 2,
+      rung: 3,
       parkedReason: 'consecutive_rejections: 3 rejections in a row',
     });
   });

@@ -72,5 +72,10 @@ describe('taskStuckSignals', () => {
       'task_cycles',
     ]);
     expect(taskStuckSignals(task({ attempts: 8, status: 'done' }), stuck)).toEqual([]);
+    // Cycles count from the current ladder rung, so each rung gets its own allowance.
+    expect(taskStuckSignals(task({ attempts: 12, rungStartedAt: 8 }), stuck)).toEqual([]);
+    expect(
+      taskStuckSignals(task({ attempts: 16, rungStartedAt: 8 }), stuck).map((s) => s.signal),
+    ).toEqual(['task_cycles']);
   });
 });

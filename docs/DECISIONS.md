@@ -160,3 +160,8 @@ Format: date, decision, why, alternatives considered.
 
 **Decision.** The ladder is now retry with evidence → escalate model → park. Escalation sets `escalated` on the task, so its cycles use the planner model, and resets the consecutive-rejection and signature counters so the strong model gets its own three attempts; approaches tried and evidence carry over. `switch_to_strong_model` is now an implemented judge action (steer mode only).
 **Why.** Cheaper than parking a task that a stronger model can solve, and bounded: an escalated task that keeps failing parks after three more rejections, or at `max_task_cycles`.
+
+## D27 (2026-10-05) Ladder rung 3: split a stuck task; climb on stalled partial progress
+
+**Decision.** After the strong model also gets stuck, the planner splits the task into 2–4 new tasks under the same milestone. The original is parked with `splitInto` and marked done when all of them are; tasks that depended on it now depend on the new ones. If the planner produces nothing, the task parks. `split_task` is now an implemented judge action.
+**Bug fixed on the way.** The ladder only climbed on rejections, so a task that kept landing accepted-but-unfinished commits looped until the budget ran out. It now also climbs when the cycles-per-task signal fires on accepted partials, and that signal counts cycles since the task reached its current rung (`rungStartedAt`), so each rung gets its own allowance.

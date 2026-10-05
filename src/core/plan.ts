@@ -50,6 +50,10 @@ export const planNodeSchema = nodeInputSchema.extend({
   rung: z.number().int().nonnegative().default(0),
   /** Cycles on this task use the planner (strong) model instead of the worker model. */
   escalated: z.boolean().default(false),
+  /** `attempts` when the task reached its current ladder rung (cycles-per-task counts from here). */
+  rungStartedAt: z.number().int().nonnegative().default(0),
+  /** Set when the ladder split this task: it is done once all of these are done. */
+  splitInto: z.array(z.string()).default([]),
   doneAtCycle: z.number().int().optional(),
   evidence: z.array(z.string()).default([]),
 });

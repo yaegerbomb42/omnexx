@@ -20,7 +20,8 @@ export class PlannerIncomplete extends StateError {
 export type PlannerMode =
   | { kind: 'initial' }
   | { kind: 'expand'; milestoneId: string }
-  | { kind: 'replan'; reason: string };
+  | { kind: 'replan'; reason: string }
+  | { kind: 'split'; taskId: string; reason: string };
 
 function instruction(mode: PlannerMode, plan: Plan | undefined): string {
   if (mode.kind === 'initial')
@@ -42,6 +43,13 @@ function instruction(mode: PlannerMode, plan: Plan | undefined): string {
     : '';
   if (mode.kind === 'expand') {
     return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nExpand milestone ${mode.milestoneId} into leaf tasks (ids ${mode.milestoneId}.T01, ...). Call write_plan with the complete plan: every existing milestone and task, plus the new tasks.`;
+  }
+  if (mode.kind === 'split') {
+    const t = plan?.nodes.find((n) => n.id === mode.taskId);
+    const evidence = t
+      ? [...t.approachesTried.map((a) => `- tried: ${a}`), ...t.evidence.slice(-2)].join('\n')
+      : '';
+    return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nTask ${mode.taskId} is stuck: ${mode.reason}.\n${evidence}\n\nSplit ${mode.taskId} into 2-4 smaller tasks under the same milestone, with new ids that are not used yet, each with its own checks. Prefer a first task that writes a failing test reproducing the problem. The new tasks replace ${mode.taskId}; it will be marked done when they are. Call write_plan with the complete plan: every existing milestone and task, plus the new tasks.`;
   }
   return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nRe-plan because: ${mode.reason}. You may split, add or reorder nodes under the affected milestone, and park nodes with a reason. Never delete a node. Call write_plan with the complete plan.`;
 }

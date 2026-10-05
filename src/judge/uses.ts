@@ -18,6 +18,7 @@ export const IMPLEMENTED_MOVES: ReadonlySet<NextMove> = new Set([
   'retry_different_approach',
   'revert_to_last_green',
   'switch_to_strong_model',
+  'split_task',
   'park_and_move_on',
   'ask_human',
 ]);
