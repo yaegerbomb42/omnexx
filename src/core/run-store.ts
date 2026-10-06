@@ -118,6 +118,8 @@ export const stateSchema = z.object({
     })
     .prefault({}),
   acceptedCommits: z.number().default(0),
+  /** Improvement rounds planned after the goal was met (beyond mode). */
+  beyondRounds: z.number().int().default(0),
   rejectedCycles: z.number().default(0),
   lastProgressAt: z.number().optional(),
   lastProgressCycle: z.number().default(0),

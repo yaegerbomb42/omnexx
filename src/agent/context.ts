@@ -6,6 +6,8 @@ export interface CycleInputs {
   systemPrompt: string;
   codemap: string;
   goal: string;
+  /** intent.md from the initial planner; empty until written. */
+  intent?: string;
   notes: string;
   plan: Plan;
   task: PlanNode;
@@ -28,7 +30,7 @@ export function buildCycleContext(i: CycleInputs): {
   const system: SystemBlock[] = [
     { text: i.systemPrompt },
     { text: i.codemap },
-    { text: `# Goal\n\n${i.goal.trim()}` },
+    { text: i.intent ? `# Goal\n\n${i.goal.trim()}\n\n${i.intent}` : `# Goal\n\n${i.goal.trim()}` },
     { text: `# Lessons (notes.md)\n\n${i.notes.trim()}`, cacheBreakpoint: true },
   ];
   const parts = [`# Plan\n\n${compactPlanView(i.plan, i.task.id)}`];

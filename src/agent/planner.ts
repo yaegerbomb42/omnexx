@@ -9,6 +9,8 @@ import { fail, ok, type Tool, type ToolContext } from '../tools/types.js';
 import { renderCodemap, type Codemap } from './codemap.js';
 import { runAgentLoop } from './loop.js';
 import { PLANNER_SYSTEM } from './prompts.js';
+import { readIntent, writeIntentTool } from './intent.js';
+import type { RouteAction } from '../router/actions.js';
 
 /** The planner loop ended (caps, stop, refusal) before a valid plan was written. */
 export class PlannerIncomplete extends StateError {
@@ -21,11 +23,24 @@ export type PlannerMode =
   | { kind: 'initial' }
   | { kind: 'expand'; milestoneId: string }
   | { kind: 'replan'; reason: string }
-  | { kind: 'split'; taskId: string; reason: string };
+  | { kind: 'split'; taskId: string; reason: string }
+  | { kind: 'beyond'; round: number; maxRounds: number };
+
+/** The rubric beyond mode ranks improvements against, once the goal itself is met. */
+export const BEYOND_RUBRIC = [
+  'correctness hardening: error paths, input validation, edge cases the tests miss',
+  'test coverage of untested behaviour that users depend on',
+  'security: dependency audit, secrets, injection, unsafe defaults',
+  'performance of hot paths, measured before and after',
+  'developer experience: README, setup scripts, types, clear errors',
+  'accessibility and UX polish when there is a UI (check it in a browser if one is available)',
+  'observability: logs and errors that make failures diagnosable',
+  'refactors that remove real duplication or risk, with tests green before and after',
+];
 
 function instruction(mode: PlannerMode, plan: Plan | undefined): string {
   if (mode.kind === 'initial')
-    return 'There is no plan yet. Explore the repository, then call write_plan with milestones, expanding only the first one or two into tasks.';
+    return 'There is no plan yet. Explore the repository. Then call write_intent with what the user actually wants (the goal may be one short sentence: infer the intended build from it and from the repo, and record your assumptions instead of asking). Then call write_plan with milestones, expanding only the first one or two into tasks. M1 is the shortest path to a working, checkable v1; widen and polish in later milestones.';
   const view = plan ? compactPlanView(plan, undefined) : '';
   const full = plan
     ? JSON.stringify({
@@ -51,6 +66,9 @@ function instruction(mode: PlannerMode, plan: Plan | undefined): string {
       : '';
     return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nTask ${mode.taskId} is stuck: ${mode.reason}.\n${evidence}\n\nSplit ${mode.taskId} into 2-4 smaller tasks under the same milestone, with new ids that are not used yet, each with its own checks. Prefer a first task that writes a failing test reproducing the problem. The new tasks replace ${mode.taskId}; it will be marked done when they are. Call write_plan with the complete plan: every existing milestone and task, plus the new tasks.`;
   }
+  if (mode.kind === 'beyond') {
+    return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nThe goal is met: every milestone and task is done and its checks pass. This is improvement round ${mode.round} of at most ${mode.maxRounds}. Work like the best engineer on the team would after shipping: look at the code and pick the few improvements with the highest real value, ranked against:\n${BEYOND_RUBRIC.map((r) => `- ${r}`).join('\n')}\n\nAdd ONE new milestone with 2-6 tasks. Every task must add or tighten a check (a new test, a stricter lint or type rule, a benchmark threshold) so its value is verified, not claimed. No cosmetic churn, no rewrites for taste. If nothing clears that bar, call write_plan with the plan unchanged: that ends the run.`;
+  }
   return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nRe-plan because: ${mode.reason}. You may split, add or reorder nodes under the affected milestone, and park nodes with a reason. Never delete a node. Call write_plan with the complete plan.`;
 }
 
@@ -59,8 +77,26 @@ function instruction(mode: PlannerMode, plan: Plan | undefined): string {
  * The tool validates the plan (schema, ids, dependencies, no deletions) and the planner retries
  * until it is valid or the cycle's caps end the loop.
  */
+/** The goal as written, plus the inferred intent once there is one. */
+export function goalBlock(goal: string, intent: string): string {
+  return intent ? `# Goal\n\n${goal.trim()}\n\n${intent}` : `# Goal\n\n${goal.trim()}`;
+}
+
+function plannerAction(mode: PlannerMode): RouteAction {
+  switch (mode.kind) {
+    case 'initial':
+    case 'expand':
+      return 'plan';
+    case 'beyond':
+      return 'beyond-ideate';
+    default:
+      return mode.kind;
+  }
+}
+
 export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   const goal = await run.store.readGoal();
+  const intent = await readIntent(run.store);
   let written: Plan | undefined;
   const writePlan: Tool<typeof planUpdateSchema> = {
     name: 'write_plan',
@@ -82,6 +118,16 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     },
   };
   const tools = [...(await readOnlyTools(run.config)), writePlan as Tool];
+  if (mode.kind === 'initial') {
+    tools.push(
+      writeIntentTool(run.store, (i) => {
+        run.events.emit('intent.update', {
+          product: i.product.slice(0, 200),
+          assumptions: i.assumptions.length,
+        });
+      }),
+    );
+  }
   const codemapText = await readTextOr(run.store.file('codemap.json'), '');
   const codemap = codemapText
     ? renderCodemap(JSON.parse(codemapText) as Codemap, run.config.context.repo_map_max_tokens)
@@ -113,7 +159,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       system: [
         { text: PLANNER_SYSTEM },
         { text: codemap },
-        { text: `# Goal\n\n${goal.text.trim()}` },
+        { text: goalBlock(goal.text, intent) },
         { text: `# Lessons (notes.md)\n\n${notes}`, cacheBreakpoint: true },
       ],
       first: { role: 'user', content: [{ type: 'text', text: instruction(mode, run.plan) }] },
@@ -123,7 +169,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       provider: run.deps.provider,
       models: (
         await run.router.pick({
-          action: mode.kind === 'initial' || mode.kind === 'expand' ? 'plan' : mode.kind,
+          action: plannerAction(mode),
           needs: { tools: true },
           facts: { mode: mode.kind },
         })

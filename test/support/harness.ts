@@ -50,7 +50,12 @@ export async function startTestRun(opts: {
 }): Promise<TestRun> {
   const repo = opts.repo ?? (await fixtureRepo(opts.fixture ?? 'ts-failing-test'));
   const env = opts.env ?? (await isolatedEnv());
-  const config = defaultConfig({ gates: [NODE_TEST_GATE], ...opts.config });
+  // Beyond mode adds planner calls after the goal is met; tests opt in explicitly.
+  const config = defaultConfig({
+    gates: [NODE_TEST_GATE],
+    beyond: { enabled: false },
+    ...opts.config,
+  });
   const clock = new FakeClock();
   const paths = resolvePaths(env);
   const goal = opts.goal ?? 'Make the test suite pass.';
