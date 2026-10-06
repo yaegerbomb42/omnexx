@@ -14,7 +14,7 @@ import { brand } from '../brand.js';
 import { EventTail, LiveFeed } from '../../telemetry/feed.js';
 import { verbosityFrom } from '../../telemetry/humanize.js';
 import { println, type CliIO } from '../io.js';
-import { superviseForeground } from './control.js';
+import { RUN_FLAGS_FILE, superviseForeground } from './control.js';
 import { resolveRunDeps } from '../run-deps.js';
 import { EXIT } from '../exit-codes.js';
 import { bootstrapEmptyProject, isEmptyProject } from '../bootstrap.js';
@@ -111,7 +111,8 @@ export async function runCommand(io: CliIO, goal: string, flags: FullRunFlags): 
     const files = await bootstrapEmptyProject(io.cwd);
     println(io.stderr, `empty folder: started a project (git init, ${files.join(', ')})`);
   }
-  const { config, paths, clock } = await resolveRunDeps(io, io.cwd, flagsToConfig(flags));
+  const overrides = flagsToConfig(flags);
+  const { config, paths, clock } = await resolveRunDeps(io, io.cwd, overrides);
   if (!config.gates.length && !flags.iKnowThereAreNoChecks) {
     throw new UsageError(
       "no gates configured: nothing would check the agent's work",
@@ -126,6 +127,7 @@ export async function runCommand(io: CliIO, goal: string, flags: FullRunFlags): 
     noChecks: !config.gates.length,
     ...(flags.from ? { from: flags.from } : {}),
   });
+  await writeJsonAtomic(store.file(RUN_FLAGS_FILE), overrides);
   if (flags.detach) {
     const pid = spawnDetached(
       io.entry ?? selfEntry(),
