@@ -1,14 +1,14 @@
 import { Box, Static, Text, useApp, useInput, useWindowSize } from 'ink';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { TAGLINE, WORDMARK } from '../cli/brand.js';
 import { cacheHitRate } from '../telemetry/aggregate.js';
 import { fmtMs, fmtTokens } from '../telemetry/humanize.js';
 import type { Entry, Session } from './session.js';
 
-export const GREEN = '#00FF41';
-export const CYAN = '#00E5FF';
-export const GRAY = '#666666';
-export const RED = '#FF3B30';
+import { CYAN, GRAY, GREEN, RED } from './colors.js';
+import { Mascot, MascotCaption, REACTION_TICKS, type Mood } from './mascot.js';
+
+export { CYAN, GRAY, GREEN, RED };
 
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -157,12 +157,20 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
   const [input, setInput] = useState('');
   const [hist, setHist] = useState<number | undefined>(undefined);
   const [showPlan, setShowPlan] = useState(false);
-  const [frame, setFrame] = useState(0);
+  const [tick, setTick] = useState(0);
+  const frame = tick % SPINNER.length;
+  // The tick a commit or rejection was last seen, so the mascot reacts for a moment.
+  const seen = useRef<{ commits: number; rejects: number; at: number; mood: Mood }>({
+    commits: 0,
+    rejects: 0,
+    at: -REACTION_TICKS,
+    mood: 'happy',
+  });
 
   useEffect(() => {
     const t = setInterval(() => {
       void session.poll();
-      setFrame((f) => (f + 1) % SPINNER.length);
+      setTick((f) => f + 1);
     }, pollMs);
     return () => {
       clearInterval(t);
@@ -230,6 +238,24 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
     void session.submit(text);
   });
 
+  const { commits, rejects } = session.telemetry;
+  const s0 = seen.current;
+  if (commits > s0.commits || rejects > s0.rejects) {
+    s0.mood = commits > s0.commits ? 'happy' : 'sad';
+    s0.at = tick;
+  }
+  s0.commits = commits;
+  s0.rejects = rejects;
+  const mood: Mood =
+    tick - s0.at < REACTION_TICKS
+      ? s0.mood
+      : session.busy
+        ? 'thinking'
+        : session.runAlive
+          ? 'working'
+          : 'idle';
+  const showMascot = width >= 50 && session.mascot;
+
   const placeholder = session.chat
     ? `message ${session.chat.ref} (/chat off to leave)`
     : session.runAlive
@@ -257,18 +283,21 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
             {SPINNER[frame]} {session.busy}
           </Text>
         )}
-        <Box borderStyle="single" borderColor={GREEN} paddingX={1} width={width}>
-          <Text color={GREEN}>{'› '}</Text>
-          {input ? (
-            <Text>
-              {input}
-              <Text color={GREEN}>█</Text>
-            </Text>
-          ) : (
-            <Text color={GRAY}>
-              <Text color={GREEN}>█</Text> {placeholder}
-            </Text>
-          )}
+        <Box width={width}>
+          {showMascot && <Mascot mood={mood} tick={tick} />}
+          <Box borderStyle="single" borderColor={GREEN} paddingX={1} flexGrow={1}>
+            <Text color={GREEN}>{'› '}</Text>
+            {input ? (
+              <Text>
+                {input}
+                <Text color={GREEN}>█</Text>
+              </Text>
+            ) : (
+              <Text color={GRAY}>
+                <Text color={GREEN}>█</Text> {placeholder}
+              </Text>
+            )}
+          </Box>
         </Box>
         {suggestions.length > 0 && (
           <Box flexDirection="column" paddingX={2}>
@@ -281,6 +310,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
           </Box>
         )}
         <StatusBar session={session} width={width} />
+        {showMascot && <MascotCaption mood={mood} tick={tick} />}
       </Box>
     </>
   );
