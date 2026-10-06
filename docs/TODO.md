@@ -13,29 +13,36 @@ Owner: Jimmy. Executors: parallel coding agents (one per workstream, see §2).
 Single source of truth for where things stand. Update the table and append a session entry at
 the end of every work session. Checkboxes in the workstream sections lag; trust this table.
 
-| WS  | State                                                        | Branch / PR        |
-| --- | ------------------------------------------------------------ | ------------------ |
-| W0  | extension points + CI matrix landed; nightly merge job not   | #10                |
-| W1  | TUI merged (boxes not yet audited)                           | #14                |
-| W2  | telemetry merged                                             | #11                |
-| W3  | router merged                                                | #12                |
-| W4  | **in progress**: uncommitted work rescued as a WIP commit    | `ws/4-providers`   |
-| W5  | merged; browser uses the installed `agent-browser` CLI first | #16 via #20        |
-| W6  | merged (MCP)                                                 | #18 via #20        |
-| W7  | merged (web fetch/search, same branch as W6)                 | #18 via #20        |
-| W8  | part 1 merged; part 2 open                                   | #15                |
-| W9  | merged (intent + beyond)                                     | #17 via #20        |
-| W10 | merged                                                       | #19 via #20        |
-| W11 | not started                                                  | –                  |
-| W12 | merged; 1 item left                                          | #13 via #20        |
-| W13 | scaffold commit only, no PR                                  | `ws/13-bench-docs` |
-| W14 | 3/5 (landed with W12)                                        | #13 via #20        |
-| W15 | not started                                                  | –                  |
+| WS  | State                                                                      | Branch / PR        |
+| --- | -------------------------------------------------------------------------- | ------------------ |
+| W0  | extension points + CI matrix landed; nightly merge job not                 | #10                |
+| W1  | TUI merged (boxes not yet audited)                                         | #14                |
+| W2  | telemetry merged                                                           | #11                |
+| W3  | router merged                                                              | #12                |
+| W4  | merged; plus paste-a-key, `/connect`, `/chat` (#25)                        | #22, #25           |
+| W5  | merged; browser gate now wired into config (#27)                           | #16, #20, #27      |
+| W6  | merged (MCP)                                                               | #18 via #20        |
+| W7  | merged (web fetch/search, same branch as W6)                               | #18 via #20        |
+| W8  | part 2: recall + compaction facts (#28); tree-sitter, learned budgets left | #15, #28           |
+| W9  | merged (intent + beyond)                                                   | #17 via #20        |
+| W10 | merged                                                                     | #19 via #20        |
+| W11 | `task` subagents, parallel fan-out (#29); token-saving unmeasured          | #29                |
+| W12 | merged; 1 item left                                                        | #13 via #20        |
+| W13 | scaffold commit only, no PR                                                | `ws/13-bench-docs` |
+| W14 | 3/5 (landed with W12)                                                      | #13 via #20        |
+| W15 | not started                                                                | –                  |
 
-Next up, in order: finish W4 → audit W1/W2/W3/W8/W9 boxes → W8 part 2 → W11 → W13 → W15.
+Next up, in order: merge #27–#30 → W13 bench (unblocks the W8/W11 token claims) → audit W1/W2/W3/W9 boxes → W15 release.
 SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
+
+- **2026-10-06 (single agent):** merged #23–#26. Browser gates can now be declared
+  (`kind = "browser"`, serves the app on `$PORT`); uncaught page errors count as failures; new
+  projects get a `page` gate (#27). W8: `recall` over run history, compaction keeps edited files
+  and last error (#28). W11: `task` subagents (#29). Found and fixed: `omnexx run` flags
+  (`--budget`, `--gate`, …) never reached the supervisor (#30). Live run "build a monkey landing
+  page" from an empty folder: 30/33 tasks, 21 commits, page gate on every cycle, $3.00.
 
 - **2026-10-05 (empty-folder start):** `omnexx run` (and a goal typed into the bare `omnexx`
   session) in an empty folder now runs `git init`, writes a starter package.json, omnexx.toml with
