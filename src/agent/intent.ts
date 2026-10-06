@@ -40,6 +40,15 @@ export function renderIntent(i: Intent): string {
     .join('\n\n');
 }
 
+/** The "Assumptions" bullets from a rendered intent.md. */
+export function intentAssumptions(text: string): string[] {
+  const m = /^## Assumptions[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(text);
+  return (m?.[1] ?? '')
+    .split('\n')
+    .filter((l) => l.startsWith('- '))
+    .map((l) => l.slice(2).trim());
+}
+
 export async function readIntent(store: RunStore): Promise<string> {
   return (await readTextOr(store.file(INTENT_FILE), '')).trim();
 }

@@ -1,3 +1,4 @@
+import { intentAssumptions, readIntent } from '../agent/intent.js';
 import { git } from '../git/git.js';
 import { formatDuration } from '../config/duration.js';
 import { readEvents, type OmnexxEvent } from './events.js';
@@ -139,6 +140,7 @@ export async function writeReport(
   const rungs = events.filter((e) => e.type === 'ladder.rung');
   const parked = plan?.nodes.filter((n) => n.status === 'parked') ?? [];
   const workers = events.filter((e) => e.type === 'worker.result');
+  const assumptions = intentAssumptions(await readIntent(store));
   const lines = [
     `# Omnexx report: ${state.repoName} · ${state.runId}`,
     '',
@@ -192,6 +194,14 @@ export async function writeReport(
       : ['- Nothing parked.']),
     ...(state.status === 'needs-human'
       ? [`- The run stopped for you: ${state.statusReason ?? ''}`]
+      : []),
+    ...(assumptions.length
+      ? [
+          '',
+          'Assumptions it made where your goal was open (change one with `omnexx steer`, then `omnexx resume`):',
+          '',
+          ...assumptions.map((a) => `- ${a}`),
+        ]
       : []),
     '',
     `## ${REPORT_SECTIONS[7]}`,

@@ -67,7 +67,7 @@ export function Header({ version, cwd, width }: { version: string; cwd: string; 
         {'> type a goal and press enter. it plans, builds, checks every step, and keeps going.'}
       </Text>
       <Text color={GRAY}>
-        {'> /help for commands · ctrl+p plan · ctrl+c leave (runs keep going)'}
+        {'> /help for commands · ctrl+p plan · ctrl+d detach · ctrl+c leave (runs keep going)'}
       </Text>
     </Box>
   );
@@ -103,14 +103,29 @@ export function WhyCard() {
   );
 }
 
+/** `▰▰▰▱▱` for done of total, `width` cells. */
+export function progressBar(done: number, total: number, width = 10): string {
+  const n = total ? Math.round((done / total) * width) : 0;
+  return '▰'.repeat(n) + '▱'.repeat(width - n);
+}
+
 function StatusBar({ session, width }: { session: Session; width: number }) {
   const t = session.telemetry;
+  const info = session.info;
   const left = session.runId ? (
-    <Text>
+    <Text wrap="truncate-end">
       <Text color={session.runAlive ? GREEN : GRAY}>{session.runAlive ? '● ' : '○ '}</Text>
       <Text color={CYAN}>{session.runId}</Text>
+      {info && <Text color={GRAY}>{` · ${info.phase}`}</Text>}
+      {info && info.tasks > 0 && (
+        <Text>
+          {' '}
+          <Text color={GREEN}>{progressBar(info.done, info.tasks)}</Text>
+          <Text color={GRAY}>{` ${info.done}/${info.tasks}`}</Text>
+        </Text>
+      )}
       <Text color={GRAY}>
-        {` · ${t.startedAt && t.lastAt ? fmtMs(t.lastAt - t.startedAt) : '0s'} · cycle ${t.cycle}${t.task ? ` · ${t.task}` : ''}`}
+        {` · ${t.startedAt && t.lastAt ? fmtMs(t.lastAt - t.startedAt) : '0s'}${t.task ? ` · ${t.task}` : ''}`}
       </Text>
     </Text>
   ) : (
@@ -122,7 +137,9 @@ function StatusBar({ session, width }: { session: Session; width: number }) {
   return (
     <Box width={width} justifyContent="space-between">
       {left}
-      <Text color={GRAY}>{right}</Text>
+      <Text color={GRAY} wrap="truncate-start">
+        {right}
+      </Text>
     </Box>
   );
 }
@@ -186,6 +203,10 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
   useInput((ch, key) => {
     if (key.ctrl && ch === 'c') {
       exit();
+      return;
+    }
+    if (key.ctrl && ch === 'd') {
+      session.detach();
       return;
     }
     if (key.ctrl && ch === 'p') {

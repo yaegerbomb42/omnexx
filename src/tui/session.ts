@@ -7,7 +7,7 @@ import { steerRun } from '../cli/commands/steer.js';
 import { connect, describeConnect, looksLikeKey } from '../cli/connect.js';
 import { maskKey } from '../auth/keys.js';
 import { Chat, defaultChatRef, hasProvider } from './chat.js';
-import { compactPlanView } from '../core/plan.js';
+import { compactPlanView, planCounts } from '../core/plan.js';
 import { resolvePaths } from '../core/paths.js';
 import { listRunIds, RunStore } from '../core/run-store.js';
 import { describeError } from '../errors.js';
@@ -73,6 +73,8 @@ export class Session {
   runId: string | undefined;
   runAlive = false;
   plan = '';
+  /** Phase and task progress of the attached run, refreshed with the plan. */
+  info: { phase: string; done: number; tasks: number } | undefined;
   busy: string | undefined;
   verbosity: Verbosity = 'normal';
   quit = false;
@@ -178,6 +180,10 @@ export class Session {
         store.readState().catch(() => undefined),
       ]);
       this.plan = plan ? compactPlanView(plan, state?.taskId) : '';
+      const c = plan ? planCounts(plan) : undefined;
+      this.info = state
+        ? { phase: state.phase, done: c?.done ?? 0, tasks: c?.tasks ?? 0 }
+        : undefined;
       this.changed();
     } else if (events.length) {
       this.changed();
