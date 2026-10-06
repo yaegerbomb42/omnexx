@@ -37,6 +37,13 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-05 (empty-folder start):** `omnexx run` (and a goal typed into the bare `omnexx`
+  session) in an empty folder now runs `git init`, writes a starter package.json, omnexx.toml with
+  `--if-present` build/lint/typecheck gates plus a `node --test` gate, and AGENTS.md, then commits.
+  Verified live: "build a monkey landing page" planned 13 tasks and committed M1.T01 through the gates.
+  Rough edges seen: the agent's bash tool rejects heredocs (it adapted), and the gates are only
+  as strict as the scripts the agent adds; no browser gate yet for new web projects.
+
 - **2026-10-05 (integration, single agent):** dropped parallel subagents (too much clutter).
   Merged ws/5, 6, 9, 10 and 12 into `next` (#20). Declared the missing MCP/web deps and
   added fake-backend browser-gate tests for CI coverage. Root-caused the disk filling up: a
