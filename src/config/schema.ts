@@ -28,6 +28,15 @@ export const gateSchema = z.strictObject({
   parser: z.enum(GATE_PARSERS).default('generic'),
   /** Re-runs of the whole gate when it shows new, named failures; ids that then pass are flaky. */
   flaky_reruns: z.number().int().min(0).max(3).default(1),
+  /**
+   * "browser": `run` starts the app (it gets a free port in $PORT), the gate waits for `url`,
+   * then checks it in a real browser with `script`'s steps, or a smoke check without one.
+   */
+  kind: z.enum(['command', 'browser']).default('command'),
+  url: z.string().default('http://localhost:${PORT}'),
+  script: z.string().optional(),
+  /** Pass without running while package.json has no script of this name (e.g. "start"). */
+  requires_script: z.string().optional(),
 });
 export type GateConfig = z.infer<typeof gateSchema>;
 

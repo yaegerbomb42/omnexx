@@ -10,6 +10,8 @@ export interface DetectedGate {
   level: 'must-pass' | 'ratchet';
   parser: GateParser;
   timeout: string;
+  kind?: 'browser';
+  requires_script?: string;
 }
 
 export interface Detection {
@@ -207,6 +209,8 @@ export function renderProjectToml(d: Detection): string {
       `timeout = ${q(g.timeout)}`,
       `level = ${q(g.level)}`,
       `parser = ${q(g.parser)}`,
+      ...(g.kind ? [`kind = ${q(g.kind)}`] : []),
+      ...(g.requires_script ? [`requires_script = ${q(g.requires_script)}`] : []),
       '',
     );
   }

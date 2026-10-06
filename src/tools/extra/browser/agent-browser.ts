@@ -10,6 +10,8 @@ interface ConsoleJsonResponse {
       text?: string;
       args?: unknown[];
     }[];
+    /** From `agent-browser errors --json`: uncaught page exceptions. */
+    errors?: { text?: string }[];
   };
   error?: string | null;
 }
@@ -121,26 +123,29 @@ export class AgentBrowserBackend implements BrowserBackend {
     }
   }
 
+  /** Console messages, plus uncaught page exceptions as `error` entries. */
   async console(): Promise<BrowserConsoleMessage[]> {
-    const output = await this.runCli(['console', '--json']);
+    const [logs, errors] = await Promise.all([
+      this.jsonData(['console', '--json']),
+      this.jsonData(['errors', '--json']).catch(() => undefined),
+    ]);
+    return [
+      ...(logs?.messages ?? []).map((m) => ({ type: m.type ?? 'log', text: m.text ?? '' })),
+      ...(errors?.errors ?? []).map((e) => ({ type: 'error', text: e.text ?? 'page error' })),
+    ];
+  }
+
+  private async jsonData(args: string[]): Promise<ConsoleJsonResponse['data']> {
+    const output = await this.runCli(args);
     const jsonLine = output
       .split('\n')
       .map((l) => l.trim())
       .find((l) => l.startsWith('{') && l.endsWith('}'));
-
-    if (!jsonLine) {
-      return [];
-    }
-
+    if (!jsonLine) return undefined;
     try {
-      const parsed = JSON.parse(jsonLine) as ConsoleJsonResponse;
-      const msgs = parsed.data?.messages ?? [];
-      return msgs.map((m) => ({
-        type: m.type ?? 'log',
-        text: m.text ?? '',
-      }));
+      return (JSON.parse(jsonLine) as ConsoleJsonResponse).data;
     } catch {
-      return [];
+      return undefined;
     }
   }
 

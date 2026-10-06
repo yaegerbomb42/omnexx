@@ -33,6 +33,10 @@ export const browserStepSchema = z.discriminatedUnion('action', [
   z.strictObject({
     action: z.literal('expect_no_console_errors'),
   }),
+  /** The page rendered something: its accessibility snapshot is more than a bare shell. */
+  z.strictObject({
+    action: z.literal('expect_nonempty'),
+  }),
   z.strictObject({
     action: z.literal('wait_ms'),
     ms: z.number().int().nonnegative(),
@@ -51,7 +55,10 @@ export type BrowserGateFile = z.infer<typeof browserGateFileSchema>;
 export interface BrowserGateConfig {
   name: string;
   kind?: 'browser';
-  script: string;
+  /** Steps file relative to cwd; without one the gate runs DEFAULT_STEPS against `url`. */
+  script?: string | undefined;
+  /** Replaces `${URL}` in step URLs (set when the gate serves the app itself). */
+  url?: string | undefined;
   level?: 'must-pass' | 'ratchet';
   timeout?: string;
 }
@@ -169,50 +176,66 @@ function parseYamlScalar(val: string): unknown {
   return val;
 }
 
+/** Smoke check when a gate has no script: it loads, renders something, and logs no errors. */
+export const DEFAULT_STEPS: BrowserStep[] = [
+  { action: 'open', url: '${URL}' },
+  { action: 'wait_ms', ms: 500 },
+  { action: 'expect_nonempty' },
+  { action: 'expect_no_console_errors' },
+];
+
+/** Snapshots shorter than this are an empty or blank page. */
+const MIN_SNAPSHOT_CHARS = 40;
+
 export async function runBrowserGate(
   gate: BrowserGateConfig,
   ctx: GateRunContext,
   customBackend?: BrowserBackend,
 ): Promise<GateResult> {
   const logFile = join(ctx.logsDir, `gate-${ctx.label}-${gate.name}.log`);
-  const scriptPath = join(ctx.cwd, gate.script);
   const startTime = Date.now();
   const logLines: string[] = [`Running browser gate "${gate.name}" from ${gate.script}`];
 
-  let rawScript: string;
-  try {
-    rawScript = await readFile(scriptPath, 'utf8');
-  } catch (err) {
-    const msg = `Cannot read gate script "${scriptPath}": ${err instanceof Error ? err.message : String(err)}`;
-    await writeFile(logFile, `${msg}\n`, { mode: 0o600 }).catch(() => undefined);
-    return {
-      name: gate.name,
-      level: gate.level ?? 'ratchet',
-      exitCode: 1,
-      timedOut: false,
-      durationMs: Date.now() - startTime,
-      failures: [{ id: `${gate.name}:missing_script`, message: msg }],
-      structured: true,
-      logFile,
-    };
-  }
-
   let parsedFile: BrowserGateFile;
-  try {
-    parsedFile = parseBrowserGateScript(rawScript);
-  } catch (err) {
-    const msg = `Invalid gate script "${gate.script}": ${err instanceof Error ? err.message : String(err)}`;
-    await writeFile(logFile, `${msg}\n`, { mode: 0o600 }).catch(() => undefined);
-    return {
-      name: gate.name,
-      level: gate.level ?? 'ratchet',
-      exitCode: 1,
-      timedOut: false,
-      durationMs: Date.now() - startTime,
-      failures: [{ id: `${gate.name}:syntax_error`, message: msg }],
-      structured: true,
-      logFile,
-    };
+  if (gate.script === undefined) {
+    parsedFile = { steps: DEFAULT_STEPS };
+    logLines[0] = `Running browser gate "${gate.name}" (default smoke steps)`;
+  } else {
+    const scriptPath = join(ctx.cwd, gate.script);
+    let rawScript: string;
+    try {
+      rawScript = await readFile(scriptPath, 'utf8');
+    } catch (err) {
+      const msg = `Cannot read gate script "${scriptPath}": ${err instanceof Error ? err.message : String(err)}`;
+      await writeFile(logFile, `${msg}\n`, { mode: 0o600 }).catch(() => undefined);
+      return {
+        name: gate.name,
+        level: gate.level ?? 'ratchet',
+        exitCode: 1,
+        timedOut: false,
+        durationMs: Date.now() - startTime,
+        failures: [{ id: `${gate.name}:missing_script`, message: msg }],
+        structured: true,
+        logFile,
+      };
+    }
+
+    try {
+      parsedFile = parseBrowserGateScript(rawScript);
+    } catch (err) {
+      const msg = `Invalid gate script "${gate.script}": ${err instanceof Error ? err.message : String(err)}`;
+      await writeFile(logFile, `${msg}\n`, { mode: 0o600 }).catch(() => undefined);
+      return {
+        name: gate.name,
+        level: gate.level ?? 'ratchet',
+        exitCode: 1,
+        timedOut: false,
+        durationMs: Date.now() - startTime,
+        failures: [{ id: `${gate.name}:syntax_error`, message: msg }],
+        structured: true,
+        logFile,
+      };
+    }
   }
 
   const sessionName = `omnexx-gate-${gate.name}-${Date.now()}`;
@@ -246,7 +269,7 @@ export async function runBrowserGate(
       try {
         switch (step.action) {
           case 'open': {
-            await backend.open(step.url);
+            await backend.open(step.url.replaceAll('${URL}', gate.url ?? ''));
             passedCount++;
             break;
           }
@@ -286,6 +309,15 @@ export async function runBrowserGate(
               : step.selector.replace(/^[#.[\]]/, '');
             if (!snapshot.includes(target) && !snapshot.includes(step.selector)) {
               throw new Error(`Expected element matching "${step.selector}" not found`);
+            }
+            passedCount++;
+            break;
+          }
+
+          case 'expect_nonempty': {
+            const snapshot = await backend.snapshot();
+            if (snapshot.trim().length < MIN_SNAPSHOT_CHARS) {
+              throw new Error(`Page looks empty (snapshot: ${JSON.stringify(snapshot.trim())})`);
             }
             passedCount++;
             break;

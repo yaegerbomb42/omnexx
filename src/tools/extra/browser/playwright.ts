@@ -16,6 +16,7 @@ interface PlaywrightPage {
   content(): Promise<string>;
   evaluate<R>(fn: () => R): Promise<R>;
   on(event: 'console', listener: (msg: { type(): string; text(): string }) => void): void;
+  on(event: 'pageerror', listener: (err: Error) => void): void;
 }
 
 interface PlaywrightBrowserContext {
@@ -66,6 +67,10 @@ export class PlaywrightBackend implements BrowserBackend {
           type: msg.type(),
           text: msg.text(),
         });
+      });
+      // Uncaught exceptions never reach the console listener; report them as errors too.
+      this.page.on('pageerror', (err) => {
+        this.consoleLogs.push({ type: 'error', text: err.message });
       });
       return this.page;
     } catch (err) {
