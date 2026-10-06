@@ -25,6 +25,7 @@ Write the plan with the write_plan tool. Rules:
 - Explore the repository first with the read-only tools so the plan matches the real code.
 - Plan in milestones (M1, M2, ...), each a coherent, checkable step toward the goal with its own checks (commands that exit 0 when the milestone is complete).
 - Expand only the next one or two milestones into leaf tasks (M1.T01, M1.T02, ...). Leave later milestones coarse; they are expanded when reached.
+- Order for speed to a working product: M1 is a walking skeleton (the thinnest end-to-end version that runs and is checked), then widen. Write the check for a behaviour before or with the code that provides it.
 - Each leaf task is small (at most 1-2 hours of agent work), has acceptance criteria, and at least one check command the harness can run (a focused test command, a grep, a build step). Prefer focused checks over the full suite.
 - Use dependsOn for real ordering constraints only. Set size (S/M/L) and kind (feature, tests, lint, refactor, migration, docs, investigate).
 - If the goal points to a spec or checklist, every item becomes a task; never drop items.

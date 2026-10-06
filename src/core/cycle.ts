@@ -21,6 +21,8 @@ import {
   toolSafetyQuestion,
 } from '../judge/uses.js';
 import { toolSpec, workerTools } from '../tools/registry.js';
+import { cycleRoute } from '../router/classify.js';
+import { readIntent } from '../agent/intent.js';
 import type { ToolContext } from '../tools/types.js';
 import { antiCheat } from '../verify/anticheat.js';
 import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
@@ -152,6 +154,21 @@ export async function prepareWorktree(run: Run): Promise<void> {
   });
 }
 
+/** Estimated tokens per segment of the cycle's starting context, in prefix order. */
+export function contextBreakdown(ctx: {
+  system: { text: string }[];
+  first: Message;
+  tools: unknown[];
+}): Record<string, number> {
+  const labels = ['system', 'codemap', 'goal', 'notes'];
+  const out: Record<string, number> = { tools: estimateTokens(JSON.stringify(ctx.tools)) };
+  ctx.system.forEach((b, i) => {
+    out[labels[i] ?? `block${i}`] = estimateTokens(b.text);
+  });
+  out.state = estimateTokens(JSON.stringify(ctx.first));
+  return out;
+}
+
 function toolContext(run: Run, edited: Set<string>): ToolContext {
   let n = 0;
   const { judge } = run;
@@ -170,6 +187,7 @@ function toolContext(run: Run, edited: Set<string>): ToolContext {
     signal: run.abort.signal,
     nextCommandId: () => `cmd-${run.state.cycle}-${++n}`,
     edited,
+    reads: new Map(),
     // Advisory, log-only, never awaited by the tool, skipped while the breaker is open.
     ...(judge.enabled('tool_safety') && judge.breakerState !== 'open'
       ? {
@@ -250,17 +268,20 @@ export async function stepAct(run: Run): Promise<void> {
 
   const edited = new Set<string>();
   const toolCtx = toolContext(run, edited);
-  const [goal, notes, progressTail, codemap] = await Promise.all([
+  const [goal, intent, notes, progressTail, codemap] = await Promise.all([
     run.store.readGoal(),
+    readIntent(run.store),
     run.store.readNotes(),
     run.store.progressTail(run.config.context.progress_tail),
     loadCodemap(run),
   ]);
   const tools = await workerTools(run.config);
+  const route = await run.router.pick(cycleRoute(task, run.budgetLeftFraction()));
   const ctx = buildCycleContext({
     systemPrompt: WORKER_SYSTEM,
     codemap,
     goal: goal.text,
+    intent,
     notes: renderNotes(notes),
     plan,
     task,
@@ -272,10 +293,11 @@ export async function stepAct(run: Run): Promise<void> {
     task: task.id,
     prefixBytes: ctx.system.reduce((n, b) => n + b.text.length, 0),
     stateBytes: JSON.stringify(ctx.first).length,
+    tokens: contextBreakdown(ctx),
   });
   const result = await runAgentLoop(ctx, {
     provider: run.deps.provider,
-    models: task.escalated ? run.chains.planner : run.chains.worker,
+    models: route.chain,
     providerBlocked: (p) => run.providerBlocked(p),
     coolProvider: (p, ms) => {
       run.coolProvider(p, ms);

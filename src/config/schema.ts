@@ -53,10 +53,26 @@ const modelRef = z
 const modelChain = z.union([modelRef, z.array(modelRef).min(1).max(8)]);
 export type ModelChainInput = z.infer<typeof modelChain>;
 
+/** What a model can do and how good/fast it is; the router filters and describes candidates with it. */
+export const modelProfileSchema = z.strictObject({
+  tags: z.array(z.string().regex(/^[a-z0-9-]+$/)).default([]),
+  /** Context window in tokens. */
+  context: z.number().int().positive().optional(),
+  tools: z.boolean().default(true),
+  vision: z.boolean().default(false),
+  speed: z.enum(['fast', 'normal', 'slow']).optional(),
+  quality: z.enum(['low', 'mid', 'high']).optional(),
+});
+export type ModelProfileConfig = z.infer<typeof modelProfileSchema>;
+
 export const modelsSchema = z.strictObject({
   planner: modelChain.default('anthropic:opus'),
   worker: modelChain.default('anthropic:sonnet'),
   cheap: modelChain.default('anthropic:haiku'),
+  /** Extra models the router may pick that aren't in any role chain. */
+  extra: z.array(modelRef).default([]),
+  /** Keyed by model ref, e.g. [models.profiles."groq:llama-4-70b"]. */
+  profiles: z.record(modelRef, modelProfileSchema).default({}),
 });
 
 export const priceSchema = z.strictObject({
@@ -96,6 +112,11 @@ export const anthropicSchema = z.strictObject({
   ...providerBudget,
   base_url: z.url().optional(),
   cache_ttl: z.enum(['5m', '1h']).default('5m'),
+  /**
+   * TTL for the stable prefix (tools, system, codemap, goal, notes). "auto" = 1h on runs longer
+   * than an hour: gates between cycles often outlast 5 minutes, and a 1h write is reread every cycle.
+   */
+  prefix_cache_ttl: z.enum(['auto', '5m', '1h']).default('auto'),
   /** Output cap per turn; also the worst-case output used by the budget pre-flight. */
   max_tokens: z.number().int().positive().default(16_000),
   request_timeout: durationString.default('10m'),
@@ -138,7 +159,13 @@ export const notifySchema = z.strictObject({
   ntfy: ntfySchema.optional(),
 });
 
-export const JUDGE_USES = ['next_move', 'drift', 'failure_similarity', 'tool_safety'] as const;
+export const JUDGE_USES = [
+  'next_move',
+  'drift',
+  'failure_similarity',
+  'tool_safety',
+  'route',
+] as const;
 export type JudgeUse = (typeof JUDGE_USES)[number];
 
 export const nimbleSchema = z.strictObject({
