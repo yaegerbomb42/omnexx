@@ -36,6 +36,13 @@ describe('extra tool sources', () => {
   });
 
   it('with no sources registered, matches the core tool list exactly', async () => {
-    expect(await workerTools(config)).toEqual(WORKER_TOOLS);
+    expect(await workerTools(config, {})).toEqual(WORKER_TOOLS);
+  });
+
+  it('the default barrel contributes the skill tool after the core tools', async () => {
+    expect((await workerTools(config)).map((t) => t.name)).toEqual([
+      ...WORKER_TOOLS.map((t) => t.name),
+      'skill',
+    ]);
   });
 });

@@ -341,6 +341,22 @@ const codemapUpdatedLine: Formatter = (e) => {
 };
 
 /** One formatter per event type; types not listed are debug-only. */
+const intentUpdateLine: Formatter = (e) => ['quiet', 'ok', 'intent', clip(str(e.product), 90)];
+
+const beyondStartLine: Formatter = (e) => [
+  'quiet',
+  'info',
+  'beyond',
+  `goal met; planning improvement round ${num(e.round)}/${num(e.maxRounds)}`,
+];
+
+const beyondRoundLine: Formatter = (e) =>
+  num(e.added)
+    ? ['quiet', 'ok', 'beyond', `round ${num(e.round)}: ${num(e.added)} new nodes`]
+    : ['quiet', 'info', 'beyond', `round ${num(e.round)}: nothing worth doing; wrapping up`];
+
+const beyondSkipLine: Formatter = (e) => ['normal', 'info', 'beyond', `skipped: ${str(e.reason)}`];
+
 const FORMATTERS: Partial<Record<string, Formatter>> = {
   'run.start': runStartLine,
   'run.resume': runResumeLine,
@@ -381,6 +397,10 @@ const FORMATTERS: Partial<Record<string, Formatter>> = {
   'control.resumed': controlResumedLine,
   'judge.next_move': judgeNextMoveLine,
   'notes.update': notesUpdateLine,
+  'intent.update': intentUpdateLine,
+  'beyond.start': beyondStartLine,
+  'beyond.round': beyondRoundLine,
+  'beyond.skip': beyondSkipLine,
   'goal.changed': goalChangedLine,
   'codemap.updated': codemapUpdatedLine,
 };

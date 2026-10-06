@@ -41,6 +41,7 @@ export function sampleState(over: Partial<RunState> = {}): RunState {
       byProvider: {},
     },
     acceptedCommits: 0,
+    beyondRounds: 0,
     rejectedCycles: 0,
     lastProgressCycle: 0,
     warned: [],

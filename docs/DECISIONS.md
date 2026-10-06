@@ -197,10 +197,78 @@ Plan §3.8 says to re-run only the failing ids. Selecting tests by id differs pe
 
 The three in-cycle signals from plan §3.10 (repeated identical tool call, no edits after K turns, token burn) stop the agent loop at a turn boundary with end `stuck`. VERIFY still runs: the cycle hard cap already treats partial work as "rolled back unless the gates pass", and the same rule applies here, so a model that fixed the bug and then wandered still gets its commit. The signal goes into the pending verdict like oscillation, so the ladder climbs whether the cycle was accepted or rejected. Burn rate is "no edit yet and tokens above `burn_factor` × the median of the last 20 cycles"; it is off until 3 cycles exist, so the first cycles of a run can't trip it. "Edit" means a file the edit tools touched; changes made through `bash` don't count, which only makes `no_edits` fire sooner.
 
-## 2026-10-05: Ink + React for the interactive TUI (W1)
+## D30 (2026-10-05) Dependencies for MCP client and web tools (W6 + W7)
 
 `ink` 8 and `react` 19 are runtime dependencies for the interactive session (bare `omnexx`,
 `omnexx watch`). Ink is what Claude Code and most modern agent CLIs use; a hand-rolled ANSI
 renderer would cost weeks for the input editing, layout, resize and `<Static>` scrollback we get
 for free. The TUI is a separate chunk loaded by dynamic import, so non-interactive commands
 (`run`, `status`, `logs`, services) never parse React.
+
+## D30 (2026-10-05) W5 Browser Tool Backends and Gate DSL
+
+**Decision.**
+
+1. Auto-selection order for browser backends: check `agent-browser` on PATH first (spawn CLI with isolated session per run), then dynamically import `playwright-core` if installed. If neither is available, the tool is omitted from registered extra tools and `browserDoctorCheck()` produces an actionable warning for `omnexx doctor`.
+2. Browser Gate DSL: supports YAML and TOML via a simple zero-dependency YAML step parser and `smol-toml`. Steps include `open`, `click`, `type`, `expect_text`, `expect_selector`, `expect_no_console_errors`, and `wait_ms`.
+3. Process cleanliness: `AgentBrowserBackend` uses explicit sessions and calls `agent-browser close` per run. A process exit hook is registered to prevent orphan processes.
+4. Vision model gating: screenshots return base64 image data only if `supportsVision` is set on the context; otherwise an informative text message is returned.
+
+**Decision.** Added `@modelcontextprotocol/sdk` for MCP client transport/protocol, plus `@mozilla/readability` and `linkedom` for `web_fetch` HTML parsing.
+**Why.** Allowed dependencies explicitly listed in `docs/agent-prompts.md` §W6+W7. `@modelcontextprotocol/sdk` handles official MCP framing, transports (stdio and HTTP/SSE) and protocol negotiation. `linkedom` provides a lightweight, pure-JS DOM implementation that runs cleanly on Node >= 22 without native browser binaries, pairing with Mozilla's reader mode parser (`@mozilla/readability`) to convert web pages into readable text/markdown while respecting token budgets.
+**Alternatives.** Hand-rolling the JSON-RPC MCP wire protocol (risks protocol drift and subtle transport bugs); using full headless browsers like Playwright for simple web reading (unnecessary overhead and external browser downloads for non-interactive pages).
+
+## W12 & W14 Worker Adapters, Headless Execution, and Secret Scanner (2026-10-05)
+
+**Decision.**
+
+1. **Worker Backend Adapters:** Implemented adapters for `claude-code`, `codex`, `opencode`, `aider`, `gemini-cli`, `qwen-code`, and `cline`.
+   - Each adapter strictly builds argv arrays (never shell strings).
+   - Each adapter executes within the isolated throwaway worktree prepared by `runWorkerCycle`.
+   - Headless execution for Cline CLI is supported via `cline --json --auto-approve true --cwd <wt> <prompt>`. Detection verifies support for non-interactive JSON execution.
+   - Credentials of the tools are never accessed, copied, or logged; the environment passed to workers is scrubbed of all supervisor secrets.
+   - Exit codes and outputs are mapped to canonical quota and status types (`completed`, `failed`, `timeout`, `quota_exhausted`, `rate_limited`, `auth_required`).
+2. **Secret Scanner:** Candidate commits are scanned before commit via regex patterns for common key structures (Anthropic, OpenAI, GitHub classic/PAT, AWS, Slack, NPM, JWT, Google AI, GitLab, Stripe, HuggingFace, PEM) plus Shannon entropy analysis on added diff lines (`+` lines).
+   - An allowlist config section `[security] secret_allow = ["path-glob"]` is provided to exempt known test fixtures or sample data.
+   - Tested to ensure zero false positives across all existing omnexx source code while detecting all seeded secret tokens.
+3. **Extra Tool Policies:** Extended policies prohibit browser JavaScript evaluation (`eval` / `execute_script`) by default, require policy approval for destructive MCP tools, and verify that worker backends execute exclusively in isolated worktrees.
+
+## W10 instructions, skills and hooks (2026-10-05)
+
+**Decision.**
+
+- Instruction precedence is the prompt's list (OMNEXX.md → AGENTS.md → CLAUDE.md →
+  `.cursor/rules/*.mdc` sorted → `.github/copilot-instructions.md`), then nested
+  AGENTS/CLAUDE shallow → deep. The 8k-token budget cuts from the _end_ of that render order
+  (deepest nested first, `OMNEXX.md` last) and every cut file is named in a footer note; a
+  single oversized file keeps its head with a `… (truncated)` marker.
+- `renderInstructions()` keeps the zero-argument signature from the agent prompt:
+  `loadInstructions()` stores its result and render uses it (tests pass an explicit value). An
+  empty render is `''` so the prompt wiring can skip the block.
+- Hook block feedback is the trimmed **2 000-char tail** of the hook's combined output, because
+  the shared `Executor` interleaves stdout and stderr and has no separate stderr channel. A
+  timed-out `pre_*` hook blocks like a non-zero exit.
+- `match` is a `*`/`?` glob over the payload's tool name and is ignored on events without one
+  (`cycle_end`, `run_end`).
+- The `skill` tool always registers (even with zero skills) so the tool list — and with it the
+  cached prompt prefix — does not change when skills appear or disappear; skill names go in the
+  prompt instead, and a repo skill shadows a user skill of the same name.
+- The hooks config is an `[[hooks]]` **array** of strict tables (not an object), matching the
+  TOML syntax the TODO specifies; `timeout` defaults to `30s` per table.
+
+**Why.** Byte-stable rendering is a hard requirement of the cached prefix, so every ordering
+decision above is fixed and tested; the tail-trim keeps the veto reason useful without letting a
+noisy hook flood the agent's context.
+
+**Alternatives.** Dropping lowest-precedence files without a note (hides what the model can't
+see), a separate stderr channel in `ExecOptions` (would touch shared `src/core/exec.ts`), and
+conditionally registering the `skill` tool (would invalidate the prompt cache whenever skills
+changed).
+
+## 2026-10-05: Runtime dependencies for MCP and web tools (integration)
+
+The W6/W7 branch imported `@modelcontextprotocol/sdk`, `linkedom` and `@mozilla/readability`
+without declaring them, so its CI failed. They are now runtime dependencies. The MCP SDK is the
+reference client and MCP is core; `linkedom` + Readability turn fetched HTML into readable text
+without a headless browser. Playwright stays an optional peer: the browser tool prefers the
+installed `agent-browser` CLI.

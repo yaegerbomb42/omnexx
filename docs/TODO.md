@@ -261,37 +261,37 @@ Read first: `src/providers/**`, `src/config/schema.ts`, `src/auth/keys.ts`, `doc
 
 Read first: `src/tools/bash.ts`, `src/tools/types.ts`, `src/verify/**`, `src/security/**`.
 
-- [ ] `browser` tool backed by `agent-browser` CLI when present (detect in `doctor`), else
+- [x] `browser` tool backed by `agent-browser` CLI when present (detect in `doctor`), else
       Playwright as an optional dependency (`npx omnexx browser install`).
-- [ ] Actions: `open(url)`, `snapshot()` (accessibility tree, ref ids, trimmed ≤ 4k tokens),
+- [x] Actions: `open(url)`, `snapshot()` (accessibility tree, ref ids, trimmed ≤ 4k tokens),
       `click(ref)`, `type(ref,text)`, `press(key)`, `scroll`, `screenshot()` (vision models only;
       router-aware), `console()` (errors), `network(filter)`, `eval(js)` (off by default), `close`.
-- [ ] Session per run, headless, isolated profile in the run dir; killed on cycle end.
-- [ ] URL allowlist: default `localhost`, `127.0.0.1`, `*.local`; config `[browser] allow = [...]`.
-- [ ] Dev-server helper: `[browser] serve = "npm run dev"`, wait for port, tear down.
-- [ ] Browser gate: `[[gates]] kind = "browser" script = "e2e/omnexx/*.yaml"`: a tiny YAML DSL
+- [x] Session per run, headless, isolated profile in the run dir; killed on cycle end.
+- [x] URL allowlist: default `localhost`, `127.0.0.1`, `*.local`; config `[browser] allow = [...]`.
+- [x] Dev-server helper: `[browser] serve = "npm run dev"`, wait for port, tear down.
+- [x] Browser gate: `[[gates]] kind = "browser" script = "e2e/omnexx/*.yaml"`: a tiny YAML DSL
       (open, expect text/selector, no console errors) so UI acceptance is a real gate.
-- [ ] Context hygiene: old snapshots replaced by one-line stubs (W8 clearing).
+- [x] Context hygiene: old snapshots replaced by one-line stubs (W8 clearing).
 - **Accept:** fixture app where the agent must fix a broken button; browser gate fails before,
   passes after; disallowed URL is refused; no zombie Chromium after 100 cycles.
 
 ## W6. MCP client
 
-- [ ] Use `@modelcontextprotocol/sdk` (optional dep). stdio + streamable HTTP transports.
-- [ ] Config: `[mcp.servers.<name>] command/args/env | url/headers_env`, `allow_tools = [...]`.
-- [ ] Read `.mcp.json` (Claude Code format) for compatibility.
-- [ ] Tools exposed as `mcp__<server>__<tool>`, sorted, schema-normalised; lazy listing to keep
+- [x] Use `@modelcontextprotocol/sdk` (optional dep). stdio + streamable HTTP transports.
+- [x] Config: `[mcp.servers.<name>] command/args/env | url/headers_env`, `allow_tools = [...]`.
+- [x] Read `.mcp.json` (Claude Code format) for compatibility.
+- [x] Tools exposed as `mcp__<server>__<tool>`, sorted, schema-normalised; lazy listing to keep
       the prefix small (tool search tool when > 20 MCP tools).
-- [ ] `omnexx mcp add|list|remove|test`; `/mcp` in TUI.
-- [ ] Results trimmed and redacted like bash output.
+- [x] `omnexx mcp add|list|remove|test`; `/mcp` in TUI.
+- [x] Results trimmed and redacted like bash output.
 - **Accept:** contract tests with an in-repo fake MCP server; a filesystem MCP server works
   end to end.
 
 ## W7. Web search and fetch
 
-- [ ] `web_fetch(url)`: fetch → readability → markdown, ≤ 8k tokens, cache per run, allowlist
+- [x] `web_fetch(url)`: fetch → readability → markdown, ≤ 8k tokens, cache per run, allowlist
       respected, robots honoured.
-- [ ] `web_search(query)`: pluggable backends (Brave, Tavily, SearXNG, Exa) via user key; off
+- [x] `web_search(query)`: pluggable backends (Brave, Tavily, SearXNG, Exa) via user key; off
       when no backend configured.
 - **Accept:** recorded-HTTP tests; disabled cleanly when unconfigured.
 
@@ -342,11 +342,11 @@ improving like a top engineer until it declares itself done.
 
 ## W10. Project instructions, skills, hooks
 
-- [ ] Load `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, `OMNEXX.md` (precedence documented),
+- [x] Load `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, `OMNEXX.md` (precedence documented),
       nested per-directory files when the agent works in that directory.
-- [ ] Skills: `.omnexx/skills/<name>/SKILL.md` (Claude Code format compatible), listed by name in
+- [x] Skills: `.omnexx/skills/<name>/SKILL.md` (Claude Code format compatible), listed by name in
       the prefix, loaded on demand via a `skill(name)` tool.
-- [ ] Hooks: `[[hooks]] on = "pre_tool|post_tool|pre_commit|cycle_end|run_end" run = "…"`,
+- [x] Hooks: `[[hooks]] on = "pre_tool|post_tool|pre_commit|cycle_end|run_end" run = "…"`,
       non-zero exit on pre_* blocks with the hook's stderr fed back to the agent.
 - **Accept:** fixtures for each file type; a pre_commit hook can veto a commit.
 
@@ -360,9 +360,9 @@ improving like a top engineer until it declares itself done.
 
 ## W12. Worker backends (from PLAN §15)
 
-- [ ] Adapters: Claude Code (`claude -p`), Codex (`codex exec`), OpenCode, Aider, Cline CLI,
+- [x] Adapters: Claude Code (`claude -p`), Codex (`codex exec`), OpenCode, Aider, Cline CLI,
       Gemini CLI, Qwen Code. Each: detect, version-gate, run in its own worktree, collect diff.
-- [ ] Contract tests against recorded CLIs; timeout kills the process tree; quota rotation.
+- [x] Contract tests against recorded CLIs; timeout kills the process tree; quota rotation.
 - [ ] Router action `delegate` can choose a worker for a well-scoped task.
 - **Accept:** PLAN §M3 worker criteria.
 
@@ -378,9 +378,9 @@ improving like a top engineer until it declares itself done.
 
 - [ ] Docker sandbox default for unattended runs > 1 h (prompt in TUI to enable).
 - [ ] Browser and MCP inside the sandbox network policy; egress allowlist.
-- [ ] Secret scanner on every commit (block + rollback on hit).
-- [ ] Destructive-command policy covers new tools (browser eval, MCP tools tagged destructive).
-- [ ] Threat model update in `docs/safety.md`.
+- [x] Secret scanner on every commit (block + rollback on hit).
+- [x] Destructive-command policy covers new tools (browser eval, MCP tools tagged destructive).
+- [x] Threat model update in `docs/safety.md`.
 
 ## W15. Release, docs, site
 
