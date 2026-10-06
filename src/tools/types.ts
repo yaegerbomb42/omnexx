@@ -32,7 +32,12 @@ export interface ToolContext {
    * whenever old tool results are elided or compacted, since the earlier copy is then gone.
    */
   reads?: Map<string, string>;
+  /** Runs a read-only child agent (the `task` tool). Unset inside a child: no recursion. */
+  subagent?: (description: string, kind: SubagentKind) => Promise<string>;
 }
+
+export const SUBAGENT_KINDS = ['explore', 'research', 'review'] as const;
+export type SubagentKind = (typeof SUBAGENT_KINDS)[number];
 
 export interface ToolOutput {
   content: string;

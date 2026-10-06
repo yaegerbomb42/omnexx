@@ -254,6 +254,7 @@ describe('registry', () => {
       'recall',
       'remember',
       'search',
+      'task',
     ]);
     expect(JSON.stringify(sortKeys({ b: 1, a: [{ d: 1, c: 2 }] }))).toBe(
       '{"a":[{"c":2,"d":1}],"b":1}',

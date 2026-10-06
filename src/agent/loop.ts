@@ -78,6 +78,8 @@ export interface LoopDeps {
   compaction?: { settings: CompactionSettings; summarize?: Summarize };
   /** In-cycle stuck detection; off when unset. */
   watch?: InCycleWatch;
+  /** How many `task` calls from one turn run at once (default 1). */
+  parallelTasks?: number;
 }
 
 function summarizeInput(input: unknown): string {
@@ -263,8 +265,7 @@ export async function runAgentLoop(
     if (res.stopReason === 'refusal') return end('refusal');
     if (calls.length === 0) return end('done');
 
-    const results: ContentBlock[] = [];
-    for (const call of calls) {
+    const runCall = async (call: (typeof calls)[number]): Promise<ContentBlock> => {
       const tool = byName.get(call.name);
       let content: string;
       let isError: boolean;
@@ -291,13 +292,18 @@ export async function runAgentLoop(
         bytes: content.length,
         ms: deps.clock.now() - toolStart,
       });
-      results.push({
+      return {
         type: 'tool_result',
         toolUseId: call.id,
         content,
         ...(isError ? { isError: true } : {}),
-      });
-    }
+      };
+    };
+    const results: ContentBlock[] = [];
+    // A turn of only `task` calls fans out: read-only helpers can't conflict with each other.
+    const parallel = calls.every((c) => c.name === 'task') ? (deps.parallelTasks ?? 1) : 1;
+    for (let i = 0; i < calls.length; i += parallel)
+      results.push(...(await Promise.all(calls.slice(i, i + parallel).map(runCall))));
     messages.push({ role: 'user', content: results });
 
     const finding = deps.watch?.afterTurn(turns, cycleTokens, calls);
