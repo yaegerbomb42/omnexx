@@ -82,7 +82,11 @@ export function templateFor(name: string): ProviderTemplate | undefined {
   return PROVIDER_TEMPLATES[name.toLowerCase()];
 }
 
-async function appendEndpointBlock(file: string, name: string, t: ProviderTemplate): Promise<void> {
+export async function appendEndpointBlock(
+  file: string,
+  name: string,
+  t: ProviderTemplate,
+): Promise<void> {
   const block = stringifyToml({
     providers: {
       endpoints: {
