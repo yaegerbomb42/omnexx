@@ -25,3 +25,15 @@ config section name is the TOML table name. Keep barrel lines sorted to avoid me
 ```
 
 ## Pending
+
+### W5 Browser tool (branch ws/5-browser)
+
+- Where: src/cli/commands/doctor.ts, function doctorChecks
+- What: Call `checks.push(await browserDoctorCheck())` from `src/tools/extra/browser/detector.js`.
+- Why: Surface missing browser automation backend (`agent-browser` or `playwright-core`) to users in `omnexx doctor`.
+
+### W5 Browser gate runner (branch ws/5-browser)
+
+- Where: src/verify/gates.ts, function runGate
+- What: Dispatch gates with `gate.kind === 'browser'` to `runBrowserGate(gate, ctx)` from `src/verify/browser-gate.js`.
+- Why: Execute browser YAML/TOML acceptance gates as first-class gates alongside command gates.

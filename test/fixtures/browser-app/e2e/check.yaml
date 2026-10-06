@@ -1,0 +1,15 @@
+steps:
+  - action: open
+    url: http://localhost:8999/index.html
+  - action: expect_text
+    text: Counter & Submission App
+  - action: type
+    selector: "@name-input"
+    text: Alice
+  - action: click
+    selector: "@submit-btn"
+  - action: wait_ms
+    ms: 100
+  - action: expect_no_console_errors
+  - action: expect_text
+    text: Submitted Successfully: Alice

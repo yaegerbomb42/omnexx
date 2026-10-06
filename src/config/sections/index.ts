@@ -6,4 +6,5 @@
  * Keep lines sorted by export name.
  */
 export { beyond } from './beyond.js';
+export { browser } from './browser.js';
 export { router } from './router.js';

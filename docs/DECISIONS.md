@@ -204,3 +204,12 @@ The three in-cycle signals from plan §3.10 (repeated identical tool call, no ed
 renderer would cost weeks for the input editing, layout, resize and `<Static>` scrollback we get
 for free. The TUI is a separate chunk loaded by dynamic import, so non-interactive commands
 (`run`, `status`, `logs`, services) never parse React.
+
+## D30 (2026-10-05) W5 Browser Tool Backends and Gate DSL
+
+**Decision.**
+
+1. Auto-selection order for browser backends: check `agent-browser` on PATH first (spawn CLI with isolated session per run), then dynamically import `playwright-core` if installed. If neither is available, the tool is omitted from registered extra tools and `browserDoctorCheck()` produces an actionable warning for `omnexx doctor`.
+2. Browser Gate DSL: supports YAML and TOML via a simple zero-dependency YAML step parser and `smol-toml`. Steps include `open`, `click`, `type`, `expect_text`, `expect_selector`, `expect_no_console_errors`, and `wait_ms`.
+3. Process cleanliness: `AgentBrowserBackend` uses explicit sessions and calls `agent-browser close` per run. A process exit hook is registered to prevent orphan processes.
+4. Vision model gating: screenshots return base64 image data only if `supportsVision` is set on the context; otherwise an informative text message is returned.
