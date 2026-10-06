@@ -363,7 +363,8 @@ describe('M2: stuck handling, budget and judge', () => {
       provider: new ScriptedProvider(scenario(plan, fileWorker)),
       config: {
         gates: [GATE],
-        budget: { max_usd_per_day: 0.035, max_hours: 2 },
+        // Just above one worst-case call (tools + prompt), so it must pause between cycles.
+        budget: { max_usd_per_day: 0.04, max_hours: 2 },
         providers: { anthropic: { max_tokens: 500 } },
       },
     });

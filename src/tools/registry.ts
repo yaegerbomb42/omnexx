@@ -4,6 +4,7 @@ import { bashTool, readLogTool } from './bash.js';
 import { multiEditTool, strReplaceTool, writeFileTool } from './edit.js';
 import { outlineTool } from './outline.js';
 import { readTool } from './read.js';
+import { recallTool } from './recall.js';
 import { rememberTool } from './remember.js';
 import { searchTool } from './search.js';
 import type { OmnexxConfig } from '../config/schema.js';
@@ -21,6 +22,7 @@ export const WORKER_TOOLS: readonly Tool[] = [
   bashTool,
   readLogTool,
   rememberTool,
+  recallTool,
 ] as Tool[];
 
 export const READ_ONLY_TOOLS: readonly Tool[] = WORKER_TOOLS.filter((t) => t.readOnly);

@@ -251,6 +251,7 @@ describe('registry', () => {
       'outline',
       'read',
       'read_log',
+      'recall',
       'remember',
       'search',
     ]);

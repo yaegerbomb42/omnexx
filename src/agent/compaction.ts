@@ -111,6 +111,27 @@ export function renderSummary(s: CycleSummary): string {
   return parts.join('\n\n');
 }
 
+/**
+ * The cheap model's summary must not lose what the next turn depends on: every file edited
+ * this cycle and the most recent error. Fill them in from the facts when it dropped them.
+ */
+export function ensureFacts(
+  s: CycleSummary,
+  head: readonly Message[],
+  edited: Iterable<string>,
+): CycleSummary {
+  const files = [...new Set([...s.filesTouched, ...edited])].slice(0, 60);
+  let lastError = s.lastError;
+  if (!lastError?.trim()) {
+    const errors = head.flatMap((m) =>
+      m.content.flatMap((b) => (b.type === 'tool_result' && b.isError ? [b.content] : [])),
+    );
+    const last = errors.at(-1);
+    if (last) lastError = last.slice(0, 1_000);
+  }
+  return { ...s, filesTouched: files, ...(lastError ? { lastError } : {}) };
+}
+
 /** First message + summary, then the kept tail. The tail starts with an assistant turn. */
 export function applySummary(first: Message, summary: string, tail: readonly Message[]): Message[] {
   return [{ role: 'user', content: [...first.content, { type: 'text', text: summary }] }, ...tail];
