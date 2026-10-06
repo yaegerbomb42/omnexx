@@ -14,6 +14,12 @@ export interface CycleInputs {
   progressTail: string;
   /** Harness-generated evidence about this task: failures, rejected patch summaries, judge notes. */
   evidence: string[];
+  /**
+   * Salience-ranked progress and evidence from the memory harness. When set it replaces the
+   * plain progress and evidence sections; it lives in the per-cycle message, after the
+   * system breakpoint, so it never invalidates the cached prefix.
+   */
+  memory?: string;
   tools: ToolSpec[];
 }
 
@@ -34,13 +40,14 @@ export function buildCycleContext(i: CycleInputs): {
     { text: `# Lessons (notes.md)\n\n${i.notes.trim()}`, cacheBreakpoint: true },
   ];
   const parts = [`# Plan\n\n${compactPlanView(i.plan, i.task.id)}`];
-  if (i.progressTail) parts.push(`# Recent progress\n\n${i.progressTail}`);
+  if (i.memory) parts.push(i.memory);
+  else if (i.progressTail) parts.push(`# Recent progress\n\n${i.progressTail}`);
   if (i.task.approachesTried.length) {
     parts.push(
       `# Approaches already tried for ${i.task.id} (do not repeat these)\n\n${i.task.approachesTried.map((a) => `- ${a}`).join('\n')}`,
     );
   }
-  if (i.evidence.length)
+  if (!i.memory && i.evidence.length)
     parts.push(`# Evidence from earlier attempts\n\n${i.evidence.join('\n\n')}`);
   parts.push(
     `# Your task now\n\nWork on ${i.task.id}: ${i.task.title}. Stop calling tools and summarize when it is done or you are blocked.`,

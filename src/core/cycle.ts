@@ -32,6 +32,7 @@ import { readTextOr } from './atomic.js';
 import { applyRemember, renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
 import { getNode, type PlanNode } from './plan.js';
+import { MemoryHarness } from './memory/index.js';
 import type { PendingVerdict } from './run-store.js';
 import type { Run } from './run.js';
 import { estimateTokens } from './tokens.js';
@@ -209,6 +210,9 @@ function toolContext(run: Run, edited: Set<string>): ToolContext {
 }
 
 const SUMMARY_MAX_TOKENS = 2_000;
+/** One progress entry or evidence item is cut to this many chars before entering memory. */
+const MEMORY_ITEM_CHARS = 12_000;
+
 /** Cycles of token totals kept for the burn-rate median. */
 const CYCLE_TOKEN_HISTORY = 20;
 
@@ -275,6 +279,16 @@ export async function stepAct(run: Run): Promise<void> {
     run.store.progressTail(run.config.context.progress_tail),
     loadCodemap(run),
   ]);
+
+  // Rank progress and evidence by salience within a token budget. Goal, plan and notes are
+  // already in the context, so the harness only reorders and trims what changes per cycle.
+  const memory = new MemoryHarness();
+  for (const entry of progressTail.split(/^(?=## Cycle \d+\n)/m).filter((e) => e.trim()))
+    memory.conversation.insert(entry.trim().slice(0, MEMORY_ITEM_CHARS));
+  for (const e of task.evidence.slice(-3)) memory.working.insert(e.slice(0, MEMORY_ITEM_CHARS));
+  memory.rescore();
+  const assembled = memory.assemble();
+
   const tools = await workerTools(run.config);
   const route = await run.router.pick(cycleRoute(task, run.budgetLeftFraction()));
   const ctx = buildCycleContext({
@@ -287,6 +301,7 @@ export async function stepAct(run: Run): Promise<void> {
     task,
     progressTail,
     evidence: task.evidence.slice(-3),
+    ...(assembled.text ? { memory: assembled.text } : {}),
     tools: tools.map(toolSpec),
   });
   run.events.emit('cycle.context', {
@@ -294,6 +309,7 @@ export async function stepAct(run: Run): Promise<void> {
     prefixBytes: ctx.system.reduce((n, b) => n + b.text.length, 0),
     stateBytes: JSON.stringify(ctx.first).length,
     tokens: contextBreakdown(ctx),
+    memory: memory.stats(),
   });
   const result = await runAgentLoop(ctx, {
     provider: run.deps.provider,
