@@ -8,6 +8,43 @@ Owner: Jimmy. Executors: parallel coding agents (one per workstream, see §2).
 
 ---
 
+## Status and work sessions (keep this current)
+
+Single source of truth for where things stand. Update the table and append a session entry at
+the end of every work session. Checkboxes in the workstream sections lag; trust this table.
+
+| WS  | State                                                        | Branch / PR        |
+| --- | ------------------------------------------------------------ | ------------------ |
+| W0  | extension points + CI matrix landed; nightly merge job not   | #10                |
+| W1  | TUI merged (boxes not yet audited)                           | #14                |
+| W2  | telemetry merged                                             | #11                |
+| W3  | router merged                                                | #12                |
+| W4  | **in progress**: uncommitted work rescued as a WIP commit    | `ws/4-providers`   |
+| W5  | merged; browser uses the installed `agent-browser` CLI first | #16 via #20        |
+| W6  | merged (MCP)                                                 | #18 via #20        |
+| W7  | merged (web fetch/search, same branch as W6)                 | #18 via #20        |
+| W8  | part 1 merged; part 2 open                                   | #15                |
+| W9  | merged (intent + beyond)                                     | #17 via #20        |
+| W10 | merged                                                       | #19 via #20        |
+| W11 | not started                                                  | –                  |
+| W12 | merged; 1 item left                                          | #13 via #20        |
+| W13 | scaffold commit only, no PR                                  | `ws/13-bench-docs` |
+| W14 | 3/5 (landed with W12)                                        | #13 via #20        |
+| W15 | not started                                                  | –                  |
+
+Next up, in order: finish W4 → audit W1/W2/W3/W8/W9 boxes → W8 part 2 → W11 → W13 → W15.
+SonarCloud findings from the #20 integration merge are still open.
+
+### Session log
+
+- **2026-10-05 (integration, single agent):** dropped parallel subagents (too much clutter).
+  Merged ws/5, 6, 9, 10 and 12 into `next` (#20). Declared the missing MCP/web deps and
+  added fake-backend browser-gate tests for CI coverage. Root-caused the disk filling up: a
+  global `merge=rizzler` driver (`cat %O %A %B > %A`) grows the file forever. The repo now
+  pins `* merge=text` in `.gitattributes`. Removed 9 stale worktrees.
+
+---
+
 ## 0. Positioning (what we are building toward)
 
 **"Why use omnexx over Claude Code?"** (shown in `omnexx --help`, README, omnexx.org, first-run)
