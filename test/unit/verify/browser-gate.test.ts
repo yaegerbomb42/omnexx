@@ -72,6 +72,7 @@ describe('runBrowserGate with a fake backend', () => {
       logsDir: dir,
       label: 'c1',
       maxCmdTimeoutMs: 10_000,
+      redact: (s) => s,
     };
     return { dir, ctx };
   }
@@ -100,7 +101,7 @@ describe('runBrowserGate with a fake backend', () => {
     expect(r.exitCode).toBe(0);
     expect(r.tests).toEqual({ total: 7, passed: 7, failed: 0, skipped: 0 });
     expect(calls).toEqual(['open http://localhost:3000', 'type @e1 hi', 'click @e2', 'close']);
-    expect(await readFile(r.logFile!, 'utf8')).toContain('7/7 passed');
+    expect(await readFile(r.logFile, 'utf8')).toContain('7/7 passed');
     await rm(dir, { recursive: true, force: true });
   });
 
