@@ -1,5 +1,11 @@
 import { ProviderError } from '../errors.js';
-import type { CompletionRequest, CompletionResponse, ContentBlock, Provider, StopReason } from './types.js';
+import type {
+  CompletionRequest,
+  CompletionResponse,
+  ContentBlock,
+  Provider,
+  StopReason,
+} from './types.js';
 
 export interface GeminiOptions {
   apiKey: string | undefined;
@@ -67,13 +73,25 @@ export class GeminiProvider implements Provider {
   constructor(private readonly opts: GeminiOptions) {}
 
   async complete(req: CompletionRequest): Promise<CompletionResponse> {
-    const base = (this.opts.baseUrl ?? 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
-    const tools =
-      req.tools.length
-        ? [{ functionDeclarations: req.tools.map((t) => ({ name: t.name, description: t.description, parameters: t.inputSchema })) }]
-        : [];
+    const base = (this.opts.baseUrl ?? 'https://generativelanguage.googleapis.com').replace(
+      /\/+$/,
+      '',
+    );
+    const tools = req.tools.length
+      ? [
+          {
+            functionDeclarations: req.tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              parameters: t.inputSchema,
+            })),
+          },
+        ]
+      : [];
     const body = {
-      system_instruction: req.system.length ? { parts: req.system.map((b) => ({ text: b.text })) } : undefined,
+      system_instruction: req.system.length
+        ? { parts: req.system.map((b) => ({ text: b.text })) }
+        : undefined,
       contents: toContents(req),
       tools: tools.length ? tools : undefined,
       generationConfig: { maxOutputTokens: req.maxTokens },
@@ -92,14 +110,22 @@ export class GeminiProvider implements Provider {
         signal: AbortSignal.any(signals),
       });
     } catch (err) {
-      if (req.signal?.aborted) throw new ProviderError('request aborted', { retryable: false, cause: err });
-      throw new ProviderError(`network error talking to gemini: ${(err as Error).message}`, { retryable: true, cause: err });
+      if (req.signal?.aborted)
+        throw new ProviderError('request aborted', { retryable: false, cause: err });
+      throw new ProviderError(`network error talking to gemini: ${(err as Error).message}`, {
+        retryable: true,
+        cause: err,
+      });
     }
     let data: GeminiResponse;
     try {
       data = (await res.json()) as GeminiResponse;
     } catch (err) {
-      throw new ProviderError(`gemini returned non-JSON (HTTP ${res.status})`, { retryable: res.status >= 500, status: res.status, cause: err });
+      throw new ProviderError(`gemini returned non-JSON (HTTP ${res.status})`, {
+        retryable: res.status >= 500,
+        status: res.status,
+        cause: err,
+      });
     }
     if (!res.ok) {
       const s = res.status;
@@ -115,11 +141,19 @@ export class GeminiProvider implements Provider {
     for (const p of cand?.content?.parts ?? []) {
       if (typeof p.text === 'string' && p.text) content.push({ type: 'text', text: p.text });
       if (p.functionCall)
-        content.push({ type: 'tool_use', id: `call_${call++}`, name: p.functionCall.name ?? '', input: p.functionCall.args ?? {} });
+        content.push({
+          type: 'tool_use',
+          id: `call_${call++}`,
+          name: p.functionCall.name ?? '',
+          input: p.functionCall.args ?? {},
+        });
     }
     return {
       model: req.model,
-      stopReason: mapStop(cand?.finishReason, content.some((b) => b.type === 'tool_use')),
+      stopReason: mapStop(
+        cand?.finishReason,
+        content.some((b) => b.type === 'tool_use'),
+      ),
       content,
       usage: {
         uncached: data.usageMetadata?.promptTokenCount ?? 0,

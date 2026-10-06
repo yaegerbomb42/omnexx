@@ -40,7 +40,7 @@ async function getJson(
   try {
     const res = await fetchFn(url, { headers, signal: AbortSignal.any(signals) });
     if (!res.ok) return undefined;
-    return (await res.json()) as unknown;
+    return await res.json();
   } catch {
     return undefined;
   }
@@ -57,8 +57,9 @@ export async function discoverModels(
 ): Promise<DiscoveredModel[]> {
   const fetchFn = opts.fetch ?? fetch;
   const timeoutMs = opts.timeoutMs ?? 5_000;
-  const headers: Record<string, string> =
-    endpoint.apiKey ? { authorization: `Bearer ${endpoint.apiKey}` } : {};
+  const headers: Record<string, string> = endpoint.apiKey
+    ? { authorization: `Bearer ${endpoint.apiKey}` }
+    : {};
   if (endpoint.kind === 'ollama') {
     const body = (await getJson(
       fetchFn,
@@ -67,13 +68,14 @@ export async function discoverModels(
       timeoutMs,
     )) as OllamaTags | undefined;
     const models: { name?: unknown }[] = Array.isArray(body?.models) ? body.models : [];
-    return tagsModels.flatMap((m) =>
-      typeof m.name === 'string' && m.name ? [{ id: m.name, contextLength: undefined, ownedBy: undefined }] : [],
+    return models.flatMap((m) =>
+      typeof m.name === 'string' && m.name
+        ? [{ id: m.name, contextLength: undefined, ownedBy: undefined }]
+        : [],
     );
   }
   const openai = (await getJson(fetchFn, modelsUrl(endpoint.baseUrl), headers, timeoutMs)) as
-    | OpenAIModelList
-    | undefined;
+    OpenAIModelList | undefined;
   // Some Ollama-shaped servers answer /v1/models with `{ data: [...] }` too; accept both.
   if (openai && !Array.isArray(openai.data)) {
     const tags = (await getJson(
@@ -83,11 +85,17 @@ export async function discoverModels(
       timeoutMs,
     )) as OllamaTags | undefined;
     const tagsModels: { name?: unknown }[] = Array.isArray(tags?.models) ? tags.models : [];
-    return models.flatMap((m) =>
-      typeof m.name === 'string' && m.name ? [{ id: m.name, contextLength: undefined, ownedBy: undefined }] : [],
+    return tagsModels.flatMap((m) =>
+      typeof m.name === 'string' && m.name
+        ? [{ id: m.name, contextLength: undefined, ownedBy: undefined }]
+        : [],
     );
   }
-  const data: { id?: unknown; context_length?: unknown; owned_by?: unknown }[] = Array.isArray(openai?.data) ? openai.data : [];
+  const data: { id?: unknown; context_length?: unknown; owned_by?: unknown }[] = Array.isArray(
+    openai?.data,
+  )
+    ? openai.data
+    : [];
   return data.flatMap((m) => {
     if (typeof m.id !== 'string' || !m.id) return [];
     return [

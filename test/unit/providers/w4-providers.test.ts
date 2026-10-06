@@ -33,7 +33,13 @@ describe('model profiles (W3 contract shape)', () => {
   it('parses defaults and lists in sorted order', () => {
     const raw = loadModelProfiles({
       profiles: {
-        'groq:llama-4-70b': { tags: ['code', 'fast'], context: 200000, vision: true, speed: 'fast', quality: 'high' },
+        'groq:llama-4-70b': {
+          tags: ['code', 'fast'],
+          context: 200000,
+          vision: true,
+          speed: 'fast',
+          quality: 'high',
+        },
         'anthropic:haiku': {},
         bad: { tags: [] },
       },
@@ -112,7 +118,11 @@ describe('tool-call repair', () => {
     expect(fixJsonText('```json\n{"a": 1,}\n```')).toBe('{"a": 1}');
     expect(parseToolArgs("{'a': 1,}").value).toEqual({ a: 1 });
     expect(parseToolArgs('"{\\"a\\": 2}"').value).toEqual({ a: 2 });
-    const schema = z.strictObject({ count: z.number(), name: z.string(), flag: z.boolean().optional() });
+    const schema = z.strictObject({
+      count: z.number(),
+      name: z.string(),
+      flag: z.boolean().optional(),
+    });
     const v = validateWithSchema({ count: '42', name: 'x', flag: 'yes' }, schema);
     expect(v).toEqual({ ok: true, value: { count: 42, name: 'x', flag: true } });
     const bad = validateWithSchema({ count: 'NaN!', name: 7 }, schema);
@@ -128,11 +138,25 @@ describe('tool-call repair', () => {
           model: 'm',
           stopReason: 'tool_use',
           usage: { uncached: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0, output: 0 },
-          content: [{ type: 'tool_use', id: 'c1', name: 'read', input: { _unparseable_arguments: "{'p': 1,}" } }],
+          content: [
+            {
+              type: 'tool_use',
+              id: 'c1',
+              name: 'read',
+              input: { _unparseable_arguments: "{'p': 1,}" },
+            },
+          ],
         });
       },
     };
-    const req: CompletionRequest = { model: 'm', system: [], tools: [], messages: [], maxTokens: 1, messageBreakpoints: [] };
+    const req: CompletionRequest = {
+      model: 'm',
+      system: [],
+      tools: [],
+      messages: [],
+      maxTokens: 1,
+      messageBreakpoints: [],
+    };
     const res = await withToolRepair(inner).complete(req);
     expect(res.content).toEqual([{ type: 'tool_use', id: 'c1', name: 'read', input: { p: 1 } }]);
   });
@@ -143,14 +167,31 @@ describe('Gemini + Responses providers (recorded fixtures)', () => {
     const srv = await mockServer((r, res) => {
       expect(r.url).toMatch(/:generateContent$/);
       json(res, 200, {
-        candidates: [{ content: { parts: [{ text: 'hi' }, { functionCall: { name: 'read', args: { p: 'a' } } }] }, finishReason: 'TOOL_CALL' }],
+        candidates: [
+          {
+            content: {
+              parts: [{ text: 'hi' }, { functionCall: { name: 'read', args: { p: 'a' } } }],
+            },
+            finishReason: 'TOOL_CALL',
+          },
+        ],
         usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
       });
     });
     const p = new GeminiProvider({ apiKey: 'k', baseUrl: srv.url, timeoutMs: 5_000 });
-    const res = await p.complete({ model: 'gemini-2.0-flash', system: [], tools: [], messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }], maxTokens: 10, messageBreakpoints: [] });
+    const res = await p.complete({
+      model: 'gemini-2.0-flash',
+      system: [],
+      tools: [],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      maxTokens: 10,
+      messageBreakpoints: [],
+    });
     expect(res.stopReason).toBe('tool_use');
-    expect(res.content).toEqual([{ type: 'text', text: 'hi' }, { type: 'tool_use', id: 'call_0', name: 'read', input: { p: 'a' } }]);
+    expect(res.content).toEqual([
+      { type: 'text', text: 'hi' },
+      { type: 'tool_use', id: 'call_0', name: 'read', input: { p: 'a' } },
+    ]);
     expect(res.usage).toMatchObject({ uncached: 10, output: 5 });
   });
   it('responses maps function_call output + usage', async () => {
@@ -163,16 +204,46 @@ describe('Gemini + Responses providers (recorded fixtures)', () => {
         usage: { input_tokens: 7, output_tokens: 3 },
       });
     });
-    const p = new ResponsesProvider({ name: 'openai', baseUrl: srv.url, apiKey: 'k', timeoutMs: 5_000 });
-    const res = await p.complete({ model: 'gpt-5', system: [], tools: [], messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }], maxTokens: 10, messageBreakpoints: [] });
+    const p = new ResponsesProvider({
+      name: 'openai',
+      baseUrl: srv.url,
+      apiKey: 'k',
+      timeoutMs: 5_000,
+    });
+    const res = await p.complete({
+      model: 'gpt-5',
+      system: [],
+      tools: [],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      maxTokens: 10,
+      messageBreakpoints: [],
+    });
     expect(res.stopReason).toBe('tool_use');
     expect(res.content).toEqual([{ type: 'tool_use', id: 'c9', name: 'ping', input: {} }]);
     expect(res.usage).toMatchObject({ uncached: 7, output: 3 });
   });
   it('both map HTTP errors to retryable ProviderErrors', async () => {
-    const srv = await mockServer((_r, res) => json(res, 429, { error: { message: 'slow down' } }));
-    const req: CompletionRequest = { model: 'm', system: [], tools: [], messages: [], maxTokens: 1, messageBreakpoints: [] };
-    await expect(new GeminiProvider({ apiKey: 'k', baseUrl: srv.url, timeoutMs: 5_000 }).complete(req)).rejects.toMatchObject({ retryable: true, status: 429 });
-    await expect(new ResponsesProvider({ name: 'r', baseUrl: srv.url, apiKey: 'k', timeoutMs: 5_000 }).complete(req)).rejects.toMatchObject({ retryable: true, status: 429 });
+    const srv = await mockServer((_r, res) => {
+      json(res, 429, { error: { message: 'slow down' } });
+    });
+    const req: CompletionRequest = {
+      model: 'm',
+      system: [],
+      tools: [],
+      messages: [],
+      maxTokens: 1,
+      messageBreakpoints: [],
+    };
+    await expect(
+      new GeminiProvider({ apiKey: 'k', baseUrl: srv.url, timeoutMs: 5_000 }).complete(req),
+    ).rejects.toMatchObject({ retryable: true, status: 429 });
+    await expect(
+      new ResponsesProvider({
+        name: 'r',
+        baseUrl: srv.url,
+        apiKey: 'k',
+        timeoutMs: 5_000,
+      }).complete(req),
+    ).rejects.toMatchObject({ retryable: true, status: 429 });
   });
 });

@@ -1,4 +1,5 @@
-import { z, type ZodType } from 'zod';
+import type { z } from 'zod';
+import { type ZodType } from 'zod';
 import type { CompletionRequest, CompletionResponse, ContentBlock, Provider } from './types.js';
 
 /** How a tool call was salvaged (for tests and telemetry). */
@@ -16,7 +17,10 @@ export function fixJsonText(raw: string): string {
   let s = raw.trim();
   const fence = /^```(?:json)?\s*\n?([\s\S]*?)\n?```$/m.exec(s);
   if (fence?.[1] !== undefined) s = fence[1].trim();
-  if ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith('"') && s.endsWith('"') && s.includes("'"))) {
+  if (
+    (s.startsWith("'") && s.endsWith("'")) ||
+    (s.startsWith('"') && s.endsWith('"') && s.includes("'"))
+  ) {
     // A whole payload wrapped in single quotes: unwrap one layer.
     if (s.startsWith("'") && s.endsWith("'")) s = s.slice(1, -1);
   }
@@ -56,11 +60,23 @@ export function parseToolArgs(raw: unknown): { value: unknown; fixed: boolean } 
 /** Coerce common mismatches toward the tool's zod schema: "42" -> 42, 1/0 -> bool, etc. */
 export function coerceToSchema(value: unknown, schema: z.ZodType): unknown {
   if (schema.safeParse(value).success) return value;
-  const def = (schema as unknown as { _def?: { type?: string; typeName?: string; innerType?: ZodType; options?: ZodType[]; shape?: unknown } })._def;
+  const def = (
+    schema as unknown as {
+      _def?: {
+        type?: string;
+        typeName?: string;
+        innerType?: ZodType;
+        options?: ZodType[];
+        shape?: unknown;
+      };
+    }
+  )._def;
   // Zod 4 stores the kind in `_def.type` ("number", "string", "object", ...);
   // older shapes used `typeName` ("ZodNumber", ...). Accept both.
   const rawKind = def?.type ?? def?.typeName ?? '';
-  const typeName = rawKind.startsWith('Zod') ? rawKind : `Zod${rawKind.charAt(0).toUpperCase()}${rawKind.slice(1)}`;
+  const typeName = rawKind.startsWith('Zod')
+    ? rawKind
+    : `Zod${rawKind.charAt(0).toUpperCase()}${rawKind.slice(1)}`;
   if (typeName === 'ZodOptional' || typeName === 'ZodDefault') {
     if (value === undefined || value === null) return value;
     const inner = def?.innerType;
@@ -107,14 +123,14 @@ export function validateWithSchema(
   const coerced = coerceToSchema(input, schema);
   const parsed = schema.safeParse(coerced);
   if (parsed.success) return { ok: true, value: parsed.data };
-  const msg = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
+  const msg = parsed.error.issues
+    .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+    .join('; ');
   return { ok: false, error: msg };
 }
 
 /** Repair one tool_use block: parse leniently; report whether it was fixed. */
-export function repairToolCall(
-  block: Extract<ContentBlock, { type: 'tool_use' }>,
-): RepairedCall {
+export function repairToolCall(block: Extract<ContentBlock, { type: 'tool_use' }>): RepairedCall {
   const parsed = parseToolArgs(block.input);
   return {
     name: block.name,

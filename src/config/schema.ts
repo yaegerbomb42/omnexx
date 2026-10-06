@@ -92,9 +92,12 @@ const providerBudget = {
   max_usd_per_day: z.number().positive().optional(),
 };
 
-/** An OpenAI-compatible Chat Completions endpoint: OpenAI, OpenRouter, LiteLLM, Ollama, vLLM. */
+/**
+ * A model endpoint. `openai` is Chat Completions (OpenAI, OpenRouter, LiteLLM, Ollama, vLLM);
+ * `responses` is the OpenAI Responses API; `gemini` is Google's native API.
+ */
 export const endpointSchema = z.strictObject({
-  kind: z.literal('openai').default('openai'),
+  kind: z.enum(['openai', 'responses', 'gemini']).default('openai'),
   base_url: z.url(),
   /** Name of the env var holding the key (never the key itself). Optional for local endpoints. */
   api_key_env: z

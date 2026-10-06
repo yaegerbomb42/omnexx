@@ -30,7 +30,11 @@ export function resolveModelLenient(ref: string, config: OmnexxConfig): PricedMo
     // Unknown provider ("unknown provider ...") or unknown price ("no price for
     // model ..."): both resolve leniently. Only malformed refs still throw, and
     // resolveModel throws those as ConfigError too, so check the prefix.
-    if (!err.message.startsWith('no price for model') && !err.message.startsWith('unknown provider')) throw err;
+    if (
+      !err.message.startsWith('no price for model') &&
+      !err.message.startsWith('unknown provider')
+    )
+      throw err;
     const cut = ref.indexOf(':');
     const provider = ref.slice(0, cut);
     const name = ref.slice(cut + 1);
@@ -52,7 +56,13 @@ export function resolveChainLenient(
 
 /** Cost in USD, or undefined when the model has no price. Tokens are always counted. */
 export function costOf(
-  usage: { uncached: number; cacheWrite5m: number; cacheWrite1h: number; cacheRead: number; output: number },
+  usage: {
+    uncached: number;
+    cacheWrite5m: number;
+    cacheWrite1h: number;
+    cacheRead: number;
+    output: number;
+  },
   price: PriceConfig | undefined,
 ): CostBreakdown {
   if (!price) return { usd: undefined, unpriced: true };

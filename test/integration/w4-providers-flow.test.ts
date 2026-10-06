@@ -26,7 +26,15 @@ async function run(
   const stderr = new PassThrough();
   const out = collect(stdout);
   const err = collect(stderr);
-  const io: CliIO = { stdout, stderr, stdin: Readable.from([]), env, cwd, isTTY: false, fetch: fetchFn };
+  const io: CliIO = {
+    stdout,
+    stderr,
+    stdin: Readable.from([]),
+    env,
+    cwd,
+    isTTY: false,
+    fetch: fetchFn,
+  };
   const code = await runCli(argv, io);
   return { code, stdout: out(), stderr: err() };
 }
@@ -42,11 +50,23 @@ describe('W4 groq flow against a fake server', () => {
         const body = JSON.parse(r.body) as { model?: string; max_tokens?: number };
         // providers add uses model "test" with maxTokens 1; models test uses the real id.
         if (body.model === 'test' && body.max_tokens === 1) {
-          json(res, 200, { model: 'test', choices: [{ finish_reason: 'stop', message: { content: 'ok' } }], usage: { prompt_tokens: 5, completion_tokens: 1 } });
+          json(res, 200, {
+            model: 'test',
+            choices: [{ finish_reason: 'stop', message: { content: 'ok' } }],
+            usage: { prompt_tokens: 5, completion_tokens: 1 },
+          });
         } else if (body.model === MODEL) {
           json(res, 200, {
             model: MODEL,
-            choices: [{ finish_reason: 'tool_calls', message: { content: null, tool_calls: [{ id: 'c1', function: { name: 'ping', arguments: '{}' } }] } }],
+            choices: [
+              {
+                finish_reason: 'tool_calls',
+                message: {
+                  content: null,
+                  tool_calls: [{ id: 'c1', function: { name: 'ping', arguments: '{}' } }],
+                },
+              },
+            ],
             usage: { prompt_tokens: 20, completion_tokens: 5 },
           });
         } else json(res, 404, { error: { message: `unknown model ${body.model ?? ''}` } });
@@ -60,7 +80,12 @@ describe('W4 groq flow against a fake server', () => {
       return fetch(`${srv.url}${raw.slice('http://groq.test'.length)}`, init);
     };
     // Point the groq template at the fake server via an explicit base URL.
-    const add = await run(['providers', 'add', 'groq', '--base-url', 'http://groq.test/openai/v1'], env, cwd, fetchFn);
+    const add = await run(
+      ['providers', 'add', 'groq', '--base-url', 'http://groq.test/openai/v1'],
+      env,
+      cwd,
+      fetchFn,
+    );
     expect(`${add.stdout} ${add.stderr}`).toMatch(/Added/);
     expect(add.code).toBe(0);
     const list = await run(['models', 'list', '--remote', '--provider', 'groq'], env, cwd, fetchFn);
@@ -88,14 +113,24 @@ describe('W4 groq flow against a fake server', () => {
     const stdout = new PassThrough();
     const stderr = new PassThrough();
     const mkIo = (stdin: string): CliIO => ({
-      stdout, stderr, stdin: Readable.from([stdin]), env, cwd, isTTY: false, fetch: passFetch,
+      stdout,
+      stderr,
+      stdin: Readable.from([stdin]),
+      env,
+      cwd,
+      isTTY: false,
+      fetch: passFetch,
     });
     expect(await runCli(['auth', 'set', 'groq'], mkIo('gsk-file-key\n'))).toBe(0);
     const paths = resolvePaths(env);
     expect((await readFile(keyFile(paths, 'groq'), 'utf8')).trim()).toBe('gsk-file-key');
-    expect((await findProviderKey(paths, env, 'groq', 'GROQ_API_KEY'))?.source).toBe('credentials file');
+    expect((await findProviderKey(paths, env, 'groq', 'GROQ_API_KEY'))?.source).toBe(
+      'credentials file',
+    );
     const withEnv = { ...env, GROQ_API_KEY: 'gsk-env-key' };
-    expect((await findProviderKey(paths, withEnv, 'groq', 'GROQ_API_KEY'))?.key).toBe('gsk-env-key');
+    expect((await findProviderKey(paths, withEnv, 'groq', 'GROQ_API_KEY'))?.key).toBe(
+      'gsk-env-key',
+    );
     expect(await runCli(['auth', 'clear', 'groq'], mkIo(''))).toBe(0);
     expect(await findProviderKey(paths, env, 'groq', 'GROQ_API_KEY')).toBeUndefined();
     afterEach(() => undefined);

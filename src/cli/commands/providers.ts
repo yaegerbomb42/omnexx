@@ -22,14 +22,54 @@ export interface ProviderTemplate {
 }
 
 export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
-  openai: { baseUrl: 'https://api.openai.com/v1', keyEnv: 'OPENAI_API_KEY', free: false, kind: 'openai' },
-  openrouter: { baseUrl: 'https://openrouter.ai/api/v1', keyEnv: 'OPENROUTER_API_KEY', free: false, kind: 'openai' },
-  groq: { baseUrl: 'https://api.groq.com/openai/v1', keyEnv: 'GROQ_API_KEY', free: false, kind: 'openai' },
-  deepseek: { baseUrl: 'https://api.deepseek.com/v1', keyEnv: 'DEEPSEEK_API_KEY', free: false, kind: 'openai' },
-  together: { baseUrl: 'https://api.together.xyz/v1', keyEnv: 'TOGETHER_API_KEY', free: false, kind: 'openai' },
-  fireworks: { baseUrl: 'https://api.fireworks.ai/inference/v1', keyEnv: 'FIREWORKS_API_KEY', free: false, kind: 'openai' },
-  mistral: { baseUrl: 'https://api.mistral.ai/v1', keyEnv: 'MISTRAL_API_KEY', free: false, kind: 'openai' },
-  gemini: { baseUrl: 'https://generativelanguage.googleapis.com', keyEnv: 'GEMINI_API_KEY', free: false, kind: 'openai' },
+  openai: {
+    baseUrl: 'https://api.openai.com/v1',
+    keyEnv: 'OPENAI_API_KEY',
+    free: false,
+    kind: 'openai',
+  },
+  openrouter: {
+    baseUrl: 'https://openrouter.ai/api/v1',
+    keyEnv: 'OPENROUTER_API_KEY',
+    free: false,
+    kind: 'openai',
+  },
+  groq: {
+    baseUrl: 'https://api.groq.com/openai/v1',
+    keyEnv: 'GROQ_API_KEY',
+    free: false,
+    kind: 'openai',
+  },
+  deepseek: {
+    baseUrl: 'https://api.deepseek.com/v1',
+    keyEnv: 'DEEPSEEK_API_KEY',
+    free: false,
+    kind: 'openai',
+  },
+  together: {
+    baseUrl: 'https://api.together.xyz/v1',
+    keyEnv: 'TOGETHER_API_KEY',
+    free: false,
+    kind: 'openai',
+  },
+  fireworks: {
+    baseUrl: 'https://api.fireworks.ai/inference/v1',
+    keyEnv: 'FIREWORKS_API_KEY',
+    free: false,
+    kind: 'openai',
+  },
+  mistral: {
+    baseUrl: 'https://api.mistral.ai/v1',
+    keyEnv: 'MISTRAL_API_KEY',
+    free: false,
+    kind: 'openai',
+  },
+  gemini: {
+    baseUrl: 'https://generativelanguage.googleapis.com',
+    keyEnv: 'GEMINI_API_KEY',
+    free: false,
+    kind: 'openai',
+  },
   xai: { baseUrl: 'https://api.x.ai/v1', keyEnv: 'XAI_API_KEY', free: false, kind: 'openai' },
   ollama: { baseUrl: 'http://localhost:11434/v1', keyEnv: undefined, free: true, kind: 'openai' },
   lmstudio: { baseUrl: 'http://localhost:1234/v1', keyEnv: undefined, free: true, kind: 'openai' },
@@ -95,8 +135,20 @@ async function testEndpoint(
   const timeoutMs = ep ? parseDuration(ep.request_timeout) : 10_000;
   const provider =
     kind === 'responses'
-      ? new ResponsesProvider({ name, baseUrl, apiKey, timeoutMs, ...(io.fetch ? { fetch: io.fetch } : {}) })
-      : new OpenAICompatProvider({ name, baseUrl, apiKey, timeoutMs, ...(io.fetch ? { fetch: io.fetch } : {}) });
+      ? new ResponsesProvider({
+          name,
+          baseUrl,
+          apiKey,
+          timeoutMs,
+          ...(io.fetch ? { fetch: io.fetch } : {}),
+        })
+      : new OpenAICompatProvider({
+          name,
+          baseUrl,
+          apiKey,
+          timeoutMs,
+          ...(io.fetch ? { fetch: io.fetch } : {}),
+        });
   try {
     // 1-token test call: tiny maxTokens, no tools.
     const res = await provider.complete({
@@ -136,7 +188,10 @@ export async function providersAdd(
     throw new UsageError(`bad provider name "${name}"`, 'use lowercase letters, digits, _ or -');
   const { config } = await loadConfig({ cwd: io.cwd, env: io.env });
   if (config.providers.endpoints[lower])
-    throw new UsageError(`provider "${lower}" already exists`, `use \`omnexx providers remove ${lower}\` first`);
+    throw new UsageError(
+      `provider "${lower}" already exists`,
+      `use \`omnexx providers remove ${lower}\` first`,
+    );
   const template = templateFor(lower);
   let baseUrl = opts.baseUrl;
   let keyEnv = opts.keyEnv;
@@ -146,7 +201,10 @@ export async function providersAdd(
     if (io.isTTY && process.env.VITEST === undefined) {
       // Interactive prompts (readline, no new deps).
       println(io.stdout, `Adding provider "${lower}"${template ? ` (template: ${lower})` : ''}.`);
-      const askBase = await readLine(io, `Base URL [${template?.baseUrl ?? 'http://localhost:8000/v1'}]: `);
+      const askBase = await readLine(
+        io,
+        `Base URL [${template?.baseUrl ?? 'http://localhost:8000/v1'}]: `,
+      );
       baseUrl = baseUrl ?? askBase?.trim() ?? template?.baseUrl ?? 'http://localhost:8000/v1';
       const askKey = await readLine(io, `Key env var [${template?.keyEnv ?? 'none'}]: `);
       const trimmedKey = (keyEnv ?? askKey?.trim() ?? template?.keyEnv ?? '').trim();
@@ -158,10 +216,11 @@ export async function providersAdd(
         free = saidYes || templateFree;
       }
     } else {
-      baseUrl = baseUrl ?? template?.baseUrl;
-      if (keyEnv === undefined) keyEnv = template?.keyEnv;
+      baseUrl ??= template?.baseUrl;
+      keyEnv ??= template?.keyEnv;
       free ??= template?.free ?? false;
-      if (!baseUrl) throw new UsageError('missing --base-url', 'pass --base-url or use a known template name');
+      if (!baseUrl)
+        throw new UsageError('missing --base-url', 'pass --base-url or use a known template name');
     }
   }
   free = free ?? false;
@@ -192,23 +251,43 @@ export async function providersRemove(io: CliIO, name: string): Promise<number> 
   if (lower === 'anthropic') throw new UsageError('cannot remove anthropic', 'it is built in');
   const file = userConfigFile(resolvePaths(io.env));
   const removed = await removeEndpointBlock(file, lower);
-  println(io.stdout, removed ? `Removed [providers.endpoints.${lower}] from ${file}.` : `No [providers.endpoints.${lower}] in ${file}.`);
+  println(
+    io.stdout,
+    removed
+      ? `Removed [providers.endpoints.${lower}] from ${file}.`
+      : `No [providers.endpoints.${lower}] in ${file}.`,
+  );
   return EXIT.ok;
 }
 
 export async function providersTest(io: CliIO, name: string): Promise<number> {
   const lower = name.toLowerCase();
-  if (lower === 'anthropic') throw new UsageError('anthropic has no test yet', 'run `omnexx doctor` to check the key');
+  if (lower === 'anthropic')
+    throw new UsageError('anthropic has no test yet', 'run `omnexx doctor` to check the key');
   const { config } = await loadConfig({ cwd: io.cwd, env: io.env });
   const ep = config.providers.endpoints[lower];
-  if (!ep) throw new UsageError(`unknown provider "${lower}"`, '`omnexx providers list` shows configured providers');
+  if (!ep)
+    throw new UsageError(
+      `unknown provider "${lower}"`,
+      '`omnexx providers list` shows configured providers',
+    );
   const key = await findProviderKey(resolvePaths(io.env), io.env, lower, ep.api_key_env);
-  const t = await testEndpoint(io, lower, ep.base_url, key?.key, (ep as { kind?: 'openai' | 'responses' }).kind ?? 'openai');
+  const t = await testEndpoint(
+    io,
+    lower,
+    ep.base_url,
+    key?.key,
+    (ep as { kind?: 'openai' | 'responses' }).kind ?? 'openai',
+  );
   println(io.stdout, t.ok ? `ok: ${t.detail}` : `failed: ${t.detail}`);
   return t.ok ? EXIT.ok : EXIT.error;
 }
 
-export const register: CommandRegistrar = (program: Command, io: CliIO, setExit: (c: number) => void) => {
+export const register: CommandRegistrar = (
+  program: Command,
+  io: CliIO,
+  setExit: (c: number) => void,
+) => {
   const p = program.command('providers').description('add, list, remove and test model providers');
   p.command('add [name]')
     .description('add a provider (interactive, or flags)')
@@ -217,18 +296,37 @@ export const register: CommandRegistrar = (program: Command, io: CliIO, setExit:
     .option('--free', 'no key needed (local models)')
     .option('--kind <kind>', 'openai|responses')
     .option('--no-test', 'skip the 1-token test call')
-    .action(async (name: string | undefined, opts: { baseUrl?: string; keyEnv?: string; free?: boolean; kind?: string; test?: boolean }) => {
-      const n = name ?? 'custom';
-      const kind = opts.kind === 'responses' ? 'responses' : 'openai';
-      setExit(await providersAdd(io, n, { baseUrl: opts.baseUrl, keyEnv: opts.keyEnv, free: opts.free, kind, skipTest: opts.test === false }));
+    .action(
+      async (
+        name: string | undefined,
+        opts: { baseUrl?: string; keyEnv?: string; free?: boolean; kind?: string; test?: boolean },
+      ) => {
+        const n = name ?? 'custom';
+        const kind = opts.kind === 'responses' ? 'responses' : 'openai';
+        setExit(
+          await providersAdd(io, n, {
+            baseUrl: opts.baseUrl,
+            keyEnv: opts.keyEnv,
+            free: opts.free,
+            kind,
+            skipTest: opts.test === false,
+          }),
+        );
+      },
+    );
+  p.command('list')
+    .description('list configured providers')
+    .action(async () => {
+      setExit(await providersList(io));
     });
-  p.command('list').description('list configured providers').action(async () => {
-    setExit(await providersList(io));
-  });
-  p.command('remove <name>').description('remove a provider from user config').action(async (name: string) => {
-    setExit(await providersRemove(io, name));
-  });
-  p.command('test <name>').description('run a 1-token test call').action(async (name: string) => {
-    setExit(await providersTest(io, name));
-  });
+  p.command('remove <name>')
+    .description('remove a provider from user config')
+    .action(async (name: string) => {
+      setExit(await providersRemove(io, name));
+    });
+  p.command('test <name>')
+    .description('run a 1-token test call')
+    .action(async (name: string) => {
+      setExit(await providersTest(io, name));
+    });
 };

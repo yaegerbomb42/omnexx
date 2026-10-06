@@ -287,8 +287,10 @@ Read first: `src/providers/**`, `src/config/schema.ts`, `src/auth/keys.ts`, `doc
 - [x] Native Gemini provider (function calling, caching) and OpenAI Responses API provider.
 - [x] Tool-call repair layer for weak/local models: JSON fix-ups, schema coercion, one
       re-ask with the validation error, then fail the turn (not the run).
-- [x] Pricing is optional everywhere: unknown price ⇒ tokens are still tracked, $ shown as "–",
-      budget falls back to token caps. (Remove the "no price" hard error.)
+- [ ] Pricing is optional everywhere: unknown price ⇒ tokens are still tracked, $ shown as "–",
+      budget falls back to token caps. (Remove the "no price" hard error.) _Lenient resolver and
+      `costOf` exist in `src/providers/profiles.ts`, but the run still uses the strict one: token
+      caps must land first, or an unpriced paid model would have no spend cap._
 - [x] Role shorthands stay: `planner/worker/cheap` map to router fallback when router off.
 - **Accept:** a fresh user with only `GROQ_API_KEY` goes `providers add groq` → `models list`
   → `omnexx` chat turn, with no TOML editing; contract tests for each provider against recorded

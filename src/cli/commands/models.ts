@@ -5,7 +5,10 @@ import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import { findProviderKey } from '../../auth/keys.js';
 import { loadConfig } from '../../config/load.js';
 import { parseDuration } from '../../config/duration.js';
-import { loadModelProfiles, type ModelProfileInput } from '../../config/sections/models-profiles.js';
+import {
+  loadModelProfiles,
+  type ModelProfileInput,
+} from '../../config/sections/models-profiles.js';
 import { resolvePaths, userConfigFile } from '../../core/paths.js';
 import { UsageError } from '../../errors.js';
 import { discoverModels } from '../../providers/discovery.js';
@@ -30,7 +33,7 @@ function parseCtx(value: string | undefined): number | undefined {
   const m = /^(\d+(?:\.\d+)?)\s*([kKmM])?$/.exec(value.trim());
   if (!m) throw new UsageError(`bad --ctx "${value}"`, 'use a number like 200000 or 200k');
   const n = Number(m[1]);
-  const mult = (m[2]?.toLowerCase() === 'k' ? 1_000 : m[2]?.toLowerCase() === 'm' ? 1_000_000 : 1);
+  const mult = m[2]?.toLowerCase() === 'k' ? 1_000 : m[2]?.toLowerCase() === 'm' ? 1_000_000 : 1;
   return Math.floor(n * mult);
 }
 
@@ -84,7 +87,12 @@ export async function modelsAdd(io: CliIO, ref: string, opts: ModelsAddOptions):
   const fullRef = `${provider}:${ref.slice(ref.indexOf(':') + 1)}`;
   const ctx = parseCtx(opts.ctx);
   const profile: ModelProfileInput = {
-    tags: opts.tags ? opts.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
+    tags: opts.tags
+      ? opts.tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
+      : [],
     ...(ctx !== undefined ? { context: ctx } : {}),
     tools: opts.tools ?? true,
     vision: opts.vision ?? false,
@@ -98,7 +106,10 @@ export async function modelsAdd(io: CliIO, ref: string, opts: ModelsAddOptions):
   return EXIT.ok;
 }
 
-export async function modelsList(io: CliIO, opts: { provider?: string | undefined; remote?: boolean | undefined }): Promise<number> {
+export async function modelsList(
+  io: CliIO,
+  opts: { provider?: string | undefined; remote?: boolean | undefined },
+): Promise<number> {
   const { config } = await loadConfig({ cwd: io.cwd, env: io.env });
   // Raw profiles (core schema may not know them yet; see INTEGRATION note).
   let rawProfiles: Record<string, ModelProfileInput> = {};
@@ -123,13 +134,23 @@ export async function modelsList(io: CliIO, opts: { provider?: string | undefine
         continue;
       }
       const key = await findProviderKey(resolvePaths(io.env), io.env, name, ep.api_key_env);
-      const kind = (ep as { kind?: string }).kind === 'responses' ? undefined : name === 'ollama' || ep.base_url.includes('11434') ? 'ollama' as const : undefined;
+      const kind =
+        (ep as { kind?: string }).kind === 'responses'
+          ? undefined
+          : name === 'ollama' || ep.base_url.includes('11434')
+            ? ('ollama' as const)
+            : undefined;
       const found = await discoverModels(
-        { baseUrl: ep.base_url, ...(key?.key ? { apiKey: key.key } : {}), ...(kind ? { kind } : {}) },
+        {
+          baseUrl: ep.base_url,
+          ...(key?.key ? { apiKey: key.key } : {}),
+          ...(kind ? { kind } : {}),
+        },
         { ...(io.fetch ? { fetch: io.fetch } : {}) },
       );
       if (!found.length) println(io.stdout, `${name}: no models reported`);
-      for (const m of found) println(io.stdout, `${name}:${m.id}${m.contextLength ? `  (ctx ${m.contextLength})` : ''}`);
+      for (const m of found)
+        println(io.stdout, `${name}:${m.id}${m.contextLength ? `  (ctx ${m.contextLength})` : ''}`);
     }
     return EXIT.ok;
   }
@@ -142,7 +163,12 @@ export async function modelsList(io: CliIO, opts: { provider?: string | undefine
   if (!sorted.length) println(io.stdout, 'no models configured');
   for (const r of sorted) {
     const p = rawProfiles[r];
-    println(io.stdout, p ? `${r}  tags=[${p.tags.join(',')}] ctx=${p.context ?? '?'} ${p.vision ? 'vision' : ''}`.trim() : r);
+    println(
+      io.stdout,
+      p
+        ? `${r}  tags=[${p.tags.join(',')}] ctx=${p.context ?? '?'} ${p.vision ? 'vision' : ''}`.trim()
+        : r,
+    );
   }
   return EXIT.ok;
 }
@@ -152,7 +178,10 @@ export async function modelsRemove(io: CliIO, ref: string): Promise<number> {
   const fullRef = `${provider}:${model}`;
   const file = userConfigFile(resolvePaths(io.env));
   const removed = await removeProfileBlock(file, fullRef);
-  println(io.stdout, removed ? `Removed ${fullRef} from ${file}.` : `${fullRef} is not in ${file}.`);
+  println(
+    io.stdout,
+    removed ? `Removed ${fullRef} from ${file}.` : `${fullRef} is not in ${file}.`,
+  );
   return EXIT.ok;
 }
 
@@ -162,36 +191,106 @@ export async function modelsTest(io: CliIO, ref: string): Promise<number> {
   const paths = resolvePaths(io.env);
   if (provider === 'anthropic') {
     const key = await findProviderKey(paths, io.env, 'anthropic');
-    if (!key) throw new UsageError('no Anthropic API key found', 'set ANTHROPIC_API_KEY or run `omnexx auth set anthropic`');
-    const p = new AnthropicProvider({ apiKey: key.key, cacheTtl: '5m', timeoutMs: 10_000, ...(io.fetch ? { fetch: io.fetch } : {}) });
-    const res = await p.complete({ model, system: [{ text: 'Reply ok.' }], tools: [{ name: 'ping', description: 'ping', inputSchema: { type: 'object', properties: {} } }], messages: [{ role: 'user', content: [{ type: 'text', text: 'Call ping.' }] }], maxTokens: 50, messageBreakpoints: [], toolChoice: { type: 'tool', name: 'ping' } });
+    if (!key)
+      throw new UsageError(
+        'no Anthropic API key found',
+        'set ANTHROPIC_API_KEY or run `omnexx auth set anthropic`',
+      );
+    const p = new AnthropicProvider({
+      apiKey: key.key,
+      cacheTtl: '5m',
+      timeoutMs: 10_000,
+      ...(io.fetch ? { fetch: io.fetch } : {}),
+    });
+    const res = await p.complete({
+      model,
+      system: [{ text: 'Reply ok.' }],
+      tools: [
+        { name: 'ping', description: 'ping', inputSchema: { type: 'object', properties: {} } },
+      ],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'Call ping.' }] }],
+      maxTokens: 50,
+      messageBreakpoints: [],
+      toolChoice: { type: 'tool', name: 'ping' },
+    });
     const call = res.content.find((b) => b.type === 'tool_use');
-    println(io.stdout, call ? `ok: tool call to ${(call as { name: string }).name}` : 'ok: answered without a tool call');
+    println(
+      io.stdout,
+      call
+        ? `ok: tool call to ${(call as { name: string }).name}`
+        : 'ok: answered without a tool call',
+    );
     return EXIT.ok;
   }
   if (provider === 'gemini') {
     const key = await findProviderKey(paths, io.env, 'gemini');
-    const p = new GeminiProvider({ apiKey: key?.key, timeoutMs: 10_000, ...(io.fetch ? { fetch: io.fetch } : {}) });
-    const res = await p.complete({ model, system: [{ text: 'Reply ok.' }], tools: [{ name: 'ping', description: 'ping', inputSchema: { type: 'object', properties: {} } }], messages: [{ role: 'user', content: [{ type: 'text', text: 'Call ping.' }] }], maxTokens: 50, messageBreakpoints: [], toolChoice: { type: 'auto' } });
+    const p = new GeminiProvider({
+      apiKey: key?.key,
+      timeoutMs: 10_000,
+      ...(io.fetch ? { fetch: io.fetch } : {}),
+    });
+    const res = await p.complete({
+      model,
+      system: [{ text: 'Reply ok.' }],
+      tools: [
+        { name: 'ping', description: 'ping', inputSchema: { type: 'object', properties: {} } },
+      ],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'Call ping.' }] }],
+      maxTokens: 50,
+      messageBreakpoints: [],
+      toolChoice: { type: 'auto' },
+    });
     const call = res.content.find((b) => b.type === 'tool_use');
-    println(io.stdout, call ? `ok: tool call to ${(call as { name: string }).name}` : 'ok: answered without a tool call');
+    println(
+      io.stdout,
+      call
+        ? `ok: tool call to ${(call as { name: string }).name}`
+        : 'ok: answered without a tool call',
+    );
     return EXIT.ok;
   }
   const ep = config.providers.endpoints[provider];
-  if (!ep) throw new UsageError(`unknown provider "${provider}"`, '`omnexx providers list` shows configured providers');
+  if (!ep)
+    throw new UsageError(
+      `unknown provider "${provider}"`,
+      '`omnexx providers list` shows configured providers',
+    );
   const key = await findProviderKey(paths, io.env, provider, ep.api_key_env);
   const kind = (ep as { kind?: string }).kind;
-  const base = { baseUrl: ep.base_url, apiKey: key?.key, timeoutMs: parseDuration(ep.request_timeout), ...(io.fetch ? { fetch: io.fetch } : {}) };
-  const req: CompletionRequest = { model, system: [{ text: 'Reply ok.' }], tools: [{ name: 'ping', description: 'ping', inputSchema: { type: 'object', properties: {} } }], messages: [{ role: 'user', content: [{ type: 'text', text: 'Call ping.' }] }], maxTokens: 50, messageBreakpoints: [], toolChoice: { type: 'auto' } };
-  const res = kind === 'responses'
-    ? await new ResponsesProvider({ name: provider, ...base }).complete(req)
-    : await new OpenAICompatProvider({ name: provider, ...base }).complete(req);
+  const base = {
+    baseUrl: ep.base_url,
+    apiKey: key?.key,
+    timeoutMs: parseDuration(ep.request_timeout),
+    ...(io.fetch ? { fetch: io.fetch } : {}),
+  };
+  const req: CompletionRequest = {
+    model,
+    system: [{ text: 'Reply ok.' }],
+    tools: [{ name: 'ping', description: 'ping', inputSchema: { type: 'object', properties: {} } }],
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'Call ping.' }] }],
+    maxTokens: 50,
+    messageBreakpoints: [],
+    toolChoice: { type: 'auto' },
+  };
+  const res =
+    kind === 'responses'
+      ? await new ResponsesProvider({ name: provider, ...base }).complete(req)
+      : await new OpenAICompatProvider({ name: provider, ...base }).complete(req);
   const call = res.content.find((b) => b.type === 'tool_use');
-  println(io.stdout, call ? `ok: tool call to ${(call as { name: string }).name}` : 'ok: answered without a tool call');
+  println(
+    io.stdout,
+    call
+      ? `ok: tool call to ${(call as { name: string }).name}`
+      : 'ok: answered without a tool call',
+  );
   return EXIT.ok;
 }
 
-export const register: CommandRegistrar = (program: Command, io: CliIO, setExit: (c: number) => void) => {
+export const register: CommandRegistrar = (
+  program: Command,
+  io: CliIO,
+  setExit: (c: number) => void,
+) => {
   const m = program.command('models').description('add, list, remove and test model profiles');
   m.command('add <ref>')
     .description('add a model profile (provider:model)')
@@ -201,11 +300,32 @@ export const register: CommandRegistrar = (program: Command, io: CliIO, setExit:
     .option('--no-tools', 'model does not support tools')
     .option('--speed <tier>', 'fast|normal|slow')
     .option('--quality <tier>', 'low|mid|high')
-    .action(async (ref: string, opts: { tags?: string; ctx?: string; vision?: boolean; tools?: boolean; speed?: string; quality?: string }) => {
-      const speed = opts.speed === 'fast' || opts.speed === 'slow' ? opts.speed : 'normal';
-      const quality = opts.quality === 'low' || opts.quality === 'high' ? opts.quality : 'mid';
-      setExit(await modelsAdd(io, ref, { tags: opts.tags, ctx: opts.ctx, vision: opts.vision, tools: opts.tools, speed, quality }));
-    });
+    .action(
+      async (
+        ref: string,
+        opts: {
+          tags?: string;
+          ctx?: string;
+          vision?: boolean;
+          tools?: boolean;
+          speed?: string;
+          quality?: string;
+        },
+      ) => {
+        const speed = opts.speed === 'fast' || opts.speed === 'slow' ? opts.speed : 'normal';
+        const quality = opts.quality === 'low' || opts.quality === 'high' ? opts.quality : 'mid';
+        setExit(
+          await modelsAdd(io, ref, {
+            tags: opts.tags,
+            ctx: opts.ctx,
+            vision: opts.vision,
+            tools: opts.tools,
+            speed,
+            quality,
+          }),
+        );
+      },
+    );
   m.command('list')
     .description('list known models')
     .option('--provider <name>', 'filter by provider')
@@ -213,10 +333,14 @@ export const register: CommandRegistrar = (program: Command, io: CliIO, setExit:
     .action(async (opts: { provider?: string; remote?: boolean }) => {
       setExit(await modelsList(io, { provider: opts.provider, remote: opts.remote }));
     });
-  m.command('remove <ref>').description('remove a model profile').action(async (ref: string) => {
-    setExit(await modelsRemove(io, ref));
-  });
-  m.command('test <ref>').description('one tool-call round trip').action(async (ref: string) => {
-    setExit(await modelsTest(io, ref));
-  });
+  m.command('remove <ref>')
+    .description('remove a model profile')
+    .action(async (ref: string) => {
+      setExit(await modelsRemove(io, ref));
+    });
+  m.command('test <ref>')
+    .description('one tool-call round trip')
+    .action(async (ref: string) => {
+      setExit(await modelsTest(io, ref));
+    });
 };
