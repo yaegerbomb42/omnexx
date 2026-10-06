@@ -40,6 +40,29 @@ async function allFiles(dir: string): Promise<string[]> {
 }
 
 describe('M1: one full cycle with the scripted provider', () => {
+  it('ranks progress and evidence in the cycle message, never in the cached prefix', async () => {
+    const provider = new ScriptedProvider(fixAdd);
+    const t = await startTestRun({ fixture: 'ts-failing-test', provider, plan: onePlan() });
+    await runBaseline(t.run);
+    const task = t.run.plan?.nodes.find((n) => n.id === 'M1.T01');
+    task?.evidence.push('typecheck failed: add() returns string');
+    await runOneCycle(t.run, 'M1.T01');
+    const events = await readEvents(t.run.events.path);
+    const banks = (events.find((e) => e.type === 'cycle.context')?.memory ?? []) as {
+      bankType: string;
+      blocks: number;
+    }[];
+    expect(banks.find((b) => b.bankType === 'working')?.blocks).toBe(1);
+
+    const req = provider.requests[0];
+    const prefix = req?.system.map((b) => b.text).join('\n\n') ?? '';
+    expect(prefix).not.toContain('Evidence from earlier attempts');
+    const first = req?.messages[0]?.content[0];
+    const text = first?.type === 'text' ? first.text : '';
+    expect(text.match(/# Evidence from earlier attempts/g)).toHaveLength(1);
+    expect(text).toContain('- typecheck failed: add() returns string');
+  });
+
   it('ts-failing-test: one checkpoint commit with trailers; the user checkout is never touched', async () => {
     const provider = new ScriptedProvider(fixAdd);
     let during: { head: string; status: string } | undefined;
