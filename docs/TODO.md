@@ -342,11 +342,11 @@ improving like a top engineer until it declares itself done.
 
 ## W10. Project instructions, skills, hooks
 
-- [ ] Load `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, `OMNEXX.md` (precedence documented),
+- [x] Load `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, `OMNEXX.md` (precedence documented),
       nested per-directory files when the agent works in that directory.
-- [ ] Skills: `.omnexx/skills/<name>/SKILL.md` (Claude Code format compatible), listed by name in
+- [x] Skills: `.omnexx/skills/<name>/SKILL.md` (Claude Code format compatible), listed by name in
       the prefix, loaded on demand via a `skill(name)` tool.
-- [ ] Hooks: `[[hooks]] on = "pre_tool|post_tool|pre_commit|cycle_end|run_end" run = "…"`,
+- [x] Hooks: `[[hooks]] on = "pre_tool|post_tool|pre_commit|cycle_end|run_end" run = "…"`,
       non-zero exit on pre_* blocks with the hook's stderr fed back to the agent.
 - **Accept:** fixtures for each file type; a pre_commit hook can veto a commit.
 

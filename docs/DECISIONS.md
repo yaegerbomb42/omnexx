@@ -232,3 +232,35 @@ for free. The TUI is a separate chunk loaded by dynamic import, so non-interacti
    - An allowlist config section `[security] secret_allow = ["path-glob"]` is provided to exempt known test fixtures or sample data.
    - Tested to ensure zero false positives across all existing omnexx source code while detecting all seeded secret tokens.
 3. **Extra Tool Policies:** Extended policies prohibit browser JavaScript evaluation (`eval` / `execute_script`) by default, require policy approval for destructive MCP tools, and verify that worker backends execute exclusively in isolated worktrees.
+
+## W10 instructions, skills and hooks (2026-10-05)
+
+**Decision.**
+
+- Instruction precedence is the prompt's list (OMNEXX.md → AGENTS.md → CLAUDE.md →
+  `.cursor/rules/*.mdc` sorted → `.github/copilot-instructions.md`), then nested
+  AGENTS/CLAUDE shallow → deep. The 8k-token budget cuts from the _end_ of that render order
+  (deepest nested first, `OMNEXX.md` last) and every cut file is named in a footer note; a
+  single oversized file keeps its head with a `… (truncated)` marker.
+- `renderInstructions()` keeps the zero-argument signature from the agent prompt:
+  `loadInstructions()` stores its result and render uses it (tests pass an explicit value). An
+  empty render is `''` so the prompt wiring can skip the block.
+- Hook block feedback is the trimmed **2 000-char tail** of the hook's combined output, because
+  the shared `Executor` interleaves stdout and stderr and has no separate stderr channel. A
+  timed-out `pre_*` hook blocks like a non-zero exit.
+- `match` is a `*`/`?` glob over the payload's tool name and is ignored on events without one
+  (`cycle_end`, `run_end`).
+- The `skill` tool always registers (even with zero skills) so the tool list — and with it the
+  cached prompt prefix — does not change when skills appear or disappear; skill names go in the
+  prompt instead, and a repo skill shadows a user skill of the same name.
+- The hooks config is an `[[hooks]]` **array** of strict tables (not an object), matching the
+  TOML syntax the TODO specifies; `timeout` defaults to `30s` per table.
+
+**Why.** Byte-stable rendering is a hard requirement of the cached prefix, so every ordering
+decision above is fixed and tested; the tail-trim keeps the veto reason useful without letting a
+noisy hook flood the agent's context.
+
+**Alternatives.** Dropping lowest-precedence files without a note (hides what the model can't
+see), a separate stderr channel in `ExecOptions` (would touch shared `src/core/exec.ts`), and
+conditionally registering the `skill` tool (would invalidate the prompt cache whenever skills
+changed).
