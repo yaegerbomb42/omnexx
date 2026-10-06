@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { render } from 'ink';
 import type { CliIO } from '../cli/io.js';
 import { resolvePaths } from '../core/paths.js';
+import { checkForUpdate } from '../cli/update-check.js';
 import { App } from './app.js';
 import { Session, type RunCli } from './session.js';
 
@@ -32,6 +33,15 @@ export async function startTui(
   else if (opts.attach) await session.attach(opts.attach);
   else await session.resumeLatest();
   await session.greet();
+  // Fire and forget: a slow or offline registry never delays the session.
+  void checkForUpdate({
+    current: opts.version,
+    cacheFile: join(paths.configHome, 'update-check.json'),
+    env: io.env,
+  }).then((latest) => {
+    if (latest)
+      session.push('system', `omnexx ${latest} is out (you have ${opts.version}): npm i -g omnexx`);
+  });
   const app = render(
     <App session={session} version={opts.version} cwd={io.cwd} showWhy={!state.seenWhy} />,
     { exitOnCtrlC: false },

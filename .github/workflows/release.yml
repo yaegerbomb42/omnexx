@@ -1,0 +1,37 @@
+name: release
+
+# Publishes to npm only when a maintainer pushes a version tag (git tag v0.3.0 && git push --tags).
+# Uses npm trusted publishing (OIDC): no NPM_TOKEN secret; configure the trusted publisher for
+# this repo and workflow on npmjs.com first. --provenance links the package to this build.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+      - name: Tag matches package.json
+        run: |
+          want="v$(node -p 'require("./package.json").version')"
+          [ "$GITHUB_REF_NAME" = "$want" ] || { echo "tag $GITHUB_REF_NAME != $want"; exit 1; }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm publish --provenance --access public
