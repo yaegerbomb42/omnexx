@@ -217,6 +217,11 @@ export const contextSchema = z.strictObject({
   compact_at: z.number().int().positive().default(100_000),
   /** Recent assistant turns kept verbatim through a compaction. */
   compact_keep_turns: z.number().int().positive().default(4),
+  /** `task` subagents: input+output tokens and turns each child may use. */
+  subagent_max_tokens: z.number().int().positive().default(150_000),
+  subagent_max_turns: z.number().int().positive().default(15),
+  /** `task` calls made in the same turn run together, at most this many at once. */
+  subagent_parallel: z.number().int().min(1).max(8).default(3),
 });
 
 export const policySchema = z.strictObject({

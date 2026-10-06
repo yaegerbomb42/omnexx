@@ -8,6 +8,7 @@ import { readOnlyTools, toolSpec } from '../tools/registry.js';
 import { fail, ok, type Tool, type ToolContext } from '../tools/types.js';
 import { renderCodemap, type Codemap } from './codemap.js';
 import { runAgentLoop } from './loop.js';
+import { subagentRunner } from './subagent.js';
 import { PLANNER_SYSTEM } from './prompts.js';
 import { readIntent, writeIntentTool } from './intent.js';
 import type { RouteAction } from '../router/actions.js';
@@ -150,6 +151,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     nextCommandId: () => `cmd-plan${run.state.cycle}-${++n}`,
     edited: new Set(),
   };
+  toolCtx.subagent = subagentRunner(run, toolCtx);
   run.events.emit('planner.start', {
     mode: mode.kind,
     ...(mode.kind === 'expand' ? { milestone: mode.milestoneId } : {}),
@@ -189,6 +191,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       onUsage: (u, usd, model, provider) => run.addSpend(u, usd, model, 'planner', provider),
       control: () => run.control(),
       signal: run.abort.signal,
+      parallelTasks: run.config.context.subagent_parallel,
     },
   );
   if (!written) {

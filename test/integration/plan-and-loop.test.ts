@@ -98,6 +98,7 @@ describe('run --plan-only', () => {
       'remember',
       'search',
       'skill',
+      'task',
       'write_intent',
       'write_plan',
     ]);

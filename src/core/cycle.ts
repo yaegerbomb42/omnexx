@@ -38,6 +38,7 @@ import { applyRemember, renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
 import { getNode, type PlanNode } from './plan.js';
 import { MemoryHarness } from './memory/index.js';
+import { subagentRunner } from '../agent/subagent.js';
 import type { PendingVerdict } from './run-store.js';
 import type { Run } from './run.js';
 import { estimateTokens } from './tokens.js';
@@ -178,7 +179,7 @@ export function contextBreakdown(ctx: {
 function toolContext(run: Run, edited: Set<string>): ToolContext {
   let n = 0;
   const { judge } = run;
-  return {
+  const ctx: ToolContext = {
     jail: new PathJail(run.worktree),
     exec: run.exec,
     env: run.childEnv,
@@ -212,6 +213,8 @@ function toolContext(run: Run, edited: Set<string>): ToolContext {
         }
       : {}),
   };
+  ctx.subagent = subagentRunner(run, ctx);
+  return ctx;
 }
 
 const SUMMARY_MAX_TOKENS = 2_000;
@@ -337,6 +340,7 @@ export async function stepAct(run: Run): Promise<void> {
       run.paused = p;
     },
     signal: run.abort.signal,
+    parallelTasks: run.config.context.subagent_parallel,
     watch: new InCycleWatch(
       {
         repeatedToolCall: run.config.stuck.repeated_tool_call,
