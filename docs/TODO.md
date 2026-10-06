@@ -277,21 +277,21 @@ Read first: `src/tools/bash.ts`, `src/tools/types.ts`, `src/verify/**`, `src/sec
 
 ## W6. MCP client
 
-- [ ] Use `@modelcontextprotocol/sdk` (optional dep). stdio + streamable HTTP transports.
-- [ ] Config: `[mcp.servers.<name>] command/args/env | url/headers_env`, `allow_tools = [...]`.
-- [ ] Read `.mcp.json` (Claude Code format) for compatibility.
-- [ ] Tools exposed as `mcp__<server>__<tool>`, sorted, schema-normalised; lazy listing to keep
+- [x] Use `@modelcontextprotocol/sdk` (optional dep). stdio + streamable HTTP transports.
+- [x] Config: `[mcp.servers.<name>] command/args/env | url/headers_env`, `allow_tools = [...]`.
+- [x] Read `.mcp.json` (Claude Code format) for compatibility.
+- [x] Tools exposed as `mcp__<server>__<tool>`, sorted, schema-normalised; lazy listing to keep
       the prefix small (tool search tool when > 20 MCP tools).
-- [ ] `omnexx mcp add|list|remove|test`; `/mcp` in TUI.
-- [ ] Results trimmed and redacted like bash output.
+- [x] `omnexx mcp add|list|remove|test`; `/mcp` in TUI.
+- [x] Results trimmed and redacted like bash output.
 - **Accept:** contract tests with an in-repo fake MCP server; a filesystem MCP server works
   end to end.
 
 ## W7. Web search and fetch
 
-- [ ] `web_fetch(url)`: fetch → readability → markdown, ≤ 8k tokens, cache per run, allowlist
+- [x] `web_fetch(url)`: fetch → readability → markdown, ≤ 8k tokens, cache per run, allowlist
       respected, robots honoured.
-- [ ] `web_search(query)`: pluggable backends (Brave, Tavily, SearXNG, Exa) via user key; off
+- [x] `web_search(query)`: pluggable backends (Brave, Tavily, SearXNG, Exa) via user key; off
       when no backend configured.
 - **Accept:** recorded-HTTP tests; disabled cleanly when unconfigured.
 
