@@ -1,6 +1,6 @@
 {
   "name": "omnexx",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Set a goal, walk away, come back to commits. One coding agent that runs for days, checks every step against your tests, and commits only what passes.",
   "license": "MIT",
   "author": "James Yaeger",

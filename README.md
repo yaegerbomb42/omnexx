@@ -4,7 +4,47 @@
 
 Omnexx is a personal coding agent harness: one agent works on one huge task in one repo for about 24 hours with no one steering it. Your tests, typecheck and lint decide what's kept; every kept step is a small git commit on its own branch, and you get a report in the morning.
 
-> **Alpha.** `0.2.0` (docker sandbox, model escalation; `0.1.0` was the first release): a personal tool, not a product. It uses your own Anthropic API key and spends your money. Verified against the real API: a one-task run (plan, fix, commit, report) cost $0.06; a single fix cycle cost $0.007 with a 90% cache-read share.
+> **Alpha.** A personal tool, not a product yet. It spends your own API credits.
+
+## Quickstart
+
+```bash
+npm i -g omnexx
+mkdir monkey-site && cd monkey-site     # or cd into any repo with tests
+omnexx                                  # paste an API key, then type a goal
+```
+
+That's it. In an empty folder omnexx runs `git init`, writes starter checks and starts building.
+In an existing repo it uses your tests, typecheck and lint as the checks. Close the terminal any
+time: the run keeps going, and `omnexx` again re-attaches.
+
+### Why omnexx over Claude Code, Codex or OpenCode?
+
+| They                         | omnexx                                                           |
+| ---------------------------- | ---------------------------------------------------------------- |
+| you drive, turn by turn      | one prompt, then it drives for hours or days                     |
+| stops when the context fills | fresh context every cycle, so it never runs out                  |
+| "done" = the model says so   | done = your tests, types, lint and a real browser check all pass |
+| stops at the literal ask     | infers the intended build, ships it, then hardens and polishes   |
+| one model per session        | a router picks the model for every action                        |
+
+### Providers in one step
+
+At the `omnexx` prompt:
+
+- **Paste an API key.** Anthropic, OpenAI, OpenRouter, Groq, xAI, Gemini and Fireworks keys are
+  recognised by their prefix; the key is saved to a 0600 file and never shown.
+- **`/connect ollama`** (or `lmstudio`, `vllm`, `litellm`): a local model, no key.
+- **`/connect https://host/v1 KEY`**: any OpenAI-compatible endpoint.
+- **`/chat`**: talk to a connected model directly and ask it to set up more ("add my groq key").
+  Pasted keys only ever reach it as placeholders.
+
+### Websites get checked in a real browser
+
+Give a check `kind = "browser"` and omnexx starts your app on a free `$PORT`, opens it with
+[agent-browser](https://github.com/vercel-labs/agent-browser) or playwright-core, and rejects any
+change that leaves the page blank or throws a JavaScript error. New projects get this check
+automatically once they have an `npm start` script.
 
 ## What it does
 
@@ -19,11 +59,12 @@ Omnexx is the loop around the model:
 - **Checkpoints and a morning-after report.** Each finished milestone is tagged; `omnexx report` writes `REPORT.md` with the outcome, the plan tree, what changed, test deltas, where it struggled, spend, decisions it needs from you, and how to merge.
 - **Optional docker sandbox.** `sandbox = "docker"` runs the agent's commands and your gates in a locked-down container with only the worktree mounted.
 - **Any provider, with failover.** Anthropic plus any OpenAI-compatible endpoint (OpenAI, OpenRouter, LiteLLM, Ollama). Each role can list a chain of models; a failing or capped provider hands the call to the next. Per-provider spend caps.
+- **Helpers and memory.** The agent can hand read-only questions to helper agents that run in parallel with their own context, and `recall` searches the whole run's history, not just the last few cycles.
 - **Your checkout is never touched.** Work happens in a git worktree on `omnexx/<runId>`; nothing is pushed unless you opt in.
 
 Optional: an advisory **fast judge** (Nimble on Ollama, usually on your Mac over Tailscale) that suggests the next move and flags drift. It's off by default and can never override the gates. See [docs/judge.md](docs/judge.md).
 
-## Try it
+## From the plain terminal
 
 ```bash
 npm i -g omnexx
@@ -64,7 +105,8 @@ Planned for M3 and later, and not in this build:
 
 - Ladder rung 4 (a planner-proposed different approach).
 - Real worker adapters (Aider, OpenCode, Cline, Pi, Hermes, OpenHands, Claude Code). The interface, lifecycle and safety checks exist and are tested with a fake worker; enabling a worker fails with "adapter not available until M3". See [docs/workers.md](docs/workers.md).
-- `open_pr`, the benchmark harness.
+- `open_pr`, the benchmark harness. Token-saving claims for helpers and memory are not measured yet.
+- Nothing has run longer than about 20 minutes in testing; set `--budget` and `--hours` for long runs.
 
 ## Docs
 
