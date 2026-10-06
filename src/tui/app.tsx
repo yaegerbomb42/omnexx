@@ -230,9 +230,11 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
     void session.submit(text);
   });
 
-  const placeholder = session.runAlive
-    ? 'steer the run, or /command'
-    : 'what should omnexx build? (or /help)';
+  const placeholder = session.chat
+    ? `message ${session.chat.ref} (/chat off to leave)`
+    : session.runAlive
+      ? 'steer the run, or /command'
+      : 'what should omnexx build? (or /help)';
 
   return (
     <>

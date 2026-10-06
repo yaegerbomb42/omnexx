@@ -31,6 +31,7 @@ export async function startTui(
   if (opts.attach === true) await session.attach();
   else if (opts.attach) await session.attach(opts.attach);
   else await session.resumeLatest();
+  await session.greet();
   const app = render(
     <App session={session} version={opts.version} cwd={io.cwd} showWhy={!state.seenWhy} />,
     { exitOnCtrlC: false },

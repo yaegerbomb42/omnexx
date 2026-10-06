@@ -4,6 +4,9 @@ import { brand, type Brand } from '../cli/brand.js';
 import type { CliIO } from '../cli/io.js';
 import { pickRun, supervisorAlive } from '../cli/commands/control.js';
 import { steerRun } from '../cli/commands/steer.js';
+import { connect, describeConnect, looksLikeKey } from '../cli/connect.js';
+import { maskKey } from '../auth/keys.js';
+import { Chat, defaultChatRef, hasProvider } from './chat.js';
 import { compactPlanView } from '../core/plan.js';
 import { resolvePaths } from '../core/paths.js';
 import { listRunIds, RunStore } from '../core/run-store.js';
@@ -41,6 +44,12 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'diff', help: 'what the run has committed so far' },
   { name: 'report', help: 'the morning-after report' },
   { name: 'runs', help: 'list runs' },
+  { name: 'connect', args: '<name|url|key> [key]', help: 'add a provider or endpoint in one step' },
+  {
+    name: 'chat',
+    args: '[provider:model|off]',
+    help: 'talk to a model directly; it can add providers',
+  },
   { name: 'init', help: 'detect gates and write omnexx.toml' },
   { name: 'doctor', help: 'check keys, providers and tools' },
   { name: 'quiet', help: 'feed: commits and verdicts only' },
@@ -67,6 +76,7 @@ export class Session {
   busy: string | undefined;
   verbosity: Verbosity = 'normal';
   quit = false;
+  chat: Chat | undefined;
   readonly history: string[] = [];
 
   private nextId = 0;
@@ -98,6 +108,21 @@ export class Session {
     }
     if (this.entries.length > MAX_ENTRIES) this.entries = this.entries.slice(-MAX_ENTRIES);
     this.changed();
+  }
+
+  /** First-run hint: with no provider set up, say how to add one before anything else. */
+  async greet(): Promise<void> {
+    if (await hasProvider(this.io).catch(() => true)) return;
+    this.push(
+      'system',
+      [
+        'no model provider yet. any of these works:',
+        '  paste an API key (Anthropic, OpenAI, OpenRouter, Groq, xAI, Gemini…)',
+        '  /connect ollama              a local model, no key',
+        '  /connect https://host/v1 KEY any OpenAI-compatible endpoint',
+        'then /chat to talk to it and let it set up the rest',
+      ].join('\n'),
+    );
   }
 
   /** Attach to the newest run if its supervisor is still alive (reopening the TUI mid-run). */
@@ -187,15 +212,63 @@ export class Session {
   async submit(raw: string): Promise<void> {
     const text = raw.trim();
     if (!text) return;
-    this.history.push(text);
-    this.push('user', text);
+    // A pasted key is never echoed, kept in history, or sent anywhere but the credentials file.
+    const key = looksLikeKey(text);
+    if (!key) this.history.push(text);
+    this.push('user', key ? maskKey(text) : this.chat ? this.chat.redact(text) : text);
     try {
       if (text.startsWith('/')) await this.slash(text.slice(1));
+      else if (key && !this.chat) await this.connect(text);
+      else if (this.chat) await this.talk(text);
       else if (this.runId && this.runAlive) await this.steer(text);
       else await this.startRun(text);
     } catch (err) {
       this.push('err', describeError(err));
     }
+  }
+
+  private async connect(target: string, key?: string): Promise<void> {
+    this.busy = 'connecting';
+    this.changed();
+    try {
+      this.push('system', describeConnect(await connect(this.io, target, key)));
+    } finally {
+      this.busy = undefined;
+      this.changed();
+    }
+  }
+
+  private async talk(text: string): Promise<void> {
+    const chat = this.chat;
+    if (!chat) return;
+    this.busy = chat.ref;
+    this.changed();
+    try {
+      await chat.send(text, (line) => {
+        this.push('out', line);
+      });
+    } finally {
+      this.busy = undefined;
+      this.changed();
+    }
+  }
+
+  private async openChat(arg: string): Promise<void> {
+    if (arg === 'off') {
+      this.chat = undefined;
+      this.push('system', 'chat off: plain text starts a run again');
+      return;
+    }
+    const ref = arg || (await defaultChatRef(this.io));
+    if (!ref)
+      throw new Error(
+        'no provider set up yet: paste an API key, or /connect ollama (or any URL) first',
+      );
+    this.chat = await Chat.open(this.io, ref);
+    this.push(
+      'system',
+      `chatting with ${ref}. ask it to add providers, e.g. "connect my groq key". /chat off to leave`,
+    );
   }
 
   private async steer(text: string): Promise<void> {
@@ -257,6 +330,13 @@ export class Session {
       case 'report':
         await this.cli([cmd, ...(this.runId ? [this.runId] : []), ...args]);
         return;
+      case 'connect':
+        if (!args[0]) throw new Error('usage: /connect <name|url|key> [key]');
+        await this.connect(args[0], args[1]);
+        return;
+      case 'chat':
+        await this.openChat(rest);
+        return;
       case 'init':
         await this.cli(['init', '--yes']);
         return;
@@ -288,6 +368,8 @@ export function helpText(b: Brand): string {
     `  ${b.dim('any other /<command> runs `omnexx <command>`, e.g. /providers list')}`,
     '',
     b.green('typing'),
+    '  paste an API key: it is saved and the provider set up (never echoed)',
+    '  in /chat: your text goes to that model, which can add providers for you',
     '  with no live run: your text becomes the goal of a new run',
     '  while a run is live: your text steers it from the next cycle',
   ].join('\n');
