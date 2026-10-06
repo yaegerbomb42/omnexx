@@ -38,7 +38,9 @@ describe('omnexx program', () => {
     expect((await cli(['auth', 'clear', 'anthropic'], { cwd, env })).stdout).toContain(
       'No stored key',
     );
-    expect((await cli(['auth', 'set', 'openai'], { cwd, env, stdin: 'k\n' })).stderr).toMatch(
+    // W4: any lowercase provider name is accepted (keys stored per-provider at 0600).
+    expect((await cli(['auth', 'set', 'openai'], { cwd, env, stdin: 'k\n' })).code).toBe(0);
+    expect((await cli(['auth', 'set', 'BAD NAME!'], { cwd, env, stdin: 'k\n' })).stderr).toMatch(
       /unknown provider/,
     );
     expect((await cli(['auth', 'set', 'anthropic'], { cwd, env, stdin: '' })).stderr).toMatch(

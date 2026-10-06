@@ -26,6 +26,21 @@ config section name is the TOML table name. Keep barrel lines sorted to avoid me
 
 ## Pending
 
+### W4 providers and models (branch ws/4-providers)
+
+- Where: src/cli/run-deps.ts, function resolveRunDeps
+- What: switch `resolveChain`/`costUsd` to `resolveChainLenient`/`costOf` from src/providers/profiles.ts (same names plus `price: PriceConfig | undefined`), treat `usd === undefined` as "over no USD cap" in pre-flight (token caps still apply), and show `"–"` via `formatCost` wherever a cost prints. Wrap endpoint providers with `withToolRepair` (src/providers/repair.ts) and construct `kind = "responses"` endpoints as `ResponsesProvider` (src/providers/responses.ts) and `kind = "gemini"` endpoints as `GeminiProvider` (src/providers/gemini.ts); this needs `endpointSchema` (src/config/schema.ts) to accept `kind = "openai" | "responses" | "gemini"`.
+- Why: pricing-optional models, repair layer and new providers without W4 touching run-deps or schema.
+- Where: src/config/schema.ts, modelsSchema
+- What: add `profiles: z.record(z.string(), modelProfileSchema).default({})` (schema in src/config/sections/models-profiles.ts) so `[models.profiles."<provider>:<model>"]` parses; the CLI already reads it leniently via `loadModelProfiles` until then.
+- Why: model profiles for the W3 router contract.
+- Where: src/agent/loop.ts, tool-call path
+- What: after `withToolRepair` fixes syntax, validate each call with `validateWithSchema(input, tool.schema)`; on failure, append one `reaskMessage(name, error, id)` user message and retry the turn once; after the retry still fails, end the turn with an error result (not the run). Record `kind` (`fixed-json`/`coerced-schema`/`re-asked`) in the `tool.call` event.
+- Why: one re-ask repair for weak/local models per the W4 spec.
+- Where: src/cli/program.ts, `auth` command
+- What: `auth set|clear` currently calls `assertProvider` (now accepts any lowercase name) and `storeKey`/`clearKey` — no change needed beyond what W4 did in src/auth/keys.ts; keep the `readSecret` flow as is. `doctor`'s anthropic-key check is unchanged.
+- Why: `omnexx auth set <any-provider>` works with no further edits.
+
 ### W5 Browser tool (branch ws/5-browser)
 
 - Where: src/cli/commands/doctor.ts, function doctorChecks

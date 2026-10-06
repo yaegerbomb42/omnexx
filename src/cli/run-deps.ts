@@ -1,4 +1,4 @@
-import { findAnthropicKey } from '../auth/keys.js';
+import { findAnthropicKey, findProviderKey } from '../auth/keys.js';
 import { loadConfig } from '../config/load.js';
 import type { ConfigInput, OmnexxConfig } from '../config/schema.js';
 import { parseDuration } from '../config/duration.js';
@@ -7,7 +7,10 @@ import { resolvePaths, type OmnexxPaths } from '../core/paths.js';
 import type { RunDeps, RunHooks } from '../core/run.js';
 import { NotImplementedError, UsageError } from '../errors.js';
 import { AnthropicProvider } from '../providers/anthropic.js';
+import { GeminiProvider } from '../providers/gemini.js';
 import { OpenAICompatProvider } from '../providers/openai-compat.js';
+import { withToolRepair } from '../providers/repair.js';
+import { ResponsesProvider } from '../providers/responses.js';
 import { ProviderRouter } from '../providers/router.js';
 import type { Provider } from '../providers/types.js';
 import type { CliIO } from './io.js';
@@ -73,24 +76,29 @@ export async function resolveRunDeps(
   }
   for (const [name, ep] of Object.entries(config.providers.endpoints)) {
     if (!used.has(name)) continue;
-    const apiKey = ep.api_key_env ? io.env[ep.api_key_env]?.trim() : undefined;
+    const apiKey = (await findProviderKey(paths, io.env, name, ep.api_key_env))?.key;
     if (ep.api_key_env && !apiKey) {
       throw new UsageError(
         `provider "${name}" needs ${ep.api_key_env}`,
-        `export ${ep.api_key_env}=… (Omnexx reads it from the environment only)`,
+        `export ${ep.api_key_env}=… or run \`omnexx auth set ${name}\``,
       );
     }
     if (apiKey) secrets.push(apiKey);
-    providers.set(
+    const opts = {
       name,
-      new OpenAICompatProvider({
-        name,
-        baseUrl: ep.base_url,
-        apiKey,
-        timeoutMs: parseDuration(ep.request_timeout),
-        ...(io.fetch ? { fetch: io.fetch } : {}),
-      }),
-    );
+      baseUrl: ep.base_url,
+      apiKey,
+      timeoutMs: parseDuration(ep.request_timeout),
+      ...(io.fetch ? { fetch: io.fetch } : {}),
+    };
+    const inner =
+      ep.kind === 'responses'
+        ? new ResponsesProvider(opts)
+        : ep.kind === 'gemini'
+          ? new GeminiProvider(opts)
+          : new OpenAICompatProvider(opts);
+    // Weaker and local models often emit broken tool JSON; repair it before the loop sees it.
+    providers.set(name, withToolRepair(inner));
   }
   const provider: Provider = io.makeProvider
     ? io.makeProvider(secrets[0] ?? '')
