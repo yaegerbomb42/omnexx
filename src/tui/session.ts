@@ -77,6 +77,8 @@ export class Session {
   verbosity: Verbosity = 'normal';
   quit = false;
   chat: Chat | undefined;
+  /** OMNEXX_NO_MASCOT=1 hides the animated character. */
+  readonly mascot: boolean;
   readonly history: string[] = [];
 
   private nextId = 0;
@@ -91,6 +93,7 @@ export class Session {
     private readonly now: () => number = Date.now,
   ) {
     this.b = brand({ env: io.env, isTTY: true });
+    this.mascot = !io.env.OMNEXX_NO_MASCOT;
   }
 
   onChange(fn: () => void): () => void {
