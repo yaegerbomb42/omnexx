@@ -236,23 +236,23 @@ Contracts: `Router.pick(action: ActionContext, candidates: ModelProfile[]): Prom
 
 Read first: `src/providers/**`, `src/config/schema.ts`, `src/auth/keys.ts`, `docs/config.md`.
 
-- [ ] `omnexx providers add` (interactive + flags): presets list as _templates only_ (OpenAI,
+- [x] `omnexx providers add` (interactive + flags): presets list as _templates only_ (OpenAI,
       OpenRouter, Groq, DeepSeek, Together, Fireworks, Mistral, Gemini, xAI, Ollama, LM Studio,
       vLLM, LiteLLM, custom). Writes to user config; verifies with a 1-token call.
-- [ ] `omnexx providers list|remove|test <name>`.
-- [ ] `omnexx models add <provider:model> [--tags code,fast] [--ctx 200k] [--vision]`,
+- [x] `omnexx providers list|remove|test <name>`.
+- [x] `omnexx models add <provider:model> [--tags code,fast] [--ctx 200k] [--vision]`,
       `models list` (with live discovery via `/v1/models` where supported), `models remove`,
       `models test`.
-- [ ] Model profiles in config: `[models.profiles."groq:llama-4-70b"] tags=[...] context=...`;
+- [x] Model profiles in config: `[models.profiles."groq:llama-4-70b"] tags=[...] context=...`;
       auto-filled from discovery when possible.
-- [ ] `omnexx auth set <any-provider>` stores keys in 0600 files; env still wins; macOS
+- [x] `omnexx auth set <any-provider>` stores keys in 0600 files; env still wins; macOS
       Keychain opt-in later.
-- [ ] Native Gemini provider (function calling, caching) and OpenAI Responses API provider.
-- [ ] Tool-call repair layer for weak/local models: JSON fix-ups, schema coercion, one
+- [x] Native Gemini provider (function calling, caching) and OpenAI Responses API provider.
+- [x] Tool-call repair layer for weak/local models: JSON fix-ups, schema coercion, one
       re-ask with the validation error, then fail the turn (not the run).
-- [ ] Pricing is optional everywhere: unknown price ⇒ tokens are still tracked, $ shown as "–",
+- [x] Pricing is optional everywhere: unknown price ⇒ tokens are still tracked, $ shown as "–",
       budget falls back to token caps. (Remove the "no price" hard error.)
-- [ ] Role shorthands stay: `planner/worker/cheap` map to router fallback when router off.
+- [x] Role shorthands stay: `planner/worker/cheap` map to router fallback when router off.
 - **Accept:** a fresh user with only `GROQ_API_KEY` goes `providers add groq` → `models list`
   → `omnexx` chat turn, with no TOML editing; contract tests for each provider against recorded
   fixtures.
