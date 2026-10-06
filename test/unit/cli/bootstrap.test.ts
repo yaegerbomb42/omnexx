@@ -25,7 +25,7 @@ describe('empty-folder bootstrap', () => {
 
   it('inits git, writes starter gates and commits once', async () => {
     const dir = await tempDir('Monkey Site ');
-    const files = await bootstrapEmptyProject(dir);
+    const files = await bootstrapEmptyProject(dir, { browser: false });
     expect(files).toEqual(['package.json', 'omnexx.toml', 'AGENTS.md', '.gitignore']);
     const pkg = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8')) as {
       name: string;
@@ -38,5 +38,18 @@ describe('empty-folder bootstrap', () => {
     const log = await git(dir, ['log', '--oneline']);
     expect(log.stdout.split('\n')).toHaveLength(1);
     expect(await isEmptyProject(dir)).toBe(false);
+  });
+
+  it('adds a browser page gate when a browser is installed', async () => {
+    const dir = await tempDir();
+    await bootstrapEmptyProject(dir, { browser: true });
+    const { config } = await loadConfig({ cwd: dir, env: await isolatedEnv() });
+    expect(config.gates.at(-1)).toMatchObject({
+      name: 'page',
+      kind: 'browser',
+      run: 'npm start',
+      requires_script: 'start',
+    });
+    expect(await readFile(join(dir, 'AGENTS.md'), 'utf8')).toContain('$PORT');
   });
 });
