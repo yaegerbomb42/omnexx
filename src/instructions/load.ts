@@ -77,7 +77,9 @@ export async function loadInstructions(
   for (const name of ROOT_FILES) await push(name, join(repoRoot, name));
   const rulesDir = join(repoRoot, '.cursor', 'rules');
   const rules = await readdir(rulesDir).catch(() => []);
-  for (const name of [...rules].filter((n) => n.endsWith('.mdc')).sort()) {
+  for (const name of [...rules]
+    .filter((n) => n.endsWith('.mdc'))
+    .sort((a, b) => a.localeCompare(b))) {
     await push(`.cursor/rules/${name}`, join(rulesDir, name), true);
   }
   await push(
