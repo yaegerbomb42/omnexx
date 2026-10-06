@@ -17,6 +17,26 @@ async function commitsByCycle(worktree: string, from: string): Promise<string[]>
 }
 
 describe('real processes: detach, heartbeat, pause/resume', () => {
+  it('run flags reach the detached supervisor: --budget stops the run', async () => {
+    const { repo, env } = await processRepo({ OMNEXX_TEST_TASKS: '4' });
+    const r = await entry(['run', '--detach', '--budget', '0.0001', 'Create the four files'], {
+      cwd: repo,
+      env,
+    });
+    expect(r.code).toBe(0);
+    const store = new RunStore(resolvePaths(env), r.stdout.trim());
+    const state = await waitFor(
+      async () => {
+        const s = await store.readState().catch(() => undefined);
+        return s && !['running', 'planning', 'created'].includes(s.status) ? s : undefined;
+      },
+      60_000,
+      'run to end',
+    );
+    expect(state.status).toBe('budget-stop');
+    expect(state.acceptedCommits).toBe(0);
+  });
+
   it('run --detach returns at once; the run keeps going with a fresh heartbeat; pause takes effect within a turn; resume continues to the end', async () => {
     const { repo, env } = await processRepo({ OMNEXX_TEST_TASKS: '4', OMNEXX_TEST_TURN_MS: '150' });
     const started = Date.now();

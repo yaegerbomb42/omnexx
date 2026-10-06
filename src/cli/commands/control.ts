@@ -1,4 +1,6 @@
 import pc from 'picocolors';
+import type { ConfigInput } from '../../config/schema.js';
+import { readTextOr } from '../../core/atomic.js';
 import { pidAlive, readLock } from '../../core/lock.js';
 import { listRunIds, RunStore, TERMINAL } from '../../core/run-store.js';
 import { resolvePaths, type OmnexxPaths } from '../../core/paths.js';
@@ -25,6 +27,9 @@ export async function supervisorAlive(store: RunStore): Promise<boolean> {
 }
 
 /** Foreground supervisor with signal handling: SIGTERM = graceful stop; SIGINT = pause, twice = stop. */
+/** The run's command-line overrides, kept so every supervisor start (detach, resume) applies them. */
+export const RUN_FLAGS_FILE = 'flags.json';
+
 export async function superviseForeground(
   io: CliIO,
   runId: string,
@@ -35,7 +40,9 @@ export async function superviseForeground(
   const paths = resolvePaths(io.env);
   const store = new RunStore(paths, runId);
   const state = await store.readState();
-  const { deps } = await resolveRunDeps(io, state.repoRoot, {}, io.hooks);
+  // Flags given to `omnexx run` (budget, gates, models…) outrank omnexx.toml for the whole run.
+  const flags = JSON.parse(await readTextOr(store.file(RUN_FLAGS_FILE), '{}')) as ConfigInput;
+  const { deps } = await resolveRunDeps(io, state.repoRoot, flags, io.hooks);
   let interrupts = 0;
   const onTerm = (): void => {
     void store.writeControl({ request: 'stop', at: Date.now() });
