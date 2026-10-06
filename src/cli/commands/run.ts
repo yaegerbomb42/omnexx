@@ -17,6 +17,7 @@ import { println, type CliIO } from '../io.js';
 import { superviseForeground } from './control.js';
 import { resolveRunDeps } from '../run-deps.js';
 import { EXIT } from '../exit-codes.js';
+import { bootstrapEmptyProject, isEmptyProject } from '../bootstrap.js';
 
 export interface RunFlags {
   goalFile?: string;
@@ -106,6 +107,10 @@ export interface FullRunFlags extends RunFlags {
 
 /** `omnexx run`: create the run, then supervise it here or in a detached process. */
 export async function runCommand(io: CliIO, goal: string, flags: FullRunFlags): Promise<number> {
+  if (await isEmptyProject(io.cwd)) {
+    const files = await bootstrapEmptyProject(io.cwd);
+    println(io.stderr, `empty folder: started a project (git init, ${files.join(', ')})`);
+  }
   const { config, paths, clock } = await resolveRunDeps(io, io.cwd, flagsToConfig(flags));
   if (!config.gates.length && !flags.iKnowThereAreNoChecks) {
     throw new UsageError(
