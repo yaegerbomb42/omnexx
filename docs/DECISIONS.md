@@ -217,3 +217,18 @@ for free. The TUI is a separate chunk loaded by dynamic import, so non-interacti
 **Decision.** Added `@modelcontextprotocol/sdk` for MCP client transport/protocol, plus `@mozilla/readability` and `linkedom` for `web_fetch` HTML parsing.
 **Why.** Allowed dependencies explicitly listed in `docs/agent-prompts.md` §W6+W7. `@modelcontextprotocol/sdk` handles official MCP framing, transports (stdio and HTTP/SSE) and protocol negotiation. `linkedom` provides a lightweight, pure-JS DOM implementation that runs cleanly on Node >= 22 without native browser binaries, pairing with Mozilla's reader mode parser (`@mozilla/readability`) to convert web pages into readable text/markdown while respecting token budgets.
 **Alternatives.** Hand-rolling the JSON-RPC MCP wire protocol (risks protocol drift and subtle transport bugs); using full headless browsers like Playwright for simple web reading (unnecessary overhead and external browser downloads for non-interactive pages).
+
+## W12 & W14 Worker Adapters, Headless Execution, and Secret Scanner (2026-10-05)
+
+**Decision.**
+
+1. **Worker Backend Adapters:** Implemented adapters for `claude-code`, `codex`, `opencode`, `aider`, `gemini-cli`, `qwen-code`, and `cline`.
+   - Each adapter strictly builds argv arrays (never shell strings).
+   - Each adapter executes within the isolated throwaway worktree prepared by `runWorkerCycle`.
+   - Headless execution for Cline CLI is supported via `cline --json --auto-approve true --cwd <wt> <prompt>`. Detection verifies support for non-interactive JSON execution.
+   - Credentials of the tools are never accessed, copied, or logged; the environment passed to workers is scrubbed of all supervisor secrets.
+   - Exit codes and outputs are mapped to canonical quota and status types (`completed`, `failed`, `timeout`, `quota_exhausted`, `rate_limited`, `auth_required`).
+2. **Secret Scanner:** Candidate commits are scanned before commit via regex patterns for common key structures (Anthropic, OpenAI, GitHub classic/PAT, AWS, Slack, NPM, JWT, Google AI, GitLab, Stripe, HuggingFace, PEM) plus Shannon entropy analysis on added diff lines (`+` lines).
+   - An allowlist config section `[security] secret_allow = ["path-glob"]` is provided to exempt known test fixtures or sample data.
+   - Tested to ensure zero false positives across all existing omnexx source code while detecting all seeded secret tokens.
+3. **Extra Tool Policies:** Extended policies prohibit browser JavaScript evaluation (`eval` / `execute_script`) by default, require policy approval for destructive MCP tools, and verify that worker backends execute exclusively in isolated worktrees.

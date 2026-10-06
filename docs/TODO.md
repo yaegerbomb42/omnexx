@@ -360,9 +360,9 @@ improving like a top engineer until it declares itself done.
 
 ## W12. Worker backends (from PLAN §15)
 
-- [ ] Adapters: Claude Code (`claude -p`), Codex (`codex exec`), OpenCode, Aider, Cline CLI,
+- [x] Adapters: Claude Code (`claude -p`), Codex (`codex exec`), OpenCode, Aider, Cline CLI,
       Gemini CLI, Qwen Code. Each: detect, version-gate, run in its own worktree, collect diff.
-- [ ] Contract tests against recorded CLIs; timeout kills the process tree; quota rotation.
+- [x] Contract tests against recorded CLIs; timeout kills the process tree; quota rotation.
 - [ ] Router action `delegate` can choose a worker for a well-scoped task.
 - **Accept:** PLAN §M3 worker criteria.
 
@@ -378,9 +378,9 @@ improving like a top engineer until it declares itself done.
 
 - [ ] Docker sandbox default for unattended runs > 1 h (prompt in TUI to enable).
 - [ ] Browser and MCP inside the sandbox network policy; egress allowlist.
-- [ ] Secret scanner on every commit (block + rollback on hit).
-- [ ] Destructive-command policy covers new tools (browser eval, MCP tools tagged destructive).
-- [ ] Threat model update in `docs/safety.md`.
+- [x] Secret scanner on every commit (block + rollback on hit).
+- [x] Destructive-command policy covers new tools (browser eval, MCP tools tagged destructive).
+- [x] Threat model update in `docs/safety.md`.
 
 ## W15. Release, docs, site
 

@@ -46,3 +46,28 @@ config section name is the TOML table name. Keep barrel lines sorted to avoid me
 - Where: `test/unit/package.test.ts`, approved dependencies test
 - What: Add `@modelcontextprotocol/sdk`, `@mozilla/readability`, and `linkedom` to approved runtime dependencies list (per DECISIONS.md D30 and agent prompts W6/W7)
 - Why: Allow W6 and W7 approved packages in package.json dependencies without failing the package unit test
+
+### W14 Secret Scanner in Verify / Commit path (branch ws/12-workers-safety)
+
+- Where: `src/core/cycle.ts`, inside `stepVerify`
+- What: Import `scanPatchForSecrets` from `../security/secret-scan.js`. Before approving candidate diff, run:
+  ```ts
+  const secScan = scanPatchForSecrets(patch, {
+    allowlist: (run.config as any).security?.secret_allow ?? [],
+  });
+  if (!secScan.clean) {
+    for (const f of secScan.findings) {
+      reasons.push(`secret-scan: ${f.reason} in ${f.file}:${f.line} (${f.rule})`);
+      evidence.push(
+        `Committed secret detected: ${f.reason} in ${f.file}:${f.line}. Remove credentials before committing.`,
+      );
+    }
+  }
+  ```
+- Why: Enforces automatic secret scanning on every candidate commit before gates/commits land, respecting `[security] secret_allow`.
+
+### W12 Worker Adapters Wiring in run-deps and cycle (branch ws/12-workers-safety)
+
+- Where: `src/cli/run-deps.ts` and `src/cli/commands/doctor.ts`
+- What: Replace the temporary `throw new UsageError('...adapters not available until M3')` guard with `createWorkerAdapter(id, w)` from `../workers/adapters/index.js`.
+- Why: Allows real worker backends to be enabled when configured by the user.
