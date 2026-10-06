@@ -13,9 +13,12 @@ describe('package.json', () => {
     expect(Object.keys(pkg.dependencies).sort()).toEqual(
       [
         '@anthropic-ai/sdk',
+        '@modelcontextprotocol/sdk',
+        '@mozilla/readability',
         'commander',
         'execa',
         'ink',
+        'linkedom',
         'picocolors',
         'react',
         'shell-quote',

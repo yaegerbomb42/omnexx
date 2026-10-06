@@ -264,3 +264,11 @@ noisy hook flood the agent's context.
 see), a separate stderr channel in `ExecOptions` (would touch shared `src/core/exec.ts`), and
 conditionally registering the `skill` tool (would invalidate the prompt cache whenever skills
 changed).
+
+## 2026-10-05: Runtime dependencies for MCP and web tools (integration)
+
+The W6/W7 branch imported `@modelcontextprotocol/sdk`, `linkedom` and `@mozilla/readability`
+without declaring them, so its CI failed. They are now runtime dependencies. The MCP SDK is the
+reference client and MCP is core; `linkedom` + Readability turn fetched HTML into readable text
+without a headless browser. Playwright stays an optional peer: the browser tool prefers the
+installed `agent-browser` CLI.

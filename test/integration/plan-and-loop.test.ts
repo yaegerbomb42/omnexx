@@ -96,8 +96,8 @@ describe('run --plan-only', () => {
       'read_log',
       'remember',
       'search',
-      'write_intent',
       'skill',
+      'write_intent',
       'write_plan',
     ]);
     expect(JSON.stringify(provider.requests.at(-1)?.messages)).toMatch(
