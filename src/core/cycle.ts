@@ -1,6 +1,11 @@
 import { join } from 'node:path';
 import { z } from 'zod';
-import { cycleSummarySchema, transcriptFor, type CycleSummary } from '../agent/compaction.js';
+import {
+  cycleSummarySchema,
+  ensureFacts,
+  transcriptFor,
+  type CycleSummary,
+} from '../agent/compaction.js';
 import { buildCycleContext } from '../agent/context.js';
 import { renderCodemap, type Codemap } from '../agent/codemap.js';
 import { runAgentLoop } from '../agent/loop.js';
@@ -347,7 +352,10 @@ export async function stepAct(run: Run): Promise<void> {
         compactAt: run.config.context.compact_at,
         keepTurns: run.config.context.compact_keep_turns,
       },
-      summarize: (head) => summarizeCycle(run, task, head),
+      summarize: async (head) => {
+        const s = await summarizeCycle(run, task, head);
+        return s && ensureFacts(s, head, edited);
+      },
     },
   });
   if (result.end === 'max_usd') run.state.budgetExhausted = true;

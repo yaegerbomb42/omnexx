@@ -94,6 +94,7 @@ describe('run --plan-only', () => {
       'outline',
       'read',
       'read_log',
+      'recall',
       'remember',
       'search',
       'skill',
