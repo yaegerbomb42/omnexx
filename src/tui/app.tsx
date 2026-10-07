@@ -7,6 +7,7 @@ import type { Entry, Session } from './session.js';
 
 import { CYAN, GRAY, GREEN, RED } from './colors.js';
 import { DiffView } from './diff.js';
+import { ModelPicker } from './model-picker.js';
 import type { TodoItem } from '../tools/todo.js';
 import { MarkdownLine } from './markdown.js';
 import { Mascot, MascotCaption, REACTION_TICKS, type Mood } from './mascot.js';
@@ -251,6 +252,15 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       exit();
       return;
     }
+    if (session.modelPicker) {
+      if (key.upArrow) session.pickerKey({ up: true });
+      else if (key.downArrow) session.pickerKey({ down: true });
+      else if (key.return) session.pickerKey({ enter: true });
+      else if (key.escape) session.pickerKey({ close: true });
+      else if (key.backspace || key.delete) session.pickerKey({ back: true });
+      else if (ch && !key.ctrl && !key.meta) session.pickerKey({ char: ch });
+      return;
+    }
     if (session.diffView) {
       if (key.upArrow) session.diffKey('up');
       else if (key.downArrow) session.diffKey('down');
@@ -353,15 +363,19 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
 
   const placeholder = session.chat
     ? `message ${session.chat.ref} (/setup off to leave)`
-    : session.pending
-      ? 'y to allow, anything else to refuse'
-      : session.mode === 'chat'
-        ? session.busy
-          ? 'type to steer the agent while it works'
-          : 'what should we build or change? (shift+tab: long run mode)'
-        : session.runAlive
-          ? 'steer the run, or /command'
-          : 'what should omnexx build? (or /help)';
+    : session.awaiting === 'key'
+      ? 'paste the API key, then enter'
+      : session.awaiting === 'url'
+        ? '<url> [key] [--name alias]'
+        : session.pending
+          ? 'y to allow, anything else to refuse'
+          : session.mode === 'chat'
+            ? session.busy
+              ? 'type to steer the agent while it works'
+              : 'what should we build or change? (shift+tab: long run mode)'
+            : session.runAlive
+              ? 'steer the run, or /command'
+              : 'what should omnexx build? (or /help)';
 
   return (
     <>
@@ -380,6 +394,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       <Box flexDirection="column" marginTop={1}>
         {showPlan && session.plan && <PlanBox plan={session.plan} rows={12} />}
         {session.diffView && <DiffView view={session.diffView} width={width} />}
+        {session.modelPicker && <ModelPicker state={session.modelPicker} width={width} />}
         <Box width={width}>
           <Box flexDirection="column" flexGrow={1}>
             {session.live && (

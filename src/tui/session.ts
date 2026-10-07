@@ -12,6 +12,7 @@ import { CodeChat, type ChatLine } from './code-chat.js';
 import type { TodoItem } from '../tools/todo.js';
 import { classifyMarkdown, type MdKind } from './markdown.js';
 import { parseDiff, type DiffViewState } from './diff.js';
+import { filterChoices, loadModelChoices, type ModelPickerState } from './model-picker.js';
 import { compactPlanView, planCounts } from '../core/plan.js';
 import { resolvePaths } from '../core/paths.js';
 import { listRunIds, RunStore } from '../core/run-store.js';
@@ -63,7 +64,11 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'chat', help: 'switch to chat: code turn by turn in this checkout (shift+tab)' },
   { name: 'clear', help: 'chat: forget the conversation so far' },
   { name: 'compact', help: 'chat: summarize the conversation to free up context' },
-  { name: 'model', args: '[provider:model]', help: 'chat: show or switch the model' },
+  {
+    name: 'model',
+    args: '[provider:model|url|key]',
+    help: 'pick a model, or add a key or endpoint',
+  },
   {
     name: 'setup',
     args: '[provider:model|off]',
@@ -264,6 +269,23 @@ export class Session {
       return;
     }
     if (!text) return;
+    const awaiting = this.awaiting;
+    if (awaiting) {
+      // The picker asked for a key or endpoint: connect it, then show its models.
+      this.awaiting = undefined;
+      const words = text.split(/\s+/);
+      const at = words.indexOf('--name');
+      const name = at >= 0 ? words[at + 1] : undefined;
+      const rest = at >= 0 ? words.filter((_, i) => i !== at && i !== at + 1) : words;
+      this.push('user', awaiting === 'key' ? maskKey(text) : text.replace(/\s(\S{20,})/, ' ••••'));
+      try {
+        await this.connect(rest[0] ?? '', rest[1], name);
+        await this.openModelPicker();
+      } catch (err) {
+        this.push('err', describeError(err));
+      }
+      return;
+    }
     // A pasted key is never echoed, kept in history, or sent anywhere but the credentials file.
     const key = looksLikeKey(text);
     if (!key) this.history.push(text);
@@ -327,6 +349,81 @@ export class Session {
     );
   }
 
+  /** The open /model picker; it takes over the keys until closed. */
+  modelPicker: ModelPickerState | undefined;
+  /** The picker asked for a key or URL: the next message is that, not a chat message. */
+  awaiting: 'key' | 'url' | undefined;
+
+  async openModelPicker(): Promise<void> {
+    this.busy = 'listing models';
+    this.changed();
+    try {
+      const { items, unreachable } = await loadModelChoices(this.io);
+      this.modelPicker = { items, unreachable, query: '', cursor: 0, current: this.chatModelName };
+    } finally {
+      this.busy = undefined;
+      this.changed();
+    }
+  }
+
+  /** Keys while the picker is open. */
+  pickerKey(k: {
+    up?: boolean;
+    down?: boolean;
+    enter?: boolean;
+    close?: boolean;
+    back?: boolean;
+    char?: string;
+  }): void {
+    const p = this.modelPicker;
+    if (!p) return;
+    const shown = filterChoices(p.items, p.query);
+    if (k.close) this.modelPicker = undefined;
+    else if (k.up) p.cursor = Math.max(0, p.cursor - 1);
+    else if (k.down) p.cursor = Math.min(shown.length - 1, p.cursor + 1);
+    else if (k.back) {
+      p.query = p.query.slice(0, -1);
+      p.cursor = 0;
+    } else if (k.char) {
+      p.query += k.char;
+      p.cursor = 0;
+    } else if (k.enter) {
+      const it = shown[Math.min(p.cursor, shown.length - 1)];
+      this.modelPicker = undefined;
+      if (it?.kind === 'model')
+        void this.switchModel(it.ref).catch((err: unknown) => {
+          this.push('err', describeError(err));
+        });
+      else if (it?.kind === 'add-key') {
+        this.awaiting = 'key';
+        this.push(
+          'system',
+          'paste the API key and press enter (it is saved to a 0600 file, never shown)',
+        );
+      } else if (it?.kind === 'add-url') {
+        this.awaiting = 'url';
+        this.push(
+          'system',
+          'enter the endpoint: <url> [key] [--name alias], e.g. http://127.0.0.1:8000/v1 --name pool',
+        );
+      }
+    }
+    this.changed();
+  }
+
+  /** Switch chat to `ref`, keeping the conversation. */
+  async switchModel(ref: string): Promise<void> {
+    if (this.code?.busy) throw new Error('wait for the agent to finish (or esc), then switch');
+    this.chatModel = ref;
+    if (this.code) {
+      // A model on another endpoint needs its own client: reopen, keep the conversation.
+      const history = this.code.conversation;
+      this.code = undefined;
+      (await this.openCode()).conversation = history;
+    }
+    this.push('system', `chat model: ${ref}`);
+  }
+
   /** Context in use / the limit chat compacts at, once a chat is open. */
   get context(): { used: number; limit: number } | undefined {
     return this.code ? { used: this.code.contextUsed, limit: this.code.contextLimit } : undefined;
@@ -379,7 +476,19 @@ export class Session {
     this.busy = 'working';
     this.changed();
     try {
-      const code = await this.openCode();
+      let code: CodeChat;
+      try {
+        code = await this.openCode();
+      } catch (err) {
+        // No model set up yet: say how, and open the picker, instead of a raw key error.
+        if (!/API key|needs [A-Z_]+|no provider/i.test(describeError(err))) throw err;
+        this.push(
+          'system',
+          'no model set up yet: pick one below, paste an API key, or add your own endpoint',
+        );
+        await this.openModelPicker();
+        return;
+      }
       let next: string | undefined = text;
       while (next !== undefined) {
         await code.send(next, this.view);
@@ -488,22 +597,16 @@ export class Session {
         this.setMode('chat');
         return;
       case 'model':
-        if (!rest) {
-          this.push(
-            'system',
-            `chat model: ${this.chatModelName ?? 'the worker model from your config'}`,
-          );
-          return;
-        }
-        if (this.code?.busy) throw new Error('wait for the agent to finish (or esc), then switch');
-        this.chatModel = rest;
-        if (this.code) {
-          // A model on another endpoint needs its own client: reopen, keep the conversation.
-          const history = this.code.conversation;
-          this.code = undefined;
-          (await this.openCode()).conversation = history;
-        }
-        this.push('system', `chat model: ${rest}`);
+        if (!rest) await this.openModelPicker();
+        else if (/^https?:\/\//i.test(rest) || looksLikeKey(rest)) {
+          // /model <url or key>: connect it, then pick one of its models.
+          const [target = '', ...more] = rest.split(/\s+/);
+          const at = more.indexOf('--name');
+          const name = at >= 0 ? more[at + 1] : undefined;
+          const key = more.find((_, i) => i !== at && i !== at + 1);
+          await this.connect(target, key, name);
+          await this.openModelPicker();
+        } else await this.switchModel(rest);
         return;
       case 'compact':
         if (!this.code) {
