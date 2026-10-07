@@ -23,12 +23,13 @@ async function readState(file: string): Promise<TuiState> {
 export async function startTui(
   io: CliIO,
   runCli: RunCli,
-  opts: { version: string; attach?: string | true },
+  opts: { version: string; attach?: string | true; continueChat?: boolean },
 ): Promise<number> {
   const paths = resolvePaths(io.env);
   const stateFile = join(paths.configHome, 'tui.json');
   const state = await readState(stateFile);
   const session = new Session(io, runCli);
+  if (opts.continueChat) await session.continueChat();
   if (opts.attach === true) await session.attach();
   else if (opts.attach) await session.attach(opts.attach);
   else await session.resumeLatest();

@@ -60,6 +60,7 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'resume', help: 'continue where the agent paused' },
   { name: 'stop', help: 'stop the agent now (same as esc)' },
   { name: 'diff', help: 'browse what changed' },
+  { name: 'undo', help: 'put the files back as they were before the last message' },
   { name: 'compact', help: 'summarize the conversation to free up context' },
   { name: 'clear', help: 'start a fresh conversation' },
   { name: 'help', help: 'this list' },
@@ -522,6 +523,22 @@ export class Session {
     return this.code?.model ?? this.chatModel;
   }
 
+  /** `omnexx --continue`: open chat with the last conversation in this folder. */
+  async continueChat(): Promise<void> {
+    try {
+      const code = await this.openCode();
+      const n = await code.resumeLatest();
+      this.push(
+        'system',
+        n
+          ? `continuing your last chat here (${n} message${n === 1 ? '' : 's'})`
+          : 'no earlier chat in this folder; starting fresh',
+      );
+    } catch (err) {
+      this.push('err', describeError(err));
+    }
+  }
+
   /** Esc: stop the agent's current turn. Returns false when nothing was running. */
   interrupt(): boolean {
     if (!this.code?.busy) return false;
@@ -726,6 +743,19 @@ export class Session {
           await this.openModelPicker();
         } else await this.switchModel(rest);
         return;
+      case 'undo': {
+        if (this.code?.busy) throw new Error('wait for the agent to finish (or esc), then undo');
+        const touched = await this.code?.undo();
+        if (touched === undefined) this.push('system', 'nothing to undo');
+        else
+          this.push(
+            'system',
+            touched.length
+              ? `undone: restored ${touched.length} file${touched.length === 1 ? '' : 's'} (${touched.slice(0, 6).join(', ')}${touched.length > 6 ? ', …' : ''}) and dropped that message`
+              : 'undone: no files had changed; dropped that message',
+          );
+        return;
+      }
       case 'compact':
         if (!this.code) {
           this.push('system', 'nothing to compact yet');

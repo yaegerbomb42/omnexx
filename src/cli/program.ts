@@ -59,13 +59,19 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
   });
   // Bare `omnexx`: the interactive session on a terminal, help otherwise.
   program.option('--no-tui', 'print help instead of opening the interactive session');
-  program.action(async (opts: { tui: boolean }) => {
+  program.option('-c, --continue', 'continue the last chat in this folder');
+  program.action(async (opts: { tui: boolean; continue?: boolean }) => {
     if (!io.isTTY || !opts.tui || io.env.TERM === 'dumb') {
       program.outputHelp();
       return;
     }
     const { startTui } = await import('../tui/start.js');
-    setExit(await startTui(io, runCli, { version: VERSION }));
+    setExit(
+      await startTui(io, runCli, {
+        version: VERSION,
+        ...(opts.continue ? { continueChat: true } : {}),
+      }),
+    );
   });
 
   program
