@@ -30,6 +30,7 @@ import { cycleRoute } from '../router/classify.js';
 import { readIntent } from '../agent/intent.js';
 import type { ToolContext } from '../tools/types.js';
 import { antiCheat, type Violation as AntiCheatViolation } from '../verify/anticheat.js';
+import { blocking, renderFindings, reviewChange } from '../verify/review.js';
 import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
 import { runGates, toBaseline, type GateResult } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
@@ -528,6 +529,32 @@ export async function stepVerify(run: Run): Promise<void> {
         `Rejected: ${osc.detail}. Find an approach that keeps the earlier accepted work.`,
       );
       run.events.emit('stuck.signal', { signal: osc.signal, task: task.id, detail: osc.detail });
+    }
+    // Gates passed: a separate model reviews the diff for what tests miss (stubs, hardcoded
+    // outputs, unmet requirements). It fails open, so a reviewer outage never blocks work.
+    if (!reasons.length && run.config.review.enabled) {
+      const goal = (await run.store.readGoal()).text;
+      const r = await reviewChange(run, task, goal, patch);
+      if (r) {
+        const block = blocking(r.findings, run.config.review.block_on);
+        run.events.emit('review.result', {
+          task: task.id,
+          findings: r.findings.length,
+          blocking: block.length,
+          summary: r.summary.slice(0, 200),
+        });
+        if (block.length) {
+          reasons.push(
+            `review: ${block
+              .map((f) => f.problem)
+              .join('; ')
+              .slice(0, 300)}`,
+          );
+          evidence.push(
+            `Rejected in review (tests passed, but):\n${renderFindings(block)}\nFix these.`,
+          );
+        }
+      }
     }
     baseline = toBaseline(results);
     run.events.emit('verify.gates', {
