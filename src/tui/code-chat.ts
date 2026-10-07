@@ -58,6 +58,20 @@ const firstLine = (t: string): string =>
     .find((l) => l.trim())
     ?.trim() ?? '';
 
+/** The line of a failed action's output worth showing: the error, not the `[exit 1, …]` header. */
+export function errorLine(t: string): string {
+  const lines = t
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const telling = lines.find(
+    (l) =>
+      !l.startsWith('[exit') &&
+      /error|fail|not ok|assert|expected|cannot|denied|refused|✗/i.test(l),
+  );
+  return telling ?? lines.find((l) => !l.startsWith('[exit')) ?? lines[0] ?? '';
+}
+
 /** Price an unpriced model at $0 so chat works on any endpoint; spend then reads $0.00. */
 function chatModel(ref: string, config: OmnexxConfig): ResolvedModel {
   const m = resolveModelLenient(ref, config);
@@ -218,7 +232,7 @@ export class CodeChat {
         return;
       case 'tool.call':
         if (e.isError)
-          v.line({ kind: 'err', text: `  ✗ ${firstLine(str(e.error)).slice(0, 160)}` });
+          v.line({ kind: 'err', text: `  ✗ ${errorLine(str(e.error)).slice(0, 160)}` });
         return;
       case 'agent.thinking':
         v.line({ kind: 'think', text: firstLine(str(e.text)).slice(0, 200) });

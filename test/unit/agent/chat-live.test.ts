@@ -106,3 +106,30 @@ describe('streaming', () => {
     expect(res.usage.output).toBe(5);
   });
 });
+
+describe('small input and display fixes from the live run', () => {
+  it('multi_edit hoists a path repeated inside each edit', async () => {
+    const { multiEditTool } = await import('../../../src/tools/edit.js');
+    const parsed = multiEditTool.schema.parse(
+      multiEditTool.normalize?.({
+        edits: [
+          { path: 'src/a.js', old_str: 'a', new_str: 'b' },
+          { path: 'src/a.js', old_str: 'c', new_str: 'd' },
+        ],
+      }),
+    );
+    expect(parsed.path).toBe('src/a.js');
+    expect(parsed.edits).toEqual([
+      { old_str: 'a', new_str: 'b' },
+      { old_str: 'c', new_str: 'd' },
+    ]);
+  });
+
+  it('shows the failing line of a command, not its exit header', async () => {
+    const { errorLine } = await import('../../../src/tui/code-chat.js');
+    expect(errorLine('[exit 1, 164ms, log cmd-1]\n\nnot ok 1 - add\n  error: Expected 5')).toBe(
+      'not ok 1 - add',
+    );
+    expect(errorLine('[exit 2, 5ms]\nsomething odd')).toBe('something odd');
+  });
+});
