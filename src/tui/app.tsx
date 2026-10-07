@@ -7,15 +7,17 @@ import type { Entry, Session } from './session.js';
 
 import { CYAN, GRAY, GREEN, RED } from './colors.js';
 import { DiffView } from './diff.js';
-import { ModelPicker } from './model-picker.js';
+import { ModelPicker, RankEditor } from './model-picker.js';
 import type { TodoItem } from '../tools/todo.js';
 import { MarkdownLine } from './markdown.js';
 import {
   Mascot,
   mascotFrame,
+  NEX_WIDTH,
   REACTION_TICKS,
   SLEEP_TICKS,
   SpeechBubble,
+  type Look,
   type Mood,
 } from './mascot.js';
 
@@ -176,6 +178,9 @@ function StatusBar({ session, width }: { session: Session; width: number }) {
   );
 }
 
+/** Width of the "omnexx" title column; Nex's eye sits right after it. */
+const TITLE_WIDTH = 9;
+
 /** The agent's checklist for the current request, OpenHands-style. */
 export function TodoPanel({ items }: { items: readonly TodoItem[] }) {
   const done = items.filter((i) => i.status === 'done').length;
@@ -257,6 +262,15 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
   useInput((ch, key) => {
     if (key.ctrl && ch === 'c') {
       exit();
+      return;
+    }
+    if (session.rankView) {
+      if (key.upArrow) void session.rankKey({ up: true });
+      else if (key.downArrow) void session.rankKey({ down: true });
+      else if (ch === ' ') void session.rankKey({ grab: true });
+      else if (ch === 'a') void session.rankKey({ add: true });
+      else if (ch === 'x' || key.backspace || key.delete) void session.rankKey({ remove: true });
+      else if (key.escape || key.return || ch === 'q') void session.rankKey({ close: true });
       return;
     }
     if (session.modelPicker) {
@@ -361,8 +375,11 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
   const nex = session.nex;
   const sinceReaction = (Date.now() - nex.at) / pollMs;
   const sinceActivity = (Date.now() - session.lastActivity) / pollMs;
+  // Typing beats the hello wave: the eye turns to the input as soon as you start.
   const reacting =
-    ['hello', 'happy', 'sad', 'startled'].includes(nex.mood) && sinceReaction < REACTION_TICKS;
+    ['hello', 'happy', 'sad', 'startled'].includes(nex.mood) &&
+    sinceReaction < REACTION_TICKS &&
+    !(nex.mood === 'hello' && input);
   const mood: Mood = reacting
     ? nex.mood
     : session.busy
@@ -377,6 +394,14 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
             ? 'sleepy'
             : 'idle';
   const say = reacting || (session.busy && nex.mood === 'working') ? nex.say : '';
+  // The eye looks down at the input box, following the cursor as the text grows.
+  const lastLine = input.split('\n').at(-1) ?? '';
+  const cursorCol = 4 + lastLine.length;
+  const eyeCol = TITLE_WIDTH + Math.floor(NEX_WIDTH / 2);
+  const look: Look = {
+    x: cursorCol < eyeCol - 4 ? -1 : cursorCol > eyeCol + 4 ? 1 : 0,
+    y: input ? 1 : 0,
+  };
   const showMascot = width >= 60 && session.mascot;
 
   const placeholder = session.chat
@@ -413,6 +438,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
         {showPlan && session.plan && <PlanBox plan={session.plan} rows={12} />}
         {session.diffView && <DiffView view={session.diffView} width={width} />}
         {session.modelPicker && <ModelPicker state={session.modelPicker} width={width} />}
+        {session.rankView && <RankEditor state={session.rankView} width={width} />}
         <Box width={width}>
           <Box flexDirection="column" flexGrow={1}>
             {session.live && (
@@ -440,18 +466,18 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
           </Text>
         )}
         {showMascot && (
-          <Box width={width} alignItems="flex-end">
-            <Box flexDirection="column" flexGrow={1}>
+          <Box width={width} alignItems="center">
+            <Box flexDirection="column" width={TITLE_WIDTH}>
               <Text color={GREEN} bold>
                 omnexx
               </Text>
               <Text color={GRAY}>{session.mode === 'chat' ? 'chat' : 'long run'}</Text>
             </Box>
+            <Mascot mood={mood} tick={tick} say={say} look={look} />
             <SpeechBubble
-              text={mascotFrame(mood, tick, say).caption}
-              width={Math.max(20, width - 30)}
+              text={mascotFrame(mood, tick, say, look).caption}
+              width={Math.max(20, width - TITLE_WIDTH - NEX_WIDTH - 2)}
             />
-            <Mascot mood={mood} tick={tick} say={say} />
           </Box>
         )}
         <Box width={width}>

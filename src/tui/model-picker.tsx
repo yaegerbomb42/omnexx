@@ -120,3 +120,43 @@ export function ModelPicker({ state, width }: { state: ModelPickerState; width: 
     </Box>
   );
 }
+
+export interface RankState {
+  ranked: string[];
+  cursor: number;
+  /** Space picked the row up: ↑↓ move it instead of the cursor. */
+  grabbed: boolean;
+}
+
+const ROLE_HINT = [
+  'chat, planner, worker and helpers try this first',
+  'first fallback',
+  'next fallback',
+];
+
+/** /models: the ranked provider:model list every role falls back through, top first. */
+export function RankEditor({ state, width }: { state: RankState; width: number }) {
+  return (
+    <Box flexDirection="column" borderStyle="single" borderColor={GREEN} paddingX={1} width={width}>
+      <Text>
+        <Text color={GREEN} bold>
+          your model ranking
+        </Text>
+        <Text color={GRAY}>{'  ↑↓ move · space pick up/drop · a add · x remove · esc done'}</Text>
+      </Text>
+      {state.ranked.length === 0 && (
+        <Text color={GRAY}>
+          empty: roles use your config.toml models. press a to add your best model first.
+        </Text>
+      )}
+      {state.ranked.map((ref, i) => (
+        <Text key={ref} inverse={i === state.cursor} wrap="truncate-end">
+          <Text color={i === state.cursor && state.grabbed ? CYAN : GREEN}>
+            {`${i + 1}. ${i === state.cursor && state.grabbed ? '⇕ ' : ''}${ref}`}
+          </Text>
+          <Text color={GRAY}>{`  ${ROLE_HINT[i] ?? 'fallback'}`}</Text>
+        </Text>
+      ))}
+    </Box>
+  );
+}

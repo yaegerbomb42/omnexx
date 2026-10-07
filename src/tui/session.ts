@@ -13,7 +13,13 @@ import type { TodoItem } from '../tools/todo.js';
 import { classifyMarkdown, type MdKind } from './markdown.js';
 import { parseDiff, type DiffViewState } from './diff.js';
 import type { Mood } from './mascot.js';
-import { filterChoices, loadModelChoices, type ModelPickerState } from './model-picker.js';
+import {
+  filterChoices,
+  loadModelChoices,
+  type ModelPickerState,
+  type RankState,
+} from './model-picker.js';
+import { readRanking, writeRanking } from '../config/ranking.js';
 import { compactPlanView, planCounts } from '../core/plan.js';
 import { resolvePaths } from '../core/paths.js';
 import { listRunIds, RunStore } from '../core/run-store.js';
@@ -42,46 +48,38 @@ export interface SlashCommand {
 /** Built-in slash commands; anything else after `/` runs the CLI command of that name. */
 export const SLASH: readonly SlashCommand[] = [
   {
-    name: 'run',
-    args: '[goal]',
-    help: 'start a long run on <goal>, or switch to run mode (shift+tab)',
-  },
-  { name: 'plan', args: '[goal]', help: 'show the attached plan, or plan a goal without coding' },
-  { name: 'steer', args: '<note>', help: 'redirect the attached run from its next cycle' },
-  { name: 'attach', args: '[runId]', help: 'follow a run (default: the latest)' },
-  { name: 'detach', help: 'stop following; the run keeps going' },
-  { name: 'pause', help: 'pause the attached run at the next turn' },
-  { name: 'resume', help: 'resume the attached run' },
-  { name: 'stop', args: '[--now]', help: 'stop the attached run' },
-  { name: 'status', help: 'phase, progress, spend' },
-  { name: 'diff', help: "browse changes: the run's commits, or your uncommitted edits" },
-  { name: 'report', help: 'the morning-after report' },
-  { name: 'runs', help: 'list runs' },
-  {
-    name: 'connect',
-    args: '<name|url|key> [key] [--name x]',
-    help: 'add a provider or endpoint in one step',
-  },
-  { name: 'chat', help: 'switch to chat: code turn by turn in this checkout (shift+tab)' },
-  { name: 'clear', help: 'chat: forget the conversation so far' },
-  { name: 'compact', help: 'chat: summarize the conversation to free up context' },
-  {
     name: 'model',
-    args: '[provider:model|url|key]',
-    help: 'pick a model, or add a key or endpoint',
+    args: '[model|url|key]',
+    help: 'pick the chat model, or add an API key or endpoint',
   },
   {
-    name: 'setup',
-    args: '[provider:model|off]',
-    help: 'talk to a model about providers; it can add them for you',
+    name: 'models',
+    help: 'rank your models: #1 chats, the rest are fallbacks for every role and helper',
   },
-  { name: 'init', help: 'detect gates and write omnexx.toml' },
-  { name: 'doctor', help: 'check keys, providers and tools' },
-  { name: 'quiet', help: 'feed: commits and verdicts only' },
-  { name: 'normal', help: 'feed: every action (default)' },
-  { name: 'verbose', help: 'feed: plus every model turn' },
+  { name: 'pause', help: 'pause the agent after its current step (/resume to continue)' },
+  { name: 'resume', help: 'continue where the agent paused' },
+  { name: 'stop', help: 'stop the agent now (same as esc)' },
+  { name: 'diff', help: 'browse what changed' },
+  { name: 'compact', help: 'summarize the conversation to free up context' },
+  { name: 'clear', help: 'start a fresh conversation' },
   { name: 'help', help: 'this list' },
-  { name: 'quit', help: 'leave omnexx (runs keep going)' },
+  { name: 'quit', help: 'leave omnexx (a long run keeps going)' },
+];
+
+/** Still work when typed, but kept out of the menu: long-run plumbing and rarely needed tools. */
+export const MORE_SLASH = [
+  'run <goal>',
+  'plan',
+  'status',
+  'report',
+  'runs',
+  'attach',
+  'detach',
+  'steer',
+  'connect',
+  'setup',
+  'init',
+  'doctor',
 ];
 
 /** Commands that never return or need the real terminal. */
@@ -372,6 +370,62 @@ export class Session {
   /** The picker asked for a key or URL: the next message is that, not a chat message. */
   awaiting: 'key' | 'url' | undefined;
 
+  /** The open /models ranking editor. */
+  rankView: RankState | undefined;
+  /** What choosing in the picker does: switch chat, or add to the ranking. */
+  private pickFor: 'chat' | 'rank' = 'chat';
+
+  async openRanking(): Promise<void> {
+    const ranked = await readRanking(resolvePaths(this.io.env));
+    this.rankView = { ranked, cursor: 0, grabbed: false };
+    this.changed();
+  }
+
+  /** Keys while the ranking editor is open; every change is saved to models.json at once. */
+  async rankKey(k: {
+    up?: boolean;
+    down?: boolean;
+    grab?: boolean;
+    add?: boolean;
+    remove?: boolean;
+    close?: boolean;
+  }): Promise<void> {
+    const v = this.rankView;
+    if (!v) return;
+    const move = (d: number): void => {
+      const to = v.cursor + d;
+      if (to < 0 || to >= v.ranked.length) return;
+      if (v.grabbed) {
+        const [it] = v.ranked.splice(v.cursor, 1);
+        if (it) v.ranked.splice(to, 0, it);
+      }
+      v.cursor = to;
+    };
+    if (k.close) {
+      this.rankView = undefined;
+      this.push(
+        'system',
+        v.ranked.length
+          ? `ranking saved: ${v.ranked.map((r, i) => `${i + 1}. ${r}`).join('  ')}. new chats and runs use it; /model switches this chat`
+          : 'no ranking: roles use your config.toml models',
+      );
+    } else if (k.up) move(-1);
+    else if (k.down) move(1);
+    else if (k.grab) v.grabbed = !v.grabbed && v.ranked.length > 0;
+    else if (k.remove) {
+      v.ranked.splice(v.cursor, 1);
+      v.cursor = Math.max(0, Math.min(v.cursor, v.ranked.length - 1));
+      v.grabbed = false;
+    } else if (k.add) {
+      this.rankView = undefined;
+      this.pickFor = 'rank';
+      await this.openModelPicker();
+      return;
+    }
+    await writeRanking(resolvePaths(this.io.env), v.ranked);
+    this.changed();
+  }
+
   async openModelPicker(): Promise<void> {
     this.busy = 'listing models';
     this.changed();
@@ -396,8 +450,13 @@ export class Session {
     const p = this.modelPicker;
     if (!p) return;
     const shown = filterChoices(p.items, p.query);
-    if (k.close) this.modelPicker = undefined;
-    else if (k.up) p.cursor = Math.max(0, p.cursor - 1);
+    if (k.close) {
+      this.modelPicker = undefined;
+      if (this.pickFor === 'rank') {
+        this.pickFor = 'chat';
+        void this.openRanking();
+      }
+    } else if (k.up) p.cursor = Math.max(0, p.cursor - 1);
     else if (k.down) p.cursor = Math.min(shown.length - 1, p.cursor + 1);
     else if (k.back) {
       p.query = p.query.slice(0, -1);
@@ -408,7 +467,18 @@ export class Session {
     } else if (k.enter) {
       const it = shown[Math.min(p.cursor, shown.length - 1)];
       this.modelPicker = undefined;
-      if (it?.kind === 'model')
+      if (it?.kind === 'model' && this.pickFor === 'rank') {
+        // Picked for the ranking: append it and go back to the editor.
+        this.pickFor = 'chat';
+        void (async () => {
+          const paths = resolvePaths(this.io.env);
+          const ranked = await readRanking(paths);
+          if (!ranked.includes(it.ref)) ranked.push(it.ref);
+          await writeRanking(paths, ranked);
+          this.rankView = { ranked, cursor: ranked.length - 1, grabbed: false };
+          this.changed();
+        })();
+      } else if (it?.kind === 'model')
         void this.switchModel(it.ref).catch((err: unknown) => {
           this.push('err', describeError(err));
         });
@@ -607,8 +677,24 @@ export class Session {
         else await this.openDiff();
         return;
       case 'pause':
+        if (this.code?.busy) {
+          this.code.paused = true;
+          this.push('system', 'pausing after the current step; /resume to continue');
+        } else if (this.runId) await this.cli(['pause', this.runId]);
+        else this.push('system', 'nothing is running');
+        return;
       case 'resume':
+        if (this.code?.busy) {
+          this.code.paused = false;
+          this.push('system', 'resumed');
+        } else await this.cli(['resume', ...(this.runId ? [this.runId] : []), ...args]);
+        return;
       case 'stop':
+      case 'abort':
+        if (this.interrupt()) return;
+        if (this.runId) await this.cli(['stop', this.runId, ...args]);
+        else this.push('system', 'nothing is running');
+        return;
       case 'status':
       case 'report':
         await this.cli([cmd, ...(this.runId ? [this.runId] : []), ...args]);
@@ -624,6 +710,9 @@ export class Session {
       }
       case 'chat':
         this.setMode('chat');
+        return;
+      case 'models':
+        await this.openRanking();
         return;
       case 'model':
         if (!rest) await this.openModelPicker();
@@ -741,7 +830,7 @@ export function helpText(b: Brand): string {
   return [
     b.green('commands'),
     ...SLASH.map((c) => `  ${b.cyan(`/${c.name} ${c.args ?? ''}`.padEnd(w))}  ${c.help}`),
-    `  ${b.dim('any other /<command> runs `omnexx <command>`, e.g. /providers list')}`,
+    `  ${b.dim(`also: ${MORE_SLASH.map((c) => `/${c}`).join(' ')}, and any omnexx command`)}`,
     '',
     b.green('typing'),
     '  paste an API key: it is saved and the provider set up (never echoed)',

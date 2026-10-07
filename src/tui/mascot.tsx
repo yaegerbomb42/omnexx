@@ -10,7 +10,7 @@ export const REACTION_TICKS = 10;
 export const SLEEP_TICKS = 200;
 
 /** Rows are all exactly this wide, so the layout never shifts between frames. */
-export const NEX_WIDTH = 11;
+export const NEX_WIDTH = 13;
 
 export interface MascotFrame {
   rows: [string, string, string, string, string];
@@ -18,79 +18,107 @@ export interface MascotFrame {
   caption: string;
 }
 
+/** Where the eye looks: x left/center/right, y up/middle/down. */
+export interface Look {
+  x: -1 | 0 | 1;
+  y: -1 | 0 | 1;
+}
+
 const pad = (s: string): string => s.padEnd(NEX_WIDTH, ' ').slice(0, NEX_WIDTH);
 
+/** Put `iris` into the eye's row at the column for `x` (rows 1 and 3 are narrower than row 2). */
+function place(row: string, iris: string, x: -1 | 0 | 1, wide: boolean): string {
+  const start = wide ? [3, 5, 7][x + 1] : [4, 5, 6][x + 1];
+  const at = start ?? 5;
+  return pad(row.slice(0, at) + iris + row.slice(at + iris.length));
+}
+
+const TOP = '   .-~~~-.';
+const R1 = '  /       \\';
+const R2 = ' |         |';
+const R3 = '  \\       /';
+const BOTTOM = "   '-...-'";
+
+/** The open eye with the iris looking at `look`. */
+function eye(look: Look, iris = '(@)', top = TOP): MascotFrame['rows'] {
+  const rows = [top, R1, R2, R3, BOTTOM].map(pad) as MascotFrame['rows'];
+  const r = look.y + 2;
+  rows[r] = place(rows[r] ?? '', iris, look.x, r === 2);
+  return rows;
+}
+
+/** A glance around the room for idle moments: mostly center, sometimes left or right. */
+const IDLE_LOOKS: Look[] = [
+  { x: 0, y: 0 },
+  { x: 0, y: 0 },
+  { x: -1, y: 0 },
+  { x: 0, y: 0 },
+  { x: 1, y: -1 },
+  { x: 0, y: 0 },
+];
+
 /**
- * Nex, five rows by eleven columns: an antenna, a round head with a face, and little feet. A pure
- * function of mood and tick so tests can pin frames. Only single-width characters, so Ink
- * measures every frame the same in every terminal.
+ * Nex: one big eye, five rows by thirteen columns. It looks where `look` says (the TUI points it
+ * at the cursor while you type), blinks, and changes with mood. A pure function of mood, tick and
+ * look so tests can pin frames; only single-width characters.
  */
-export function mascotFrame(mood: Mood, tick: number, say = ''): MascotFrame {
-  const step = tick % 2 === 0;
-  const sway = ['  \\  ', '  |  ', '  /  ', '  |  '][Math.floor(tick / 2) % 4] ?? '  |  ';
-  const antenna = (a: string): string => pad(`   ${a}`);
-  const head = pad('  ╭─────╮');
-  const face = (eyes: string, mouth: string, l = '│', r = '│'): [string, string] => [
-    pad(`  ${l} ${eyes} ${r}`),
-    pad(`  ${l}  ${mouth}  ${r}`),
-  ];
-  const stand = pad('  ╰┬───┬╯');
-  const walk = step ? pad('  ╰┬───┬╯') : pad('  ╰─┬─┬─╯');
+export function mascotFrame(
+  mood: Mood,
+  tick: number,
+  say = '',
+  look: Look = { x: 0, y: 0 },
+): MascotFrame {
+  const blink = tick % 17 === 16;
+  const closed = (): MascotFrame['rows'] =>
+    [TOP, '  /_______\\', R2, R3, BOTTOM].map(pad) as MascotFrame['rows'];
   switch (mood) {
-    case 'hello': {
-      // Waves one arm.
-      const arm = step ? '/' : '_';
+    case 'hello':
       return {
-        rows: [antenna(sway), head, pad(`  │ ^ ^ │${arm}`), pad('  │  v  │'), stand],
+        rows: blink ? closed() : eye({ x: tick % 4 < 2 ? -1 : 1, y: 0 }, '(@)', '   .-~~~-. o/'),
         caption: say || 'hi! what are we building?',
       };
-    }
-    case 'idle': {
-      const blink = tick % 16 === 15;
-      const [e, m] = face(blink ? '- -' : 'o o', 'u');
-      return { rows: [antenna(sway), head, e, m, stand], caption: say };
-    }
-    case 'sleepy': {
-      const z = ['z  ', ' z ', '  Z'][Math.floor(tick / 3) % 3] ?? 'z';
-      const [e, m] = face('- -', 'o');
+    case 'idle':
       return {
-        rows: [pad(`     .    ${z}`), head, e, m, stand],
-        caption: say || 'zz… type to wake me',
+        rows: blink ? closed() : eye(IDLE_LOOKS[Math.floor(tick / 8) % IDLE_LOOKS.length] ?? look),
+        caption: say,
       };
-    }
-    case 'listening': {
-      // Eyes drop toward the input box.
-      const [e, m] = face('. .', 'o');
-      return { rows: [antenna('  |  '), head, e, m, stand], caption: say || 'listening…' };
-    }
+    case 'listening':
+      return { rows: blink ? closed() : eye(look), caption: say || 'listening…' };
     case 'thinking': {
-      const dots = '.'.repeat((tick % 3) + 1);
-      const [e, m] = face(tick % 4 < 2 ? "' '" : '` `', '~');
+      const x = ([-1, 0, 1, 0] as const)[Math.floor(tick / 2) % 4] ?? 0;
       return {
-        rows: [antenna(` ${'*+x+'[tick % 4] ?? '*'}  `), head, e, m, stand],
-        caption: say || `thinking${dots}`,
+        rows: eye({ x, y: -1 }, '(o)'),
+        caption: say || `thinking${'.'.repeat((tick % 3) + 1)}`,
       };
     }
     case 'working': {
-      const eyes = ['o o', ' oo', 'o o', 'oo '][Math.floor(tick / 3) % 4] ?? 'o o';
-      const [e, m] = face(eyes, '-');
-      return { rows: [antenna(sway), head, e, m, walk], caption: say || 'on it' };
+      const x = ([-1, 1, 0, 1, -1, 0] as const)[tick % 6] ?? 0;
+      return { rows: blink ? closed() : eye({ x, y: look.y }), caption: say || 'on it' };
     }
     case 'happy': {
-      // Arms up, sparkles around the antenna.
-      const spark = step ? '*' : '+';
+      const spark = tick % 2 === 0 ? '*' : '+';
       return {
-        rows: [pad(` ${spark} \\|/ ${spark}`), head, pad('  │ ^ ^ │'), pad(' \\│  w  │/'), walk],
+        rows: eye({ x: 0, y: 0 }, '(^)', ` ${spark} .-~~~-. ${spark}`),
         caption: say || 'yay, it works!',
       };
     }
-    case 'sad': {
-      const [e, m] = face('; ;', 'n');
-      return { rows: [antenna('  .  '), head, e, m, stand], caption: say || 'oops, trying again' };
-    }
-    case 'startled': {
-      const [e, m] = face('O O', 'o');
-      return { rows: [antenna(' ! ! '), head, e, m, stand], caption: say || 'stopping!' };
+    case 'sad':
+      return {
+        rows: [TOP, '  /-------\\', R2, place(pad(R3), '(.)', 0, false), BOTTOM].map(
+          pad,
+        ) as MascotFrame['rows'],
+        caption: say || 'oops, trying again',
+      };
+    case 'startled':
+      return { rows: eye({ x: 0, y: 0 }, '(O)', ' ! .-~~~-. !'), caption: say || 'stopping!' };
+    case 'sleepy': {
+      const z = ['  z', ' zZ', 'zZz'][Math.floor(tick / 3) % 3] ?? 'z';
+      return {
+        rows: [`${TOP}${z}`, '  /_______\\', ' |---------|', R3, BOTTOM].map(
+          pad,
+        ) as MascotFrame['rows'],
+        caption: say || 'zz… type to wake me',
+      };
     }
   }
 }
@@ -107,8 +135,18 @@ const MOOD_COLOR: Record<Mood, string> = {
   startled: CYAN,
 };
 
-export function Mascot({ mood, tick, say }: { mood: Mood; tick: number; say?: string }) {
-  const f = mascotFrame(mood, tick, say);
+export function Mascot({
+  mood,
+  tick,
+  say,
+  look,
+}: {
+  mood: Mood;
+  tick: number;
+  say?: string;
+  look?: Look;
+}) {
+  const f = mascotFrame(mood, tick, say, look);
   return (
     <Box flexDirection="column" width={NEX_WIDTH}>
       {f.rows.map((r, i) => (
@@ -126,13 +164,13 @@ export function SpeechBubble({ text, width }: { text: string; width: number }) {
   const t = text.length > width - 6 ? `${text.slice(0, width - 7)}…` : text;
   return (
     <Box flexDirection="column">
-      <Text color={GRAY}>{`╭${'─'.repeat(t.length + 2)}╮ `}</Text>
+      <Text color={GRAY}>{`  ╭${'─'.repeat(t.length + 2)}╮`}</Text>
       <Text>
-        <Text color={GRAY}>{'│ '}</Text>
+        <Text color={GRAY}>{'─┤ '}</Text>
         <Text>{t}</Text>
-        <Text color={GRAY}>{' ├─'}</Text>
+        <Text color={GRAY}>{' │'}</Text>
       </Text>
-      <Text color={GRAY}>{`╰${'─'.repeat(t.length + 2)}╯ `}</Text>
+      <Text color={GRAY}>{`  ╰${'─'.repeat(t.length + 2)}╯`}</Text>
     </Box>
   );
 }

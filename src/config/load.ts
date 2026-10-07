@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { rankingLayer, readRanking } from './ranking.js';
 import { parse as parseToml, TomlError } from 'smol-toml';
 import type { z } from 'zod';
 import { ConfigError } from '../errors.js';
@@ -173,6 +174,9 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<LoadedConfig>
     ? undefined
     : await readTomlLayer(join(opts.cwd, PROJECT_CONFIG));
   if (project) layers.push(project);
+  // /models ranking: above your config.toml, below a project's omnexx.toml and flags.
+  const ranked = rankingLayer(await readRanking(paths));
+  if (ranked) layers.push({ source: 'your /models ranking (models.json)', data: ranked });
   const user = await readTomlLayer(userConfigFile(paths));
   if (user) layers.push(user);
 

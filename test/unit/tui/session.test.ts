@@ -100,7 +100,8 @@ describe('Session', () => {
 
   it('completes slash commands by prefix', async () => {
     const { s } = await setup();
-    expect(s.complete('/st').map((c) => c.name)).toEqual(['steer', 'stop', 'status']);
+    expect(s.complete('/st').map((c) => c.name)).toEqual(['stop']);
+    expect(s.complete('/mo').map((c) => c.name)).toEqual(['model', 'models']);
     expect(s.complete('/stop now')).toEqual([]);
     expect(s.complete('hello')).toEqual([]);
   });
