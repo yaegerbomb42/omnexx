@@ -492,7 +492,7 @@ export class Session {
         this.awaiting = 'url';
         this.push(
           'system',
-          'enter the endpoint: <url> [key] [--name alias], e.g. http://127.0.0.1:8000/v1 --name pool',
+          'enter the endpoint: <url> [key] [--name alias], e.g. http://localhost:11434/v1 --name local',
         );
       }
     }

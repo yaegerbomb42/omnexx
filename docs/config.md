@@ -106,14 +106,15 @@ cache_write_1h = 4
 cache_read = 0.2
 ```
 
-| `[providers.endpoints.<name>]` key | Default    | Meaning                                                        |
-| ---------------------------------- | ---------- | -------------------------------------------------------------- |
-| `kind`                             | `"openai"` | Chat Completions API                                           |
-| `base_url`                         | required   | e.g. `https://api.openai.com/v1`                               |
-| `api_key_env`                      | unset      | Env var holding the key; unset for local endpoints             |
-| `free`                             | `false`    | Price unknown models at $0                                     |
-| `request_timeout`                  | `"10m"`    |                                                                |
-| `max_usd` / `max_usd_per_day`      | unset      | Per-provider caps; also accepted under `[providers.anthropic]` |
+| `[providers.endpoints.<name>]` key | Default    | Meaning                                                                                                                                                                                                                                                                                     |
+| ---------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kind`                             | `"openai"` | Chat Completions API                                                                                                                                                                                                                                                                        |
+| `base_url`                         | required   | e.g. `https://api.openai.com/v1`                                                                                                                                                                                                                                                            |
+| `api_key_env`                      | unset      | Env var holding the key; unset for local endpoints                                                                                                                                                                                                                                          |
+| `free`                             | `false`    | Price unknown models at $0                                                                                                                                                                                                                                                                  |
+| `request_timeout`                  | `"10m"`    |                                                                                                                                                                                                                                                                                             |
+| `sticky_random`                    | `false`    | For a pool whose `*-random` model picks a different model each request: omnexx picks one real chat model itself and keeps it (warm prompt cache) until it reports it is out of quota, then moves to the next. The pick and exhausted models are remembered in `sticky-<name>.json` for 24 h |
+| `max_usd` / `max_usd_per_day`      | unset      | Per-provider caps; also accepted under `[providers.anthropic]`                                                                                                                                                                                                                              |
 
 Each turn tries the chain in order. Providers over their own caps are skipped; a failing provider cools for 1 minute (transient errors) or 30 minutes (key, quota or unknown model) while the next one takes the call. If every provider is over its cap, the run stops as a budget stop; if every one is failing, the normal outage backoff applies. Events: `provider.failover`; spend per provider in `status --json` (`spend.byProvider`).
 

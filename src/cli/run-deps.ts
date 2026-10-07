@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { findAnthropicKey, findProviderKey } from '../auth/keys.js';
 import { loadConfig } from '../config/load.js';
 import type { ConfigInput, OmnexxConfig } from '../config/schema.js';
@@ -9,6 +10,7 @@ import { NotImplementedError, UsageError } from '../errors.js';
 import { AnthropicProvider } from '../providers/anthropic.js';
 import { GeminiProvider } from '../providers/gemini.js';
 import { OpenAICompatProvider } from '../providers/openai-compat.js';
+import { withStickyRandom } from '../providers/sticky.js';
 import { withToolRepair } from '../providers/repair.js';
 import { ResponsesProvider } from '../providers/responses.js';
 import { ProviderRouter } from '../providers/router.js';
@@ -98,7 +100,18 @@ export async function resolveRunDeps(
           ? new GeminiProvider(opts)
           : new OpenAICompatProvider(opts);
     // Weaker and local models often emit broken tool JSON; repair it before the loop sees it.
-    providers.set(name, withToolRepair(inner));
+    const repaired = withToolRepair(inner);
+    providers.set(
+      name,
+      ep.sticky_random
+        ? withStickyRandom(repaired, {
+            baseUrl: ep.base_url,
+            apiKey,
+            stateFile: join(paths.configHome, `sticky-${name}.json`),
+            ...(io.fetch ? { fetch: io.fetch } : {}),
+          })
+        : repaired,
+    );
   }
   const provider: Provider = io.makeProvider
     ? io.makeProvider(secrets[0] ?? '')
