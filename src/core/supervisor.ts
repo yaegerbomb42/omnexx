@@ -1,5 +1,6 @@
 import { PlannerIncomplete, runPlanner } from '../agent/planner.js';
 import { closeSession } from '../tools/extra/browser.js';
+import { saveToRepoMemory } from './repo-memory.js';
 import { renderCodemap, type Codemap } from '../agent/codemap.js';
 import { readIntent } from '../agent/intent.js';
 import { git } from '../git/git.js';
@@ -75,6 +76,21 @@ export const EXIT_FOR: Record<RunStatus, number> = {
 };
 
 const MAX_MILESTONE_REPLANS = 2;
+
+/** Fold this run's lessons into the repo's memory so the next run or chat starts with them. */
+async function rememberForRepo(run: Run): Promise<void> {
+  try {
+    const added = await saveToRepoMemory(
+      run.deps.paths,
+      run.state.repoRoot,
+      await run.store.readNotes(),
+      run.config.context.notes_max_tokens,
+    );
+    if (added) run.events.emit('memory.saved', { added });
+  } catch (err) {
+    run.events.emit('memory.save_failed', { error: (err as Error).message });
+  }
+}
 
 /** How many times a task's line may be split before a stuck descendant is parked instead. */
 const MAX_SPLIT_DEPTH = 2;
@@ -814,6 +830,7 @@ export async function supervise(
       clearInterval(watcher);
       stopHeartbeat();
       await closeSession(runId).catch(() => undefined);
+      await rememberForRepo(run);
       await sandbox?.stop();
       await releaseLock(run.store.dir, pid);
       throw err;
@@ -822,6 +839,7 @@ export async function supervise(
   clearInterval(watcher);
   // No browser outlives its run (a cycle that threw may have skipped its own cleanup).
   await closeSession(runId).catch(() => undefined);
+  await rememberForRepo(run);
   if (outcome.status === 'user-stop') await prepareWorktree(run);
   run.state.status = outcome.status;
   run.state.statusReason = outcome.reason;
