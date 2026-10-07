@@ -60,6 +60,7 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'resume', help: 'continue where the agent paused' },
   { name: 'stop', help: 'stop the agent now (same as esc)' },
   { name: 'diff', help: 'browse what changed' },
+  { name: 'go', help: 'plan mode: approve the plan and carry it out' },
   { name: 'undo', help: 'put the files back as they were before the last message' },
   { name: 'compact', help: 'summarize the conversation to free up context' },
   { name: 'clear', help: 'start a fresh conversation' },
@@ -104,7 +105,7 @@ export class Session {
   quit = false;
   chat: Chat | undefined;
   /** What plain text does: start or steer a long run, or code turn by turn. */
-  mode: 'run' | 'chat' = 'chat';
+  mode: 'run' | 'chat' | 'plan' = 'chat';
   /** A y/n question from chat mode waiting on the person (permission to go past a guard). */
   pending: { question: string; resolve: (yes: boolean) => void } | undefined;
   private code: CodeChat | undefined;
@@ -296,7 +297,7 @@ export class Session {
       if (text.startsWith('/')) await this.slash(text.slice(1));
       else if (key && !this.chat) await this.connect(text);
       else if (this.chat) await this.talk(text);
-      else if (this.mode === 'chat') await this.code_(text);
+      else if (this.mode === 'chat' || this.mode === 'plan') await this.code_(text);
       else if (this.runId && this.runAlive) await this.steer(text);
       else await this.startRun(text);
     } catch (err) {
@@ -341,14 +342,21 @@ export class Session {
     });
   }
 
-  setMode(mode: 'run' | 'chat'): void {
+  setMode(mode: 'run' | 'chat' | 'plan'): void {
     this.mode = mode;
     this.push(
       'system',
       mode === 'chat'
         ? 'chat mode: each message is worked on right here in your checkout; checks run after edits'
-        : 'run mode: your text starts a long run, or steers the live one',
+        : mode === 'plan'
+          ? 'plan mode: the agent investigates and proposes a plan without changing anything; /go to carry it out'
+          : 'run mode: your text starts a long run, or steers the live one',
     );
+  }
+
+  /** shift+tab: chat → plan → run → chat. */
+  nextMode(): void {
+    this.setMode(this.mode === 'chat' ? 'plan' : this.mode === 'plan' ? 'run' : 'chat');
   }
 
   /** Nex's latest reaction and what it says; the TUI turns this into a mood each tick. */
@@ -607,12 +615,14 @@ export class Session {
       }
       let next: string | undefined = text;
       while (next !== undefined) {
-        await code.send(next, this.view);
+        await code.send(next, this.view, { plan: this.mode === 'plan' });
         // Messages that arrived after its last step: answer them now, not never.
         const left = code.takeLeftovers();
         next = left.length ? left.join('\n') : undefined;
       }
       if (code.usd > 0) this.push('system', `chat spend $${code.usd.toFixed(2)}`);
+      if (this.mode === 'plan')
+        this.push('system', 'plan ready: /go to carry it out, or type what to change');
     } finally {
       this.busy = undefined;
       this.live = '';
@@ -742,6 +752,15 @@ export class Session {
           await this.connect(target, key, name);
           await this.openModelPicker();
         } else await this.switchModel(rest);
+        return;
+      case 'go':
+        if (this.mode !== 'plan')
+          throw new Error('/go approves a plan: switch to plan mode with shift+tab first');
+        this.mode = 'chat';
+        this.push('system', 'plan approved: carrying it out');
+        await this.code_(
+          'The plan is approved. Carry it out now, keeping the todo list up to date.',
+        );
         return;
       case 'undo': {
         if (this.code?.busy) throw new Error('wait for the agent to finish (or esc), then undo');

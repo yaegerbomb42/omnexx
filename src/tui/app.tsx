@@ -165,8 +165,8 @@ function StatusBar({ session, width }: { session: Session; width: number }) {
   );
   const right = session.runId
     ? `${t.model ?? '–'} · ${fmtTokens(t.tokens.input + t.tokens.output)} tok · cache ${Math.round(cacheHitRate(t) * 100)}% · $${t.usd.toFixed(2)} · ✓${t.commits} ✗${t.rejects}`
-    : session.mode === 'chat'
-      ? `${session.chatModelName ?? 'chat'}${session.context ? ` · ctx ${fmtTokens(session.context.used)}/${fmtTokens(session.context.limit)}` : ''} · chat mode`
+    : session.mode !== 'run'
+      ? `${session.chatModelName ?? 'chat'}${session.context ? ` · ctx ${fmtTokens(session.context.used)}/${fmtTokens(session.context.limit)}` : ''} · ${session.mode} mode`
       : `run mode · feed ${session.verbosity}`;
   return (
     <Box width={width} justifyContent="space-between">
@@ -290,7 +290,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       return;
     }
     if (key.shift && key.tab) {
-      session.setMode(session.mode === 'run' ? 'chat' : 'run');
+      session.nextMode();
       return;
     }
     if (key.ctrl && ch === 'd') {
@@ -412,13 +412,17 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
         ? '<url> [key] [--name alias]'
         : session.pending
           ? 'y to allow, anything else to refuse'
-          : session.mode === 'chat'
+          : session.mode === 'plan'
             ? session.busy
-              ? 'type to steer the agent while it works'
-              : 'what should we build or change? (shift+tab: long run mode)'
-            : session.runAlive
-              ? 'steer the run, or /command'
-              : 'what should omnexx build? (or /help)';
+              ? 'type to steer the plan while it investigates'
+              : 'what should we plan? (nothing changes until you /go)'
+            : session.mode === 'chat'
+              ? session.busy
+                ? 'type to steer the agent while it works'
+                : 'what should we build or change? (shift+tab: plan, then long run)'
+              : session.runAlive
+                ? 'steer the run, or /command'
+                : 'what should omnexx build? (or /help)';
 
   return (
     <>
@@ -448,7 +452,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
               <Text color={CYAN}>
                 {SPINNER[frame]} {session.busy}
                 <Text color={GRAY}>
-                  {session.mode === 'chat' ? '  (esc to stop, type to steer)' : ''}
+                  {session.mode === 'run' ? '' : '  (esc to stop, type to steer)'}
                 </Text>
               </Text>
             )}
@@ -471,7 +475,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
               <Text color={GREEN} bold>
                 omnexx
               </Text>
-              <Text color={GRAY}>{session.mode === 'chat' ? 'chat' : 'long run'}</Text>
+              <Text color={GRAY}>{session.mode === 'run' ? 'long run' : session.mode}</Text>
             </Box>
             <Mascot mood={mood} tick={tick} say={say} look={look} />
             <SpeechBubble
