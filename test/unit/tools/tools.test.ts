@@ -175,6 +175,14 @@ describe('bash + read_log', () => {
     expect((await bashTool.run({ command: 'true', timeout: 'soon' }, ctx)).content).toMatch(
       /invalid timeout/,
     );
+    // Models often send milliseconds as a bare number (or a numeric string).
+    expect((await bashTool.run({ command: 'sleep 5', timeout: '200' }, ctx)).content).toMatch(
+      /timed out/,
+    );
+    const parsed = bashTool.schema.parse(
+      bashTool.normalize?.({ command: 'true', timeout: 120000 }),
+    );
+    expect(parsed.timeout).toBe('120000');
   });
 
   it('refuses policy violations, logs tool.denied, and calls the safety hook only for allowed commands', async () => {

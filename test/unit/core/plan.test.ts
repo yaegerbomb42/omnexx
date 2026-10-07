@@ -193,3 +193,41 @@ describe('normalizePlanUpdate', () => {
     expect(normalizePlanUpdate('nonsense')).toBe('nonsense');
   });
 });
+
+describe('normalizePlanUpdate: what the free-model run sent', () => {
+  it('renumbers malformed task ids, follows dependsOn, maps check/kind, and parks bare ids', async () => {
+    const { applyPlanUpdate, normalizePlanUpdate, planUpdateSchema } =
+      await import('../../../src/core/plan.js');
+    const prev = applyPlanUpdate(
+      undefined,
+      { milestones: [{ id: 'M3', title: 'Inline', tasks: [{ id: 'M3.T01', title: 'emphasis' }] }] },
+      'g',
+    );
+    const raw = {
+      milestones: [
+        {
+          id: 'M3',
+          title: 'Inline',
+          tasks: [
+            { id: 'M3.T01', title: 'emphasis', status: 'parked' },
+            { id: 'M3.T01a', title: 'star emphasis', kind: 'test', check: 'npm test' },
+            { id: 'M3.T01b', title: 'underscore emphasis', kind: 'weird', dependsOn: ['M3.T01a'] },
+          ],
+        },
+      ],
+      park: ['M3.T01'],
+    };
+    const fixed = planUpdateSchema.parse(normalizePlanUpdate(raw, prev));
+    const tasks = fixed.milestones[0]?.tasks ?? [];
+    expect(tasks.map((t) => t.id)).toEqual(['M3.T01', 'M3.T02', 'M3.T03']);
+    expect(tasks[1]).toMatchObject({ kind: 'tests', checks: ['npm test'] });
+    expect(tasks[2]).toMatchObject({ kind: 'feature', dependsOn: ['M3.T02'] });
+    expect(fixed.park).toEqual([{ id: 'M3.T01', reason: 'parked by the planner' }]);
+    expect(applyPlanUpdate(prev, fixed, 'g').nodes.map((n) => [n.id, n.status])).toEqual([
+      ['M3', 'todo'],
+      ['M3.T01', 'parked'],
+      ['M3.T02', 'todo'],
+      ['M3.T03', 'todo'],
+    ]);
+  });
+});

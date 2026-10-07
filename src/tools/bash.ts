@@ -34,7 +34,10 @@ export function trimOutput(output: string, logId: string): string {
 
 const schema = z.strictObject({
   command: z.string().min(1).describe('Shell command, run in the repo root'),
-  timeout: z.string().optional().describe('e.g. "2m"; capped by the run config'),
+  timeout: z
+    .string()
+    .optional()
+    .describe('e.g. "2m" (a bare number is milliseconds); capped by the run config'),
 });
 
 export const bashTool: Tool<typeof schema> = {
@@ -43,6 +46,13 @@ export const bashTool: Tool<typeof schema> = {
     'Run a shell command in the repo root and wait for it to finish (never poll). Output is trimmed; use read_log for the full log. git writes, network, sudo and paths outside the repo are refused.',
   schema,
   readOnly: false,
+  // Models often send the timeout as a number of milliseconds.
+  normalize: (input) =>
+    typeof input === 'object' &&
+    input !== null &&
+    typeof (input as { timeout?: unknown }).timeout === 'number'
+      ? { ...input, timeout: String((input as { timeout: number }).timeout) }
+      : input,
   async run(input, ctx) {
     const verdict = checkCommand(input.command, ctx.policy);
     const allowed =
@@ -62,7 +72,11 @@ export const bashTool: Tool<typeof schema> = {
     let timeoutMs = ctx.maxCmdTimeoutMs;
     if (input.timeout) {
       try {
-        timeoutMs = Math.min(parseDuration(input.timeout), ctx.maxCmdTimeoutMs);
+        // A bare number is milliseconds, as most tool APIs mean it.
+        const ms = /^\d+$/.test(input.timeout.trim())
+          ? Number(input.timeout)
+          : parseDuration(input.timeout);
+        timeoutMs = Math.min(ms, ctx.maxCmdTimeoutMs);
       } catch {
         return fail(`invalid timeout "${input.timeout}"`);
       }
