@@ -352,7 +352,9 @@ export async function runAgentLoop(
       (b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use',
     );
     // What the model said or reasoned on its way to a tool call: shown as "thinking".
-    const thought = (calls.length ? text : '') || res.reasoning?.trim();
+    // A final answer (no tool call) is shown as the reply itself, so its reasoning isn't
+    // repeated after it.
+    const thought = calls.length ? text || res.reasoning?.trim() : undefined;
     if (thought) deps.events.emit('agent.thinking', { text: thought.slice(0, 600) });
     if (res.stopReason === 'refusal') return end('refusal');
     if (calls.length === 0) {
