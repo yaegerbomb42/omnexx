@@ -6,3 +6,4 @@ docs/PLAN.md
 test/fixtures
 .changeset/*.md
 test/.build
+.claude/

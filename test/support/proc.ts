@@ -30,7 +30,7 @@ export async function processRepo(
 ): Promise<{ repo: string; env: NodeJS.ProcessEnv }> {
   const repo = await makeRepo({
     'omnexx.toml':
-      '[[gates]]\nname = "test"\nrun = "node --test --test-reporter=tap"\nparser = "node-test"\ntimeout = "2m"\n',
+      '[[gates]]\nname = "test"\nrun = "node --test --test-reporter=tap"\nparser = "node-test"\ntimeout = "2m"\n\n[review]\nenabled = false\naudit = false\nstrict_checks = false\n',
   });
   const { git } = await import('../../src/git/git.js');
   await git(repo, ['add', '-A']);

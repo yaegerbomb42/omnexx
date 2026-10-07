@@ -54,6 +54,8 @@ export async function startTestRun(opts: {
   const config = defaultConfig({
     gates: [NODE_TEST_GATE],
     beyond: { enabled: false },
+    // Review and audit add model calls; tests for them opt in explicitly.
+    review: { enabled: false, audit: false, strict_checks: false },
     ...opts.config,
   });
   const clock = new FakeClock();
