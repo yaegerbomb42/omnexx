@@ -1,4 +1,5 @@
-import { mkdir } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildCodemap, renderCodemap } from '../agent/codemap.js';
 import { clearOldToolResults, contextTokens, transcriptFor } from '../agent/compaction.js';
@@ -10,6 +11,9 @@ import { loadConfig } from '../config/load.js';
 import { parseDuration } from '../config/duration.js';
 import { EventLog, type OmnexxEvent } from '../core/events.js';
 import { RunStore } from '../core/run-store.js';
+import { readTextOr, writeJsonAtomic } from '../core/atomic.js';
+import { runsDir } from '../core/paths.js';
+import { restoreTree, snapshotTree } from './undo.js';
 import { renderNotes } from '../core/notes.js';
 import type { OmnexxPaths } from '../core/paths.js';
 import { readRepoNotes, saveToRepoMemory } from '../core/repo-memory.js';
@@ -37,6 +41,9 @@ export const CHAT_SYSTEM = `You are Omnexx in chat mode: a coding agent working 
 - The person may send messages while you work; they arrive marked as such. Read them and adjust at once.
 - Some actions need their OK (paths outside the repo, commands the policy refuses); they are asked for you. If they say no, find another way or explain.
 - Ask a question instead of guessing when the request is ambiguous and the choice matters.`;
+
+/** Where a chat's conversation is saved, inside its store. */
+const CHAT_FILE = 'chat.json';
 
 /** Tools chat leaves out: helpers need a run. */
 const CHAT_DENIED = new Set(['task']);
@@ -101,6 +108,8 @@ export class CodeChat {
   private history: Message[] = [];
   /** Set by open(); where repo memory lives. */
   paths: OmnexxPaths | undefined;
+  /** Before each message: the files as they were, and how long the conversation was. */
+  private snapshots: { tree: string | undefined; historyLength: number }[] = [];
   private queue: string[] = [];
   private abort: AbortController | undefined;
   private view: ChatView | undefined;
@@ -144,7 +153,7 @@ export class CodeChat {
     );
     const store = new RunStore(
       paths,
-      `chat_${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`,
+      `chat_${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}_${randomBytes(3).toString('hex')}`,
     );
     await mkdir(store.logsDir, { recursive: true, mode: 0o700 });
     const redactor = Redactor.fromEnv(io.env, deps.secrets);
@@ -289,6 +298,10 @@ export class CodeChat {
   /** One message: the agent works until it replies. */
   async send(text: string, view: ChatView): Promise<void> {
     this.view = view;
+    this.snapshots.push({
+      tree: await snapshotTree(this.ctx.jail.root),
+      historyLength: this.history.length,
+    });
     this.ctx.edited.clear();
     this.ctx.reads?.clear();
     await this.compactIfNeeded();
@@ -347,6 +360,51 @@ export class CodeChat {
     }
     if (this.ctx.edited.size && this.config.gates.length) await this.check(view);
     await this.rememberForRepo();
+    await this.persist();
+  }
+
+  /**
+   * /undo: put the files back as they were before the last message and drop that exchange.
+   * Returns the paths restored, or undefined when there is nothing to undo.
+   */
+  async undo(): Promise<string[] | undefined> {
+    const snap = this.snapshots.pop();
+    if (!snap) return undefined;
+    const touched = snap.tree ? await restoreTree(this.ctx.jail.root, snap.tree) : [];
+    this.history = this.history.slice(0, snap.historyLength);
+    this.contextUsed = this.baseTokens() + contextTokens(this.history);
+    await this.persist();
+    return touched;
+  }
+
+  /** Save the conversation so `omnexx --continue` can pick it up. */
+  private async persist(): Promise<void> {
+    await writeJsonAtomic(this.store.file(CHAT_FILE), {
+      cwd: this.ctx.jail.root,
+      model: this.model,
+      savedAt: Date.now(),
+      history: this.history,
+    }).catch(() => undefined);
+  }
+
+  /** Load the newest saved chat for this folder into this one (--continue). Returns its length. */
+  async resumeLatest(): Promise<number> {
+    if (!this.paths) return 0;
+    const dirs = (await readdir(runsDir(this.paths)).catch(() => [] as string[]))
+      .filter((d) => d.startsWith('chat_') && d !== this.store.runId)
+      .sort()
+      .reverse();
+    for (const d of dirs) {
+      const raw = await readTextOr(join(runsDir(this.paths), d, CHAT_FILE), '');
+      if (!raw) continue;
+      const saved = JSON.parse(raw) as { cwd?: string; history?: Message[] };
+      if (saved.cwd !== this.ctx.jail.root || !saved.history?.length) continue;
+      this.conversation = saved.history;
+      return saved.history.filter(
+        (m) => m.role === 'user' && m.content.some((b) => b.type === 'text'),
+      ).length;
+    }
+    return 0;
   }
 
   /** Lessons the agent recorded this message become part of the repo's memory. */
