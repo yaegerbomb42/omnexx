@@ -39,6 +39,7 @@ import { applyRemember, renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
 import { getNode, type PlanNode } from './plan.js';
 import { MemoryHarness } from './memory/index.js';
+import { closeSession } from '../tools/extra/browser.js';
 import { subagentRunner } from '../agent/subagent.js';
 import type { PendingVerdict } from './run-store.js';
 import type { Run } from './run.js';
@@ -402,6 +403,8 @@ export async function stepAct(run: Run): Promise<void> {
       },
     },
   });
+  // The browser (and the page it holds) lives for one cycle; the next starts fresh.
+  await closeSession(run.state.runId).catch(() => undefined);
   if (result.end === 'max_usd') run.state.budgetExhausted = true;
   if (result.end === 'max_usd_per_day') run.state.dailyCapHit = true;
   run.events.emit('act.end', {

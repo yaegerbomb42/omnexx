@@ -5,6 +5,7 @@ import { source, resetMcpManager } from '../../../src/tools/extra/mcp.js';
 import { toolContext } from '../../support/tool-context.js';
 import { workerTools } from '../../../src/tools/registry.js';
 import { loadConfig } from '../../../src/config/load.js';
+import { isolatedEnv } from '../../support/tmp.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -18,7 +19,7 @@ describe('MCP Tools Source and Search Mode', () => {
 
   it('exposes direct tools as mcp__<server>__<tool> when <= 20 tools', async () => {
     const cwd = process.cwd();
-    const { config } = await loadConfig({ cwd });
+    const { config } = await loadConfig({ cwd, env: await isolatedEnv() });
     config.mcp.servers = {
       demo: {
         command: process.execPath,
@@ -44,7 +45,7 @@ describe('MCP Tools Source and Search Mode', () => {
   it('switches to mcp_search and mcp_call when > 20 tools', async () => {
     process.env.FAKE_MCP_MANY_TOOLS = '1';
     const cwd = process.cwd();
-    const { config } = await loadConfig({ cwd });
+    const { config } = await loadConfig({ cwd, env: await isolatedEnv() });
     config.mcp.servers = {
       demo: {
         command: process.execPath,
@@ -77,7 +78,7 @@ describe('MCP Tools Source and Search Mode', () => {
 
   it('integrates seamlessly with workerTools registry', async () => {
     const cwd = process.cwd();
-    const { config } = await loadConfig({ cwd });
+    const { config } = await loadConfig({ cwd, env: await isolatedEnv() });
     config.mcp.servers = {
       demo: {
         command: process.execPath,
