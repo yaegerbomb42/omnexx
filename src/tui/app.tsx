@@ -6,6 +6,7 @@ import { fmtMs, fmtTokens } from '../telemetry/humanize.js';
 import type { Entry, Session } from './session.js';
 
 import { CYAN, GRAY, GREEN, RED } from './colors.js';
+import { DiffView } from './diff.js';
 import { MarkdownLine } from './markdown.js';
 import { Mascot, MascotCaption, REACTION_TICKS, type Mood } from './mascot.js';
 
@@ -209,6 +210,13 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       exit();
       return;
     }
+    if (session.diffView) {
+      if (key.upArrow) session.diffKey('up');
+      else if (key.downArrow) session.diffKey('down');
+      else if (key.return || ch === ' ') session.diffKey('enter');
+      else if (key.escape || ch === 'q') session.diffKey('close');
+      return;
+    }
     if (key.shift && key.tab) {
       session.setMode(session.mode === 'run' ? 'chat' : 'run');
       return;
@@ -327,6 +335,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       </Static>
       <Box flexDirection="column" marginTop={1}>
         {showPlan && session.plan && <PlanBox plan={session.plan} rows={12} />}
+        {session.diffView && <DiffView view={session.diffView} width={width} />}
         {session.busy && (
           <Text color={CYAN}>
             {SPINNER[frame]} {session.busy}

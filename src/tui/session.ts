@@ -10,6 +10,7 @@ import { maskKey } from '../auth/keys.js';
 import { Chat, defaultChatRef, hasProvider } from './chat.js';
 import { CodeChat } from './code-chat.js';
 import { classifyMarkdown, type MdKind } from './markdown.js';
+import { parseDiff, type DiffViewState } from './diff.js';
 import { compactPlanView, planCounts } from '../core/plan.js';
 import { resolvePaths } from '../core/paths.js';
 import { listRunIds, RunStore } from '../core/run-store.js';
@@ -50,7 +51,7 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'resume', help: 'resume the attached run' },
   { name: 'stop', args: '[--now]', help: 'stop the attached run' },
   { name: 'status', help: 'phase, progress, spend' },
-  { name: 'diff', help: 'what the run has committed so far' },
+  { name: 'diff', help: "browse changes: the run's commits, or your uncommitted edits" },
   { name: 'report', help: 'the morning-after report' },
   { name: 'runs', help: 'list runs' },
   { name: 'connect', args: '<name|url|key> [key]', help: 'add a provider or endpoint in one step' },
@@ -393,11 +394,14 @@ export class Session {
         this.verbosity = cmd;
         this.push('system', `feed verbosity: ${cmd}`);
         return;
+      case 'diff':
+        if (args.length) await this.cli(['diff', ...(this.runId ? [this.runId] : []), ...args]);
+        else await this.openDiff();
+        return;
       case 'pause':
       case 'resume':
       case 'stop':
       case 'status':
-      case 'diff':
       case 'report':
         await this.cli([cmd, ...(this.runId ? [this.runId] : []), ...args]);
         return;
@@ -428,6 +432,37 @@ export class Session {
           );
         await this.cli([cmd, ...args]);
     }
+  }
+
+  /** The open /diff viewer, if any; it takes over the keys until closed. */
+  diffView: DiffViewState | undefined;
+
+  /** /diff: the attached run's commits since it started, or uncommitted changes in this checkout. */
+  async openDiff(): Promise<void> {
+    let text: string;
+    let title: string;
+    if (this.runId) {
+      const st = await new RunStore(resolvePaths(this.io.env), this.runId).readState();
+      text = (await git(st.worktree, ['diff', `${st.startRef}..${st.lastGreen}`])).stdout;
+      title = `${this.runId} since start`;
+    } else {
+      text = (await git(this.io.cwd, ['diff', 'HEAD'], { allowFailure: true })).stdout;
+      title = 'uncommitted changes';
+    }
+    this.diffView = { title, files: parseDiff(text), cursor: 0, open: new Set() };
+    this.changed();
+  }
+
+  /** Keys while the diff viewer is open. */
+  diffKey(key: 'up' | 'down' | 'enter' | 'close'): void {
+    const v = this.diffView;
+    if (!v) return;
+    if (key === 'close') this.diffView = undefined;
+    else if (key === 'up') v.cursor = Math.max(0, v.cursor - 1);
+    else if (key === 'down') v.cursor = Math.min(v.files.length - 1, v.cursor + 1);
+    else if (v.open.has(v.cursor)) v.open.delete(v.cursor);
+    else v.open.add(v.cursor);
+    this.changed();
   }
 
   private files: string[] | undefined;
