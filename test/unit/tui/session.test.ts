@@ -112,7 +112,11 @@ describe('@file completion', () => {
       Promise.resolve(0),
     );
     expect(s.completeFile('fix @ma')).toEqual([]);
-    await new Promise<void>((r) => s.onChange(() => r()));
+    await new Promise<void>((r) =>
+      s.onChange(() => {
+        r();
+      }),
+    );
     expect(s.completeFile('fix @src/m')).toEqual(['src/math.js']);
     expect(s.completeFile('fix @math')).toEqual(['src/math.js', 'test/math.test.js']);
     expect(s.completeFile('no at sign')).toEqual([]);
