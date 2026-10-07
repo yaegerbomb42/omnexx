@@ -102,6 +102,8 @@ describe('runBrowserGate with a fake backend', () => {
     expect(r.tests).toEqual({ total: 7, passed: 7, failed: 0, skipped: 0 });
     expect(calls).toEqual(['open http://localhost:3000', 'type @e1 hi', 'click @e2', 'close']);
     expect(await readFile(r.logFile, 'utf8')).toContain('7/7 passed');
+    // A passing page is screenshotted for the milestone walkthrough.
+    await expect(readFile(join(dir, 'screens', 'gate-c1-ui.png'))).resolves.toBeInstanceOf(Buffer);
     await rm(dir, { recursive: true, force: true });
   });
 

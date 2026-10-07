@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { parse as parseToml } from 'smol-toml';
@@ -407,6 +407,21 @@ export async function runBrowserGate(
           message: `Step ${i + 1} (${step.action}) failed: ${errorMsg}`,
         });
         break; // Stop running further steps in this gate script
+      }
+    }
+    // A passing page gets a screenshot for the milestone walkthrough; it never fails the gate.
+    if (!failures.length) {
+      try {
+        const shot = await backend.screenshot();
+        const dir = join(ctx.logsDir, 'screens');
+        await mkdir(dir, { recursive: true });
+        const ext = shot.mimeType === 'image/jpeg' ? 'jpg' : 'png';
+        await writeFile(
+          join(dir, `gate-${ctx.label}-${gate.name}.${ext}`),
+          Buffer.from(shot.base64, 'base64'),
+        );
+      } catch {
+        // no screenshot this time
       }
     }
   } finally {

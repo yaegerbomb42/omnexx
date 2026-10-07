@@ -156,6 +156,12 @@ export async function writeReport(
     `## ${REPORT_SECTIONS[1]}`,
     '',
     ...planTree(plan),
+    ...(state.checkpoints.length
+      ? [
+          '',
+          `Walkthroughs (what each milestone did, with evidence): ${state.checkpoints.map((c) => `walkthroughs/${c.milestoneId}.md`).join(', ')}`,
+        ]
+      : []),
     '',
     `## ${REPORT_SECTIONS[2]}`,
     '',
