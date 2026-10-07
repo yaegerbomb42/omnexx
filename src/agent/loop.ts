@@ -95,6 +95,9 @@ export interface LoopDeps {
 export const steeringText = (msgs: readonly string[]): string =>
   `The user sent ${msgs.length === 1 ? 'a message' : 'messages'} while you were working. Read ${msgs.length === 1 ? 'it' : 'them'} now and adjust:\n${msgs.map((m) => `> ${m}`).join('\n')}`;
 
+/** Extra tries for a 400 on one call (a pool may route the retry to another model). */
+const BAD_REQUEST_RETRIES = 2;
+
 /** Failed attempts with a server error before checking whether the provider itself is up. */
 export const POISON_PROBE_AFTER = 3;
 
@@ -164,6 +167,7 @@ export async function runAgentLoop(
     const callStart = deps.clock.now();
     // Attempts in a row where some provider answered 5xx, and the last one that did.
     let serverFailures = 0;
+    let badRequests = 0;
     let lastServerFailure: ResolvedModel | undefined;
     try {
       res = await withRetry(
@@ -239,6 +243,19 @@ export async function runAgentLoop(
               chosen = m;
               return r;
             } catch (err) {
+              // A 400 is usually our own mistake, but behind a model pool the next try can land on
+              // a different model: give it two more chances before failing the call.
+              if (
+                err instanceof ProviderError &&
+                err.status === 400 &&
+                badRequests++ < BAD_REQUEST_RETRIES
+              ) {
+                deps.events.emit('provider.retry_400', {
+                  provider: m.provider,
+                  error: err.message,
+                });
+                throw new ProviderError(err.message, { retryable: true, status: 400 });
+              }
               if (!shouldFailover(err)) throw err;
               onlyBudget = false;
               if ((err.status ?? 0) >= 500) {
