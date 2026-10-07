@@ -1,6 +1,13 @@
 import { readTextOr } from '../core/atomic.js';
 import { renderNotes } from '../core/notes.js';
-import { applyPlanUpdate, compactPlanView, planUpdateSchema, type Plan } from '../core/plan.js';
+import {
+  applyPlanUpdate,
+  compactPlanView,
+  normalizePlanUpdate,
+  planUpdateSchema,
+  type Plan,
+  type PlanUpdate,
+} from '../core/plan.js';
 import type { Run } from '../core/run.js';
 import { OmnexxError, StateError } from '../errors.js';
 import { PathJail } from '../security/paths.js';
@@ -58,19 +65,19 @@ function instruction(mode: PlannerMode, plan: Plan | undefined): string {
       })
     : '';
   if (mode.kind === 'expand') {
-    return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nExpand milestone ${mode.milestoneId} into leaf tasks (ids ${mode.milestoneId}.T01, ...). Call write_plan with the complete plan: every existing milestone and task, plus the new tasks.`;
+    return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nExpand milestone ${mode.milestoneId} into leaf tasks (ids ${mode.milestoneId}.T01, ...). Call write_plan with the milestone you changed (milestones and tasks you leave out are kept unchanged).`;
   }
   if (mode.kind === 'split') {
     const t = plan?.nodes.find((n) => n.id === mode.taskId);
     const evidence = t
       ? [...t.approachesTried.map((a) => `- tried: ${a}`), ...t.evidence.slice(-2)].join('\n')
       : '';
-    return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nTask ${mode.taskId} is stuck: ${mode.reason}.\n${evidence}\n\nSplit ${mode.taskId} into 2-4 smaller tasks under the same milestone, with new ids that are not used yet, each with its own checks. Prefer a first task that writes a failing test reproducing the problem. The new tasks replace ${mode.taskId}; it will be marked done when they are. Call write_plan with the complete plan: every existing milestone and task, plus the new tasks.`;
+    return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nTask ${mode.taskId} is stuck: ${mode.reason}.\n${evidence}\n\nSplit ${mode.taskId} into 2-4 smaller tasks under the same milestone, with new ids that are not used yet, each with its own checks. Prefer a first task that writes a failing test reproducing the problem. The new tasks replace ${mode.taskId}; it will be marked done when they are. Call write_plan with the milestone you changed (milestones and tasks you leave out are kept unchanged).`;
   }
   if (mode.kind === 'beyond') {
     return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nThe goal is met: every milestone and task is done and its checks pass. This is improvement round ${mode.round} of at most ${mode.maxRounds}. Work like the best engineer on the team would after shipping: look at the code and pick the few improvements with the highest real value, ranked against:\n${BEYOND_RUBRIC.map((r) => `- ${r}`).join('\n')}\n\nAdd ONE new milestone with 2-6 tasks. Every task must add or tighten a check (a new test, a stricter lint or type rule, a benchmark threshold) so its value is verified, not claimed. No cosmetic churn, no rewrites for taste. If nothing clears that bar, call write_plan with the plan unchanged: that ends the run.`;
   }
-  return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nRe-plan because: ${mode.reason}. You may split, add or reorder nodes under the affected milestone, and park nodes with a reason. Never delete a node. Call write_plan with the complete plan.`;
+  return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nRe-plan because: ${mode.reason}. You may split, add or reorder nodes under the affected milestone, and park nodes with a reason. Never delete a node. Call write_plan with the milestones you changed (anything you leave out is kept unchanged).`;
 }
 
 /**
@@ -95,6 +102,24 @@ function plannerAction(mode: PlannerMode): RouteAction {
   }
 }
 
+/**
+ * Checks a planner wrote that can never pass as intended: `grep` without -F on a pattern with
+ * `*`, `[` or `\\`, which grep reads as regex (`grep -q "export * from"` never matches that text).
+ */
+export function brokenChecks(update: PlanUpdate): string[] {
+  const out: string[] = [];
+  for (const m of update.milestones)
+    for (const node of [m, ...(m.tasks ?? [])])
+      for (const c of node.checks ?? []) {
+        const g = /\bgrep((?:\s+-[A-Za-z]+)*)\s+(["'])(.*?)\2/.exec(c);
+        if (g && !/[FEP]/.test(g[1] ?? '') && /[*[\\]/.test(g[3] ?? ''))
+          out.push(
+            `${node.id}: \`${c}\` reads the pattern as a regex; use grep -F (or grep -qF) for literal text`,
+          );
+      }
+  return out;
+}
+
 export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   const goal = await run.store.readGoal();
   const intent = await readIntent(run.store);
@@ -102,10 +127,16 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   const writePlan: Tool<typeof planUpdateSchema> = {
     name: 'write_plan',
     description:
-      'Write the complete plan (milestones with optional tasks, plus nodes to park). Validated by the harness.',
+      'Write the plan (milestones with optional tasks, plus nodes to park). Milestones you leave out are kept unchanged. Validated by the harness.',
     schema: planUpdateSchema,
+    normalize: normalizePlanUpdate,
     readOnly: true,
     run(input) {
+      const broken = brokenChecks(input);
+      if (broken.length)
+        return Promise.resolve(
+          fail(`plan rejected: checks that cannot pass:\n${broken.join('\n')}`),
+        );
       try {
         written = applyPlanUpdate(run.plan, input, goal.text.trim());
         return Promise.resolve(ok(`plan accepted: ${written.nodes.length} nodes`));

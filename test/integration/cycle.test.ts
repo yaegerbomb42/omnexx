@@ -264,6 +264,15 @@ describe('M1: one full cycle with the scripted provider', () => {
     expect(verdict.verdict).toBe('reject');
     expect(verdict.reasons.join('\n')).toMatch(reason);
     expect(await isClean(t.run.worktree)).toBe(true);
+    // The rule becomes a run-wide lesson, so it outlives the task's short evidence list.
+    const pitfalls = (await t.run.store.readNotes()).filter((n) => n.type === 'pitfall');
+    expect(pitfalls.length).toBeGreaterThanOrEqual(1);
+    for (const p of pitfalls) expect(p.text).toMatch(/rejected/);
+    // Another rejection for the same rule adds nothing new.
+    await runOneCycle(t.run, 'M1.T01');
+    expect((await t.run.store.readNotes()).filter((n) => n.type === 'pitfall')).toHaveLength(
+      pitfalls.length,
+    );
   });
 
   it('a cycle with no changes and failing checks is rejected; already-passing checks finish at zero cost', async () => {
