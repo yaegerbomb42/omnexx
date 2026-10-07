@@ -343,7 +343,7 @@ export async function runAgentLoop(
       let isError: boolean;
       const toolStart = deps.clock.now();
       if (!tool) {
-        content = `unknown tool ${call.name}`;
+        content = `unknown tool ${call.name}; the tools are: ${[...byName.keys()].join(', ')} (list files with bash, e.g. \`ls -R src\`)`;
         isError = true;
       } else {
         const parsed = tool.schema.safeParse(
