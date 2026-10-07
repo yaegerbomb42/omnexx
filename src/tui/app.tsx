@@ -6,6 +6,7 @@ import { fmtMs, fmtTokens } from '../telemetry/humanize.js';
 import type { Entry, Session } from './session.js';
 
 import { CYAN, GRAY, GREEN, RED } from './colors.js';
+import { MarkdownLine } from './markdown.js';
 import { Mascot, MascotCaption, REACTION_TICKS, type Mood } from './mascot.js';
 
 export { CYAN, GRAY, GREEN, RED };
@@ -37,6 +38,8 @@ function EntryLine({ e }: { e: Entry }) {
       return <Text color={GRAY}>{e.text}</Text>;
     case 'err':
       return <Text color={RED}>{e.text}</Text>;
+    case 'out':
+      return e.md ? <MarkdownLine text={e.text} md={e.md} /> : <Text>{e.text}</Text>;
     default:
       return <Text>{e.text}</Text>;
   }

@@ -8,6 +8,7 @@ import { connect, describeConnect, looksLikeKey } from '../cli/connect.js';
 import { maskKey } from '../auth/keys.js';
 import { Chat, defaultChatRef, hasProvider } from './chat.js';
 import { CodeChat } from './code-chat.js';
+import { classifyMarkdown, type MdKind } from './markdown.js';
 import { compactPlanView, planCounts } from '../core/plan.js';
 import { resolvePaths } from '../core/paths.js';
 import { listRunIds, RunStore } from '../core/run-store.js';
@@ -21,6 +22,8 @@ export interface Entry {
   id: number;
   kind: EntryKind;
   text: string;
+  /** Model replies render as markdown, line by line. */
+  md?: MdKind;
 }
 
 export type RunCli = (argv: readonly string[], io: CliIO) => Promise<number>;
@@ -119,9 +122,13 @@ export class Session {
     for (const fn of this.listeners) fn();
   }
 
-  push(kind: EntryKind, text: string): void {
-    for (const line of text.replace(/\n$/, '').split('\n')) {
-      this.entries.push({ id: this.nextId++, kind, text: line });
+  /** `markdown` marks a model's reply; command output (diffs, logs) is never reinterpreted. */
+  push(kind: EntryKind, text: string, opts: { markdown?: boolean } = {}): void {
+    const lines = text.replace(/\n$/, '').split('\n');
+    const md = opts.markdown ? classifyMarkdown(lines) : undefined;
+    for (const [i, line] of lines.entries()) {
+      const m = md?.[i];
+      this.entries.push({ id: this.nextId++, kind, text: line, ...(m ? { md: m } : {}) });
     }
     if (this.entries.length > MAX_ENTRIES) this.entries = this.entries.slice(-MAX_ENTRIES);
     this.changed();
@@ -275,7 +282,7 @@ export class Session {
     this.changed();
     try {
       await chat.send(text, (line) => {
-        this.push('out', line);
+        this.push('out', line, { markdown: true });
       });
     } finally {
       this.busy = undefined;
@@ -307,7 +314,7 @@ export class Session {
     try {
       this.code ??= await CodeChat.open(this.io, (q) => this.ask(q));
       await this.code.send(text, (kind, line) => {
-        this.push(kind, line);
+        this.push(kind, line, { markdown: kind === 'out' });
       });
       this.push('system', `chat spend $${this.code.usd.toFixed(2)}`);
     } finally {
