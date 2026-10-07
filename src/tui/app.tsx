@@ -202,6 +202,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
   });
 
   const suggestions = session.complete(input);
+  const files = session.completeFile(input);
 
   useInput((ch, key) => {
     if (key.ctrl && ch === 'c') {
@@ -220,6 +221,11 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       setShowPlan((v) => !v);
       return;
     }
+    if (key.return && (key.meta || input.endsWith('\\'))) {
+      // alt+enter, or a trailing backslash, continues on a new line.
+      setInput((s) => `${s.endsWith('\\') ? s.slice(0, -1) : s}\n`);
+      return;
+    }
     if (key.return) {
       const text = input;
       setInput('');
@@ -232,6 +238,11 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       return;
     }
     if (key.tab) {
+      const file = files[0];
+      if (file) {
+        setInput((s) => s.replace(/@[^\s@]*$/, `@${file} `));
+        return;
+      }
       const first = suggestions[0];
       if (first) setInput(`/${first.name} `);
       return;
@@ -254,7 +265,13 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       return;
     }
     if (!ch || key.ctrl || key.meta) return;
-    // A paste (or fast typing) can arrive as one chunk that ends in Enter: submit it.
+    // A multi-line paste stays in the box to be edited and sent with Enter.
+    const body = ch.replace(/\r\n?/g, '\n');
+    if (body.slice(0, -1).includes('\n')) {
+      setInput((s) => s + body.replace(/\n$/, ''));
+      return;
+    }
+    // Fast typing can arrive as one chunk that ends in Enter: submit it.
     const nl = ch.search(/[\r\n]/);
     if (nl === -1) {
       setInput((s) => s + ch);
@@ -336,6 +353,13 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
             )}
           </Box>
         </Box>
+        {files.length > 0 && (
+          <Box flexDirection="column" paddingX={2}>
+            {files.slice(0, 6).map((f) => (
+              <Text key={f} color={CYAN}>{`@${f}`}</Text>
+            ))}
+          </Box>
+        )}
         {suggestions.length > 0 && (
           <Box flexDirection="column" paddingX={2}>
             {suggestions.slice(0, 6).map((c) => (

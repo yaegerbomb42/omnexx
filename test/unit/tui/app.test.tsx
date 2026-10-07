@@ -50,4 +50,30 @@ describe('App', () => {
     expect(calls.at(-1)).toEqual(['runs']);
     unmount();
   });
+
+  it('keeps a multi-line paste and a trailing backslash as new lines, then sends it whole', async () => {
+    const sent: string[] = [];
+    const s = new Session(io, () => Promise.resolve(0));
+    s.submit = (t: string) => {
+      sent.push(t);
+      return Promise.resolve();
+    };
+    const { lastFrame, stdin, unmount } = render(
+      <App session={s} version="1" cwd="/r" showWhy={false} pollMs={10_000} />,
+    );
+    stdin.write('first line\nsecond line');
+    await tick();
+    expect(lastFrame()).toContain('second line');
+    expect(sent).toEqual([]);
+    stdin.write(' \\');
+    await tick();
+    stdin.write('\r');
+    await tick();
+    stdin.write('third');
+    await tick();
+    stdin.write('\r');
+    await tick();
+    expect(sent).toEqual(['first line\nsecond line \nthird']);
+    unmount();
+  });
 });

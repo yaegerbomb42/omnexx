@@ -4,6 +4,7 @@ import { brand, type Brand } from '../cli/brand.js';
 import type { CliIO } from '../cli/io.js';
 import { pickRun, supervisorAlive } from '../cli/commands/control.js';
 import { steerRun } from '../cli/commands/steer.js';
+import { git } from '../git/git.js';
 import { connect, describeConnect, looksLikeKey } from '../cli/connect.js';
 import { maskKey } from '../auth/keys.js';
 import { Chat, defaultChatRef, hasProvider } from './chat.js';
@@ -427,6 +428,36 @@ export class Session {
           );
         await this.cli([cmd, ...args]);
     }
+  }
+
+  private files: string[] | undefined;
+  private loadingFiles = false;
+
+  /**
+   * Repo files matching an `@partial` at the end of the input (tab completes the first).
+   * The file list loads once in the background on the first `@`.
+   */
+  completeFile(input: string): string[] {
+    const m = /@([^\s@]*)$/.exec(input);
+    if (!m) return [];
+    if (!this.files) {
+      if (!this.loadingFiles) {
+        this.loadingFiles = true;
+        void git(this.io.cwd, ['ls-files', '--cached', '--others', '--exclude-standard'], {
+          allowFailure: true,
+        }).then((r) => {
+          this.files = r.exitCode === 0 ? r.stdout.split('\n').filter(Boolean) : [];
+          this.changed();
+        });
+      }
+      return [];
+    }
+    const q = (m[1] ?? '').toLowerCase();
+    const starts = this.files.filter((f) => f.toLowerCase().startsWith(q));
+    const contains = this.files.filter(
+      (f) => !f.toLowerCase().startsWith(q) && f.toLowerCase().includes(q),
+    );
+    return [...starts, ...contains].slice(0, 20);
   }
 
   /** Commands whose name starts with what's typed after `/`. */

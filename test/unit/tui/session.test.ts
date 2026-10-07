@@ -103,3 +103,18 @@ describe('Session', () => {
     expect(s.complete('hello')).toEqual([]);
   });
 });
+
+describe('@file completion', () => {
+  it('lists repo files matching the @partial, prefix matches first', async () => {
+    const { makeRepo } = await import('../../support/harness.js');
+    const repo = await makeRepo({ 'src/math.js': 'x', 'test/math.test.js': 'y', 'README.md': 'z' });
+    const s = new Session({ env: {}, cwd: repo, isTTY: false } as unknown as CliIO, () =>
+      Promise.resolve(0),
+    );
+    expect(s.completeFile('fix @ma')).toEqual([]);
+    await new Promise<void>((r) => s.onChange(() => r()));
+    expect(s.completeFile('fix @src/m')).toEqual(['src/math.js']);
+    expect(s.completeFile('fix @math')).toEqual(['src/math.js', 'test/math.test.js']);
+    expect(s.completeFile('no at sign')).toEqual([]);
+  });
+});
