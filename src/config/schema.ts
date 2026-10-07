@@ -78,6 +78,8 @@ export const modelsSchema = z.strictObject({
   planner: modelChain.default('anthropic:opus'),
   worker: modelChain.default('anthropic:sonnet'),
   cheap: modelChain.default('anthropic:haiku'),
+  /** Chat mode's model; the worker chain when unset. `/model` overrides it for a session. */
+  chat: modelRef.optional(),
   /** Extra models the router may pick that aren't in any role chain. */
   extra: z.array(modelRef).default([]),
   /** Keyed by model ref, e.g. [models.profiles."groq:llama-4-70b"]. */

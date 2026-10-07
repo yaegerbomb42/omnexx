@@ -55,7 +55,11 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'diff', help: "browse changes: the run's commits, or your uncommitted edits" },
   { name: 'report', help: 'the morning-after report' },
   { name: 'runs', help: 'list runs' },
-  { name: 'connect', args: '<name|url|key> [key]', help: 'add a provider or endpoint in one step' },
+  {
+    name: 'connect',
+    args: '<name|url|key> [key] [--name x]',
+    help: 'add a provider or endpoint in one step',
+  },
   { name: 'chat', help: 'switch to chat: code turn by turn in this checkout (shift+tab)' },
   { name: 'clear', help: 'chat: forget the conversation so far' },
   { name: 'compact', help: 'chat: summarize the conversation to free up context' },
@@ -276,11 +280,14 @@ export class Session {
     }
   }
 
-  private async connect(target: string, key?: string): Promise<void> {
+  private async connect(target: string, key?: string, name?: string): Promise<void> {
     this.busy = 'connecting';
     this.changed();
     try {
-      this.push('system', describeConnect(await connect(this.io, target, key)));
+      this.push(
+        'system',
+        describeConnect(await connect(this.io, target, key, name ? { name } : {})),
+      );
     } finally {
       this.busy = undefined;
       this.changed();
@@ -468,10 +475,15 @@ export class Session {
       case 'report':
         await this.cli([cmd, ...(this.runId ? [this.runId] : []), ...args]);
         return;
-      case 'connect':
-        if (!args[0]) throw new Error('usage: /connect <name|url|key> [key]');
-        await this.connect(args[0], args[1]);
+      case 'connect': {
+        // /connect <name|url|key> [key] [--name <alias>]
+        const at = args.indexOf('--name');
+        const alias = at >= 0 ? args[at + 1] : undefined;
+        const rest = at >= 0 ? args.filter((_, i) => i !== at && i !== at + 1) : args;
+        if (!rest[0]) throw new Error('usage: /connect <name|url|key> [key] [--name <alias>]');
+        await this.connect(rest[0], rest[1], alias);
         return;
+      }
       case 'chat':
         this.setMode('chat');
         return;
@@ -483,8 +495,14 @@ export class Session {
           );
           return;
         }
-        if (this.code) this.code.setModel(rest);
-        else this.chatModel = rest;
+        if (this.code?.busy) throw new Error('wait for the agent to finish (or esc), then switch');
+        this.chatModel = rest;
+        if (this.code) {
+          // A model on another endpoint needs its own client: reopen, keep the conversation.
+          const history = this.code.conversation;
+          this.code = undefined;
+          (await this.openCode()).conversation = history;
+        }
         this.push('system', `chat model: ${rest}`);
         return;
       case 'compact':

@@ -6,6 +6,7 @@ import { runAgentLoop } from '../agent/loop.js';
 import type { CliIO } from '../cli/io.js';
 import { resolveRunDeps } from '../cli/run-deps.js';
 import type { OmnexxConfig } from '../config/schema.js';
+import { loadConfig } from '../config/load.js';
 import { parseDuration } from '../config/duration.js';
 import { EventLog, type OmnexxEvent } from '../core/events.js';
 import { RunStore } from '../core/run-store.js';
@@ -127,10 +128,14 @@ export class CodeChat {
     ask: (q: string) => Promise<boolean>,
     model?: string,
   ): Promise<CodeChat> {
+    // Build the provider for the chat model only (not every role's), so chatting on one
+    // endpoint never needs keys for the others.
+    const { config: base } = await loadConfig({ cwd: io.cwd, env: io.env });
+    const ref = model ?? base.models.chat;
     const { config, paths, deps } = await resolveRunDeps(
       io,
       io.cwd,
-      model ? { models: { planner: model, worker: model, cheap: model } } : {},
+      ref ? { models: { planner: ref, worker: ref, cheap: ref } } : {},
     );
     const store = new RunStore(
       paths,
@@ -180,7 +185,7 @@ export class CodeChat {
       ...(instructions ? [{ text: instructions }] : []),
       { text: codemap, cacheBreakpoint: true },
     ];
-    return new CodeChat(config, deps.provider, tools, system, ctx, events, store, model);
+    return new CodeChat(config, deps.provider, tools, system, ctx, events, store, ref);
   }
 
   /** "provider:model" of the model chat talks to. */
@@ -189,9 +194,14 @@ export class CodeChat {
     return m ? `${m.provider}:${m.alias}` : '?';
   }
 
-  /** Switch models; the conversation carries over. */
-  setModel(ref: string): void {
-    this.models = [chatModel(ref, this.config)];
+  /** The conversation so far, to carry into a chat on another model (/model). */
+  get conversation(): Message[] {
+    return this.history;
+  }
+
+  set conversation(m: Message[]) {
+    this.history = m;
+    this.contextUsed = this.baseTokens() + contextTokens(m);
   }
 
   get busy(): boolean {

@@ -114,4 +114,25 @@ describe('chat: steering, todo, actions and stop', () => {
     expect(calls).toBe(1);
     expect(s.entries.map((e) => e.text).join('\n')).toMatch(/stopped\. tell me what to do instead/);
   });
+
+  it('/model switches the chat model and keeps the conversation', async () => {
+    const models: string[] = [];
+    const seen: number[] = [];
+    const provider: Provider = {
+      name: 'anthropic',
+      complete(req) {
+        models.push(req.model);
+        seen.push(req.messages.length);
+        return Promise.resolve(reply([{ type: 'text', text: 'ok' }], req));
+      },
+    };
+    const s = await chatSession(provider);
+    await s.submit('first');
+    await s.submit('/model anthropic:opus');
+    await s.submit('second');
+    expect(models[1]).not.toBe(models[0]);
+    // The second request carries the first exchange (2 messages) plus the new one.
+    expect(seen).toEqual([1, 3]);
+    expect(s.chatModelName).toBe('anthropic:opus');
+  });
 });

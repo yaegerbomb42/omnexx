@@ -56,11 +56,12 @@ The container runs as your uid/gid with `--cap-drop ALL`, `no-new-privileges`, a
 
 ## `[models]` and `[pricing.<alias>]`
 
-| Key       | Default                                                                                                |
-| --------- | ------------------------------------------------------------------------------------------------------ |
-| `planner` | `"anthropic:opus"` → `claude-opus-5-5`                                                                 |
-| `worker`  | `"anthropic:sonnet"` → `claude-sonnet-5-5`                                                             |
-| `cheap`   | `"anthropic:haiku"` → `claude-haiku-4-5-20251001` (codemap purposes, notes consolidation, `llm` judge) |
+| Key       | Default                                                                                                                     |
+| --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `planner` | `"anthropic:opus"` → `claude-opus-5-5`                                                                                      |
+| `worker`  | `"anthropic:sonnet"` → `claude-sonnet-5-5`                                                                                  |
+| `cheap`   | `"anthropic:haiku"` → `claude-haiku-4-5-20251001` (codemap purposes, notes consolidation, `llm` judge)                      |
+| `chat`    | unset → the `worker` chain. The model chat mode talks to, e.g. `"pool:kimi-k2.7-code"`; `/model` overrides it for a session |
 
 Prices live in `src/providers/pricing.ts` (USD per MTok, checked 2026-10-03). Override or add one:
 

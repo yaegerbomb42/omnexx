@@ -162,6 +162,6 @@ export function describeConnect(r: ConnectResult): string {
     );
   }
   for (const n of r.notes) lines.push(n);
-  if (r.suggested) lines.push(`talk to it: /setup ${r.suggested}`);
+  if (r.suggested) lines.push(`chat with it: /model ${r.suggested}`);
   return lines.join('\n');
 }
