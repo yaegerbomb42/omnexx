@@ -10,6 +10,9 @@ import { loadConfig } from '../config/load.js';
 import { parseDuration } from '../config/duration.js';
 import { EventLog, type OmnexxEvent } from '../core/events.js';
 import { RunStore } from '../core/run-store.js';
+import { renderNotes } from '../core/notes.js';
+import type { OmnexxPaths } from '../core/paths.js';
+import { readRepoNotes, saveToRepoMemory } from '../core/repo-memory.js';
 import { realClock } from '../core/clock.js';
 import { estimateTokens } from '../core/tokens.js';
 import { loadInstructions, renderInstructions } from '../instructions/load.js';
@@ -96,6 +99,8 @@ function chatModel(ref: string, config: OmnexxConfig): ResolvedModel {
  */
 export class CodeChat {
   private history: Message[] = [];
+  /** Set by open(); where repo memory lives. */
+  paths: OmnexxPaths | undefined;
   private queue: string[] = [];
   private abort: AbortController | undefined;
   private view: ChatView | undefined;
@@ -180,12 +185,18 @@ export class CodeChat {
       await buildCodemap(jail.root),
       config.context.repo_map_max_tokens,
     );
+    // What earlier runs and chats learned about this repo; the remember tool adds to it.
+    const known = await readRepoNotes(paths, jail.root);
+    if (known.length) await store.writeNotes(known);
     const system = [
       { text: CHAT_SYSTEM },
       ...(instructions ? [{ text: instructions }] : []),
+      ...(known.length ? [{ text: `# Lessons about this repo\n\n${renderNotes(known)}` }] : []),
       { text: codemap, cacheBreakpoint: true },
     ];
-    return new CodeChat(config, deps.provider, tools, system, ctx, events, store, ref);
+    const chat = new CodeChat(config, deps.provider, tools, system, ctx, events, store, ref);
+    chat.paths = paths;
+    return chat;
   }
 
   /** "provider:model" of the model chat talks to. */
@@ -335,6 +346,18 @@ export class CodeChat {
       this.contextUsed = this.baseTokens() + contextTokens(this.history);
     }
     if (this.ctx.edited.size && this.config.gates.length) await this.check(view);
+    await this.rememberForRepo();
+  }
+
+  /** Lessons the agent recorded this message become part of the repo's memory. */
+  private async rememberForRepo(): Promise<void> {
+    if (!this.paths) return;
+    await saveToRepoMemory(
+      this.paths,
+      this.ctx.jail.root,
+      await this.store.readNotes(),
+      this.config.context.notes_max_tokens,
+    ).catch(() => undefined);
   }
 
   /** Between messages: trim old tool output, then summarize the oldest exchanges if still big. */
