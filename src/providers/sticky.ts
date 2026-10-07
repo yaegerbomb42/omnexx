@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { ProviderError } from '../errors.js';
@@ -41,7 +42,7 @@ export interface StickyOptions {
 const randomShuffle = <T>(xs: T[]): T[] => {
   const a = [...xs];
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = randomInt(i + 1);
     [a[i], a[j]] = [a[j] as T, a[i] as T];
   }
   return a;
