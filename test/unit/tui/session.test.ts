@@ -55,6 +55,7 @@ describe('Session', () => {
       return Promise.resolve(0);
     };
     const { s, root } = await setup(cli);
+    s.mode = 'run';
     await fakeRun(root, 'r_1', [
       { ts: 1, runId: 'r_1', cycle: 1, type: 'commit', sha: 'abcdef1', task: 'M1.T01' },
     ]);
@@ -66,6 +67,7 @@ describe('Session', () => {
 
   it('steers a live run by appending to goal.md', async () => {
     const { s, root } = await setup();
+    s.mode = 'run';
     await fakeRun(root, 'r_2', []);
     await s.attach('r_2');
     s.runAlive = true;

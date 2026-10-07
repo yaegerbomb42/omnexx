@@ -67,6 +67,24 @@ export const multiEditTool: Tool<typeof multiSchema> = {
   description: 'Apply several str_replace edits to one file atomically (all or nothing), in order.',
   schema: multiSchema,
   readOnly: false,
+  // Models often repeat `path` inside each edit instead of once at the top: hoist it.
+  normalize: (input) => {
+    if (typeof input !== 'object' || input === null) return input;
+    const i = input as { path?: unknown; edits?: unknown };
+    if (!Array.isArray(i.edits)) return input;
+    const inner = i.edits.find(
+      (e): e is { path: string } =>
+        typeof e === 'object' && e !== null && typeof (e as { path?: unknown }).path === 'string',
+    );
+    return {
+      ...i,
+      path: i.path ?? inner?.path,
+      edits: i.edits.map((e: unknown) => {
+        if (typeof e !== 'object' || e === null) return e;
+        return Object.fromEntries(Object.entries(e).filter(([k]) => k !== 'path'));
+      }),
+    };
+  },
   run: (input, ctx) => applyEdits(input.path, input.edits, ctx),
 };
 

@@ -37,6 +37,8 @@ export interface CompletionRequest {
   /** Which configured provider serves this call (default "anthropic"). */
   route?: string;
   signal?: AbortSignal;
+  /** Stream text and reasoning as they arrive (interactive chat); the result is the same. */
+  onDelta?: (d: { text?: string; reasoning?: string }) => void;
 }
 
 export interface Usage {
@@ -56,6 +58,8 @@ export interface CompletionResponse {
   stopReason: StopReason;
   usage: Usage;
   model: string;
+  /** The model's visible reasoning, when the provider returns it (shown, never sent back). */
+  reasoning?: string;
 }
 
 export interface Provider {
