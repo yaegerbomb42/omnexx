@@ -5,6 +5,7 @@ import { tagCheckpoint } from '../git/checkpoint.js';
 import { readTextOr, writeJsonAtomic, writeFileAtomic } from './atomic.js';
 import { estimateTokens } from './tokens.js';
 import { noteSchema, renderNotes, type Note } from './notes.js';
+import { writeWalkthrough } from './walkthrough.js';
 import { childrenOf, milestonesAwaitingCheck, type PlanNode } from './plan.js';
 import type { Run } from './run.js';
 import { renderCodemap } from '../agent/codemap.js';
@@ -69,6 +70,9 @@ export async function settleMilestones(run: Run): Promise<PlanNode[]> {
       tasks: childrenOf(plan, m.id).length,
     });
     await consolidateNotes(run);
+    await writeWalkthrough(run, m).catch((err: unknown) => {
+      run.events.emit('walkthrough.failed', { milestone: m.id, error: (err as Error).message });
+    });
   }
   await run.savePlan();
   await run.save();

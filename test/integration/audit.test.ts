@@ -75,5 +75,15 @@ describe('earned done: audit before finishing', () => {
     const events = await readEvents(t.run.store.eventsPath);
     expect(events.filter((e) => e.type === 'audit.result').map((e) => e.gaps)).toEqual([1, 0]);
     expect((await t.run.store.readState()).acceptedCommits).toBe(2);
+    // Each finished milestone leaves a walkthrough with its tasks, commits and evidence.
+    const { readFile } = await import('node:fs/promises');
+    const w1 = await readFile(t.run.store.file('walkthroughs/M1.md'), 'utf8');
+    expect(w1).toMatch(/^# M1: Files/);
+    expect(w1).toMatch(/\[x\] M1\.T01/);
+    expect(w1).toMatch(/omnexx\(M1\.T01\)/);
+    expect(w1).toMatch(/out\/M1\.T01\.txt/);
+    const w2 = await readFile(t.run.store.file('walkthroughs/M2.md'), 'utf8');
+    expect(w2).toMatch(/Audit 1: close the gaps/);
+    expect(w2).not.toMatch(/M1\.T01/);
   });
 });
