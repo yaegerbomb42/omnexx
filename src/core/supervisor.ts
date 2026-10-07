@@ -1,4 +1,5 @@
 import { PlannerIncomplete, runPlanner } from '../agent/planner.js';
+import { closeSession } from '../tools/extra/browser.js';
 import { renderCodemap, type Codemap } from '../agent/codemap.js';
 import { readIntent } from '../agent/intent.js';
 import { git } from '../git/git.js';
@@ -812,12 +813,15 @@ export async function supervise(
       run.events.emit('run.error', { error: (err as Error).message });
       clearInterval(watcher);
       stopHeartbeat();
+      await closeSession(runId).catch(() => undefined);
       await sandbox?.stop();
       await releaseLock(run.store.dir, pid);
       throw err;
     }
   }
   clearInterval(watcher);
+  // No browser outlives its run (a cycle that threw may have skipped its own cleanup).
+  await closeSession(runId).catch(() => undefined);
   if (outcome.status === 'user-stop') await prepareWorktree(run);
   run.state.status = outcome.status;
   run.state.statusReason = outcome.reason;
