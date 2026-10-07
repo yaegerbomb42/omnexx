@@ -218,6 +218,9 @@ export class CodeChat {
     return this.queue.splice(0);
   }
 
+  /** /pause: hold at the next step boundary until resume() (the loop polls control()). */
+  paused = false;
+
   /** Esc: end the current turn, keeping every completed step. */
   interrupt(): void {
     this.abort?.abort();
@@ -302,7 +305,8 @@ export class CodeChat {
             this.usd += usd;
             return Promise.resolve();
           },
-          control: () => Promise.resolve('continue'),
+          control: () => Promise.resolve(this.paused ? 'pause' : 'continue'),
+          pausePollMs: 300,
           signal: abort.signal,
           onDelta: (d) => {
             if (d.text) view.stream(d.text);
@@ -327,6 +331,7 @@ export class CodeChat {
       else if (result.end !== 'done') view.line({ kind: 'err', text: `(stopped: ${result.end})` });
     } finally {
       this.abort = undefined;
+      this.paused = false;
       this.contextUsed = this.baseTokens() + contextTokens(this.history);
     }
     if (this.ctx.edited.size && this.config.gates.length) await this.check(view);

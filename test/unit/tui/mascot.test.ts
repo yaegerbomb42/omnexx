@@ -30,9 +30,12 @@ describe('Nex', () => {
       new Set(Array.from({ length: 12 }, (_, t) => mascotFrame(m, t).rows.join()));
     for (const m of ['hello', 'working', 'happy', 'thinking', 'sleepy'] as const)
       expect(frames(m).size, m).toBeGreaterThan(1);
-    expect(mascotFrame('idle', 15).rows[2]).toContain('- -');
-    expect(mascotFrame('happy', 0).rows[2]).toContain('^ ^');
-    expect(mascotFrame('sad', 0).rows[2]).toContain('; ;');
+    expect(mascotFrame('idle', 16).rows[1]).toContain('_______');
+    expect(mascotFrame('happy', 0).rows.join()).toContain('(^)');
+    expect(mascotFrame('sad', 0).rows.join()).toContain('(.)');
+    // The eye follows the cursor: down-left, then down-right as the text grows.
+    expect(mascotFrame('listening', 0, '', { x: -1, y: 1 }).rows[3]).toMatch(/^ {2}\\ \(@\)/);
+    expect(mascotFrame('listening', 0, '', { x: 1, y: 1 }).rows[3]).toMatch(/\(@\) \/ {2}$/);
     expect(mascotFrame('working', 0, 'running test suite!').caption).toBe('running test suite!');
     expect(mascotFrame('sleepy', 0).caption).toMatch(/type to wake/);
   });

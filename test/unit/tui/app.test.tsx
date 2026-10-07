@@ -34,13 +34,16 @@ describe('App', () => {
     const { lastFrame, stdin, unmount } = render(
       <App session={s} version="1" cwd="/r" showWhy={false} pollMs={10_000} />,
     );
-    stdin.write('/do');
+    stdin.write('/mo');
     await tick();
-    expect(lastFrame()).toContain('/doctor');
+    expect(lastFrame()).toContain('/models');
     stdin.write('\t');
     await tick();
-    expect(lastFrame()).toContain('/doctor █');
-    stdin.write('--offline');
+    expect(lastFrame()).toContain('/model █');
+    stdin.write('\u001B');
+    await tick();
+    // Commands kept out of the menu still run when typed in full.
+    stdin.write('/doctor --offline');
     await tick();
     stdin.write('\r');
     await tick();
