@@ -118,6 +118,11 @@ export const endpointSchema = z.strictObject({
   /** Price every model on this endpoint at $0 unless [pricing] says otherwise (local models). */
   free: z.boolean().default(false),
   request_timeout: durationString.default('10m'),
+  /**
+   * For pools that route a `*-random` model to a different model each request: omnexx picks one
+   * real model itself and sticks to it (warm prompt cache) until it runs out of quota.
+   */
+  sticky_random: z.boolean().default(false),
   ...providerBudget,
 });
 export type EndpointConfig = z.infer<typeof endpointSchema>;
