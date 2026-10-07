@@ -12,12 +12,21 @@ The `browser` tool enables Omnexx to navigate, inspect, interact with, and verif
   - `open(url)`: Navigates to a URL. Checks the URL against `[browser] allow`. Returns the accessibility tree snapshot immediately.
   - `snapshot()`: Produces an accessibility tree of the current page with ref IDs, trimmed to 4,000 tokens with a `…N more nodes` truncation notice when large.
   - `click(ref)`: Clicks an element by snapshot ref (e.g., `@e1` or `e1`) or CSS selector/id.
-  - `type(ref, text)`: Fills/types into an input element.
+  - `type(ref, text)`: Types into an input after its current value; `fill(ref, text)` clears it first.
   - `press(key)`: Simulates keyboard key press (e.g. `Enter`, `Tab`).
   - `scroll(direction?, amount?)`: Scrolls the page (`up`, `down`, `left`, `right`).
-  - `screenshot()`: Captures a page screenshot. If the active model supports vision, returns the base64 image data block; otherwise returns an informative text note to avoid wasting tokens.
-  - `console()`: Returns captured console logs and errors.
+  - `select(ref, value)`, `check(ref)`, `uncheck(ref)`, `hover(ref)`: form controls; `select` takes an option value or its visible label.
+  - `upload(ref, path)`: Uploads a file; `path` must be inside the repo (same jail as file tools).
+  - `wait_for(ref | text, timeout_ms?)`: Waits (default 10s) for an element or text to appear. `open`, `click` and `new_tab` also wait for the page to finish loading (best-effort, 5s).
+  - `get_text(ref)`, `get_url()`: read an element's text or the current URL.
+  - `eval(expression)`: Evaluates a JS expression in the page and returns its JSON. Off unless `[browser] allow_eval = true`: page scripts can change app state, submit forms, or read cookies and storage, so treat it as a write.
+  - `network()`: Recent requests with status (failed ones show `FAILED`), to debug API calls.
+  - `tabs()`, `switch_tab(tab)`, `new_tab(url)`, `close_tab(tab?)`: tabs, including ones opened by links (`target=_blank`), which become active.
+  - `screenshot()`: Saves a PNG under the run's `logs/browser/` (never the repo) and returns its path, size and URL.
+  - `console()`: Returns captured console logs and errors (last 50 entries).
   - `close()`: Closes the browser session.
+
+Element actions given a stale snapshot ref retry once after a fresh snapshot; if the ref is still missing the error includes the current snapshot. Outputs are capped (snapshots 4,000 tokens, console/network 50 entries, text 4,000 chars). If the browser itself dies, the session is closed so no process is left behind. When a backend lacks an action the tool says so.
 
 ## Configuration
 
@@ -31,6 +40,7 @@ serve = "npm run dev"           # optional dev-server command
 serve_port = 3000               # dev-server port to wait for
 serve_timeout = "60s"           # timeout to wait for dev-server port
 headless = true                 # headless browser execution
+allow_eval = false              # let the eval action run page JavaScript
 ```
 
 ## Security & URL Allowlist
@@ -58,6 +68,10 @@ Supported step actions:
 - `open`: navigates to URL
 - `click`: clicks element by ref or selector
 - `type`: enters text into selector
+- `fill`: clears the field, then enters text
+- `select`: chooses an option (`selector`, `value`)
+- `wait_for`: waits for `selector` or `text` (optional `timeout_ms`, default 10000)
+- `expect_url`: asserts the current URL contains `url` (`${URL}` is substituted)
 - `wait_ms`: pauses for specified milliseconds
 - `expect_text`: asserts text is present in the accessibility snapshot
 - `expect_selector`: asserts selector or ref is present

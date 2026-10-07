@@ -9,6 +9,8 @@ export const browser = z
     serve_port: z.number().int().positive().optional(),
     serve_timeout: durationString.default('60s'),
     headless: z.boolean().default(true),
+    /** Lets the `eval` action run page JavaScript, which can change app state. */
+    allow_eval: z.boolean().default(false),
   })
   .prefault({});
 

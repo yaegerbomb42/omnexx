@@ -158,4 +158,82 @@ describe('runBrowserGate with a fake backend', () => {
     );
     expect(parsed.steps[0]).toEqual({ action: 'open', url: 'http://localhost:1' });
   });
+
+  it('runs a login flow with fill, select, wait_for and expect_url', async () => {
+    const { dir, ctx } = await setup(`steps:
+  - action: open
+    url: \${URL}/login
+  - action: fill
+    selector: "#user"
+    text: bob
+  - action: select
+    selector: "#plan"
+    value: Large
+  - action: click
+    selector: "#submit"
+  - action: wait_for
+    text: Welcome
+    timeout_ms: 500
+  - action: wait_for
+    selector: "#logout"
+  - action: expect_url
+    url: \${URL}/home
+`);
+    const { backend, calls } = fakeBackend('');
+    let url = '';
+    backend.open = (u) => Promise.resolve(void (url = u));
+    backend.fill = (sel, text) => Promise.resolve(void calls.push(`fill ${sel} ${text}`));
+    backend.select = (sel, v) => Promise.resolve(void calls.push(`select ${sel} ${v}`));
+    backend.waitFor = (t, ms) =>
+      Promise.resolve(void calls.push(`wait ${JSON.stringify(t)} ${ms}`));
+    backend.getUrl = () => Promise.resolve(url.replace('/login', '/home'));
+    const r = await runBrowserGate(
+      { name: 'ui', script: 'check.yaml', url: 'http://localhost:9' },
+      ctx,
+      backend,
+    );
+    expect(r.failures).toEqual([]);
+    expect(calls).toEqual([
+      'fill #user bob',
+      'select #plan Large',
+      'click #submit',
+      'wait {"text":"Welcome"} 500',
+      'wait {"selector":"#logout"} 10000',
+      'close',
+    ]);
+
+    backend.getUrl = () => Promise.resolve('http://localhost:9/login');
+    const wrong = await runBrowserGate(
+      { name: 'ui', script: 'check.yaml', url: 'http://localhost:9' },
+      ctx,
+      backend,
+    );
+    expect(wrong.failures[0]?.message).toContain(
+      'Expected URL containing "http://localhost:9/home"',
+    );
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('fails new steps clearly on a backend without them', async () => {
+    const { dir, ctx } = await setup('');
+    const { backend } = fakeBackend('');
+    for (const step of [
+      'action: fill\n    selector: "#a"\n    text: x',
+      'action: select\n    selector: "#a"\n    value: x',
+      'action: wait_for\n    text: x',
+      'action: expect_url\n    url: /x',
+    ]) {
+      await writeFile(join(dir, 'check.yaml'), `steps:\n  - ${step}\n`);
+      const r = await runBrowserGate({ name: 'ui', script: 'check.yaml' }, ctx, backend);
+      expect(r.failures[0]?.message).toContain('fake browser backend does not support');
+    }
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('rejects a wait_for with both or neither of selector and text', () => {
+    expect(() => parseBrowserGateScript('steps:\n  - action: wait_for\n')).toThrow();
+    expect(() =>
+      parseBrowserGateScript('steps:\n  - action: wait_for\n    text: a\n    selector: "#b"\n'),
+    ).toThrow();
+  });
 });

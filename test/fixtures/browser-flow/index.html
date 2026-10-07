@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Order form</title>
+  </head>
+  <body>
+    <h1>Order a shirt</h1>
+    <form id="order">
+      <label for="name">Name</label>
+      <input id="name" name="name" value="placeholder" />
+      <label for="size">Size</label>
+      <select id="size" name="size">
+        <option value="s">Small</option>
+        <option value="l">Large</option>
+      </select>
+      <label><input type="checkbox" id="gift" /> Gift wrap</label>
+      <button id="submit" type="submit">Place order</button>
+    </form>
+    <p id="result"></p>
+    <a id="details" href="/details.html" target="_blank">Shipping details</a>
+    <script>
+      document.getElementById('order').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = document.getElementById('name').value;
+        const size = document.getElementById('size').selectedOptions[0].textContent;
+        const gift = document.getElementById('gift').checked ? ', gift wrapped' : '';
+        // Arrives late on purpose: the test must wait for it, not race it.
+        setTimeout(() => {
+          document.getElementById('result').textContent =
+            'Order placed: ' + name + ', ' + size + gift;
+        }, 400);
+      });
+    </script>
+  </body>
+</html>

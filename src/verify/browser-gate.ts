@@ -38,6 +38,32 @@ export const browserStepSchema = z.discriminatedUnion('action', [
     action: z.literal('expect_nonempty'),
   }),
   z.strictObject({
+    action: z.literal('fill'),
+    selector: z.string().min(1),
+    text: z.string(),
+  }),
+  z.strictObject({
+    action: z.literal('select'),
+    selector: z.string().min(1),
+    value: z.string(),
+  }),
+  /** Waits for an element or for text; give exactly one of `selector` or `text`. */
+  z
+    .strictObject({
+      action: z.literal('wait_for'),
+      selector: z.string().min(1).optional(),
+      text: z.string().min(1).optional(),
+      timeout_ms: z.number().int().positive().optional(),
+    })
+    .refine((s) => (s.selector === undefined) !== (s.text === undefined), {
+      message: 'wait_for needs exactly one of selector or text',
+    }),
+  /** The current URL contains `url` (after `${URL}` substitution). */
+  z.strictObject({
+    action: z.literal('expect_url'),
+    url: z.string().min(1),
+  }),
+  z.strictObject({
     action: z.literal('wait_ms'),
     ms: z.number().int().nonnegative(),
   }),
@@ -184,8 +210,13 @@ export const DEFAULT_STEPS: BrowserStep[] = [
   { action: 'expect_no_console_errors' },
 ];
 
+const DEFAULT_WAIT_MS = 10_000;
+
 /** Snapshots shorter than this are an empty or blank page. */
 const MIN_SNAPSHOT_CHARS = 40;
+
+const unsupported = (backend: BrowserBackend, action: string): Error =>
+  new Error(`the ${backend.name} browser backend does not support "${action}"`);
 
 export async function runBrowserGate(
   gate: BrowserGateConfig,
@@ -282,6 +313,40 @@ export async function runBrowserGate(
 
           case 'type': {
             await backend.type(step.selector, step.text);
+            passedCount++;
+            break;
+          }
+
+          case 'fill': {
+            if (!backend.fill) throw unsupported(backend, step.action);
+            await backend.fill(step.selector, step.text);
+            passedCount++;
+            break;
+          }
+
+          case 'select': {
+            if (!backend.select) throw unsupported(backend, step.action);
+            await backend.select(step.selector, step.value);
+            passedCount++;
+            break;
+          }
+
+          case 'wait_for': {
+            if (!backend.waitFor) throw unsupported(backend, step.action);
+            const target =
+              step.selector !== undefined ? { selector: step.selector } : { text: step.text ?? '' };
+            await backend.waitFor(target, step.timeout_ms ?? DEFAULT_WAIT_MS);
+            passedCount++;
+            break;
+          }
+
+          case 'expect_url': {
+            if (!backend.getUrl) throw unsupported(backend, step.action);
+            const want = step.url.replaceAll('${URL}', gate.url ?? '');
+            const got = await backend.getUrl();
+            if (!got.includes(want)) {
+              throw new Error(`Expected URL containing "${want}", but the page is at "${got}"`);
+            }
             passedCount++;
             break;
           }

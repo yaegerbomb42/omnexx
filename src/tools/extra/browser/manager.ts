@@ -9,6 +9,8 @@ export interface BrowserManagerOptions {
   runId: string;
   config: BrowserConfig;
   worktreeRoot: string;
+  /** Tests inject a fake; default: detect agent-browser or playwright-core. */
+  createBackend?: (session: string, headless: boolean) => Promise<BrowserBackend | null>;
 }
 
 export class BrowserSessionManager {
@@ -21,7 +23,8 @@ export class BrowserSessionManager {
   async getBackend(): Promise<BrowserBackend> {
     if (!this.backend) {
       const sessionName = `omnexx-${this.options.runId}`;
-      const backend = await createBrowserBackend(sessionName, this.options.config.headless);
+      const create = this.options.createBackend ?? createBrowserBackend;
+      const backend = await create(sessionName, this.options.config.headless);
       if (!backend) {
         throw new Error('No browser backend available (agent-browser or playwright-core).');
       }

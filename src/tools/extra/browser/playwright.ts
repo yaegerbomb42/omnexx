@@ -1,11 +1,35 @@
-import type { BrowserBackend, BrowserConsoleMessage, ScreenshotResult } from './types.js';
+import type {
+  BrowserBackend,
+  BrowserConsoleMessage,
+  BrowserRequest,
+  BrowserTab,
+  ScreenshotResult,
+  WaitTarget,
+} from './types.js';
+
+interface PlaywrightLocator {
+  click(): Promise<void>;
+  fill(text: string): Promise<void>;
+  pressSequentially(text: string): Promise<void>;
+  selectOption(value: string | { label: string }): Promise<string[]>;
+  setChecked(checked: boolean): Promise<void>;
+  setInputFiles(file: string): Promise<void>;
+  hover(): Promise<void>;
+  innerText(): Promise<string>;
+  first(): PlaywrightLocator;
+  waitFor(options: { state: 'visible'; timeout: number }): Promise<void>;
+}
+
+interface PlaywrightResponse {
+  status(): number;
+  url(): string;
+  request(): { method(): string; resourceType(): string };
+}
 
 interface PlaywrightPage {
   goto(url: string, options?: { timeout?: number }): Promise<unknown>;
-  locator(selector: string): {
-    click(): Promise<void>;
-    fill(text: string): Promise<void>;
-  };
+  locator(selector: string): PlaywrightLocator;
+  getByText(text: string): PlaywrightLocator;
   keyboard: {
     press(key: string): Promise<void>;
   };
@@ -14,13 +38,25 @@ interface PlaywrightPage {
   };
   screenshot(options?: { type?: 'png' | 'jpeg' }): Promise<Buffer>;
   content(): Promise<string>;
-  evaluate<R>(fn: () => R): Promise<R>;
+  url(): string;
+  title(): Promise<string>;
+  bringToFront(): Promise<void>;
+  close(): Promise<void>;
+  waitForLoadState(state: 'networkidle', options: { timeout: number }): Promise<void>;
+  evaluate<R>(fn: (() => R) | string): Promise<R>;
   on(event: 'console', listener: (msg: { type(): string; text(): string }) => void): void;
   on(event: 'pageerror', listener: (err: Error) => void): void;
+  on(event: 'response', listener: (res: PlaywrightResponse) => void): void;
+  on(
+    event: 'requestfailed',
+    listener: (req: { method(): string; url(): string; resourceType(): string }) => void,
+  ): void;
+  on(event: 'close', listener: () => void): void;
 }
 
 interface PlaywrightBrowserContext {
   newPage(): Promise<PlaywrightPage>;
+  on(event: 'page', listener: (page: PlaywrightPage) => void): void;
   close(): Promise<void>;
 }
 
@@ -35,11 +71,18 @@ interface PlaywrightCoreModule {
   };
 }
 
+/** Recent requests kept for `network`; older ones are dropped. */
+const MAX_REQUESTS = 200;
+
 export class PlaywrightBackend implements BrowserBackend {
   readonly name = 'playwright';
   private browser: PlaywrightBrowser | null = null;
+  private context: PlaywrightBrowserContext | null = null;
   private page: PlaywrightPage | null = null;
+  /** Open pages in opening order; index + 1 is the tab id. */
+  private readonly pages: PlaywrightPage[] = [];
   private readonly consoleLogs: BrowserConsoleMessage[] = [];
+  private readonly requests: BrowserRequest[] = [];
 
   constructor(private readonly headless = true) {}
 
@@ -61,24 +104,69 @@ export class PlaywrightBackend implements BrowserBackend {
     try {
       this.browser = await pw.chromium.launch({ headless: this.headless });
       const context = await this.browser.newContext();
-      this.page = await context.newPage();
-      this.page.on('console', (msg) => {
-        this.consoleLogs.push({
-          type: msg.type(),
-          text: msg.text(),
-        });
+      this.context = context;
+      // Pages opened by the app (target=_blank, window.open) become the active tab, as in
+      // agent-browser.
+      context.on('page', (p) => {
+        this.track(p);
+        this.page = p;
       });
-      // Uncaught exceptions never reach the console listener; report them as errors too.
-      this.page.on('pageerror', (err) => {
-        this.consoleLogs.push({ type: 'error', text: err.message });
-      });
-      return this.page;
+      const first = await context.newPage();
+      if (!this.pages.includes(first)) this.track(first);
+      this.page = first;
+      return first;
     } catch (err) {
+      await this.close();
       throw new Error(
         `Failed to launch Playwright browser: ${err instanceof Error ? err.message : String(err)}`,
         { cause: err },
       );
     }
+  }
+
+  private track(page: PlaywrightPage): void {
+    if (this.pages.includes(page)) return;
+    this.pages.push(page);
+    page.on('console', (msg) => {
+      this.consoleLogs.push({
+        type: msg.type(),
+        text: msg.text(),
+      });
+    });
+    // Uncaught exceptions never reach the console listener; report them as errors too.
+    page.on('pageerror', (err) => {
+      this.consoleLogs.push({ type: 'error', text: err.message });
+    });
+    page.on('response', (res) => {
+      this.record({
+        method: res.request().method(),
+        url: res.url(),
+        status: res.status(),
+        resourceType: res.request().resourceType(),
+      });
+    });
+    page.on('requestfailed', (req) => {
+      this.record({ method: req.method(), url: req.url(), resourceType: req.resourceType() });
+    });
+    page.on('close', () => {
+      const i = this.pages.indexOf(page);
+      if (i >= 0) this.pages.splice(i, 1);
+      if (this.page === page) this.page = this.pages.at(-1) ?? null;
+    });
+  }
+
+  private record(r: BrowserRequest): void {
+    this.requests.push(r);
+    if (this.requests.length > MAX_REQUESTS) this.requests.shift();
+  }
+
+  private toSelector(ref: string): string {
+    return ref.startsWith('@') ? `[data-ref="${ref.slice(1)}"], #${ref.slice(1)}` : ref;
+  }
+
+  private async loc(ref: string): Promise<PlaywrightLocator> {
+    const page = await this.ensurePage();
+    return page.locator(this.toSelector(ref)).first();
   }
 
   async open(url: string): Promise<void> {
@@ -99,6 +187,7 @@ export class PlaywrightBackend implements BrowserBackend {
         if (node.nodeType === 1) { // ELEMENT_NODE
           const el = node;
           const tag = el.tagName.toLowerCase();
+          if (tag === 'script' || tag === 'style') return [];
           const role = el.getAttribute('role') || tag;
           const id = el.id ? '#' + el.id : '';
           const ariaLabel = el.getAttribute('aria-label');
@@ -120,25 +209,41 @@ export class PlaywrightBackend implements BrowserBackend {
       return walk(document.body).join('\\n');
     })()`;
 
-    const snapshotText = await page.evaluate<string>(() => {
-      // Evaluated in browser context where document exists
-      return (globalThis as unknown as { eval: (code: string) => string }).eval(snapshotScript);
-    });
-
-    return snapshotText;
+    return page.evaluate<string>(snapshotScript);
   }
 
   async click(ref: string): Promise<void> {
-    const page = await this.ensurePage();
-    // Support ref as @id, [data-ref=...], #id, or selector
-    const selector = ref.startsWith('@') ? `[data-ref="${ref.slice(1)}"], #${ref.slice(1)}` : ref;
-    await page.locator(selector).click();
+    await (await this.loc(ref)).click();
   }
 
   async type(ref: string, text: string): Promise<void> {
-    const page = await this.ensurePage();
-    const selector = ref.startsWith('@') ? `[data-ref="${ref.slice(1)}"], #${ref.slice(1)}` : ref;
-    await page.locator(selector).fill(text);
+    await (await this.loc(ref)).pressSequentially(text);
+  }
+
+  async fill(ref: string, text: string): Promise<void> {
+    await (await this.loc(ref)).fill(text);
+  }
+
+  async select(ref: string, value: string): Promise<void> {
+    const l = await this.loc(ref);
+    // A value that matches no option is treated as the option's visible label.
+    try {
+      await l.selectOption(value);
+    } catch {
+      await l.selectOption({ label: value });
+    }
+  }
+
+  async setChecked(ref: string, checked: boolean): Promise<void> {
+    await (await this.loc(ref)).setChecked(checked);
+  }
+
+  async upload(ref: string, file: string): Promise<void> {
+    await (await this.loc(ref)).setInputFiles(file);
+  }
+
+  async hover(ref: string): Promise<void> {
+    await (await this.loc(ref)).hover();
   }
 
   async press(key: string): Promise<void> {
@@ -156,6 +261,76 @@ export class PlaywrightBackend implements BrowserBackend {
     else deltaX = -amount;
 
     await page.mouse.wheel(deltaX, deltaY);
+  }
+
+  async waitFor(target: WaitTarget, timeoutMs: number): Promise<void> {
+    const page = await this.ensurePage();
+    const l =
+      'text' in target
+        ? page.getByText(target.text).first()
+        : page.locator(this.toSelector(target.selector)).first();
+    await l.waitFor({ state: 'visible', timeout: timeoutMs });
+  }
+
+  async waitForLoad(timeoutMs: number): Promise<void> {
+    const page = await this.ensurePage();
+    await page.waitForLoadState('networkidle', { timeout: timeoutMs });
+  }
+
+  async getText(ref: string): Promise<string> {
+    return (await this.loc(ref)).innerText();
+  }
+
+  async getUrl(): Promise<string> {
+    return (await this.ensurePage()).url();
+  }
+
+  async evaluate(expression: string): Promise<unknown> {
+    return (await this.ensurePage()).evaluate<unknown>(expression);
+  }
+
+  async network(): Promise<BrowserRequest[]> {
+    await this.ensurePage();
+    return [...this.requests];
+  }
+
+  async tabs(): Promise<BrowserTab[]> {
+    await this.ensurePage();
+    return Promise.all(
+      this.pages.map(async (p, i) => ({
+        id: String(i + 1),
+        url: p.url(),
+        title: await p.title().catch(() => ''),
+        active: p === this.page,
+      })),
+    );
+  }
+
+  private pageById(id: string): PlaywrightPage {
+    const p = this.pages[Number(id.replace(/^t/, '')) - 1];
+    if (!p) throw new Error(`no tab "${id}"; list tabs to see the open ones`);
+    return p;
+  }
+
+  async switchTab(id: string): Promise<void> {
+    await this.ensurePage();
+    const p = this.pageById(id);
+    await p.bringToFront();
+    this.page = p;
+  }
+
+  async newTab(url: string): Promise<void> {
+    await this.ensurePage();
+    if (!this.context) throw new Error('browser context is gone');
+    const p = await this.context.newPage();
+    this.track(p);
+    this.page = p;
+    await p.goto(url, { timeout: 30_000 });
+  }
+
+  async closeTab(id?: string): Promise<void> {
+    const p = id === undefined ? await this.ensurePage() : this.pageById(id);
+    await p.close();
   }
 
   async screenshot(): Promise<ScreenshotResult> {
@@ -176,7 +351,9 @@ export class PlaywrightBackend implements BrowserBackend {
     if (this.browser) {
       await this.browser.close().catch(() => undefined);
       this.browser = null;
+      this.context = null;
       this.page = null;
+      this.pages.length = 0;
     }
   }
 }
