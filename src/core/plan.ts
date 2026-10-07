@@ -70,12 +70,25 @@ export type Plan = z.infer<typeof planSchema>;
 const LIST_FIELDS = ['acceptance', 'checks', 'steps', 'dependsOn', 'allow'] as const;
 const NODE_KEYS = new Set(Object.keys(nodeInputSchema.shape));
 
+const KIND_SYNONYMS: Record<string, (typeof TASK_KINDS)[number]> = {
+  test: 'tests',
+  testing: 'tests',
+  bug: 'feature',
+  fix: 'feature',
+  bugfix: 'feature',
+  doc: 'docs',
+  documentation: 'docs',
+  research: 'investigate',
+  chore: 'refactor',
+};
+
 /** One node as models tend to write it: lists as a single string, `description` for `why`, extras. */
 function normalizeNode(raw: unknown, extraKeys: readonly string[] = []): unknown {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(raw)) {
     if (k === 'description' && !('why' in raw)) out.why = v;
+    else if (k === 'check' && !('checks' in raw)) out.checks = v;
     else if (NODE_KEYS.has(k) || extraKeys.includes(k)) out[k] = v;
   }
   for (const f of LIST_FIELDS) {
@@ -86,27 +99,61 @@ function normalizeNode(raw: unknown, extraKeys: readonly string[] = []): unknown
         .map((l) => l.replace(/^\s*(?:[-*]|\d+\.)\s+/, '').trim())
         .filter(Boolean);
   }
+  if (typeof out.kind === 'string' && !(TASK_KINDS as readonly string[]).includes(out.kind)) {
+    const k = KIND_SYNONYMS[out.kind.toLowerCase()];
+    if (k) out.kind = k;
+    else delete out.kind;
+  }
   return out;
 }
 
 /**
- * Forgive shape slips before validation (a list sent as one string, `description` instead of
- * `why`, unknown keys). Each one would otherwise cost the planner a turn; weaker models can
- * spend all of them and never write a plan. What the plan means is still checked strictly.
+ * Forgive shape slips before validation: a list sent as one string, `description` for `why`,
+ * `check` for `checks`, unknown keys, a `kind` synonym, park entries as bare ids, and task ids
+ * that don't follow `M<n>.T<nn>` (renumbered under their milestone, with dependsOn updated).
+ * Each would otherwise cost the planner a turn; weaker models can spend all of them and never
+ * write a plan. What the plan means is still checked strictly.
  */
-export function normalizePlanUpdate(raw: unknown): unknown {
+export function normalizePlanUpdate(raw: unknown, prev?: Plan): unknown {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
   const r = raw as { milestones?: unknown; park?: unknown };
   if (!Array.isArray(r.milestones)) return raw;
-  return {
-    ...(r.park !== undefined ? { park: r.park } : {}),
-    milestones: r.milestones.map((m: unknown) => {
-      const node = normalizeNode(m, ['tasks']);
-      if (typeof node !== 'object' || node === null) return node;
-      const tasks = (node as { tasks?: unknown }).tasks;
-      return Array.isArray(tasks) ? { ...node, tasks: tasks.map((t) => normalizeNode(t)) } : node;
-    }),
-  };
+  const milestones = r.milestones.map((m: unknown) => {
+    const node = normalizeNode(m, ['tasks']);
+    if (typeof node !== 'object' || node === null) return node;
+    const tasks = (node as { tasks?: unknown }).tasks;
+    return Array.isArray(tasks) ? { ...node, tasks: tasks.map((t) => normalizeNode(t)) } : node;
+  });
+  // Renumber malformed task ids after every id already in use under that milestone.
+  const renamed = new Map<string, string>();
+  const used = new Set((prev?.nodes ?? []).map((n) => n.id));
+  for (const m of milestones as { id?: unknown; tasks?: { id?: unknown }[] }[])
+    for (const t of m.tasks ?? []) if (typeof t.id === 'string') used.add(t.id);
+  for (const m of milestones as { id?: unknown; tasks?: { id?: unknown }[] }[]) {
+    if (typeof m.id !== 'string' || !/^M\d+$/.test(m.id)) continue;
+    for (const t of m.tasks ?? []) {
+      if (typeof t.id === 'string' && new RegExp(`^${m.id}\\.T\\d+$`).test(t.id)) continue;
+      let n = 1;
+      while (used.has(`${m.id}.T${String(n).padStart(2, '0')}`)) n++;
+      const id = `${m.id}.T${String(n).padStart(2, '0')}`;
+      used.add(id);
+      if (typeof t.id === 'string') renamed.set(t.id, id);
+      t.id = id;
+    }
+  }
+  if (renamed.size)
+    for (const m of milestones as { dependsOn?: unknown; tasks?: { dependsOn?: unknown }[] }[])
+      for (const node of [m, ...(m.tasks ?? [])])
+        if (Array.isArray(node.dependsOn))
+          node.dependsOn = node.dependsOn.map((d: unknown) =>
+            typeof d === 'string' ? (renamed.get(d) ?? d) : d,
+          );
+  const park = Array.isArray(r.park)
+    ? r.park.map((p: unknown) =>
+        typeof p === 'string' ? { id: renamed.get(p) ?? p, reason: 'parked by the planner' } : p,
+      )
+    : r.park;
+  return { ...(park !== undefined ? { park } : {}), milestones };
 }
 
 export const planUpdateSchema = z.strictObject({

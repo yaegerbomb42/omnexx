@@ -129,7 +129,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     description:
       'Write the plan (milestones with optional tasks, plus nodes to park). Milestones you leave out are kept unchanged. Validated by the harness.',
     schema: planUpdateSchema,
-    normalize: normalizePlanUpdate,
+    normalize: (input) => normalizePlanUpdate(input, run.plan),
     readOnly: true,
     run(input) {
       const broken = brokenChecks(input);
