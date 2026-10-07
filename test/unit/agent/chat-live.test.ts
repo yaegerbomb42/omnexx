@@ -133,3 +133,50 @@ describe('small input and display fixes from the live run', () => {
     expect(errorLine('[exit 2, 5ms]\nsomething odd')).toBe('something odd');
   });
 });
+
+describe('enable_thinking negotiation', () => {
+  it('resends with enable_thinking:false when asked, and without it when a thinking-only model refuses', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const answers = [
+      {
+        status: 400,
+        body: {
+          error: {
+            message: 'parameter.enable_thinking must be set to false for non-streaming calls',
+          },
+        },
+      },
+      {
+        status: 400,
+        body: {
+          error: { message: 'The value of the enable_thinking parameter is restricted to True.' },
+        },
+      },
+      { status: 200, body: { choices: [{ finish_reason: 'stop', message: { content: 'ok' } }] } },
+    ];
+    const fetchFn: typeof fetch = (_u, init) => {
+      bodies.push(
+        JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as Record<string, unknown>,
+      );
+      const a = answers.shift();
+      return Promise.resolve(new Response(JSON.stringify(a?.body), { status: a?.status ?? 500 }));
+    };
+    const p = new OpenAICompatProvider({
+      name: 'pool',
+      baseUrl: 'http://x/v1',
+      apiKey: undefined,
+      timeoutMs: 5_000,
+      fetch: fetchFn,
+    });
+    const res = await p.complete({
+      model: 'pool-random',
+      system: [{ text: 's' }],
+      tools: [],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      maxTokens: 10,
+      messageBreakpoints: [],
+    });
+    expect(res.content).toEqual([{ type: 'text', text: 'ok' }]);
+    expect(bodies.map((b) => b.enable_thinking)).toEqual([undefined, false, undefined]);
+  });
+});

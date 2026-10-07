@@ -102,7 +102,34 @@ export class OpenAICompatProvider implements Provider {
     this.name = opts.name;
   }
 
+  /**
+   * Thinking switches differ per model, and a pool can route each request to a different one:
+   * some refuse non-streaming calls unless `enable_thinking: false` is sent, thinking-only models
+   * refuse that same flag. So a 400 about `enable_thinking` flips the flag for this request and
+   * tries again (at most twice); nothing is remembered between requests.
+   */
   async complete(req: CompletionRequest): Promise<CompletionResponse> {
+    let thinking: boolean | undefined;
+    for (let i = 0; ; i++) {
+      try {
+        return await this.attempt(req, thinking);
+      } catch (err) {
+        if (
+          i >= 2 ||
+          !(err instanceof ProviderError) ||
+          err.status !== 400 ||
+          !/enable_thinking/i.test(err.message)
+        )
+          throw err;
+        thinking = thinking === false ? undefined : false;
+      }
+    }
+  }
+
+  private async attempt(
+    req: CompletionRequest,
+    thinking: boolean | undefined,
+  ): Promise<CompletionResponse> {
     const body = {
       model: req.model,
       messages: toChatMessages(req),
@@ -119,6 +146,7 @@ export class OpenAICompatProvider implements Provider {
         ? { tool_choice: { type: 'function', function: { name: req.toolChoice.name } } }
         : {}),
       ...(req.onDelta ? { stream: true, stream_options: { include_usage: true } } : {}),
+      ...(thinking === undefined ? {} : { enable_thinking: thinking }),
     };
     const signals = [AbortSignal.timeout(this.opts.timeoutMs), ...(req.signal ? [req.signal] : [])];
     let res: Response;
