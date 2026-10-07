@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { OmnexxError } from '../errors.js';
 import { extractSymbols, renderOutline } from './outline.js';
-import { fail, ok, type Tool } from './types.js';
+import { fail, ok, resolvePath, type Tool } from './types.js';
 
 export const MAX_READ_LINES = 400;
 
@@ -26,7 +26,7 @@ export const readTool: Tool<typeof schema> = {
   async run(input, ctx) {
     let text: string;
     try {
-      text = await readFile(ctx.jail.resolve(input.path, 'read'), 'utf8');
+      text = await readFile(await resolvePath(ctx, input.path, 'read'), 'utf8');
     } catch (err) {
       return fail(
         err instanceof OmnexxError

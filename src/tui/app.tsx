@@ -133,7 +133,7 @@ function StatusBar({ session, width }: { session: Session; width: number }) {
   );
   const right = session.runId
     ? `${t.model ?? '–'} · ${fmtTokens(t.tokens.input + t.tokens.output)} tok · cache ${Math.round(cacheHitRate(t) * 100)}% · $${t.usd.toFixed(2)} · ✓${t.commits} ✗${t.rejects}`
-    : `feed ${session.verbosity}`;
+    : `${session.mode} mode · feed ${session.verbosity}`;
   return (
     <Box width={width} justifyContent="space-between">
       {left}
@@ -203,6 +203,10 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
   useInput((ch, key) => {
     if (key.ctrl && ch === 'c') {
       exit();
+      return;
+    }
+    if (key.shift && key.tab) {
+      session.setMode(session.mode === 'run' ? 'chat' : 'run');
       return;
     }
     if (key.ctrl && ch === 'd') {
@@ -278,10 +282,14 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
   const showMascot = width >= 50 && session.mascot;
 
   const placeholder = session.chat
-    ? `message ${session.chat.ref} (/chat off to leave)`
-    : session.runAlive
-      ? 'steer the run, or /command'
-      : 'what should omnexx build? (or /help)';
+    ? `message ${session.chat.ref} (/setup off to leave)`
+    : session.pending
+      ? 'y to allow, anything else to refuse'
+      : session.mode === 'chat'
+        ? 'what should we change? (shift+tab: run mode)'
+        : session.runAlive
+          ? 'steer the run, or /command'
+          : 'what should omnexx build? (or /help)';
 
   return (
     <>
@@ -302,6 +310,11 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
         {session.busy && (
           <Text color={CYAN}>
             {SPINNER[frame]} {session.busy}
+          </Text>
+        )}
+        {session.pending && (
+          <Text color={CYAN} bold>
+            {`? ${session.pending.question} [y/N]`}
           </Text>
         )}
         <Box width={width}>

@@ -7,6 +7,7 @@ import { steerRun } from '../cli/commands/steer.js';
 import { connect, describeConnect, looksLikeKey } from '../cli/connect.js';
 import { maskKey } from '../auth/keys.js';
 import { Chat, defaultChatRef, hasProvider } from './chat.js';
+import { CodeChat } from './code-chat.js';
 import { compactPlanView, planCounts } from '../core/plan.js';
 import { resolvePaths } from '../core/paths.js';
 import { listRunIds, RunStore } from '../core/run-store.js';
@@ -32,7 +33,11 @@ export interface SlashCommand {
 
 /** Built-in slash commands; anything else after `/` runs the CLI command of that name. */
 export const SLASH: readonly SlashCommand[] = [
-  { name: 'run', args: '<goal>', help: 'start a long run in the background and attach to it' },
+  {
+    name: 'run',
+    args: '[goal]',
+    help: 'start a long run on <goal>, or switch to run mode (shift+tab)',
+  },
   { name: 'plan', args: '[goal]', help: 'show the attached plan, or plan a goal without coding' },
   { name: 'steer', args: '<note>', help: 'redirect the attached run from its next cycle' },
   { name: 'attach', args: '[runId]', help: 'follow a run (default: the latest)' },
@@ -45,10 +50,12 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'report', help: 'the morning-after report' },
   { name: 'runs', help: 'list runs' },
   { name: 'connect', args: '<name|url|key> [key]', help: 'add a provider or endpoint in one step' },
+  { name: 'chat', help: 'switch to chat: code turn by turn in this checkout (shift+tab)' },
+  { name: 'clear', help: 'chat: forget the conversation so far' },
   {
-    name: 'chat',
+    name: 'setup',
     args: '[provider:model|off]',
-    help: 'talk to a model directly; it can add providers',
+    help: 'talk to a model about providers; it can add them for you',
   },
   { name: 'init', help: 'detect gates and write omnexx.toml' },
   { name: 'doctor', help: 'check keys, providers and tools' },
@@ -79,6 +86,11 @@ export class Session {
   verbosity: Verbosity = 'normal';
   quit = false;
   chat: Chat | undefined;
+  /** What plain text does: start or steer a long run, or code turn by turn. */
+  mode: 'run' | 'chat' = 'run';
+  /** A y/n question from chat mode waiting on the person (permission to go past a guard). */
+  pending: { question: string; resolve: (yes: boolean) => void } | undefined;
+  private code: CodeChat | undefined;
   /** OMNEXX_NO_MASCOT=1 hides the animated character. */
   readonly mascot: boolean;
   readonly history: string[] = [];
@@ -125,7 +137,7 @@ export class Session {
         '  paste an API key (Anthropic, OpenAI, OpenRouter, Groq, xAI, Gemini…)',
         '  /connect ollama              a local model, no key',
         '  /connect https://host/v1 KEY any OpenAI-compatible endpoint',
-        'then /chat to talk to it and let it set up the rest',
+        'then /setup to talk to it and let it set up the rest',
       ].join('\n'),
     );
   }
@@ -220,6 +232,14 @@ export class Session {
   /** Plain text starts a run, or steers the attached live run. `/x` is a command. */
   async submit(raw: string): Promise<void> {
     const text = raw.trim();
+    const pending = this.pending;
+    if (pending) {
+      const yes = /^y(es)?$/i.test(text);
+      this.pending = undefined;
+      this.push('system', `${yes ? 'allowed' : 'refused'}: ${pending.question}`);
+      pending.resolve(yes);
+      return;
+    }
     if (!text) return;
     // A pasted key is never echoed, kept in history, or sent anywhere but the credentials file.
     const key = looksLikeKey(text);
@@ -229,6 +249,7 @@ export class Session {
       if (text.startsWith('/')) await this.slash(text.slice(1));
       else if (key && !this.chat) await this.connect(text);
       else if (this.chat) await this.talk(text);
+      else if (this.mode === 'chat') await this.code_(text);
       else if (this.runId && this.runAlive) await this.steer(text);
       else await this.startRun(text);
     } catch (err) {
@@ -262,10 +283,43 @@ export class Session {
     }
   }
 
+  /** Chat mode asks the person before going past a guard; the TUI shows it above the input. */
+  ask(question: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      this.pending = { question, resolve };
+      this.changed();
+    });
+  }
+
+  setMode(mode: 'run' | 'chat'): void {
+    this.mode = mode;
+    this.push(
+      'system',
+      mode === 'chat'
+        ? 'chat mode: each message is worked on right here in your checkout; checks run after edits'
+        : 'run mode: your text starts a long run, or steers the live one',
+    );
+  }
+
+  private async code_(text: string): Promise<void> {
+    this.busy = 'working';
+    this.changed();
+    try {
+      this.code ??= await CodeChat.open(this.io, (q) => this.ask(q));
+      await this.code.send(text, (kind, line) => {
+        this.push(kind, line);
+      });
+      this.push('system', `chat spend $${this.code.usd.toFixed(2)}`);
+    } finally {
+      this.busy = undefined;
+      this.changed();
+    }
+  }
+
   private async openChat(arg: string): Promise<void> {
     if (arg === 'off') {
       this.chat = undefined;
-      this.push('system', 'chat off: plain text starts a run again');
+      this.push('system', 'setup chat off');
       return;
     }
     const ref = arg || (await defaultChatRef(this.io));
@@ -276,7 +330,7 @@ export class Session {
     this.chat = await Chat.open(this.io, ref);
     this.push(
       'system',
-      `chatting with ${ref}. ask it to add providers, e.g. "connect my groq key". /chat off to leave`,
+      `talking to ${ref} about providers. e.g. "connect my groq key". /setup off to leave`,
     );
   }
 
@@ -308,8 +362,8 @@ export class Session {
         this.changed();
         return;
       case 'run':
-        if (!rest) throw new Error('usage: /run <goal>');
-        await this.startRun(rest);
+        if (rest) await this.startRun(rest);
+        else this.setMode('run');
         return;
       case 'plan':
         if (rest) await this.cli(['run', '--plan-only', rest], 'planning');
@@ -344,6 +398,13 @@ export class Session {
         await this.connect(args[0], args[1]);
         return;
       case 'chat':
+        this.setMode('chat');
+        return;
+      case 'clear':
+        this.code?.clear();
+        this.push('system', 'chat conversation cleared');
+        return;
+      case 'setup':
         await this.openChat(rest);
         return;
       case 'init':
@@ -378,8 +439,9 @@ export function helpText(b: Brand): string {
     '',
     b.green('typing'),
     '  paste an API key: it is saved and the provider set up (never echoed)',
-    '  in /chat: your text goes to that model, which can add providers for you',
-    '  with no live run: your text becomes the goal of a new run',
-    '  while a run is live: your text steers it from the next cycle',
+    '  shift+tab switches mode:',
+    '    run:  with no live run your text becomes the goal of a new run; while one is live it steers it',
+    '    chat: the agent works on your message right here in your checkout, like Claude Code',
+    '  in /setup: your text goes to that model, which can add providers for you',
   ].join('\n');
 }
