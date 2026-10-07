@@ -85,9 +85,15 @@ describe('hierarchical plan', () => {
       status: 'parked',
       parkedReason: 'superseded by M1.T03',
     });
-    expect(() =>
-      applyPlanUpdate(next, { milestones: [{ id: 'M1', title: 'only one' }] }, 'goal'),
-    ).toThrow(/never deleted|would delete/);
+    // Leaving nodes out never deletes them: they stay as they were, in place.
+    const partial = applyPlanUpdate(
+      next,
+      { milestones: [{ id: 'M1', title: 'only one' }] },
+      'goal',
+    );
+    expect(partial.nodes.map((n) => n.id)).toEqual(next.nodes.map((n) => n.id));
+    expect(getNode(partial, 'M1').title).toBe('only one');
+    expect(getNode(partial, 'M1.T01')).toMatchObject({ status: 'done', attempts: 2 });
   });
 
   it('rejects bad ids, misplaced tasks, unknown deps and duplicates', () => {

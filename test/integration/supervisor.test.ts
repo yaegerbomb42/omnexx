@@ -108,7 +108,7 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
     expect(await isClean(t.repo)).toBe(true);
   });
 
-  it('a re-plan that deletes a node is refused and the planner has to keep it', async () => {
+  it('a re-plan that leaves nodes out keeps them unchanged instead of deleting them', async () => {
     let attempt = 0;
     const plan = (m: Parameters<Script>[0]) => {
       if (m.turn > 0) return say('ok');
@@ -122,7 +122,7 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
         });
       }
       attempt++;
-      // First expansion drops M1 entirely (refused); the retry keeps it.
+      // First expansion sends only M2; M1 is kept as it was (nodes are never deleted).
       return attempt === 1
         ? call('write_plan', {
             milestones: [{ id: 'M2', title: 'Two', tasks: [fileTask('M2.T01')] }],
@@ -151,9 +151,9 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
     );
     const t = await startTestRun({ repo: await makeRepo(), provider, config: { gates: [GATE] } });
     expect((await superviseTest(t)).status).toBe('finished');
-    expect(JSON.stringify(provider.requests.map((r) => r.messages))).toMatch(
-      /plan rejected: plan update would delete M1, M1.T01 \(nodes are never deleted/,
-    );
+    expect(JSON.stringify(provider.requests.map((r) => r.messages))).not.toMatch(/plan rejected/);
+    const final = await t.run.store.readPlan();
+    expect(final?.nodes.map((n) => n.id)).toEqual(['M1', 'M1.T01', 'M2', 'M2.T01']);
   });
 });
 

@@ -29,7 +29,7 @@ import { toolSpec, workerTools } from '../tools/registry.js';
 import { cycleRoute } from '../router/classify.js';
 import { readIntent } from '../agent/intent.js';
 import type { ToolContext } from '../tools/types.js';
-import { antiCheat } from '../verify/anticheat.js';
+import { antiCheat, type Violation as AntiCheatViolation } from '../verify/anticheat.js';
 import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
 import { runGates, toBaseline, type GateResult } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
@@ -118,6 +118,45 @@ async function recordFlaky(
     }
   }
   await run.store.writeNotes(notes);
+}
+
+/** Anti-cheat lessons, one per rule, phrased so they hold for every later task. */
+const ANTI_CHEAT_LESSON: Record<AntiCheatViolation['rule'], string> = {
+  'skip-marker':
+    'Never add @ts-ignore, eslint-disable, .skip or .only, not even in tests: the cycle is rejected even when every test passes. Fix the cause.',
+  'deleted-test': 'Never delete or rename away a test file: the cycle is rejected.',
+  'test-count-drop': 'The test count may never go down: the cycle is rejected.',
+  'snapshot-rewrite': 'Never rewrite snapshot files to make tests pass: the cycle is rejected.',
+  'protected-path':
+    'Never edit protected files (CI config, lockfiles, omnexx.toml, .env): the cycle is rejected.',
+};
+
+/**
+ * Task evidence keeps only the last few rejections, so an early anti-cheat rejection can scroll
+ * out and the agent repeats it. Each rule that fired becomes a run-wide lesson instead.
+ */
+async function recordAntiCheatLessons(
+  run: Run,
+  violations: readonly AntiCheatViolation[],
+): Promise<void> {
+  let notes = await run.store.readNotes();
+  const today = new Date(run.clock.now()).toISOString().slice(0, 10);
+  let changed = false;
+  for (const rule of new Set(violations.map((v) => v.rule))) {
+    const text = ANTI_CHEAT_LESSON[rule];
+    if (notes.some((n) => n.text === text)) continue;
+    const r = applyRemember(
+      notes,
+      { action: 'add', type: 'pitfall', text },
+      run.config.context.notes_max_tokens,
+      today,
+    );
+    if (r.ok) {
+      notes = r.notes;
+      changed = true;
+    }
+  }
+  if (changed) await run.store.writeNotes(notes);
 }
 
 /** Record which tests and errors already fail at the starting commit (plan §3.8). */
@@ -460,17 +499,19 @@ export async function stepVerify(run: Run): Promise<void> {
     const failText = renderFailures(results, verdicts);
     if (failText) evidence.push(failText);
     testsPassed = results.reduce((n, r) => n + (r.tests?.passed ?? 0), 0) || undefined;
-    for (const v of antiCheat({
+    const cheats = antiCheat({
       changes,
       patch,
       protectedPatterns: run.config.protected,
       allow: task.allow,
       baseline: run.state.baseline,
       results,
-    })) {
+    });
+    for (const v of cheats) {
       reasons.push(`anti-cheat ${v.rule}: ${v.detail}`);
       evidence.push(`Rejected by anti-cheat (${v.rule}): ${v.detail}. Do not do this.`);
     }
+    if (cheats.length) await recordAntiCheatLessons(run, cheats);
     const osc = await detectOscillation(
       run.worktree,
       run.state.lastGreen,

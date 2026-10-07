@@ -126,12 +126,27 @@ export function applyPlanUpdate(prev: Plan | undefined, update: PlanUpdate, goal
       );
     }
   }
-  const missing = [...byId.keys()].filter((k) => !seen.has(k));
-  if (missing.length) {
-    throw new StateError(
-      `plan update would delete ${missing.join(', ')}`,
-      'nodes are never deleted; park them with a reason instead',
-    );
+  // Nodes are never deleted. Anything the update leaves out stays as it was, where it was, so a
+  // model can send just the milestone it changed (weaker models rarely restate the whole plan).
+  for (const old of prev?.nodes ?? []) {
+    if (seen.has(old.id)) continue;
+    seen.add(old.id);
+    const blockEnd = (milestoneId: string): number => {
+      let at = nodes.findIndex((n) => n.id === milestoneId);
+      while (at + 1 < nodes.length && nodes[at + 1]?.parentId === milestoneId) at++;
+      return at;
+    };
+    if (old.type === 'task' && old.parentId && nodes.some((n) => n.id === old.parentId)) {
+      nodes.splice(blockEnd(old.parentId) + 1, 0, old);
+      continue;
+    }
+    // An omitted milestone (its tasks follow it) goes after the milestone it followed before.
+    const prevMs = (prev?.nodes ?? []).filter((n) => n.type === 'milestone').map((n) => n.id);
+    const before = prevMs
+      .slice(0, prevMs.indexOf(old.type === 'milestone' ? old.id : (old.parentId ?? '')))
+      .reverse()
+      .find((id) => nodes.some((n) => n.id === id));
+    nodes.splice(before ? blockEnd(before) + 1 : 0, 0, old);
   }
   for (const p of parsed.park) {
     const n = nodes.find((x) => x.id === p.id);
