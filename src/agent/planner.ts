@@ -106,7 +106,7 @@ function plannerAction(mode: PlannerMode): RouteAction {
  * Checks a planner wrote that can never pass as intended: `grep` without -F on a pattern with
  * `*`, `[` or `\\`, which grep reads as regex (`grep -q "export * from"` never matches that text).
  */
-export function brokenChecks(update: PlanUpdate): string[] {
+export function brokenChecks(update: PlanUpdate, strict = true): string[] {
   const out: string[] = [];
   for (const m of update.milestones)
     for (const node of [m, ...(m.tasks ?? [])])
@@ -117,7 +117,31 @@ export function brokenChecks(update: PlanUpdate): string[] {
             `${node.id}: \`${c}\` reads the pattern as a regex; use grep -F (or grep -qF) for literal text`,
           );
       }
+  // A task "verified" only by a file existing or a string appearing can pass with shallow code.
+  if (strict)
+    for (const m of update.milestones)
+      for (const t of m.tasks ?? []) {
+        const checks = t.checks ?? [];
+        if (!checks.length || t.kind === 'docs' || t.kind === 'investigate') continue;
+        if (checks.every(isWeakCheck))
+          out.push(
+            `${t.id}: its checks only look for files or text (${checks.map((c) => `\`${c}\``).join(', ')}); add a check that runs the code, e.g. a test command for this behaviour`,
+          );
+      }
   return out;
+}
+
+/** A check that proves a file or string exists, not that anything works. */
+export function isWeakCheck(cmd: string): boolean {
+  return cmd
+    .split(/&&|\|\||;/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .every((p) =>
+      /^(!\s*)?(test\s+-[efds]\b|\[\s+-[efds]\b|grep\b|rg\b|ls\b|cat\b|wc\b|head\b|tail\b|stat\b)/.test(
+        p,
+      ),
+    );
 }
 
 export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
@@ -132,7 +156,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     normalize: (input) => normalizePlanUpdate(input, run.plan),
     readOnly: true,
     run(input) {
-      const broken = brokenChecks(input);
+      const broken = brokenChecks(input, run.config.review.strict_checks);
       if (broken.length)
         return Promise.resolve(
           fail(`plan rejected: checks that cannot pass:\n${broken.join('\n')}`),

@@ -12,6 +12,8 @@ export const review = z
     block_on: z.enum(['blocker', 'major']).default('blocker'),
     /** Diffs larger than this are cut (head and tail kept) before review. */
     max_diff_chars: z.number().int().positive().default(40_000),
+    /** Refuse plans whose task checks only look for files or text (`test -f`, `grep`). */
+    strict_checks: z.boolean().default(true),
     /** Audit the finished work before the run may end. */
     audit: z.boolean().default(true),
     /** Audit rounds that may add work before the run finishes anyway. */
