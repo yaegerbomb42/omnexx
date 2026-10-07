@@ -4,10 +4,13 @@ import { brand, type Brand } from '../cli/brand.js';
 import type { CliIO } from '../cli/io.js';
 import { pickRun, supervisorAlive } from '../cli/commands/control.js';
 import { steerRun } from '../cli/commands/steer.js';
+import { git } from '../git/git.js';
 import { connect, describeConnect, looksLikeKey } from '../cli/connect.js';
 import { maskKey } from '../auth/keys.js';
 import { Chat, defaultChatRef, hasProvider } from './chat.js';
 import { CodeChat } from './code-chat.js';
+import { classifyMarkdown, type MdKind } from './markdown.js';
+import { parseDiff, type DiffViewState } from './diff.js';
 import { compactPlanView, planCounts } from '../core/plan.js';
 import { resolvePaths } from '../core/paths.js';
 import { listRunIds, RunStore } from '../core/run-store.js';
@@ -21,6 +24,8 @@ export interface Entry {
   id: number;
   kind: EntryKind;
   text: string;
+  /** Model replies render as markdown, line by line. */
+  md?: MdKind;
 }
 
 export type RunCli = (argv: readonly string[], io: CliIO) => Promise<number>;
@@ -46,7 +51,7 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'resume', help: 'resume the attached run' },
   { name: 'stop', args: '[--now]', help: 'stop the attached run' },
   { name: 'status', help: 'phase, progress, spend' },
-  { name: 'diff', help: 'what the run has committed so far' },
+  { name: 'diff', help: "browse changes: the run's commits, or your uncommitted edits" },
   { name: 'report', help: 'the morning-after report' },
   { name: 'runs', help: 'list runs' },
   { name: 'connect', args: '<name|url|key> [key]', help: 'add a provider or endpoint in one step' },
@@ -119,9 +124,13 @@ export class Session {
     for (const fn of this.listeners) fn();
   }
 
-  push(kind: EntryKind, text: string): void {
-    for (const line of text.replace(/\n$/, '').split('\n')) {
-      this.entries.push({ id: this.nextId++, kind, text: line });
+  /** `markdown` marks a model's reply; command output (diffs, logs) is never reinterpreted. */
+  push(kind: EntryKind, text: string, opts: { markdown?: boolean } = {}): void {
+    const lines = text.replace(/\n$/, '').split('\n');
+    const md = opts.markdown ? classifyMarkdown(lines) : undefined;
+    for (const [i, line] of lines.entries()) {
+      const m = md?.[i];
+      this.entries.push({ id: this.nextId++, kind, text: line, ...(m ? { md: m } : {}) });
     }
     if (this.entries.length > MAX_ENTRIES) this.entries = this.entries.slice(-MAX_ENTRIES);
     this.changed();
@@ -275,7 +284,7 @@ export class Session {
     this.changed();
     try {
       await chat.send(text, (line) => {
-        this.push('out', line);
+        this.push('out', line, { markdown: true });
       });
     } finally {
       this.busy = undefined;
@@ -307,7 +316,7 @@ export class Session {
     try {
       this.code ??= await CodeChat.open(this.io, (q) => this.ask(q));
       await this.code.send(text, (kind, line) => {
-        this.push(kind, line);
+        this.push(kind, line, { markdown: kind === 'out' });
       });
       this.push('system', `chat spend $${this.code.usd.toFixed(2)}`);
     } finally {
@@ -385,11 +394,14 @@ export class Session {
         this.verbosity = cmd;
         this.push('system', `feed verbosity: ${cmd}`);
         return;
+      case 'diff':
+        if (args.length) await this.cli(['diff', ...(this.runId ? [this.runId] : []), ...args]);
+        else await this.openDiff();
+        return;
       case 'pause':
       case 'resume':
       case 'stop':
       case 'status':
-      case 'diff':
       case 'report':
         await this.cli([cmd, ...(this.runId ? [this.runId] : []), ...args]);
         return;
@@ -420,6 +432,67 @@ export class Session {
           );
         await this.cli([cmd, ...args]);
     }
+  }
+
+  /** The open /diff viewer, if any; it takes over the keys until closed. */
+  diffView: DiffViewState | undefined;
+
+  /** /diff: the attached run's commits since it started, or uncommitted changes in this checkout. */
+  async openDiff(): Promise<void> {
+    let text: string;
+    let title: string;
+    if (this.runId) {
+      const st = await new RunStore(resolvePaths(this.io.env), this.runId).readState();
+      text = (await git(st.worktree, ['diff', `${st.startRef}..${st.lastGreen}`])).stdout;
+      title = `${this.runId} since start`;
+    } else {
+      text = (await git(this.io.cwd, ['diff', 'HEAD'], { allowFailure: true })).stdout;
+      title = 'uncommitted changes';
+    }
+    this.diffView = { title, files: parseDiff(text), cursor: 0, open: new Set() };
+    this.changed();
+  }
+
+  /** Keys while the diff viewer is open. */
+  diffKey(key: 'up' | 'down' | 'enter' | 'close'): void {
+    const v = this.diffView;
+    if (!v) return;
+    if (key === 'close') this.diffView = undefined;
+    else if (key === 'up') v.cursor = Math.max(0, v.cursor - 1);
+    else if (key === 'down') v.cursor = Math.min(v.files.length - 1, v.cursor + 1);
+    else if (v.open.has(v.cursor)) v.open.delete(v.cursor);
+    else v.open.add(v.cursor);
+    this.changed();
+  }
+
+  private files: string[] | undefined;
+  private loadingFiles = false;
+
+  /**
+   * Repo files matching an `@partial` at the end of the input (tab completes the first).
+   * The file list loads once in the background on the first `@`.
+   */
+  completeFile(input: string): string[] {
+    const m = /@([^\s@]*)$/.exec(input);
+    if (!m) return [];
+    if (!this.files) {
+      if (!this.loadingFiles) {
+        this.loadingFiles = true;
+        void git(this.io.cwd, ['ls-files', '--cached', '--others', '--exclude-standard'], {
+          allowFailure: true,
+        }).then((r) => {
+          this.files = r.exitCode === 0 ? r.stdout.split('\n').filter(Boolean) : [];
+          this.changed();
+        });
+      }
+      return [];
+    }
+    const q = (m[1] ?? '').toLowerCase();
+    const starts = this.files.filter((f) => f.toLowerCase().startsWith(q));
+    const contains = this.files.filter(
+      (f) => !f.toLowerCase().startsWith(q) && f.toLowerCase().includes(q),
+    );
+    return [...starts, ...contains].slice(0, 20);
   }
 
   /** Commands whose name starts with what's typed after `/`. */
