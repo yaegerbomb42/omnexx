@@ -10,7 +10,14 @@ import { DiffView } from './diff.js';
 import { ModelPicker } from './model-picker.js';
 import type { TodoItem } from '../tools/todo.js';
 import { MarkdownLine } from './markdown.js';
-import { Mascot, MascotCaption, REACTION_TICKS, type Mood } from './mascot.js';
+import {
+  Mascot,
+  mascotFrame,
+  REACTION_TICKS,
+  SLEEP_TICKS,
+  SpeechBubble,
+  type Mood,
+} from './mascot.js';
 
 export { CYAN, GRAY, GREEN, RED };
 
@@ -333,6 +340,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
     }
     // Fast typing can arrive as one chunk that ends in Enter: submit it.
     const nl = ch.search(/[\r\n]/);
+    session.touch();
     if (nl === -1) {
       setInput((s) => s + ch);
       return;
@@ -343,23 +351,33 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
     void session.submit(text);
   });
 
+  // Run commits and rejections make Nex cheer or droop, like chat checks do.
   const { commits, rejects } = session.telemetry;
   const s0 = seen.current;
-  if (commits > s0.commits || rejects > s0.rejects) {
-    s0.mood = commits > s0.commits ? 'happy' : 'sad';
-    s0.at = tick;
-  }
+  if (commits > s0.commits) session.react('happy', 'committed!');
+  else if (rejects > s0.rejects) session.react('sad', 'rejected, retrying');
   s0.commits = commits;
   s0.rejects = rejects;
-  const mood: Mood =
-    tick - s0.at < REACTION_TICKS
-      ? s0.mood
-      : session.busy
-        ? 'thinking'
-        : session.runAlive
-          ? 'working'
-          : 'idle';
-  const showMascot = width >= 50 && session.mascot;
+  const nex = session.nex;
+  const sinceReaction = (Date.now() - nex.at) / pollMs;
+  const sinceActivity = (Date.now() - session.lastActivity) / pollMs;
+  const reacting =
+    ['hello', 'happy', 'sad', 'startled'].includes(nex.mood) && sinceReaction < REACTION_TICKS;
+  const mood: Mood = reacting
+    ? nex.mood
+    : session.busy
+      ? nex.mood === 'working'
+        ? 'working'
+        : 'thinking'
+      : session.runAlive
+        ? 'working'
+        : input
+          ? 'listening'
+          : sinceActivity > SLEEP_TICKS
+            ? 'sleepy'
+            : 'idle';
+  const say = reacting || (session.busy && nex.mood === 'working') ? nex.say : '';
+  const showMascot = width >= 60 && session.mascot;
 
   const placeholder = session.chat
     ? `message ${session.chat.ref} (/setup off to leave)`
@@ -421,8 +439,22 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
             {`? ${session.pending.question} [y/N]`}
           </Text>
         )}
+        {showMascot && (
+          <Box width={width} alignItems="flex-end">
+            <Box flexDirection="column" flexGrow={1}>
+              <Text color={GREEN} bold>
+                omnexx
+              </Text>
+              <Text color={GRAY}>{session.mode === 'chat' ? 'chat' : 'long run'}</Text>
+            </Box>
+            <SpeechBubble
+              text={mascotFrame(mood, tick, say).caption}
+              width={Math.max(20, width - 30)}
+            />
+            <Mascot mood={mood} tick={tick} say={say} />
+          </Box>
+        )}
         <Box width={width}>
-          {showMascot && <Mascot mood={mood} tick={tick} />}
           <Box borderStyle="single" borderColor={GREEN} paddingX={1} flexGrow={1}>
             <Text color={GREEN}>{'› '}</Text>
             {input ? (
@@ -455,7 +487,6 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
           </Box>
         )}
         <StatusBar session={session} width={width} />
-        {showMascot && <MascotCaption mood={mood} tick={tick} />}
       </Box>
     </>
   );

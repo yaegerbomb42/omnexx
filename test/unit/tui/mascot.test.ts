@@ -1,26 +1,39 @@
 import stringWidth from 'string-width';
 import { describe, expect, it } from 'vitest';
-import { mascotFrame, type Mood } from '../../../src/tui/mascot.js';
+import { mascotFrame, NEX_WIDTH, type Mood } from '../../../src/tui/mascot.js';
 
-const MOODS: Mood[] = ['idle', 'thinking', 'working', 'happy', 'sad'];
+const MOODS: Mood[] = [
+  'hello',
+  'idle',
+  'sleepy',
+  'listening',
+  'thinking',
+  'working',
+  'happy',
+  'sad',
+  'startled',
+];
 
-describe('mascot', () => {
-  it('every frame is exactly 3 rows of 5 columns, so the input box never jumps', () => {
+describe('Nex', () => {
+  it('every frame is 5 rows of exactly NEX_WIDTH columns, so nothing around it shifts', () => {
     for (const mood of MOODS)
-      for (let tick = 0; tick < 32; tick++)
-        for (const row of mascotFrame(mood, tick).rows) expect(stringWidth(row)).toBe(5);
+      for (let tick = 0; tick < 40; tick++) {
+        const f = mascotFrame(mood, tick);
+        expect(f.rows).toHaveLength(5);
+        for (const row of f.rows)
+          expect(stringWidth(row), `${mood}@${tick}: "${row}"`).toBe(NEX_WIDTH);
+      }
   });
 
-  it('moves when working, blinks when idle, and reacts to commits and rejections', () => {
-    const working = new Set(
-      Array.from({ length: 12 }, (_, t) => mascotFrame('working', t).rows.join()),
-    );
-    expect(working.size).toBeGreaterThan(2);
-    expect(mascotFrame('idle', 0).rows[1]).toBe('▐o.o▌');
-    expect(mascotFrame('idle', 15).rows[1]).toBe('▐-.-▌');
-    expect(mascotFrame('happy', 0).rows[1]).toBe('▐^‿^▌');
-    expect(mascotFrame('sad', 0).caption).toMatch(/rejected/);
-    expect(mascotFrame('thinking', 2).caption).toBe('thinking...');
-    expect(mascotFrame('idle', 3).caption).toBe('');
+  it('animates, reacts, and says what it is doing', () => {
+    const frames = (m: Mood) =>
+      new Set(Array.from({ length: 12 }, (_, t) => mascotFrame(m, t).rows.join()));
+    for (const m of ['hello', 'working', 'happy', 'thinking', 'sleepy'] as const)
+      expect(frames(m).size, m).toBeGreaterThan(1);
+    expect(mascotFrame('idle', 15).rows[2]).toContain('- -');
+    expect(mascotFrame('happy', 0).rows[2]).toContain('^ ^');
+    expect(mascotFrame('sad', 0).rows[2]).toContain('; ;');
+    expect(mascotFrame('working', 0, 'running test suite!').caption).toBe('running test suite!');
+    expect(mascotFrame('sleepy', 0).caption).toMatch(/type to wake/);
   });
 });
