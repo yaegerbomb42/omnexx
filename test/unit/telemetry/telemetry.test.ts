@@ -42,6 +42,16 @@ describe('humanize', () => {
       ),
     ).toBe('12:04:31 ✗ bash     npm test  6.1s  ✗');
     expect(
+      h(
+        ev('tool.call', {
+          tool: 'write_plan',
+          input: '{}',
+          isError: true,
+          error: '\nplan rejected: task M1.T01 must live under milestone M2\nmore',
+        }),
+      ),
+    ).toMatch(/✗ plan rejected: task M1\.T01 must live under milestone M2$/);
+    expect(
       h(ev('tool.call', { tool: 'multi_edit', input: '{"path":"x.ts","edits":[{},{}]}' })),
     ).toBe('12:04:31 ▸ edit     x.ts (2 edits)');
     expect(
