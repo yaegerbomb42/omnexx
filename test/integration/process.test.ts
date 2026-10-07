@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { supervisorAlive } from '../../src/cli/commands/control.js';
 import { readEvents } from '../../src/core/events.js';
 import { readLock } from '../../src/core/lock.js';
 import { resolvePaths } from '../../src/core/paths.js';
@@ -35,6 +36,12 @@ describe('real processes: detach, heartbeat, pause/resume', () => {
     );
     expect(state.status).toBe('budget-stop');
     expect(state.acceptedCommits).toBe(0);
+    // The supervisor writes REPORT.md after the status; let it exit before temp dirs are removed.
+    await waitFor(
+      async () => (!(await supervisorAlive(store)) ? true : undefined),
+      30_000,
+      'supervisor exit',
+    );
   });
 
   it('run --detach returns at once; the run keeps going with a fresh heartbeat; pause takes effect within a turn; resume continues to the end', async () => {
