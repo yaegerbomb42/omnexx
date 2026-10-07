@@ -243,10 +243,16 @@ export class Run {
    */
   async cheapComplete(
     req: Omit<CompletionRequest, 'model' | 'route'>,
-    opts: { estimatedInputTokens: number; maxOutputTokens: number; role: string },
+    opts: {
+      estimatedInputTokens: number;
+      maxOutputTokens: number;
+      role: string;
+      /** Which chain to try: the cheap one (default), or the planner's for judgement calls. */
+      chain?: 'cheap' | 'planner';
+    },
   ): Promise<{ res: CompletionResponse; model: ResolvedModel } | undefined> {
     const errors: string[] = [];
-    for (const model of this.chains.cheap) {
+    for (const model of this.chains[opts.chain ?? 'cheap']) {
       const blocked = this.providerBlocked(model.provider);
       if (blocked) {
         errors.push(`${model.provider}: ${blocked}`);

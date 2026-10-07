@@ -32,7 +32,8 @@ export type PlannerMode =
   | { kind: 'expand'; milestoneId: string }
   | { kind: 'replan'; reason: string }
   | { kind: 'split'; taskId: string; reason: string }
-  | { kind: 'beyond'; round: number; maxRounds: number };
+  | { kind: 'beyond'; round: number; maxRounds: number }
+  | { kind: 'audit'; round: number; gaps: string };
 
 /** The rubric beyond mode ranks improvements against, once the goal itself is met. */
 export const BEYOND_RUBRIC = [
@@ -48,7 +49,7 @@ export const BEYOND_RUBRIC = [
 
 function instruction(mode: PlannerMode, plan: Plan | undefined): string {
   if (mode.kind === 'initial')
-    return 'There is no plan yet. Explore the repository. Then call write_intent with what the user actually wants (the goal may be one short sentence: infer the intended build from it and from the repo, and record your assumptions instead of asking). Then call write_plan with milestones, expanding only the first one or two into tasks. M1 is the shortest path to a working, checkable v1; widen and polish in later milestones.';
+    return 'There is no plan yet. Explore the repository. Then call write_intent with what the user actually wants (the goal may be one short sentence: infer the intended build from it and from the repo, and record your assumptions instead of asking). Then call write_plan with milestones, expanding only the first one or two into tasks. M1 is the shortest path to a working, checkable v1; widen and polish in later milestones. Every item in the "done when" list of the intent must map to a task that delivers it, and the checks of that task must run a test proving it (not just look for a file or string); commits are only accepted when every test passes, so a task that adds a test also makes it pass. Before the run may finish, an independent audit compares the result with the "done when" list.';
   const view = plan ? compactPlanView(plan, undefined) : '';
   const full = plan
     ? JSON.stringify({
@@ -74,6 +75,9 @@ function instruction(mode: PlannerMode, plan: Plan | undefined): string {
       : '';
     return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nTask ${mode.taskId} is stuck: ${mode.reason}.\n${evidence}\n\nSplit ${mode.taskId} into 2-4 smaller tasks under the same milestone, with new ids that are not used yet, each with its own checks. Commits are only accepted when every test passes, so never plan a task that only adds a failing test: a task that adds a test must also make it pass. The new tasks replace ${mode.taskId}; it will be marked done when they are. Call write_plan with the milestone you changed (milestones and tasks you leave out are kept unchanged).`;
   }
+  if (mode.kind === 'audit') {
+    return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nEvery task is marked done, but an independent audit of the result against what the user asked for found these gaps:\n${mode.gaps}\n\nAdd ONE new milestone (the next free M id) titled "Audit ${mode.round}: close the gaps", with one task per gap (merge trivial ones), each with a check that runs the code and proves the gap is closed. Don't change existing nodes. Call write_plan with just that milestone.`;
+  }
   if (mode.kind === 'beyond') {
     return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nThe goal is met: every milestone and task is done and its checks pass. This is improvement round ${mode.round} of at most ${mode.maxRounds}. Work like the best engineer on the team would after shipping: look at the code and pick the few improvements with the highest real value, ranked against:\n${BEYOND_RUBRIC.map((r) => `- ${r}`).join('\n')}\n\nAdd ONE new milestone with 2-6 tasks. Every task must add or tighten a check (a new test, a stricter lint or type rule, a benchmark threshold) so its value is verified, not claimed. No cosmetic churn, no rewrites for taste. If nothing clears that bar, call write_plan with the plan unchanged: that ends the run.`;
   }
@@ -97,6 +101,8 @@ function plannerAction(mode: PlannerMode): RouteAction {
       return 'plan';
     case 'beyond':
       return 'beyond-ideate';
+    case 'audit':
+      return 'replan';
     default:
       return mode.kind;
   }
@@ -106,7 +112,7 @@ function plannerAction(mode: PlannerMode): RouteAction {
  * Checks a planner wrote that can never pass as intended: `grep` without -F on a pattern with
  * `*`, `[` or `\\`, which grep reads as regex (`grep -q "export * from"` never matches that text).
  */
-export function brokenChecks(update: PlanUpdate): string[] {
+export function brokenChecks(update: PlanUpdate, strict = true): string[] {
   const out: string[] = [];
   for (const m of update.milestones)
     for (const node of [m, ...(m.tasks ?? [])])
@@ -117,7 +123,31 @@ export function brokenChecks(update: PlanUpdate): string[] {
             `${node.id}: \`${c}\` reads the pattern as a regex; use grep -F (or grep -qF) for literal text`,
           );
       }
+  // A task "verified" only by a file existing or a string appearing can pass with shallow code.
+  if (strict)
+    for (const m of update.milestones)
+      for (const t of m.tasks ?? []) {
+        const checks = t.checks ?? [];
+        if (!checks.length || t.kind === 'docs' || t.kind === 'investigate') continue;
+        if (checks.every(isWeakCheck))
+          out.push(
+            `${t.id}: its checks only look for files or text (${checks.map((c) => `\`${c}\``).join(', ')}); add a check that runs the code, e.g. a test command for this behaviour`,
+          );
+      }
   return out;
+}
+
+/** A check that proves a file or string exists, not that anything works. */
+export function isWeakCheck(cmd: string): boolean {
+  return cmd
+    .split(/&&|\|\||;/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .every((p) =>
+      /^(!\s*)?(test\s+-[efds]\b|\[\s+-[efds]\b|grep\b|rg\b|ls\b|cat\b|wc\b|head\b|tail\b|stat\b)/.test(
+        p,
+      ),
+    );
 }
 
 export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
@@ -132,7 +162,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     normalize: (input) => normalizePlanUpdate(input, run.plan),
     readOnly: true,
     run(input) {
-      const broken = brokenChecks(input);
+      const broken = brokenChecks(input, run.config.review.strict_checks);
       if (broken.length)
         return Promise.resolve(
           fail(`plan rejected: checks that cannot pass:\n${broken.join('\n')}`),

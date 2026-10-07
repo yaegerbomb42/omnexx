@@ -1,4 +1,9 @@
 import { PlannerIncomplete, runPlanner } from '../agent/planner.js';
+import { renderCodemap, type Codemap } from '../agent/codemap.js';
+import { readIntent } from '../agent/intent.js';
+import { git } from '../git/git.js';
+import { readTextOr } from './atomic.js';
+import { auditResult, blocking, clipDiff, renderFindings } from '../verify/review.js';
 import { join } from 'node:path';
 import { EXIT } from '../cli/exit-codes.js';
 import { DockerSandbox } from '../security/sandbox-docker.js';
@@ -528,6 +533,47 @@ class Supervisor {
    * True when it added runnable work; false when it's off, out of rounds or budget, or the
    * planner found nothing worth doing (it returns the plan unchanged).
    */
+  /**
+   * Before a run may finish: an independent auditor compares the result with what was asked (goal,
+   * inferred intent and its "done when" list). Gaps become a new milestone, so "done" is earned,
+   * not declared. Fails open; stops after `max_audits` rounds.
+   */
+  private async planAudit(): Promise<boolean> {
+    const r = this.run;
+    const cfg = r.config.review;
+    if (!cfg.audit || r.state.auditRounds >= cfg.max_audits) return false;
+    const goal = (await r.store.readGoal()).text;
+    const intent = await readIntent(r.store);
+    const codemapText = await readTextOr(r.store.file('codemap.json'), '');
+    const map = codemapText
+      ? renderCodemap(JSON.parse(codemapText) as Codemap, r.config.context.repo_map_max_tokens)
+      : '';
+    const diff = (
+      await git(r.worktree, ['diff', `${r.state.startRef}..HEAD`], { allowFailure: true })
+    ).stdout;
+    const result = await auditResult(
+      r,
+      goal,
+      intent,
+      `${map}\n\n# Everything this run changed (diff from the start)\n${clipDiff(diff, cfg.max_diff_chars * 2)}`,
+    );
+    const round = r.state.auditRounds + 1;
+    r.state.auditRounds = round;
+    await r.save();
+    if (!result) return false;
+    const gaps = blocking(result.findings, 'major');
+    r.events.emit('audit.result', { round, findings: result.findings.length, gaps: gaps.length });
+    if (!gaps.length) return false;
+    const before = r.requirePlan().nodes.length;
+    try {
+      await runPlanner(r, { kind: 'audit', round, gaps: renderFindings(gaps) });
+    } catch (err) {
+      if (!(err instanceof PlannerIncomplete)) throw err;
+      return false;
+    }
+    return r.requirePlan().nodes.length > before && runnableTasks(r.requirePlan()).length > 0;
+  }
+
   private async planBeyond(): Promise<boolean> {
     const r = this.run;
     const cfg = r.config.beyond;
@@ -591,6 +637,7 @@ class Supervisor {
       openMilestones.length === 0 &&
       plan.nodes.every((n) => n.status !== 'parked')
     ) {
+      if (await this.planAudit()) return this.select();
       if (await this.planBeyond()) return this.select();
       await this.finalVerify();
       const rounds = r.state.beyondRounds;
