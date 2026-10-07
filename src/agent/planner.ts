@@ -1,6 +1,12 @@
 import { readTextOr } from '../core/atomic.js';
 import { renderNotes } from '../core/notes.js';
-import { applyPlanUpdate, compactPlanView, planUpdateSchema, type Plan } from '../core/plan.js';
+import {
+  applyPlanUpdate,
+  compactPlanView,
+  planUpdateSchema,
+  type Plan,
+  type PlanUpdate,
+} from '../core/plan.js';
 import type { Run } from '../core/run.js';
 import { OmnexxError, StateError } from '../errors.js';
 import { PathJail } from '../security/paths.js';
@@ -95,6 +101,24 @@ function plannerAction(mode: PlannerMode): RouteAction {
   }
 }
 
+/**
+ * Checks a planner wrote that can never pass as intended: `grep` without -F on a pattern with
+ * `*`, `[` or `\\`, which grep reads as regex (`grep -q "export * from"` never matches that text).
+ */
+export function brokenChecks(update: PlanUpdate): string[] {
+  const out: string[] = [];
+  for (const m of update.milestones)
+    for (const node of [m, ...(m.tasks ?? [])])
+      for (const c of node.checks ?? []) {
+        const g = /\bgrep((?:\s+-[A-Za-z]+)*)\s+(["'])(.*?)\2/.exec(c);
+        if (g && !/[FEP]/.test(g[1] ?? '') && /[*[\\]/.test(g[3] ?? ''))
+          out.push(
+            `${node.id}: \`${c}\` reads the pattern as a regex; use grep -F (or grep -qF) for literal text`,
+          );
+      }
+  return out;
+}
+
 export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   const goal = await run.store.readGoal();
   const intent = await readIntent(run.store);
@@ -102,10 +126,15 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   const writePlan: Tool<typeof planUpdateSchema> = {
     name: 'write_plan',
     description:
-      'Write the complete plan (milestones with optional tasks, plus nodes to park). Validated by the harness.',
+      'Write the plan (milestones with optional tasks, plus nodes to park). Milestones you leave out are kept unchanged. Validated by the harness.',
     schema: planUpdateSchema,
     readOnly: true,
     run(input) {
+      const broken = brokenChecks(input);
+      if (broken.length)
+        return Promise.resolve(
+          fail(`plan rejected: checks that cannot pass:\n${broken.join('\n')}`),
+        );
       try {
         written = applyPlanUpdate(run.plan, input, goal.text.trim());
         return Promise.resolve(ok(`plan accepted: ${written.nodes.length} nodes`));
