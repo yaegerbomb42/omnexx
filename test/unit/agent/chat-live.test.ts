@@ -17,6 +17,26 @@ describe('action lines', () => {
       'browsing alexa.com',
     );
     expect(narrateTool('browser', { action: 'click', ref: '@e3' })).toBe('clicking on @e3');
+    const b = (input: Record<string, unknown>) => narrateTool('browser', input);
+    expect(b({ action: 'wait_for', ref: '@e9' })).toBe('waiting for @e9 to appear');
+    expect(b({ action: 'wait_for', text: 'Thanks' })).toBe('waiting for "Thanks" to appear');
+    expect(b({ action: 'select', ref: '@e2', value: 'Large' })).toBe("choosing 'Large' in @e2");
+    expect(b({ action: 'upload', ref: '@e4', path: 'assets/logo.png' })).toBe('uploading logo.png');
+    expect(b({ action: 'switch_tab', tab: 't2' })).toBe('switching to tab t2');
+    expect(b({ action: 'network' })).toBe('checking the network for failed requests');
+    expect(b({ action: 'fill', ref: '@e1' })).toBe('filling in @e1');
+    expect(b({ action: 'check', ref: '@e1' })).toBe('ticking @e1');
+    expect(b({ action: 'uncheck', ref: '@e1' })).toBe('unticking @e1');
+    expect(b({ action: 'hover', ref: '@e1' })).toBe('hovering over @e1');
+    expect(b({ action: 'get_text', ref: '@e1' })).toBe('reading the text of @e1');
+    expect(b({ action: 'get_url' })).toBe('checking which page the browser is on');
+    expect(b({ action: 'eval' })).toBe('running a script in the page');
+    expect(b({ action: 'tabs' })).toBe('listing the open tabs');
+    expect(b({ action: 'new_tab', url: 'http://localhost:3000/a' })).toBe(
+      'opening localhost:3000 in a new tab',
+    );
+    expect(b({ action: 'close_tab', tab: 't2' })).toBe('closing tab t2');
+    expect(b({ action: 'close_tab' })).toBe('closing the tab');
     expect(narrateTool('web_search', { query: 'vitest coverage' })).toBe(
       'searching the web for vitest coverage',
     );

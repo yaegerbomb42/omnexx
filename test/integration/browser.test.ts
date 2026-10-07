@@ -120,6 +120,7 @@ describe('browser integration', () => {
       allow: ['localhost', '127.0.0.1', '*.local'],
       headless: true,
       serve_timeout: '60s',
+      allow_eval: false,
     });
 
     const res = await tool.run({ action: 'open', url: 'https://evil.com/phishing' }, ctx);

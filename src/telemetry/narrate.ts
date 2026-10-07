@@ -15,6 +15,8 @@ function host(url: string): string {
 
 const clip = (t: string, n = 70): string => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
 
+const basename = (p: string): string => p.split('/').pop() ?? p;
+
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 
 /** What a shell command is for, in words; falls back to the command itself. */
@@ -101,6 +103,23 @@ export function narrateTool(name: string, input: Record<string, unknown>): strin
       if (a === 'snapshot') return 'reading the page';
       if (a === 'console') return 'checking the browser console for errors';
       if (a === 'close') return 'closing the browser';
+      if (a === 'fill') return `filling in ${s(input.ref)}`;
+      if (a === 'hover') return `hovering over ${s(input.ref)}`;
+      if (a === 'select') return `choosing '${clip(s(input.value), 40)}' in ${s(input.ref)}`;
+      if (a === 'check') return `ticking ${s(input.ref)}`;
+      if (a === 'uncheck') return `unticking ${s(input.ref)}`;
+      if (a === 'upload') return `uploading ${basename(s(input.path))}`;
+      if (a === 'wait_for')
+        return `waiting for ${s(input.ref) || `"${clip(s(input.text), 50)}"`} to appear`;
+      if (a === 'get_text') return `reading the text of ${s(input.ref)}`;
+      if (a === 'get_url') return 'checking which page the browser is on';
+      if (a === 'eval') return 'running a script in the page';
+      if (a === 'network') return 'checking the network for failed requests';
+      if (a === 'tabs') return 'listing the open tabs';
+      if (a === 'switch_tab') return `switching to tab ${s(input.tab)}`;
+      if (a === 'new_tab') return `opening ${host(s(input.url))} in a new tab`;
+      if (a === 'close_tab')
+        return s(input.tab) ? `closing tab ${s(input.tab)}` : 'closing the tab';
       return `using the browser (${a})`;
     }
     default:
