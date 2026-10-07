@@ -14,9 +14,10 @@ mkdir monkey-site && cd monkey-site     # or cd into any repo with tests
 omnexx                                  # paste an API key, then type a goal
 ```
 
-That's it. In an empty folder omnexx runs `git init`, writes starter checks and starts building.
-In an existing repo it uses your tests, typecheck and lint as the checks. Close the terminal any
-time: the run keeps going, and `omnexx` again re-attaches.
+That's it: you're chatting with an agent that works in your checkout and shows every step as it
+goes. Type while it works to steer it; Esc stops it. For work that takes hours or days, `/run
+<goal>` starts a long unattended run on its own branch: it plans, checks every step against your
+tests, typecheck and lint, and keeps going. Close the terminal any time; `omnexx` re-attaches.
 
 ### Why omnexx over Claude Code, Codex or OpenCode?
 
