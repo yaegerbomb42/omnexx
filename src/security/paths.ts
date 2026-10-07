@@ -52,6 +52,9 @@ export function isInside(root: string, target: string): boolean {
   return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
 }
 
+/** A path outside the root: the one jail refusal a person may override in interactive chat. */
+export class OutsideRootError extends PolicyError {}
+
 /**
  * The path jail. Every file tool goes through `resolve()`: the result is a real path inside the
  * worktree, never through a symlink that escapes it, and never a secret-looking file.
@@ -63,7 +66,7 @@ export class PathJail {
     this.root = realpathSync.native(root);
   }
 
-  resolve(userPath: string, mode: 'read' | 'write'): string {
+  resolve(userPath: string, mode: 'read' | 'write', opts: { allowOutside?: boolean } = {}): string {
     if (userPath.includes('\0')) throw new PolicyError('path contains a NUL byte');
     const expanded = userPath.startsWith('~')
       ? `${this.root}${sep}__home__${userPath.slice(1)}`
@@ -71,7 +74,8 @@ export class PathJail {
     const abs = resolve(this.root, expanded);
     const real = canonical(abs);
     if (!isInside(this.root, real)) {
-      throw new PolicyError(
+      if (opts.allowOutside && !isSecretPath(real)) return real;
+      throw new OutsideRootError(
         `${userPath} is outside the worktree`,
         'file tools only work on paths inside the repository',
       );

@@ -93,10 +93,16 @@ function summarizeInput(input: unknown): string {
  * here at a turn boundary; no tokens are spent while paused or while a command runs.
  */
 export async function runAgentLoop(
-  ctx: { system: SystemBlock[]; first: Message; tools: ToolSpec[] },
+  ctx: {
+    system: SystemBlock[];
+    first: Message;
+    tools: ToolSpec[];
+    /** Earlier turns of an interactive chat, sent before `first`. */
+    history?: readonly Message[];
+  },
   deps: LoopDeps,
 ): Promise<LoopResult> {
-  let messages: Message[] = [ctx.first];
+  let messages: Message[] = [...(ctx.history ?? []), ctx.first];
   const usage: Usage = { uncached: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0, output: 0 };
   let usd = 0;
   let turns = 0;

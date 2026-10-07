@@ -45,7 +45,11 @@ export const bashTool: Tool<typeof schema> = {
   readOnly: false,
   async run(input, ctx) {
     const verdict = checkCommand(input.command, ctx.policy);
-    if (!verdict.allowed) {
+    const allowed =
+      verdict.allowed ||
+      (ctx.ask !== undefined &&
+        (await ctx.ask(`run \`${input.command}\`? Normally refused: ${verdict.reason}`)));
+    if (!verdict.allowed && !allowed) {
       ctx.events.emit('tool.denied', {
         tool: 'bash',
         rule: verdict.rule,
