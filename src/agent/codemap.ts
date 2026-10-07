@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { estimateTokens } from '../core/tokens.js';
@@ -79,12 +79,48 @@ async function entryFor(root: string, path: string): Promise<CodemapEntry | unde
   }
 }
 
+/** Directories a walk outside git never descends into. */
+const SKIP_DIRS = new Set([
+  'node_modules',
+  'dist',
+  'build',
+  'out',
+  'target',
+  'coverage',
+  'vendor',
+  '__pycache__',
+  'venv',
+  'Library',
+  'Applications',
+]);
+const WALK_MAX_FILES = 2_000;
+const WALK_MAX_DEPTH = 4;
+
+/**
+ * Outside a git repository (chat in any folder), a bounded walk: no hidden or dependency
+ * directories, a few levels deep, at most a couple thousand files, so a home folder stays cheap.
+ */
+async function walkFiles(root: string): Promise<string[]> {
+  const out: string[] = [];
+  const visit = async (dir: string, depth: number): Promise<void> => {
+    if (out.length >= WALK_MAX_FILES || depth > WALK_MAX_DEPTH) return;
+    const entries = await readdir(join(root, dir), { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      if (out.length >= WALK_MAX_FILES) return;
+      if (e.name.startsWith('.') || SKIP_DIRS.has(e.name)) continue;
+      const rel = dir ? `${dir}/${e.name}` : e.name;
+      if (e.isDirectory()) await visit(rel, depth + 1);
+      else if (e.isFile()) out.push(rel);
+    }
+  };
+  await visit('', 0);
+  return out;
+}
+
 export async function trackedFiles(root: string): Promise<string[]> {
-  const out = await git(root, ['ls-files', '-z']);
-  return out.stdout
-    .split('\0')
-    .filter(Boolean)
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const out = await git(root, ['ls-files', '-z'], { allowFailure: true });
+  const files = out.exitCode === 0 ? out.stdout.split('\0').filter(Boolean) : await walkFiles(root);
+  return files.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 export async function buildCodemap(root: string): Promise<Codemap> {
