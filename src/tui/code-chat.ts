@@ -1,45 +1,93 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildCodemap, renderCodemap } from '../agent/codemap.js';
+import { clearOldToolResults, contextTokens, transcriptFor } from '../agent/compaction.js';
 import { runAgentLoop } from '../agent/loop.js';
 import type { CliIO } from '../cli/io.js';
 import { resolveRunDeps } from '../cli/run-deps.js';
 import type { OmnexxConfig } from '../config/schema.js';
 import { parseDuration } from '../config/duration.js';
-import { EventLog } from '../core/events.js';
+import { EventLog, type OmnexxEvent } from '../core/events.js';
 import { RunStore } from '../core/run-store.js';
 import { realClock } from '../core/clock.js';
+import { estimateTokens } from '../core/tokens.js';
 import { loadInstructions, renderInstructions } from '../instructions/load.js';
-import { resolveChain } from '../providers/pricing.js';
+import type { ResolvedModel } from '../providers/pricing.js';
+import { resolveModelLenient } from '../providers/profiles.js';
 import type { Message, Provider } from '../providers/types.js';
 import { scrubEnv } from '../security/env-scrub.js';
 import { PathJail } from '../security/paths.js';
 import { Redactor } from '../security/redact.js';
-import { humanize } from '../telemetry/humanize.js';
-import { brand } from '../cli/brand.js';
 import { workerTools, toolSpec } from '../tools/registry.js';
+import { todoTool, type TodoItem } from '../tools/todo.js';
 import type { Tool, ToolContext } from '../tools/types.js';
 import { runGates } from '../verify/gates.js';
 
 export const CHAT_SYSTEM = `You are Omnexx in chat mode: a coding agent working turn by turn with a person at the keyboard, directly in their repository (your cwd).
 
-- Do what they ask in this message, then stop and reply briefly: what you changed and what you checked.
+- Do what they ask, then stop and reply briefly: what you changed and what you checked.
+- For anything with more than two steps, write a todo list first with the todo tool and keep it current: one item in_progress at a time, done as you finish.
+- Before each tool call, say in one short sentence what you are about to do and why.
 - Explore with the codebase map, outline, search and ranged reads. Edit with str_replace / multi_edit; write_file for new or small files.
 - Run the relevant tests with bash before you finish when you changed code.
+- The person may send messages while you work; they arrive marked as such. Read them and adjust at once.
 - Some actions need their OK (paths outside the repo, commands the policy refuses); they are asked for you. If they say no, find another way or explain.
 - Ask a question instead of guessing when the request is ambiguous and the choice matters.`;
 
-/** Tools chat leaves out: helpers need a run, and the planner's tools don't apply. */
+/** Tools chat leaves out: helpers need a run. */
 const CHAT_DENIED = new Set(['task']);
 
+/** What the chat shows the person. */
+export type ChatLine =
+  | { kind: 'act'; text: string }
+  | { kind: 'think'; text: string }
+  | { kind: 'out'; text: string }
+  | { kind: 'feed'; text: string }
+  | { kind: 'err'; text: string };
+
+export interface ChatView {
+  line: (l: ChatLine) => void;
+  /** Reply text as it streams in (cleared when the reply lands as an `out` line). */
+  stream: (delta: string) => void;
+  todo: (items: TodoItem[]) => void;
+}
+
+const firstLine = (t: string): string =>
+  t
+    .split('\n')
+    .find((l) => l.trim())
+    ?.trim() ?? '';
+
+/** Price an unpriced model at $0 so chat works on any endpoint; spend then reads $0.00. */
+function chatModel(ref: string, config: OmnexxConfig): ResolvedModel {
+  const m = resolveModelLenient(ref, config);
+  return {
+    ...m,
+    price: m.price ?? {
+      id: m.id,
+      input: 0,
+      output: 0,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      cache_read: 0,
+    },
+  };
+}
+
 /**
- * Turn-by-turn coding in the user's own checkout (no worktree, no rollback): the conversation
- * carries across messages, edits land immediately, and after each message that edited files the
- * configured gates run and report (they inform; they don't revert).
+ * Turn-by-turn coding in the user's own checkout (no worktree, no rollback). The conversation
+ * carries across messages; messages typed mid-turn reach the model at its next step; Esc ends a
+ * turn cleanly; long conversations are trimmed, then summarized, between messages.
  */
 export class CodeChat {
   private history: Message[] = [];
+  private queue: string[] = [];
+  private abort: AbortController | undefined;
+  private view: ChatView | undefined;
+  private models: ResolvedModel[];
   usd = 0;
+  /** Estimated tokens the next request starts with (system + tools + conversation). */
+  contextUsed = 0;
 
   private constructor(
     private readonly config: OmnexxConfig,
@@ -49,10 +97,27 @@ export class CodeChat {
     private readonly ctx: ToolContext,
     private readonly events: EventLog,
     private readonly store: RunStore,
-  ) {}
+    model: string | undefined,
+  ) {
+    const refs = model ? [model] : config.models.worker;
+    this.models = (typeof refs === 'string' ? [refs] : refs).map((r) => chatModel(r, config));
+    this.contextUsed = this.baseTokens();
+    // One listener for the whole chat: every action shows as a line while it happens.
+    events.onEvent((e) => {
+      this.onEvent(e);
+    });
+  }
 
-  static async open(io: CliIO, ask: (q: string) => Promise<boolean>): Promise<CodeChat> {
-    const { config, paths, deps } = await resolveRunDeps(io, io.cwd);
+  static async open(
+    io: CliIO,
+    ask: (q: string) => Promise<boolean>,
+    model?: string,
+  ): Promise<CodeChat> {
+    const { config, paths, deps } = await resolveRunDeps(
+      io,
+      io.cwd,
+      model ? { models: { planner: model, worker: model, cheap: model } } : {},
+    );
     const store = new RunStore(
       paths,
       `chat_${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`,
@@ -87,7 +152,10 @@ export class CodeChat {
       reads: new Map(),
       ask,
     };
-    const tools = (await workerTools(config)).filter((t) => !CHAT_DENIED.has(t.name));
+    const tools = [
+      ...(await workerTools(config)).filter((t) => !CHAT_DENIED.has(t.name)),
+      todoTool as Tool,
+    ];
     const instructions = renderInstructions(await loadInstructions(jail.root, jail.root));
     const codemap = renderCodemap(
       await buildCodemap(jail.root),
@@ -98,53 +166,223 @@ export class CodeChat {
       ...(instructions ? [{ text: instructions }] : []),
       { text: codemap, cacheBreakpoint: true },
     ];
-    return new CodeChat(config, deps.provider, tools, system, ctx, events, store);
+    return new CodeChat(config, deps.provider, tools, system, ctx, events, store, model);
   }
 
-  /** One message: the agent works until it replies; `say` gets progress and the reply. */
-  async send(
-    text: string,
-    say: (kind: 'out' | 'feed' | 'err', line: string) => void,
-  ): Promise<void> {
-    const b = brand({ env: {}, isTTY: true });
-    const listener = (e: Parameters<typeof humanize>[0]) => {
-      const line = humanize(e, { brand: b, verbosity: 'normal' });
-      if (line && e.type === 'tool.call') say('feed', line);
-    };
-    this.events.onEvent(listener);
+  /** "provider:model" of the model chat talks to. */
+  get model(): string {
+    const m = this.models[0];
+    return m ? `${m.provider}:${m.alias}` : '?';
+  }
+
+  /** Switch models; the conversation carries over. */
+  setModel(ref: string): void {
+    this.models = [chatModel(ref, this.config)];
+  }
+
+  get busy(): boolean {
+    return this.abort !== undefined;
+  }
+
+  /** A message typed while the agent works: it joins the conversation at the next step. */
+  steer(text: string): void {
+    this.queue.push(text);
+  }
+
+  /** Messages that arrived after the agent's last step: the session sends them next. */
+  takeLeftovers(): string[] {
+    return this.queue.splice(0);
+  }
+
+  /** Esc: end the current turn, keeping every completed step. */
+  interrupt(): void {
+    this.abort?.abort();
+  }
+
+  /** The context limit the chat compacts at. */
+  get contextLimit(): number {
+    return this.config.context.compact_at;
+  }
+
+  private baseTokens(): number {
+    return estimateTokens(JSON.stringify([this.system, this.tools.map(toolSpec)]));
+  }
+
+  private onEvent(e: OmnexxEvent): void {
+    const v = this.view;
+    if (!v) return;
+    const str = (x: unknown): string => (typeof x === 'string' ? x : '');
+    switch (e.type) {
+      case 'tool.start':
+        v.line({ kind: 'act', text: str(e.doing) });
+        return;
+      case 'tool.call':
+        if (e.isError)
+          v.line({ kind: 'err', text: `  ✗ ${firstLine(str(e.error)).slice(0, 160)}` });
+        return;
+      case 'agent.thinking':
+        v.line({ kind: 'think', text: firstLine(str(e.text)).slice(0, 200) });
+        return;
+      case 'todo.update':
+        v.todo(Array.isArray(e.items) ? (e.items as TodoItem[]) : []);
+        return;
+      case 'steer.applied':
+        v.line({ kind: 'feed', text: 'read your new message' });
+        return;
+      case 'context.cleared':
+        v.line({ kind: 'feed', text: 'trimmed old tool output to keep the context small' });
+        return;
+      case 'provider.retry':
+        v.line({
+          kind: 'feed',
+          text: `waiting for the model provider (${str(e.error).slice(0, 80)})`,
+        });
+        return;
+      case 'provider.failover':
+        v.line({
+          kind: 'feed',
+          text: `switching from ${str(e.provider)} (${str(e.error).slice(0, 60)})`,
+        });
+        return;
+      default:
+    }
+  }
+
+  /** One message: the agent works until it replies. */
+  async send(text: string, view: ChatView): Promise<void> {
+    this.view = view;
     this.ctx.edited.clear();
     this.ctx.reads?.clear();
-    const result = await runAgentLoop(
-      {
-        system: this.system,
-        history: this.history,
-        first: { role: 'user', content: [{ type: 'text', text }] },
-        tools: this.tools.map(toolSpec),
-      },
-      {
-        provider: this.provider,
-        models: resolveChain(this.config.models.worker, this.config),
-        tools: this.tools,
-        toolCtx: this.ctx,
-        budget: this.config.budget,
-        maxTokens: this.config.providers.anthropic.max_tokens,
-        clock: realClock,
-        events: this.events,
-        spentUsd: () => this.usd,
-        onUsage: (_u, usd) => {
-          this.usd += usd;
-          return Promise.resolve();
+    await this.compactIfNeeded();
+    const abort = new AbortController();
+    this.abort = abort;
+    try {
+      const result = await runAgentLoop(
+        {
+          system: this.system,
+          history: this.history,
+          first: { role: 'user', content: [{ type: 'text', text }] },
+          tools: this.tools.map(toolSpec),
         },
-        control: () => Promise.resolve('continue'),
-      },
-    );
-    this.history = result.messages;
-    if (result.finalText) say('out', result.finalText);
-    if (result.end !== 'done') say('err', `(stopped: ${result.end})`);
-    if (this.ctx.edited.size && this.config.gates.length) await this.check(say);
+        {
+          provider: this.provider,
+          models: this.models,
+          tools: this.tools,
+          toolCtx: this.ctx,
+          budget: { ...this.config.budget, max_turns_per_cycle: 200 },
+          maxTokens: this.config.providers.anthropic.max_tokens,
+          clock: realClock,
+          events: this.events,
+          spentUsd: () => this.usd,
+          onUsage: (_u, usd) => {
+            this.usd += usd;
+            return Promise.resolve();
+          },
+          control: () => Promise.resolve('continue'),
+          signal: abort.signal,
+          onDelta: (d) => {
+            if (d.text) view.stream(d.text);
+          },
+          pendingInput: () => this.queue.splice(0),
+          // Within one long turn only old tool output is trimmed; summaries happen between turns.
+          compaction: {
+            settings: {
+              clearAt: this.config.context.clear_tool_results_at,
+              keepToolResults: this.config.context.keep_tool_results,
+              compactAt: Number.MAX_SAFE_INTEGER,
+              keepTurns: this.config.context.compact_keep_turns,
+            },
+          },
+        },
+      );
+      this.history = result.messages;
+      view.stream('');
+      if (result.finalText) view.line({ kind: 'out', text: result.finalText });
+      if (result.end === 'stop-now')
+        view.line({ kind: 'feed', text: 'stopped. tell me what to do instead' });
+      else if (result.end !== 'done') view.line({ kind: 'err', text: `(stopped: ${result.end})` });
+    } finally {
+      this.abort = undefined;
+      this.contextUsed = this.baseTokens() + contextTokens(this.history);
+    }
+    if (this.ctx.edited.size && this.config.gates.length) await this.check(view);
   }
 
-  private async check(say: (kind: 'out' | 'feed' | 'err', line: string) => void): Promise<void> {
+  /** Between messages: trim old tool output, then summarize the oldest exchanges if still big. */
+  private async compactIfNeeded(force = false): Promise<void> {
+    const limit = this.config.context.compact_at;
+    if (!force && contextTokens(this.history) < this.config.context.clear_tool_results_at) return;
+    this.history = clearOldToolResults(
+      this.history,
+      this.config.context.keep_tool_results,
+    ).messages;
+    if (!force && contextTokens(this.history) < limit) return;
+    // Keep the last few exchanges verbatim; an exchange starts at a user message with text.
+    const starts = this.history.flatMap((m, i) =>
+      m.role === 'user' && m.content.some((b) => b.type === 'text') ? [i] : [],
+    );
+    const cut = starts.at(-Math.max(1, this.config.context.compact_keep_turns));
+    if (cut === undefined || cut === 0) return;
+    const head = this.history.slice(0, cut);
+    const summary = await this.summarize(head).catch(() => undefined);
+    if (!summary) return;
+    this.history = [
+      {
+        role: 'user',
+        content: [{ type: 'text', text: `Summary of our conversation so far:\n${summary}` }],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Understood; continuing from there.' }],
+      },
+      ...this.history.slice(cut),
+    ];
+    this.view?.line({
+      kind: 'feed',
+      text: 'summarized the earlier conversation to free up context',
+    });
+    this.contextUsed = this.baseTokens() + contextTokens(this.history);
+  }
+
+  /** /compact. */
+  async compact(view: ChatView): Promise<void> {
+    this.view = view;
+    await this.compactIfNeeded(true);
+  }
+
+  private async summarize(head: readonly Message[]): Promise<string | undefined> {
+    const m = this.models[0];
+    if (!m) return undefined;
+    const res = await this.provider.complete({
+      model: m.id,
+      route: m.provider,
+      system: [
+        { text: 'You compress a coding conversation so it can continue without the transcript.' },
+      ],
+      tools: [],
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: `Summarize: what the user asked for and decided, what was changed (file paths), what was verified, and what is still open. Concrete and brief.\n\n${this.ctx.redactor.text(transcriptFor(head))}`,
+            },
+          ],
+        },
+      ],
+      maxTokens: 1_500,
+      messageBreakpoints: [],
+    });
+    const t = res.content
+      .flatMap((b) => (b.type === 'text' ? [b.text] : []))
+      .join('\n')
+      .trim();
+    return t || undefined;
+  }
+
+  private async check(view: ChatView): Promise<void> {
+    view.line({ kind: 'act', text: 'running your checks' });
     const results = await runGates(this.config.gates, {
       cwd: this.ctx.jail.root,
       env: this.ctx.env,
@@ -159,11 +397,15 @@ export class CodeChat {
           `${r.name} ${r.exitCode === 0 ? '✓' : `✗${r.failures.length ? ` (${r.failures.length})` : ''}`}`,
       )
       .join('  ');
-    say(results.every((r) => r.exitCode === 0) ? 'feed' : 'err', `checks  ${line}`);
+    view.line({
+      kind: results.every((r) => r.exitCode === 0) ? 'feed' : 'err',
+      text: `checks  ${line}`,
+    });
   }
 
   /** Forget the conversation (the codebase map and instructions stay). */
   clear(): void {
     this.history = [];
+    this.contextUsed = this.baseTokens();
   }
 }

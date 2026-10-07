@@ -5,10 +5,12 @@ import { estimateTokens } from '../core/tokens.js';
 import { preflight, type BudgetStop } from '../guard/budget.js';
 import { costUsd, type ResolvedModel } from '../providers/pricing.js';
 import { StopRequested, withRetry } from '../providers/retry.js';
+import { narrateTool } from '../telemetry/narrate.js';
 import { shouldFailover } from '../providers/router.js';
 import { ProviderError } from '../errors.js';
 import {
   totalInput,
+  type CompletionRequest,
   type CompletionResponse,
   type ContentBlock,
   type Message,
@@ -80,7 +82,18 @@ export interface LoopDeps {
   watch?: InCycleWatch;
   /** How many `task` calls from one turn run at once (default 1). */
   parallelTasks?: number;
+  /** Interactive chat: stream text and reasoning as the model writes them. */
+  onDelta?: CompletionRequest['onDelta'];
+  /**
+   * Interactive chat: messages the person typed while the agent was working. Drained after
+   * every step and added to the conversation right away, so they steer the current turn.
+   */
+  pendingInput?: () => string[];
 }
+
+/** How messages typed mid-turn reach the model. */
+export const steeringText = (msgs: readonly string[]): string =>
+  `The user sent ${msgs.length === 1 ? 'a message' : 'messages'} while you were working. Read ${msgs.length === 1 ? 'it' : 'them'} now and adjust:\n${msgs.map((m) => `> ${m}`).join('\n')}`;
 
 /** Failed attempts with a server error before checking whether the provider itself is up. */
 export const POISON_PROBE_AFTER = 3;
@@ -130,6 +143,7 @@ export async function runAgentLoop(
       deps.events.emit('control.resumed', { turn: turns });
     }
     if (signal === 'stop' || signal === 'stop-now') return end(signal);
+    if (deps.signal?.aborted) return end('stop-now');
 
     if (deps.compaction && turns > 0) {
       messages = await manageContext(
@@ -219,6 +233,7 @@ export async function runAgentLoop(
               const r = await deps.provider.complete({
                 ...req,
                 route: m.provider,
+                ...(deps.onDelta ? { onDelta: deps.onDelta } : {}),
                 ...(deps.signal ? { signal: deps.signal } : {}),
               });
               chosen = m;
@@ -280,6 +295,8 @@ export async function runAgentLoop(
       );
     } catch (err) {
       if (err instanceof StopRequested) return end('stop');
+      // Esc in chat: end the turn cleanly, keeping every completed step.
+      if (deps.signal?.aborted) return end('stop-now');
       if (err instanceof PoisonedRequest) {
         const finding: StuckFinding = { signal: 'poisoned_request', detail: err.message };
         deps.events.emit('stuck.in_cycle', {
@@ -334,14 +351,33 @@ export async function runAgentLoop(
     const calls = res.content.filter(
       (b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use',
     );
+    // What the model said or reasoned on its way to a tool call: shown as "thinking".
+    const thought = (calls.length ? text : '') || res.reasoning?.trim();
+    if (thought) deps.events.emit('agent.thinking', { text: thought.slice(0, 600) });
     if (res.stopReason === 'refusal') return end('refusal');
-    if (calls.length === 0) return end('done');
+    if (calls.length === 0) {
+      const late = deps.pendingInput?.() ?? [];
+      if (!late.length) return end('done');
+      // The person wrote while the model was finishing: answer that before ending the turn.
+      messages.push({ role: 'user', content: [{ type: 'text', text: steeringText(late) }] });
+      deps.events.emit('steer.applied', { count: late.length, turn: turns });
+      continue;
+    }
 
     const runCall = async (call: (typeof calls)[number]): Promise<ContentBlock> => {
       const tool = byName.get(call.name);
       let content: string;
       let isError: boolean;
       const toolStart = deps.clock.now();
+      deps.events.emit('tool.start', {
+        tool: call.name,
+        doing: narrateTool(
+          call.name,
+          typeof call.input === 'object' && call.input !== null
+            ? (call.input as Record<string, unknown>)
+            : {},
+        ),
+      });
       if (!tool) {
         content = `unknown tool ${call.name}; the tools are: ${[...byName.keys()].join(', ')} (list files with bash, e.g. \`ls -R src\`)`;
         isError = true;
@@ -380,6 +416,11 @@ export async function runAgentLoop(
     const parallel = calls.every((c) => c.name === 'task') ? (deps.parallelTasks ?? 1) : 1;
     for (let i = 0; i < calls.length; i += parallel)
       results.push(...(await Promise.all(calls.slice(i, i + parallel).map(runCall))));
+    const steer = deps.pendingInput?.() ?? [];
+    if (steer.length) {
+      results.push({ type: 'text', text: steeringText(steer) });
+      deps.events.emit('steer.applied', { count: steer.length, turn: turns });
+    }
     messages.push({ role: 'user', content: results });
 
     const finding = deps.watch?.afterTurn(turns, cycleTokens, calls);

@@ -7,6 +7,7 @@ import type { Entry, Session } from './session.js';
 
 import { CYAN, GRAY, GREEN, RED } from './colors.js';
 import { DiffView } from './diff.js';
+import type { TodoItem } from '../tools/todo.js';
 import { MarkdownLine } from './markdown.js';
 import { Mascot, MascotCaption, REACTION_TICKS, type Mood } from './mascot.js';
 
@@ -33,6 +34,19 @@ function EntryLine({ e }: { e: Entry }) {
         <Text>
           <Text color={GREEN}>{'› '}</Text>
           <Text bold>{e.text}</Text>
+        </Text>
+      );
+    case 'act':
+      return (
+        <Text>
+          <Text color={CYAN}>{'▸ '}</Text>
+          <Text>{e.text}</Text>
+        </Text>
+      );
+    case 'think':
+      return (
+        <Text color={GRAY} italic>
+          {`thinking: ${e.text}`}
         </Text>
       );
     case 'system':
@@ -68,10 +82,14 @@ export function Header({ version, cwd, width }: { version: string; cwd: string; 
       </Text>
       <Text>{`> ${TAGLINE}`}</Text>
       <Text color={GRAY}>
-        {'> type a goal and press enter. it plans, builds, checks every step, and keeps going.'}
+        {
+          '> type what you want: it works on it right here, showing every step. /run <goal> starts a long unattended run.'
+        }
       </Text>
       <Text color={GRAY}>
-        {'> /help for commands · ctrl+p plan · ctrl+d detach · ctrl+c leave (runs keep going)'}
+        {
+          '> /help · shift+tab chat/run mode · esc stop · ctrl+p plan · ctrl+c leave (runs keep going)'
+        }
       </Text>
     </Box>
   );
@@ -137,13 +155,35 @@ function StatusBar({ session, width }: { session: Session; width: number }) {
   );
   const right = session.runId
     ? `${t.model ?? '–'} · ${fmtTokens(t.tokens.input + t.tokens.output)} tok · cache ${Math.round(cacheHitRate(t) * 100)}% · $${t.usd.toFixed(2)} · ✓${t.commits} ✗${t.rejects}`
-    : `${session.mode} mode · feed ${session.verbosity}`;
+    : session.mode === 'chat'
+      ? `${session.chatModelName ?? 'chat'}${session.context ? ` · ctx ${fmtTokens(session.context.used)}/${fmtTokens(session.context.limit)}` : ''} · chat mode`
+      : `run mode · feed ${session.verbosity}`;
   return (
     <Box width={width} justifyContent="space-between">
       {left}
       <Text color={GRAY} wrap="truncate-start">
         {right}
       </Text>
+    </Box>
+  );
+}
+
+/** The agent's checklist for the current request, OpenHands-style. */
+export function TodoPanel({ items }: { items: readonly TodoItem[] }) {
+  const done = items.filter((i) => i.status === 'done').length;
+  return (
+    <Box flexDirection="column" borderStyle="single" borderColor={GRAY} paddingX={1} flexGrow={1}>
+      <Text color={GREEN}>{`todo ${done}/${items.length}`}</Text>
+      {items.map((it, i) => (
+        <Text
+          key={i}
+          wrap="truncate-end"
+          {...(it.status === 'done' ? { color: GRAY, strikethrough: true } : {})}
+          {...(it.status === 'in_progress' ? { color: CYAN, bold: true } : {})}
+        >
+          {`${it.status === 'done' ? '☑' : it.status === 'in_progress' ? '▶' : '☐'} ${it.text}`}
+        </Text>
+      ))}
     </Box>
   );
 }
@@ -202,6 +242,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
     if (session.quit) exit();
   });
 
+  const wide = width >= 110;
   const suggestions = session.complete(input);
   const files = session.completeFile(input);
 
@@ -242,7 +283,8 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       return;
     }
     if (key.escape) {
-      setInput('');
+      // Esc stops the agent mid-turn; with nothing running it clears the input.
+      if (!session.interrupt()) setInput('');
       return;
     }
     if (key.tab) {
@@ -314,7 +356,9 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
     : session.pending
       ? 'y to allow, anything else to refuse'
       : session.mode === 'chat'
-        ? 'what should we change? (shift+tab: run mode)'
+        ? session.busy
+          ? 'type to steer the agent while it works'
+          : 'what should we build or change? (shift+tab: long run mode)'
         : session.runAlive
           ? 'steer the run, or /command'
           : 'what should omnexx build? (or /help)';
@@ -336,11 +380,27 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       <Box flexDirection="column" marginTop={1}>
         {showPlan && session.plan && <PlanBox plan={session.plan} rows={12} />}
         {session.diffView && <DiffView view={session.diffView} width={width} />}
-        {session.busy && (
-          <Text color={CYAN}>
-            {SPINNER[frame]} {session.busy}
-          </Text>
-        )}
+        <Box width={width}>
+          <Box flexDirection="column" flexGrow={1}>
+            {session.live && (
+              <Text wrap="wrap">{session.live.split('\n').slice(-6).join('\n')}</Text>
+            )}
+            {session.busy && (
+              <Text color={CYAN}>
+                {SPINNER[frame]} {session.busy}
+                <Text color={GRAY}>
+                  {session.mode === 'chat' ? '  (esc to stop, type to steer)' : ''}
+                </Text>
+              </Text>
+            )}
+            {!wide && session.todos.length > 0 && <TodoPanel items={session.todos} />}
+          </Box>
+          {wide && session.todos.length > 0 && (
+            <Box width={42} marginLeft={1}>
+              <TodoPanel items={session.todos} />
+            </Box>
+          )}
+        </Box>
         {session.pending && (
           <Text color={CYAN} bold>
             {`? ${session.pending.question} [y/N]`}

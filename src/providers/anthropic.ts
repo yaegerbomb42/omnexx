@@ -90,10 +90,15 @@ export class AnthropicProvider implements Provider {
   async complete(req: CompletionRequest): Promise<CompletionResponse> {
     let res: Anthropic.Message;
     try {
-      res = await this.client.messages.create(
-        this.buildParams(req),
-        req.signal ? { signal: req.signal } : {},
-      );
+      const opts = req.signal ? { signal: req.signal } : {};
+      if (req.onDelta) {
+        const onDelta = req.onDelta;
+        const stream = this.client.messages.stream(this.buildParams(req), opts);
+        stream.on('text', (text) => {
+          onDelta({ text });
+        });
+        res = await stream.finalMessage();
+      } else res = await this.client.messages.create(this.buildParams(req), opts);
     } catch (err) {
       throw toProviderError(err);
     }

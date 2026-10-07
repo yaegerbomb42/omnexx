@@ -52,12 +52,15 @@ describe('a request the provider keeps choking on', () => {
   it('keeps waiting through a real outage, where the health check fails too', async () => {
     const t = await startTestRun({ provider: down, plan });
     await runBaseline(t.run);
-    const started = t.clock.now();
-    void runOneCycle(t.run, 'M1.T01').catch(() => undefined);
+    const cycle = runOneCycle(t.run, 'M1.T01').catch(() => undefined);
     // Let the retry loop run through many backoffs on the fake clock, then stop the run.
-    for (let i = 0; i < 200 && t.clock.now() - started < 3_600_000; i++)
-      await new Promise((r) => setTimeout(r, 5));
+    const retries = async () =>
+      (await readEvents(t.run.events.path)).filter((e) => e.type === 'provider.retry').length;
+    for (let i = 0; i < 1_000 && (await retries()) <= 5; i++)
+      await new Promise((r) => setTimeout(r, 10));
     t.run.abort.abort();
+    // Let the cycle finish writing before the temp dirs are removed.
+    await cycle;
     const events = await readEvents(t.run.events.path);
     expect(events.some((e) => e.type === 'stuck.in_cycle')).toBe(false);
     expect(events.filter((e) => e.type === 'provider.retry').length).toBeGreaterThan(5);

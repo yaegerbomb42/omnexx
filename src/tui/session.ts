@@ -8,7 +8,8 @@ import { git } from '../git/git.js';
 import { connect, describeConnect, looksLikeKey } from '../cli/connect.js';
 import { maskKey } from '../auth/keys.js';
 import { Chat, defaultChatRef, hasProvider } from './chat.js';
-import { CodeChat } from './code-chat.js';
+import { CodeChat, type ChatLine } from './code-chat.js';
+import type { TodoItem } from '../tools/todo.js';
 import { classifyMarkdown, type MdKind } from './markdown.js';
 import { parseDiff, type DiffViewState } from './diff.js';
 import { compactPlanView, planCounts } from '../core/plan.js';
@@ -19,7 +20,7 @@ import { emptyTelemetry, fold, type Telemetry } from '../telemetry/aggregate.js'
 import { EventTail } from '../telemetry/feed.js';
 import { humanize, type Verbosity } from '../telemetry/humanize.js';
 
-export type EntryKind = 'feed' | 'out' | 'err' | 'user' | 'system';
+export type EntryKind = 'feed' | 'out' | 'err' | 'user' | 'system' | 'act' | 'think';
 export interface Entry {
   id: number;
   kind: EntryKind;
@@ -57,6 +58,8 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'connect', args: '<name|url|key> [key]', help: 'add a provider or endpoint in one step' },
   { name: 'chat', help: 'switch to chat: code turn by turn in this checkout (shift+tab)' },
   { name: 'clear', help: 'chat: forget the conversation so far' },
+  { name: 'compact', help: 'chat: summarize the conversation to free up context' },
+  { name: 'model', args: '[provider:model]', help: 'chat: show or switch the model' },
   {
     name: 'setup',
     args: '[provider:model|off]',
@@ -92,10 +95,17 @@ export class Session {
   quit = false;
   chat: Chat | undefined;
   /** What plain text does: start or steer a long run, or code turn by turn. */
-  mode: 'run' | 'chat' = 'run';
+  mode: 'run' | 'chat' = 'chat';
   /** A y/n question from chat mode waiting on the person (permission to go past a guard). */
   pending: { question: string; resolve: (yes: boolean) => void } | undefined;
   private code: CodeChat | undefined;
+  private opening: Promise<CodeChat> | undefined;
+  /** Model chosen with /model before the chat opened. */
+  private chatModel: string | undefined;
+  /** The chat reply as it streams in; moves into the transcript when it lands. */
+  live = '';
+  /** The agent's checklist for the current request (the todo tool). */
+  todos: TodoItem[] = [];
   /** OMNEXX_NO_MASCOT=1 hides the animated character. */
   readonly mascot: boolean;
   readonly history: string[] = [];
@@ -310,17 +320,70 @@ export class Session {
     );
   }
 
+  /** Context in use / the limit chat compacts at, once a chat is open. */
+  get context(): { used: number; limit: number } | undefined {
+    return this.code ? { used: this.code.contextUsed, limit: this.code.contextLimit } : undefined;
+  }
+
+  get chatModelName(): string | undefined {
+    return this.code?.model ?? this.chatModel;
+  }
+
+  /** Esc: stop the agent's current turn. Returns false when nothing was running. */
+  interrupt(): boolean {
+    if (!this.code?.busy) return false;
+    this.code.interrupt();
+    this.push('system', 'stopping…');
+    return true;
+  }
+
+  private async openCode(): Promise<CodeChat> {
+    if (this.code) return this.code;
+    this.opening ??= CodeChat.open(this.io, (q) => this.ask(q), this.chatModel);
+    try {
+      this.code = await this.opening;
+      return this.code;
+    } finally {
+      this.opening = undefined;
+    }
+  }
+
+  private readonly view = {
+    line: (l: ChatLine) => {
+      this.push(l.kind, l.text, { markdown: l.kind === 'out' });
+    },
+    stream: (delta: string) => {
+      this.live = delta ? this.live + delta : '';
+      this.changed();
+    },
+    todo: (items: TodoItem[]) => {
+      this.todos = items;
+      this.changed();
+    },
+  };
+
   private async code_(text: string): Promise<void> {
+    // While the agent works, a new message goes straight to it, read at its next step.
+    if (this.code?.busy) {
+      this.code.steer(text);
+      this.push('system', 'sent to the agent; it reads this at its next step');
+      return;
+    }
     this.busy = 'working';
     this.changed();
     try {
-      this.code ??= await CodeChat.open(this.io, (q) => this.ask(q));
-      await this.code.send(text, (kind, line) => {
-        this.push(kind, line, { markdown: kind === 'out' });
-      });
-      this.push('system', `chat spend $${this.code.usd.toFixed(2)}`);
+      const code = await this.openCode();
+      let next: string | undefined = text;
+      while (next !== undefined) {
+        await code.send(next, this.view);
+        // Messages that arrived after its last step: answer them now, not never.
+        const left = code.takeLeftovers();
+        next = left.length ? left.join('\n') : undefined;
+      }
+      if (code.usd > 0) this.push('system', `chat spend $${code.usd.toFixed(2)}`);
     } finally {
       this.busy = undefined;
+      this.live = '';
       this.changed();
     }
   }
@@ -412,7 +475,27 @@ export class Session {
       case 'chat':
         this.setMode('chat');
         return;
+      case 'model':
+        if (!rest) {
+          this.push(
+            'system',
+            `chat model: ${this.chatModelName ?? 'the worker model from your config'}`,
+          );
+          return;
+        }
+        if (this.code) this.code.setModel(rest);
+        else this.chatModel = rest;
+        this.push('system', `chat model: ${rest}`);
+        return;
+      case 'compact':
+        if (!this.code) {
+          this.push('system', 'nothing to compact yet');
+          return;
+        }
+        await this.code.compact(this.view);
+        return;
       case 'clear':
+        this.todos = [];
         this.code?.clear();
         this.push('system', 'chat conversation cleared');
         return;
@@ -512,9 +595,9 @@ export function helpText(b: Brand): string {
     '',
     b.green('typing'),
     '  paste an API key: it is saved and the provider set up (never echoed)',
-    '  shift+tab switches mode:',
-    '    run:  with no live run your text becomes the goal of a new run; while one is live it steers it',
-    '    chat: the agent works on your message right here in your checkout, like Claude Code',
+    '  chat mode (default): the agent works on your message right here, showing every step',
+    '    type while it works to steer it (it reads your message at its next step); esc stops it',
+    '  run mode (shift+tab, or /run <goal>): a long unattended run on its own branch',
     '  in /setup: your text goes to that model, which can add providers for you',
   ].join('\n');
 }

@@ -20,7 +20,7 @@ describe('App', () => {
     const f = lastFrame() ?? '';
     expect(f).toContain('v9.9.9 · /repo');
     expect(f).toContain('why omnexx over claude code?');
-    expect(f).toContain('what should omnexx build?');
+    expect(f).toContain('what should we build or change?');
     expect(f).toContain('no run attached');
     unmount();
   });
