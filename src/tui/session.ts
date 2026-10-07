@@ -12,6 +12,7 @@ import { CodeChat, type ChatLine } from './code-chat.js';
 import type { TodoItem } from '../tools/todo.js';
 import { classifyMarkdown, type MdKind } from './markdown.js';
 import { parseDiff, type DiffViewState } from './diff.js';
+import type { Mood } from './mascot.js';
 import { filterChoices, loadModelChoices, type ModelPickerState } from './model-picker.js';
 import { compactPlanView, planCounts } from '../core/plan.js';
 import { resolvePaths } from '../core/paths.js';
@@ -132,6 +133,8 @@ export class Session {
   ) {
     this.b = brand({ env: io.env, isTTY: true });
     this.mascot = !io.env.OMNEXX_NO_MASCOT;
+    this.nex = { mood: 'hello', at: now(), say: '' };
+    this.lastActivity = now();
   }
 
   onChange(fn: () => void): () => void {
@@ -349,6 +352,21 @@ export class Session {
     );
   }
 
+  /** Nex's latest reaction and what it says; the TUI turns this into a mood each tick. */
+  nex: { mood: Mood; at: number; say: string } = { mood: 'hello', at: 0, say: '' };
+  /** The last time anything happened (typing, output), for Nex dozing off. */
+  lastActivity = 0;
+
+  react(mood: Mood, say = ''): void {
+    this.nex = { mood, at: this.now(), say };
+    this.lastActivity = this.now();
+  }
+
+  /** The person is typing: Nex wakes up and listens. */
+  touch(): void {
+    this.lastActivity = this.now();
+  }
+
   /** The open /model picker; it takes over the keys until closed. */
   modelPicker: ModelPickerState | undefined;
   /** The picker asked for a key or URL: the next message is that, not a chat message. */
@@ -422,6 +440,7 @@ export class Session {
       (await this.openCode()).conversation = history;
     }
     this.push('system', `chat model: ${ref}`);
+    this.react('happy', `hello from ${ref.split(':').pop() ?? ref}!`);
   }
 
   /** Context in use / the limit chat compacts at, once a chat is open. */
@@ -437,6 +456,7 @@ export class Session {
   interrupt(): boolean {
     if (!this.code?.busy) return false;
     this.code.interrupt();
+    this.react('startled');
     this.push('system', 'stopping…');
     return true;
   }
@@ -455,6 +475,15 @@ export class Session {
   private readonly view = {
     line: (l: ChatLine) => {
       this.push(l.kind, l.text, { markdown: l.kind === 'out' });
+      if (l.kind === 'act') this.nex = { mood: 'working', at: 0, say: `${l.text}!` };
+      else if (l.kind === 'err') this.react('sad', l.text.includes('✗') ? 'hm, that failed' : '');
+      else if (l.kind === 'feed' && l.text.startsWith('checks'))
+        this.react(
+          l.text.includes('✗') ? 'sad' : 'happy',
+          l.text.includes('✗') ? 'checks failed' : 'checks pass!',
+        );
+      else if (l.kind === 'out') this.react('happy', 'done!');
+      this.lastActivity = this.now();
     },
     stream: (delta: string) => {
       this.live = delta ? this.live + delta : '';
