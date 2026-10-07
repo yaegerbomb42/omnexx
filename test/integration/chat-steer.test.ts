@@ -136,3 +136,32 @@ describe('chat: steering, todo, actions and stop', () => {
     expect(s.chatModelName).toBe('anthropic:opus');
   });
 });
+
+describe('thinking lines', () => {
+  it('show reasoning on the way to an action, never after a final answer', async () => {
+    let n = 0;
+    const provider: Provider = {
+      name: 'anthropic',
+      complete(req) {
+        n++;
+        const res =
+          n === 1
+            ? reply(
+                [{ type: 'tool_use', id: 't1', name: 'read', input: { path: 'src/a.js' } }],
+                req,
+              )
+            : reply([{ type: 'text', text: 'It exports a.' }], req);
+        return Promise.resolve({
+          ...res,
+          reasoning: n === 1 ? 'check the file first' : 'easy one',
+        });
+      },
+    };
+    const s = await chatSession(provider);
+    await s.submit('what is in a.js?');
+    const lines = s.entries.map((e) => `${e.kind}:${e.text}`);
+    expect(lines).toContain('think:check the file first');
+    expect(lines.some((l) => l.includes('easy one'))).toBe(false);
+    expect(lines.at(-1)).toBe('out:It exports a.');
+  });
+});
