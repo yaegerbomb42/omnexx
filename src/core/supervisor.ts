@@ -63,7 +63,12 @@ export const EXIT_FOR: Record<RunStatus, number> = {
 
 const MAX_MILESTONE_REPLANS = 2;
 
+/** Fresh planner attempts after it ends stuck or out of turns, per supervisor process. */
+const PLANNER_RETRIES = 2;
+
 class Supervisor {
+  private plannerRetries = 0;
+
   constructor(
     private readonly run: Run,
     private readonly notifier: Notifier,
@@ -591,6 +596,16 @@ class Supervisor {
       } catch (err) {
         if (!(err instanceof PlannerIncomplete)) throw err;
         r.events.emit('planner.incomplete', { end: err.end });
+        // A planner that got wedged (a request the provider chokes on, or turns burned on
+        // invalid plans) gets a fresh conversation before the run stops for a human.
+        if (
+          (err.end === 'stuck' || err.end === 'max_turns_per_cycle') &&
+          this.plannerRetries < PLANNER_RETRIES
+        ) {
+          this.plannerRetries++;
+          r.events.emit('planner.retry', { attempt: this.plannerRetries, end: err.end });
+          continue;
+        }
         if (err.end === 'stop' || err.end === 'stop-now')
           return { status: 'user-stop', reason: 'stopped during planning' };
         return err.end === 'max_usd'

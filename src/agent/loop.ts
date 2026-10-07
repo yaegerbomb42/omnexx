@@ -82,6 +82,12 @@ export interface LoopDeps {
   parallelTasks?: number;
 }
 
+/** Failed attempts with a server error before checking whether the provider itself is up. */
+export const POISON_PROBE_AFTER = 3;
+
+/** The provider answers a trivial request but keeps failing this one: retrying can't help. */
+class PoisonedRequest extends Error {}
+
 function summarizeInput(input: unknown): string {
   const s = JSON.stringify(input);
   return s.length > 300 ? `${s.slice(0, 300)}…` : s;
@@ -142,9 +148,52 @@ export async function runAgentLoop(
     let chosen: ResolvedModel | undefined;
     let res: CompletionResponse;
     const callStart = deps.clock.now();
+    // Attempts in a row where some provider answered 5xx, and the last one that did.
+    let serverFailures = 0;
+    let lastServerFailure: ResolvedModel | undefined;
     try {
       res = await withRetry(
         async () => {
+          // After a few server errors, check whether the provider answers a trivial request.
+          // If it does and this request still fails, the request itself is the problem: an
+          // outage fails both, and one that just ended lets this attempt through.
+          if (serverFailures >= POISON_PROBE_AFTER && lastServerFailure) {
+            const m = lastServerFailure;
+            const up = await deps.provider
+              .complete({
+                model: m.id,
+                route: m.provider,
+                system: [{ text: 'Reply with: ok' }],
+                tools: [],
+                messages: [{ role: 'user', content: [{ type: 'text', text: 'ok' }] }],
+                maxTokens: 16,
+                messageBreakpoints: [],
+              })
+              .then(
+                () => true,
+                () => false,
+              );
+            if (up) {
+              // The provider is up: send the real request once more, cooling or not.
+              try {
+                const r = await deps.provider.complete({
+                  ...turnRequest(ctx, messages, m.id, deps.maxTokens),
+                  route: m.provider,
+                  ...(deps.signal ? { signal: deps.signal } : {}),
+                });
+                chosen = m;
+                return r;
+              } catch (err) {
+                if (err instanceof ProviderError && (err.status ?? 0) >= 500)
+                  throw new PoisonedRequest(
+                    `${m.provider}:${m.id} answers other requests but failed this one ${serverFailures + 1} times`,
+                  );
+                throw err;
+              }
+            }
+          }
+          let sawServerError = false;
+          let triedAny = false;
           const skipped: string[] = [];
           let onlyBudget = true;
           for (const m of deps.models) {
@@ -165,6 +214,7 @@ export async function runAgentLoop(
               price: m.price,
             });
             if (!pf.ok) throw new BudgetStopSignal(pf.stop, pf.detail);
+            triedAny = true;
             try {
               const r = await deps.provider.complete({
                 ...req,
@@ -176,6 +226,10 @@ export async function runAgentLoop(
             } catch (err) {
               if (!shouldFailover(err)) throw err;
               onlyBudget = false;
+              if ((err.status ?? 0) >= 500) {
+                sawServerError = true;
+                lastServerFailure = m;
+              }
               // Transient trouble: retry this provider soon. Key, quota or model problems: much later.
               deps.coolProvider?.(m.provider, err.retryable ? 60_000 : 30 * 60_000);
               deps.events.emit('provider.failover', {
@@ -187,6 +241,9 @@ export async function runAgentLoop(
               skipped.push(`${m.provider}: ${err.message}`);
             }
           }
+          // Attempts where every provider was cooling down tried nothing: they don't reset it.
+          if (sawServerError) serverFailures++;
+          else if (triedAny) serverFailures = 0;
           if (skipped.length && onlyBudget)
             throw new BudgetStopSignal(
               'max_usd',
@@ -223,6 +280,15 @@ export async function runAgentLoop(
       );
     } catch (err) {
       if (err instanceof StopRequested) return end('stop');
+      if (err instanceof PoisonedRequest) {
+        const finding: StuckFinding = { signal: 'poisoned_request', detail: err.message };
+        deps.events.emit('stuck.in_cycle', {
+          signal: finding.signal,
+          detail: finding.detail,
+          turn: turns,
+        });
+        return { ...end('stuck'), stuck: finding };
+      }
       if (err instanceof BudgetStopSignal) {
         deps.events.emit('budget.preflight_stop', {
           stop: err.stop,

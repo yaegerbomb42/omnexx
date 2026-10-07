@@ -25,21 +25,21 @@ const warp: Clock = {
 
 const tasks = Number(process.env.OMNEXX_TEST_TASKS ?? 6);
 const outageCycle = Number(process.env.OMNEXX_TEST_OUTAGE_CYCLE ?? -1);
-const outageStart = new Map<string, number>();
+let outageStart: number | undefined;
 const base = scenario(planner(manyTasks(tasks, 5)), fileWorker);
 const slow = Number(process.env.OMNEXX_TEST_TURN_MS ?? 0);
 
 const script: Script = (m) => {
-  if (outageCycle >= 0 && m.taskId && !m.planner && m.turn === 0) {
-    const key = m.taskId;
+  // A real outage fails every request (health checks included) for its whole window.
+  if (outageStart !== undefined && warp.now() - outageStart < 10 * 60_000) return outage();
+  if (outageCycle >= 0 && outageStart === undefined && m.taskId && !m.planner && m.turn === 0) {
     // Task number across milestones of 5: M2.T03 is task 8.
     const index =
       Number(/T(\d+)/.exec(m.taskId)?.[1] ?? 0) +
       (Number(/M(\d+)/.exec(m.taskId)?.[1] ?? 1) - 1) * 5;
     if (index === outageCycle) {
-      const start = outageStart.get(key) ?? warp.now();
-      outageStart.set(key, start);
-      if (warp.now() - start < 10 * 60_000) return outage();
+      outageStart = warp.now();
+      return outage();
     }
   }
   return base(m);

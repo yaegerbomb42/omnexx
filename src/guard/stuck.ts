@@ -7,7 +7,12 @@ export type StuckSignal =
   'consecutive_rejections' | 'repeated_signature' | 'task_cycles' | 'oscillation' | InCycleSignal;
 
 /** Signals the agent loop raises mid-cycle (plan §3.10); each ends the cycle early. */
-export const IN_CYCLE_SIGNALS = ['repeated_tool_call', 'no_edits', 'token_burn'] as const;
+export const IN_CYCLE_SIGNALS = [
+  'repeated_tool_call',
+  'no_edits',
+  'token_burn',
+  'poisoned_request',
+] as const;
 export type InCycleSignal = (typeof IN_CYCLE_SIGNALS)[number];
 
 export function isInCycleSignal(s: string): s is InCycleSignal {
