@@ -67,6 +67,48 @@ export const planSchema = z.strictObject({
 export type Plan = z.infer<typeof planSchema>;
 
 /** What the planner's `write_plan` tool accepts: milestones, each optionally expanded into tasks. */
+const LIST_FIELDS = ['acceptance', 'checks', 'steps', 'dependsOn', 'allow'] as const;
+const NODE_KEYS = new Set(Object.keys(nodeInputSchema.shape));
+
+/** One node as models tend to write it: lists as a single string, `description` for `why`, extras. */
+function normalizeNode(raw: unknown, extraKeys: readonly string[] = []): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (k === 'description' && !('why' in raw)) out.why = v;
+    else if (NODE_KEYS.has(k) || extraKeys.includes(k)) out[k] = v;
+  }
+  for (const f of LIST_FIELDS) {
+    const v = out[f];
+    if (typeof v === 'string')
+      out[f] = v
+        .split('\n')
+        .map((l) => l.replace(/^\s*(?:[-*]|\d+\.)\s+/, '').trim())
+        .filter(Boolean);
+  }
+  return out;
+}
+
+/**
+ * Forgive shape slips before validation (a list sent as one string, `description` instead of
+ * `why`, unknown keys). Each one would otherwise cost the planner a turn; weaker models can
+ * spend all of them and never write a plan. What the plan means is still checked strictly.
+ */
+export function normalizePlanUpdate(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
+  const r = raw as { milestones?: unknown; park?: unknown };
+  if (!Array.isArray(r.milestones)) return raw;
+  return {
+    ...(r.park !== undefined ? { park: r.park } : {}),
+    milestones: r.milestones.map((m: unknown) => {
+      const node = normalizeNode(m, ['tasks']);
+      if (typeof node !== 'object' || node === null) return node;
+      const tasks = (node as { tasks?: unknown }).tasks;
+      return Array.isArray(tasks) ? { ...node, tasks: tasks.map((t) => normalizeNode(t)) } : node;
+    }),
+  };
+}
+
 export const planUpdateSchema = z.strictObject({
   milestones: z
     .array(

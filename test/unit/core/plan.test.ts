@@ -151,3 +151,45 @@ describe('hierarchical plan', () => {
     expect(runnableTasks(plan)).toEqual([]);
   });
 });
+
+describe('normalizePlanUpdate', () => {
+  it('forgives shape slips models make, then the strict schema accepts it', async () => {
+    const { normalizePlanUpdate, planUpdateSchema } = await import('../../../src/core/plan.js');
+    const raw = {
+      milestones: [
+        {
+          id: 'M1',
+          title: 'Core',
+          description: 'the converter core',
+          size: 'S',
+          estimate: '2h',
+          tasks: [
+            {
+              id: 'M1.T01',
+              title: 'Headings',
+              acceptance: '- # renders h1\n- ###### renders h6',
+              checks: 'node --test test/headings.test.js',
+              command: 'ignored',
+            },
+          ],
+        },
+      ],
+    };
+    expect(planUpdateSchema.safeParse(raw).success).toBe(false);
+    const fixed = planUpdateSchema.parse(normalizePlanUpdate(raw));
+    expect(fixed.milestones[0]?.why).toBe('the converter core');
+    expect(fixed.milestones[0]?.tasks[0]).toMatchObject({
+      acceptance: ['# renders h1', '###### renders h6'],
+      checks: ['node --test test/headings.test.js'],
+    });
+  });
+
+  it('leaves real mistakes for the schema to reject', async () => {
+    const { normalizePlanUpdate, planUpdateSchema } = await import('../../../src/core/plan.js');
+    expect(
+      planUpdateSchema.safeParse(normalizePlanUpdate({ milestones: [{ id: 'X', title: 'bad' }] }))
+        .success,
+    ).toBe(false);
+    expect(normalizePlanUpdate('nonsense')).toBe('nonsense');
+  });
+});

@@ -274,7 +274,9 @@ export async function runAgentLoop(
         content = `unknown tool ${call.name}`;
         isError = true;
       } else {
-        const parsed = tool.schema.safeParse(call.input);
+        const parsed = tool.schema.safeParse(
+          tool.normalize ? tool.normalize(call.input) : call.input,
+        );
         if (!parsed.success) {
           content = `invalid input for ${call.name}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
           isError = true;
