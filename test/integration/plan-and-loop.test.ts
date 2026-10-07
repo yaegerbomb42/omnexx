@@ -237,7 +237,7 @@ describe('agent loop limits and control inside a cycle', () => {
     ]);
     const calls = events.filter((e) => e.type === 'tool.call');
     expect(calls.slice(0, 2).map((e) => e.isError)).toEqual([true, true]);
-    expect(String(calls[0]?.error)).toMatch(/unknown tool|invalid input/);
+    expect(String(calls[0]?.error)).toMatch(/unknown tool .*the tools are: read|invalid input/);
     expect(turnSeen).toBe(3);
 
     const stopped = await startTestRun({

@@ -31,7 +31,14 @@ import {
 import { startHeartbeat } from './heartbeat.js';
 import { acquireLock, defaultLockEnv, releaseLock, type LockEnv } from './lock.js';
 import { initCodemap, settleMilestones } from './milestones.js';
-import { childrenOf, getNode, nextUnexpandedMilestone, planCounts, runnableTasks } from './plan.js';
+import {
+  childrenOf,
+  getNode,
+  nextUnexpandedMilestone,
+  planCounts,
+  runnableTasks,
+  type Plan,
+} from './plan.js';
 import { writeReport } from './report.js';
 import type { RunStatus } from './run-store.js';
 import { Run, type RunDeps } from './run.js';
@@ -62,6 +69,21 @@ export const EXIT_FOR: Record<RunStatus, number> = {
 };
 
 const MAX_MILESTONE_REPLANS = 2;
+
+/** How many times a task's line may be split before a stuck descendant is parked instead. */
+const MAX_SPLIT_DEPTH = 2;
+
+/** How many splits produced this task (0 for a task the planner wrote directly). */
+export function splitDepth(plan: Plan, id: string): number {
+  let depth = 0;
+  let cur = id;
+  for (;;) {
+    const parent = plan.nodes.find((n) => n.splitInto.includes(cur));
+    if (!parent) return depth;
+    depth++;
+    cur = parent.id;
+  }
+}
 
 /** Fresh planner attempts after it ends stuck or out of turns, per supervisor process. */
 const PLANNER_RETRIES = 2;
@@ -174,14 +196,20 @@ class Supervisor {
             detail: climbed.detail,
           });
         if (climbed?.rung.id === 'replan_task') {
-          const split = await this.splitTask(task.id, findings.map((f) => f.detail).join('; '));
+          // A task that came out of splits that kept failing won't be saved by another split;
+          // park it so the run moves on instead of splitting forever.
+          const deep = splitDepth(r.requirePlan(), task.id) >= MAX_SPLIT_DEPTH;
+          const split =
+            !deep && (await this.splitTask(task.id, findings.map((f) => f.detail).join('; ')));
           task = getNode(r.requirePlan(), p.taskId);
           if (!split) {
             r.events.emit('ladder.rung', {
               task: task.id,
               rung: 'park',
               detail: park.apply(task, findings),
-              fallback: 'split produced no tasks',
+              fallback: deep
+                ? `already split ${MAX_SPLIT_DEPTH} levels deep`
+                : 'split produced no tasks',
             });
             task.rung = LADDER.indexOf(park);
           }
