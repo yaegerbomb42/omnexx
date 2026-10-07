@@ -295,6 +295,8 @@ export async function runAgentLoop(
         tool: call.name,
         input: summarizeInput(call.input),
         isError,
+        // Already redacted above. Enough to see why it failed without opening the transcript.
+        ...(isError ? { error: content.slice(0, 500) } : {}),
         bytes: content.length,
         ms: deps.clock.now() - toolStart,
       });

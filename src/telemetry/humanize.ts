@@ -69,7 +69,12 @@ function toolLine(e: OmnexxEvent): Line {
   const path = str(input.path);
   const took = num(e.ms) >= 1_000 ? `  ${fmtMs(num(e.ms))}` : '';
   const glyph: Glyph = e.isError ? 'bad' : 'act';
-  const err = e.isError ? '  ✗' : '';
+  // Why it failed, when the loop recorded it: the first line is usually enough to act on.
+  const why =
+    str(e.error)
+      .split('\n')
+      .find((l) => l.trim()) ?? '';
+  const err = e.isError ? `  ✗${why ? ` ${clip(why, 90)}` : ''}` : '';
   switch (name) {
     case 'read': {
       const range =
