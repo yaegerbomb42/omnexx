@@ -7,6 +7,7 @@ import type { Entry, Session } from './session.js';
 
 import { CYAN, GRAY, GREEN, RED } from './colors.js';
 import { DiffView } from './diff.js';
+import { AgentsView } from './agents.js';
 import { ModelPicker, RankEditor } from './model-picker.js';
 import type { TodoItem } from '../tools/todo.js';
 import { MarkdownLine } from './markdown.js';
@@ -268,6 +269,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
   useEffect(() => {
     const t = setInterval(() => {
       void session.poll();
+      void session.refreshAgents();
       setTick((f) => f + 1);
     }, pollMs);
     return () => {
@@ -304,6 +306,15 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       else if (key.escape) session.pickerKey({ close: true });
       else if (key.backspace || key.delete) session.pickerKey({ back: true });
       else if (ch && !key.ctrl && !key.meta) session.pickerKey({ char: ch });
+      return;
+    }
+    if (session.agentsView) {
+      if (key.upArrow) void session.agentsKey('up');
+      else if (key.downArrow) void session.agentsKey('down');
+      else if (key.return) void session.agentsKey('attach');
+      else if (ch === 'p') void session.agentsKey('pause');
+      else if (ch === 's') void session.agentsKey('stop');
+      else if (key.escape || ch === 'q') void session.agentsKey('close');
       return;
     }
     if (session.diffView) {
@@ -447,6 +458,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       <Box flexDirection="column" marginTop={1}>
         {showPlan && session.plan && <PlanBox plan={session.plan} rows={12} />}
         {session.diffView && <DiffView view={session.diffView} width={width} />}
+        {session.agentsView && <AgentsView state={session.agentsView} width={width} />}
         {session.modelPicker && <ModelPicker state={session.modelPicker} width={width} />}
         {session.rankView && <RankEditor state={session.rankView} width={width} />}
         <Box width={width}>
