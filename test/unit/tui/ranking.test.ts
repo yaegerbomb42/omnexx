@@ -30,3 +30,43 @@ describe('/models ranking', () => {
     expect(config.models.chat).toBeUndefined();
   });
 });
+
+describe('/models picker', () => {
+  it('ticking the last model then enter adds the ticked models, not the "+ add" action below', async () => {
+    const { PassThrough } = await import('node:stream');
+    const { Session } = await import('../../../src/tui/session.js');
+    const env = await isolatedEnv();
+    const io = {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new PassThrough(),
+      env,
+      cwd: await tempDir(),
+      isTTY: false,
+    } as never;
+    const s = new Session(io, () => Promise.resolve(0));
+    (s as unknown as { pickFor: string }).pickFor = 'rank';
+    s.modelPicker = {
+      items: [
+        { kind: 'model', ref: 'pool:a', provider: 'pool', model: 'a' },
+        { kind: 'model', ref: 'pool:b', provider: 'pool', model: 'b' },
+        { kind: 'add-env', label: '+ use the keys in your environment' },
+      ],
+      query: '',
+      cursor: 1,
+      current: undefined,
+      unreachable: [],
+      checked: new Set<string>(),
+    };
+    s.pickerKey({ toggle: true });
+    expect(s.modelPicker.cursor).toBe(1);
+    s.pickerKey({ up: true });
+    s.pickerKey({ toggle: true });
+    s.pickerKey({ down: true });
+    s.pickerKey({ down: true });
+    s.pickerKey({ enter: true });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await readRanking(resolvePaths(env))).toEqual(['pool:b', 'pool:a']);
+    expect(s.rankView?.ranked).toEqual(['pool:b', 'pool:a']);
+  });
+});

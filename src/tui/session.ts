@@ -76,6 +76,7 @@ export const SLASH: readonly SlashCommand[] = [
     help: 'your model pool: tick models, pick top-first or random, each runs until its quota is out',
   },
   { name: 'agents', help: 'every long run on this machine: watch, attach, pause, stop' },
+  { name: 'card', help: 'show or hide the live run card (health, progress, models, quota)' },
   { name: 'pause', help: 'pause the agent after its current step (/resume to continue)' },
   { name: 'resume', help: 'continue where the agent paused' },
   { name: 'stop', help: 'stop the agent now (same as esc)' },
@@ -254,6 +255,65 @@ export class Session {
     this.changed();
   }
 
+  /** The live run card under the transcript (toggle with /card). */
+  showRunCard = true;
+
+  /** Nex narrates the moments of an autonomous run that matter. */
+  private reactToRun(e: { type: string; [k: string]: unknown }): void {
+    const model = (v: unknown): string =>
+      typeof v === 'string' ? (v.split(':').pop() ?? v) : 'that model';
+    switch (e.type) {
+      case 'provider.quota_exhausted':
+        this.react('sad', `${model(e.model)} is out of quota, next one!`);
+        break;
+      case 'provider.failover':
+        this.react('startled', `${model(e.model ?? e.provider)} hiccuped, switching`);
+        break;
+      case 'milestone.done':
+        this.react('happy', 'milestone done! ✨');
+        break;
+      case 'task.done':
+        this.react('happy', 'task done!');
+        break;
+      case 'ladder.rung':
+        this.react('startled', 'trying a different angle');
+        break;
+      case 'run.finish':
+        this.react(e.status === 'finished' ? 'happy' : 'sad', `run ${String(e.status)}`);
+        break;
+    }
+  }
+
+  /** Every 10 minutes of an attached run: one line on what happened since the last one. */
+  private digestAt = 0;
+  private digestBase = { commits: 0, rejects: 0, failovers: 0, done: 0 };
+  private digest(): void {
+    const now = this.now();
+    if (!this.digestAt) {
+      this.digestAt = now;
+      return;
+    }
+    if (now - this.digestAt < 10 * 60_000) return;
+    const t = this.telemetry;
+    const b = this.digestBase;
+    const done = this.info?.done ?? 0;
+    const parts = [
+      `${t.commits - b.commits} commit${t.commits - b.commits === 1 ? '' : 's'}`,
+      `${t.rejects - b.rejects} rejected`,
+      `${done - b.done} task${done - b.done === 1 ? '' : 's'} done`,
+      t.failovers > b.failovers ? `${t.failovers - b.failovers} model switches` : undefined,
+      t.quotaOut.length
+        ? `out of quota: ${t.quotaOut.map((r) => r.split(':').pop()).join(', ')}`
+        : undefined,
+    ].filter(Boolean);
+    this.push(
+      'system',
+      `last ${Math.round((now - this.digestAt) / 60_000)}m: ${parts.join(' · ')}${this.info ? ` · ${this.info.done}/${this.info.tasks} tasks overall` : ''}`,
+    );
+    this.digestAt = now;
+    this.digestBase = { commits: t.commits, rejects: t.rejects, failovers: t.failovers, done };
+  }
+
   /** Pull new events into the feed and refresh liveness and the plan (every ~2 s). */
   async poll(): Promise<void> {
     if (!this.tail || !this.runId) return;
@@ -262,7 +322,9 @@ export class Session {
       fold(this.telemetry, e);
       const line = humanize(e, { brand: this.b, verbosity: this.verbosity });
       if (line) this.push('feed', line);
+      this.reactToRun(e);
     }
+    this.digest();
     if (this.now() - this.lastPlanAt > 2_000) {
       this.lastPlanAt = this.now();
       const store = new RunStore(resolvePaths(this.io.env), this.runId);
@@ -568,7 +630,8 @@ export class Session {
       if (it?.kind === 'model') {
         if (p.checked.has(it.ref)) p.checked.delete(it.ref);
         else p.checked.add(it.ref);
-        p.cursor = Math.min(shown.length - 1, p.cursor + 1);
+        // Step to the next model, never onto the "+ add…" actions below the list.
+        if (shown[p.cursor + 1]?.kind === 'model') p.cursor += 1;
       }
     } else if (k.back) {
       p.query = p.query.slice(0, -1);
@@ -579,10 +642,13 @@ export class Session {
     } else if (k.enter) {
       const it = shown[Math.min(p.cursor, shown.length - 1)];
       this.modelPicker = undefined;
-      if (it?.kind === 'model' && this.pickFor === 'rank') {
-        // Picked for the pool: append the ticked models (or this one) and go back to the editor.
+      const ticked = this.pickFor === 'rank' && (p.checked?.size ?? 0) > 0;
+      if (this.pickFor === 'rank' && (ticked || it?.kind === 'model')) {
+        // Picked for the pool: the ticked models (wherever the cursor is), else this one.
         this.pickFor = 'chat';
-        const add = p.checked?.size ? [...p.checked] : [it.ref];
+        let add: string[] = [];
+        if (ticked && p.checked) add = [...p.checked];
+        else if (it?.kind === 'model') add = [it.ref];
         void (async () => {
           const paths = resolvePaths(this.io.env);
           const ranked = await readRanking(paths);
@@ -802,6 +868,10 @@ export class Session {
         if (rest) await this.startRun(rest);
         else this.setMode('run');
         return;
+      case 'card':
+        this.showRunCard = !this.showRunCard;
+        this.push('system', `run card ${this.showRunCard ? 'on' : 'off'}`);
+        break;
       case 'plan':
         if (rest) await this.cli(['run', '--plan-only', rest], 'planning');
         else await this.cli(['plan', ...(this.runId ? [this.runId] : [])]);

@@ -22,6 +22,16 @@ export interface Telemetry {
   compactions: number;
   lastCommit?: string;
   status?: string;
+  /** Calls moved to another model after an error. */
+  failovers: number;
+  lastFailover?: string;
+  /** provider:model refs that ran out of quota during the run. */
+  quotaOut: string[];
+  /** How the current model was chosen: pin, judge (Nimble) or rules. */
+  routeBy?: string;
+  /** Stuck signals and strategy-ladder escalations. */
+  stuck: number;
+  milestonesDone: number;
 }
 
 export function emptyTelemetry(): Telemetry {
@@ -38,6 +48,10 @@ export function emptyTelemetry(): Telemetry {
     gateRuns: 0,
     gatePasses: 0,
     compactions: 0,
+    failovers: 0,
+    quotaOut: [],
+    stuck: 0,
+    milestonesDone: 0,
   };
 }
 
@@ -92,6 +106,23 @@ export function fold(t: Telemetry, e: OmnexxEvent): Telemetry {
       break;
     case 'run.finish':
       if (typeof e.status === 'string') t.status = e.status;
+      break;
+    case 'provider.failover':
+      t.failovers++;
+      t.lastFailover = `${String(e.provider)}${typeof e.model === 'string' ? `:${e.model}` : ''}`;
+      break;
+    case 'provider.quota_exhausted':
+      if (typeof e.model === 'string' && !t.quotaOut.includes(e.model)) t.quotaOut.push(e.model);
+      break;
+    case 'route.decision':
+      if (typeof e.by === 'string') t.routeBy = e.by;
+      break;
+    case 'stuck.signal':
+    case 'ladder.rung':
+      t.stuck++;
+      break;
+    case 'milestone.done':
+      t.milestonesDone++;
       break;
   }
   return t;
