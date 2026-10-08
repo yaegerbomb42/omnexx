@@ -60,19 +60,28 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
   // Bare `omnexx`: the interactive session on a terminal, help otherwise.
   program.option('--no-tui', 'print help instead of opening the interactive session');
   program.option('-c, --continue', 'continue the last chat in this folder');
-  program.action(async (opts: { tui: boolean; continue?: boolean }) => {
-    if (!io.isTTY || !opts.tui || io.env.TERM === 'dumb') {
-      program.outputHelp();
-      return;
-    }
-    const { startTui } = await import('../tui/start.js');
-    setExit(
-      await startTui(io, runCli, {
-        version: VERSION,
-        ...(opts.continue ? { continueChat: true } : {}),
-      }),
-    );
-  });
+  program.option('-p, --print <prompt>', 'one chat turn without the TUI; "-" reads stdin');
+  program.option('-m, --model <model>', 'with -p: the model to use (provider:model)');
+  program.action(
+    async (opts: { tui: boolean; continue?: boolean; print?: string; model?: string }) => {
+      if (opts.print !== undefined) {
+        const { printCommand } = await import('./print.js');
+        setExit(await printCommand(io, opts.print, opts.model ? { model: opts.model } : {}));
+        return;
+      }
+      if (!io.isTTY || !opts.tui || io.env.TERM === 'dumb') {
+        program.outputHelp();
+        return;
+      }
+      const { startTui } = await import('../tui/start.js');
+      setExit(
+        await startTui(io, runCli, {
+          version: VERSION,
+          ...(opts.continue ? { continueChat: true } : {}),
+        }),
+      );
+    },
+  );
 
   program
     .command('watch')
