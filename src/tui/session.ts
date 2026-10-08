@@ -12,6 +12,7 @@ import { CodeChat, type ChatLine } from './code-chat.js';
 import type { TodoItem } from '../tools/todo.js';
 import { classifyMarkdown, type MdKind } from './markdown.js';
 import { parseDiff, type DiffViewState } from './diff.js';
+import { commandDirs, expandCommand, loadCustomCommands, type CustomCommand } from './commands.js';
 import type { Mood } from './mascot.js';
 import {
   filterChoices,
@@ -672,6 +673,14 @@ export class Session {
     switch (cmd) {
       case 'help':
         this.push('system', helpText(this.b));
+        if (this.custom.length)
+          this.push(
+            'system',
+            [
+              'your commands',
+              ...this.custom.map((c) => `  /${c.name}  ${c.description}  (${c.source})`),
+            ].join('\n'),
+          );
         return;
       case 'quit':
       case 'exit':
@@ -796,7 +805,13 @@ export class Session {
       case 'init':
         await this.cli(['init', '--yes']);
         return;
-      default:
+      default: {
+        const custom = this.custom.find((c) => c.name === cmd);
+        if (custom) {
+          // A custom command is a saved prompt: it goes to the agent like a typed message.
+          await this.code_(expandCommand(custom, rest));
+          return;
+        }
         if (
           BLOCKED.has(cmd) ||
           (cmd === 'logs' && args.some((a) => a === '-f' || a === '--follow'))
@@ -805,6 +820,7 @@ export class Session {
             `/${cmd} needs the plain terminal; run \`omnexx ${line}\` outside the TUI`,
           );
         await this.cli([cmd, ...args]);
+      }
     }
   }
 
@@ -873,7 +889,25 @@ export class Session {
   complete(input: string): SlashCommand[] {
     if (!input.startsWith('/') || input.includes(' ')) return [];
     const q = input.slice(1);
-    return SLASH.filter((c) => c.name.startsWith(q));
+    const builtIn = new Set(SLASH.map((c) => c.name));
+    return [
+      ...SLASH,
+      ...this.custom
+        .filter((c) => !builtIn.has(c.name))
+        .map((c) => ({ name: c.name, help: c.description })),
+    ].filter((c) => c.name.startsWith(q));
+  }
+
+  /** Slash commands from .omnexx/commands, .claude/commands and the config folder. */
+  custom: CustomCommand[] = [];
+
+  async loadCommands(): Promise<void> {
+    const root =
+      (
+        await git(this.io.cwd, ['rev-parse', '--show-toplevel'], { allowFailure: true })
+      ).stdout.trim() || this.io.cwd;
+    this.custom = await loadCustomCommands(commandDirs(root, resolvePaths(this.io.env).configHome));
+    this.changed();
   }
 }
 

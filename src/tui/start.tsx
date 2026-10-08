@@ -29,6 +29,7 @@ export async function startTui(
   const stateFile = join(paths.configHome, 'tui.json');
   const state = await readState(stateFile);
   const session = new Session(io, runCli);
+  await session.loadCommands();
   if (opts.continueChat) await session.continueChat();
   if (opts.attach === true) await session.attach();
   else if (opts.attach) await session.attach(opts.attach);
