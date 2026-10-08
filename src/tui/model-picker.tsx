@@ -4,11 +4,13 @@ import type { CliIO } from '../cli/io.js';
 import { loadConfig } from '../config/load.js';
 import { resolvePaths } from '../core/paths.js';
 import { discoverModels } from '../providers/discovery.js';
+import { envKeys } from '../cli/connect.js';
 import { CYAN, GRAY, GREEN } from './colors.js';
 
 export type PickerItem =
   | { kind: 'model'; ref: string; provider: string; model: string }
   | { kind: 'add-key'; label: string }
+  | { kind: 'add-env'; label: string }
   | { kind: 'add-url'; label: string };
 
 export interface ModelPickerState {
@@ -64,7 +66,16 @@ export async function loadModelChoices(
     for (const id of ids)
       items.push({ kind: 'model', ref: `${name}:${id}`, provider: name, model: id });
   }
-  return { items: [...items, ...ADD], unreachable };
+  const env = await envKeys(io).catch(() => []);
+  const fromEnv: PickerItem[] = env.length
+    ? [
+        {
+          kind: 'add-env',
+          label: `+ use the keys in your environment (${env.map((k) => k.label).join(', ')})`,
+        },
+      ]
+    : [];
+  return { items: [...items, ...fromEnv, ...ADD], unreachable };
 }
 
 /** Items matching the typed query (every word must appear); the add actions always stay. */

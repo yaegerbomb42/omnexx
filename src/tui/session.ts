@@ -5,7 +5,14 @@ import type { CliIO } from '../cli/io.js';
 import { pickRun, supervisorAlive } from '../cli/commands/control.js';
 import { steerRun } from '../cli/commands/steer.js';
 import { git } from '../git/git.js';
-import { connect, describeConnect, looksLikeKey } from '../cli/connect.js';
+import {
+  connect,
+  connectFromEnv,
+  describeConnect,
+  envKeys,
+  looksLikeKey,
+  type EnvKey,
+} from '../cli/connect.js';
 import { maskKey } from '../auth/keys.js';
 import { Chat, defaultChatRef, hasProvider } from './chat.js';
 import { CodeChat, type ChatLine } from './code-chat.js';
@@ -173,16 +180,33 @@ export class Session {
   }
 
   /** First-run hint: with no provider set up, say how to add one before anything else. */
-  async greet(): Promise<void> {
-    if (await hasProvider(this.io).catch(() => true)) return;
+  async greet(firstRun = false): Promise<void> {
+    const ready = await hasProvider(this.io).catch(() => true);
+    if (ready && !firstRun) return;
+    const found = await envKeys(this.io).catch(() => [] as EnvKey[]);
+    const model = ready
+      ? ['1. a model: you have one. /model to switch or add more, /models to rank them']
+      : [
+          '1. a model (pick any):',
+          ...(found.length
+            ? [
+                `     /connect env      use the keys already in your environment: ${found.map((k) => k.label).join(', ')}`,
+              ]
+            : []),
+          '     paste an API key  OpenAI, Gemini, xAI, Groq, OpenRouter, Mistral, NVIDIA, … are recognised',
+          '     /connect ollama   a free local model (also lmstudio, vllm, llamacpp, jan)',
+          '     /model            browse providers, or add any OpenAI-compatible URL',
+        ];
     this.push(
       'system',
       [
-        'no model provider yet. any of these works:',
-        '  paste an API key (Anthropic, OpenAI, OpenRouter, Groq, xAI, Gemini…)',
-        '  /connect ollama              a local model, no key',
-        '  /connect https://host/v1 KEY any OpenAI-compatible endpoint',
-        'then /setup to talk to it and let it set up the rest',
+        firstRun
+          ? 'welcome to omnexx: an agent that works in this folder and keeps going until your checks pass'
+          : 'no model set up yet',
+        '',
+        ...model,
+        '2. ask: type what you want built or fixed. shift+tab: plan first, or a long unattended run',
+        '3. review: /diff shows what changed, /undo takes it back, /help lists everything',
       ].join('\n'),
     );
   }
@@ -498,6 +522,10 @@ export class Session {
         void this.switchModel(it.ref).catch((err: unknown) => {
           this.push('err', describeError(err));
         });
+      else if (it?.kind === 'add-env')
+        void this.slash('connect env').catch((err: unknown) => {
+          this.push('err', describeError(err));
+        });
       else if (it?.kind === 'add-key') {
         this.awaiting = 'key';
         this.push(
@@ -749,6 +777,17 @@ export class Session {
         await this.cli([cmd, ...(this.runId ? [this.runId] : []), ...args]);
         return;
       case 'connect': {
+        if (args[0] === 'env') {
+          const added = await connectFromEnv(this.io);
+          this.push(
+            'system',
+            added.length
+              ? `connected from your environment: ${added.map((k) => k.label).join(', ')}. /model to pick one`
+              : 'no API keys found in your environment',
+          );
+          if (added.length) await this.openModelPicker();
+          return;
+        }
         // /connect <name|url|key> [key] [--name <alias>]
         const at = args.indexOf('--name');
         const alias = at >= 0 ? args[at + 1] : undefined;
