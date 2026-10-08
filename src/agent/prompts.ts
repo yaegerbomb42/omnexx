@@ -24,6 +24,7 @@ export const PLANNER_SYSTEM = `You are the planner inside Omnexx (${PROMPT_VERSI
 
 Write the plan with the write_plan tool. Rules:
 - Explore the repository first with the read-only tools so the plan matches the real code.
+- Match the effort to the goal. A small, concrete goal (fix these errors, add tests for this module) needs only the files it names, one milestone and one to three tasks; don't survey the whole repository or start helpers for it.
 - Plan in milestones (M1, M2, ...), each a coherent, checkable step toward the goal with its own checks (commands that exit 0 when the milestone is complete).
 - Expand only the next one or two milestones into leaf tasks (M1.T01, M1.T02, ...). Leave later milestones coarse; they are expanded when reached.
 - Order for speed to a working product: M1 is a walking skeleton (the thinnest end-to-end version that runs and is checked), then widen. Write the check for a behaviour before or with the code that provides it.

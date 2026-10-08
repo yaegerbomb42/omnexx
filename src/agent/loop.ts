@@ -416,7 +416,7 @@ export async function runAgentLoop(
         ),
       });
       if (!tool) {
-        content = `unknown tool ${call.name}; the tools are: ${[...byName.keys()].join(', ')} (list files with bash, e.g. \`ls -R src\`)`;
+        content = `unknown tool ${call.name}; the tools are: ${[...byName.keys()].join(', ')}${byName.has('bash') ? ' (list files with bash, e.g. `ls -R src`)' : ' (you cannot run commands here; list files with search)'}`;
         isError = true;
       } else {
         const parsed = tool.schema.safeParse(

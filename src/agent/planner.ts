@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { readTextOr } from '../core/atomic.js';
 import { renderNotes } from '../core/notes.js';
 import {
@@ -47,9 +48,12 @@ export const BEYOND_RUBRIC = [
   'refactors that remove real duplication or risk, with tests green before and after',
 ];
 
-function instruction(mode: PlannerMode, plan: Plan | undefined): string {
+function instruction(mode: PlannerMode, plan: Plan | undefined, baseline = ''): string {
   if (mode.kind === 'initial')
-    return 'There is no plan yet. Explore the repository. Then call write_intent with what the user actually wants (the goal may be one short sentence: infer the intended build from it and from the repo, and record your assumptions instead of asking). Then call write_plan with milestones, expanding only the first one or two into tasks. M1 is the shortest path to a working, checkable v1; widen and polish in later milestones. Every item in the "done when" list of the intent must map to a task that delivers it, and the checks of that task must run a test proving it (not just look for a file or string); commits are only accepted when every test passes, so a task that adds a test also makes it pass. Before the run may finish, an independent audit compares the result with the "done when" list.';
+    return (
+      'There is no plan yet. Explore the repository. Then call write_intent with what the user actually wants (the goal may be one short sentence: infer the intended build from it and from the repo, and record your assumptions instead of asking). Then call write_plan with milestones, expanding only the first one or two into tasks. M1 is the shortest path to a working, checkable v1; widen and polish in later milestones. Every item in the "done when" list of the intent must map to a task that delivers it, and the checks of that task must run a test proving it (not just look for a file or string); commits are only accepted when every test passes, so a task that adds a test also makes it pass. Before the run may finish, an independent audit compares the result with the "done when" list.' +
+      (baseline ? `\n\n${baseline}` : '')
+    );
   const view = plan ? compactPlanView(plan, undefined) : '';
   const full = plan
     ? JSON.stringify({
@@ -89,6 +93,36 @@ function instruction(mode: PlannerMode, plan: Plan | undefined): string {
  * The tool validates the plan (schema, ids, dependencies, no deletions) and the planner retries
  * until it is valid or the cycle's caps end the loop.
  */
+/** Lines of a failing gate's log the initial planner sees, so it need not dig for them. */
+const BASELINE_LOG_LINES = 25;
+
+/**
+ * The gates as they stand on the starting commit, for the initial planner: what already passes,
+ * what fails and the tail of each failing log. Saves the exploration turns spent rediscovering it.
+ */
+export async function baselineBlock(run: Run): Promise<string> {
+  const baseline = run.state.baseline;
+  if (!baseline || !Object.keys(baseline).length) return '';
+  const parts: string[] = [];
+  for (const [name, g] of Object.entries(baseline)) {
+    const tests = g.tests ? `, tests ${g.tests.passed}/${g.tests.total} passing` : '';
+    if (g.exitCode === 0 && !g.timedOut) {
+      parts.push(`- ${name}: passes${tests}`);
+      continue;
+    }
+    const ids = g.failureIds.length
+      ? `; failing: ${g.failureIds.slice(0, 10).join(', ')}${g.failureIds.length > 10 ? ', ...' : ''}`
+      : '';
+    const log = await readTextOr(join(run.store.logsDir, `gate-baseline-${name}.log`), '');
+    const tail = log.trimEnd().split('\n').slice(-BASELINE_LOG_LINES).join('\n');
+    parts.push(
+      `- ${name}: ${g.timedOut ? 'timed out' : `exit ${g.exitCode}`}${tests}${ids}` +
+        (tail ? `\n\`\`\`\n${run.redactor.text(tail)}\n\`\`\`` : ''),
+    );
+  }
+  return `Gates on the starting commit (already run; no need to rediscover this):\n${parts.join('\n')}`;
+}
+
 /** The goal as written, plus the inferred intent once there is one. */
 export function goalBlock(goal: string, intent: string): string {
   return intent ? `# Goal\n\n${goal.trim()}\n\n${intent}` : `# Goal\n\n${goal.trim()}`;
@@ -202,6 +236,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     ? renderCodemap(JSON.parse(codemapText) as Codemap, run.config.context.repo_map_max_tokens)
     : '# Codebase map\n(not built)';
   const notes = renderNotes(await run.store.readNotes());
+  const baseline = mode.kind === 'initial' ? await baselineBlock(run) : '';
   let n = 0;
   const toolCtx: ToolContext = {
     jail: new PathJail(run.worktree),
@@ -232,7 +267,10 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
         { text: goalBlock(goal.text, intent) },
         { text: `# Lessons (notes.md)\n\n${notes}`, cacheBreakpoint: true },
       ],
-      first: { role: 'user', content: [{ type: 'text', text: instruction(mode, run.plan) }] },
+      first: {
+        role: 'user',
+        content: [{ type: 'text', text: instruction(mode, run.plan, baseline) }],
+      },
       tools: tools.map(toolSpec),
     },
     {
