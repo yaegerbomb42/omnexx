@@ -10,16 +10,15 @@ import {
 } from './commands/providers.js';
 import type { CliIO } from './io.js';
 
-/** Key prefixes that name their provider. Order matters: longer prefixes first. */
-const KEY_PREFIXES: readonly (readonly [string, string])[] = [
-  ['sk-ant-', 'anthropic'],
-  ['sk-or-', 'openrouter'],
-  ['gsk_', 'groq'],
-  ['xai-', 'xai'],
-  ['AIza', 'gemini'],
-  ['fw_', 'fireworks'],
-  ['sk-', 'openai'],
-];
+/** Key prefixes that name their provider, from the catalog; longest first so sk-or- beats sk-. */
+const KEY_PREFIXES: readonly (readonly [string, string])[] = (
+  [
+    ['sk-ant-', 'anthropic'],
+    ...Object.entries(PROVIDER_TEMPLATES).flatMap(([name, t]): [string, string][] =>
+      t.keyPrefix ? [[t.keyPrefix, name]] : [],
+    ),
+  ] as [string, string][]
+).sort((a, b) => b[0].length - a[0].length);
 
 /** The provider a pasted key belongs to, or undefined when it doesn't look like a key. */
 export function providerForKey(text: string): string | undefined {
@@ -164,4 +163,42 @@ export function describeConnect(r: ConnectResult): string {
   for (const n of r.notes) lines.push(n);
   if (r.suggested) lines.push(`chat with it: /model ${r.suggested}`);
   return lines.join('\n');
+}
+
+export interface EnvKey {
+  name: string;
+  label: string;
+  keyEnv: string;
+}
+
+/**
+ * Providers whose standard key variable is already set in the environment but that aren't
+ * configured yet: the fastest way to a working model on a machine that already has keys.
+ */
+export async function envKeys(io: CliIO): Promise<EnvKey[]> {
+  const { config } = await loadConfig({ cwd: io.cwd, env: io.env });
+  const out: EnvKey[] = [];
+  if (io.env.ANTHROPIC_API_KEY?.trim())
+    out.push({ name: 'anthropic', label: 'Anthropic', keyEnv: 'ANTHROPIC_API_KEY' });
+  for (const [name, t] of Object.entries(PROVIDER_TEMPLATES)) {
+    if (!t.keyEnv || config.providers.endpoints[name]) continue;
+    if (io.env[t.keyEnv]?.trim()) out.push({ name, label: t.label ?? name, keyEnv: t.keyEnv });
+  }
+  return out;
+}
+
+/**
+ * `/connect env`: add every provider found by envKeys(), pointing each endpoint at its env var
+ * (the key is never copied into omnexx's files). Anthropic needs nothing: its key is read from
+ * the environment already.
+ */
+export async function connectFromEnv(io: CliIO): Promise<EnvKey[]> {
+  const found = await envKeys(io);
+  const file = userConfigFile(resolvePaths(io.env));
+  for (const k of found) {
+    const t = PROVIDER_TEMPLATES[k.name];
+    if (!t) continue;
+    await appendEndpointBlock(file, k.name, { ...t, keyEnv: k.keyEnv });
+  }
+  return found;
 }

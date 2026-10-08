@@ -34,7 +34,7 @@ export async function startTui(
   if (opts.attach === true) await session.attach();
   else if (opts.attach) await session.attach(opts.attach);
   else await session.resumeLatest();
-  await session.greet();
+  await session.greet(!state.seenWhy);
   // Fire and forget: a slow or offline registry never delays the session.
   void checkForUpdate({
     current: opts.version,
