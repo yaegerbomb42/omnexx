@@ -39,6 +39,13 @@ Nimble routing, 0.4.0).
 
 ### Session log
 
+- **2026-10-08 (bench, part 2):** jimmy10 now has all 10 tasks: 04-09 focused (pagination bug, LRU,
+  async race, cross-file rename, validation, CSV) and 10 a long 11-rule inventory spec. Plain node,
+  hidden tests written outside the repo, reference solutions proven by a unit test. Results on the
+  free pool before the over-scoping fix: task-01 pass, 92k tokens, 254 s (was ~740k, no plan);
+  task-02 pass, 713k tokens, hit the 0.3 h cap. The rerun on the new build stalled: every model in
+  the user's config chain is `retired` (out of quota) on the local pool.
+
 - **2026-10-08 (single agent, bench):** ported the W13 bench onto `next` (`feat/bench`). Its runners
   returned made-up numbers and the suite copied the hidden `check.sh` into the agent's repo; now the
   omnexx runner runs `omnexx run` in an isolated `OMNEXX_HOME` and reads real tokens from
