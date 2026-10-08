@@ -55,6 +55,7 @@ async function ask(
   system: string,
   prompt: string,
   role: string,
+  chain: 'cheap' | 'worker' | 'planner',
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
   const done = await run.cheapComplete(
     {
@@ -75,7 +76,7 @@ async function ask(
       estimatedInputTokens: estimateTokens(prompt) + 800,
       maxOutputTokens: 3_000,
       role,
-      chain: 'planner',
+      chain,
     },
   );
   const call = done?.res.content.find((b) => b.type === 'tool_use');
@@ -95,7 +96,7 @@ export async function reviewChange(
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
   const prompt = `# Goal\n${goal.slice(0, 3_000)}\n\n# Task ${task.id}: ${task.title}\n${task.why}\n${task.acceptance.length ? `Acceptance:\n${task.acceptance.map((a) => `- ${a}`).join('\n')}` : ''}\n\n# The change (unified diff)\n${clipDiff(diff, run.config.review.max_diff_chars)}`;
   try {
-    return await ask(run, REVIEW_SYSTEM, prompt, 'review');
+    return await ask(run, REVIEW_SYSTEM, prompt, 'review', run.config.review.review_models);
   } catch (err) {
     run.events.emit('review.unavailable', { task: task.id, error: (err as Error).message });
     return undefined;
@@ -111,7 +112,7 @@ export async function auditResult(
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
   const prompt = `# What the user asked for\n${goal.slice(0, 4_000)}\n\n${intent.slice(0, 4_000)}\n\n# The code now\n${codebase}`;
   try {
-    return await ask(run, AUDIT_SYSTEM, prompt, 'audit');
+    return await ask(run, AUDIT_SYSTEM, prompt, 'audit', run.config.review.audit_models);
   } catch (err) {
     run.events.emit('audit.unavailable', { error: (err as Error).message });
     return undefined;

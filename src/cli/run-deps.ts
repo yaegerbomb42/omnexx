@@ -8,11 +8,9 @@ import { resolvePaths, type OmnexxPaths } from '../core/paths.js';
 import type { RunDeps, RunHooks } from '../core/run.js';
 import { UsageError } from '../errors.js';
 import { AnthropicProvider } from '../providers/anthropic.js';
-import { GeminiProvider } from '../providers/gemini.js';
-import { OpenAICompatProvider } from '../providers/openai-compat.js';
 import { withStickyRandom } from '../providers/sticky.js';
 import { withToolRepair } from '../providers/repair.js';
-import { ResponsesProvider } from '../providers/responses.js';
+import { makeEndpointProvider } from '../providers/make.js';
 import { ProviderRouter } from '../providers/router.js';
 import type { Provider } from '../providers/types.js';
 import type { CliIO } from './io.js';
@@ -92,12 +90,7 @@ export async function resolveRunDeps(
       timeoutMs: parseDuration(ep.request_timeout),
       ...(io.fetch ? { fetch: io.fetch } : {}),
     };
-    const inner =
-      ep.kind === 'responses'
-        ? new ResponsesProvider(opts)
-        : ep.kind === 'gemini'
-          ? new GeminiProvider(opts)
-          : new OpenAICompatProvider(opts);
+    const inner = makeEndpointProvider(ep.kind, opts);
     // Weaker and local models often emit broken tool JSON; repair it before the loop sees it.
     const repaired = withToolRepair(inner);
     providers.set(

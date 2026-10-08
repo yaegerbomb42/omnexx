@@ -179,7 +179,11 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       }
     },
   };
-  const tools = [...(await readOnlyTools(run.config)), writePlan as Tool];
+  // The running context belongs to a task's worker cycles, not to planning.
+  const tools = [
+    ...(await readOnlyTools(run.config)).filter((t) => t.name !== 'running_context'),
+    writePlan as Tool,
+  ];
   if (mode.kind === 'initial') {
     tools.push(
       writeIntentTool(run.store, (i) => {

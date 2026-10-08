@@ -233,10 +233,11 @@ export async function envKeys(io: CliIO): Promise<EnvKey[]> {
 export async function connectFromEnv(io: CliIO): Promise<EnvKey[]> {
   const found = await envKeys(io);
   const file = userConfigFile(resolvePaths(io.env));
-  for (const k of found) {
+  // One after another: every block is appended to the same file.
+  await found.reduce(async (prev, k) => {
+    await prev;
     const t = PROVIDER_TEMPLATES[k.name];
-    if (!t) continue;
-    await appendEndpointBlock(file, k.name, { ...t, keyEnv: k.keyEnv });
-  }
+    if (t) await appendEndpointBlock(file, k.name, { ...t, keyEnv: k.keyEnv });
+  }, Promise.resolve());
   return found;
 }

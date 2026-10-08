@@ -11,7 +11,10 @@ import {
   connectFromEnv,
   describeConnect,
   envKeys,
+<<<<<<< HEAD
   findKeyInText,
+=======
+>>>>>>> origin/next
   looksLikeKey,
   type EnvKey,
 } from '../cli/connect.js';

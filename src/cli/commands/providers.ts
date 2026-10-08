@@ -7,9 +7,7 @@ import { loadConfig } from '../../config/load.js';
 import { parseDuration } from '../../config/duration.js';
 import { resolvePaths, userConfigFile } from '../../core/paths.js';
 import { UsageError } from '../../errors.js';
-import { OpenAICompatProvider } from '../../providers/openai-compat.js';
-import { ResponsesProvider } from '../../providers/responses.js';
-import { GeminiProvider } from '../../providers/gemini.js';
+import { makeEndpointProvider } from '../../providers/make.js';
 import type { CommandRegistrar } from './extra/types.js';
 import { println, readLine, type CliIO } from '../io.js';
 import { EXIT } from '../exit-codes.js';
@@ -43,194 +41,43 @@ type Row = [
  * Every provider omnexx knows by name (checked 2026-10). All speak the OpenAI Chat Completions
  * API except Gemini (native). Anthropic is built in and not listed here. Any other
  * OpenAI-compatible service works by URL: `/connect https://host/v1 KEY`.
+ * One per line: name | label | base URL | key env var | key prefix | signup ('-' = none).
  */
 const HOSTED: Row[] = [
-  [
-    'openai',
-    'OpenAI',
-    'https://api.openai.com/v1',
-    'OPENAI_API_KEY',
-    'sk-',
-    'https://platform.openai.com/api-keys',
-  ],
-  [
-    'gemini',
-    'Google Gemini',
-    'https://generativelanguage.googleapis.com',
-    'GEMINI_API_KEY',
-    'AIza',
-    'https://aistudio.google.com/apikey',
-  ],
-  ['xai', 'xAI (Grok)', 'https://api.x.ai/v1', 'XAI_API_KEY', 'xai-', 'https://console.x.ai'],
-  [
-    'mistral',
-    'Mistral',
-    'https://api.mistral.ai/v1',
-    'MISTRAL_API_KEY',
-    undefined,
-    'https://console.mistral.ai/api-keys',
-  ],
-  [
-    'deepseek',
-    'DeepSeek',
-    'https://api.deepseek.com/v1',
-    'DEEPSEEK_API_KEY',
-    undefined,
-    'https://platform.deepseek.com/api_keys',
-  ],
-  [
-    'groq',
-    'Groq',
-    'https://api.groq.com/openai/v1',
-    'GROQ_API_KEY',
-    'gsk_',
-    'https://console.groq.com/keys',
-  ],
-  [
-    'cerebras',
-    'Cerebras',
-    'https://api.cerebras.ai/v1',
-    'CEREBRAS_API_KEY',
-    'csk-',
-    'https://cloud.cerebras.ai',
-  ],
-  [
-    'openrouter',
-    'OpenRouter (hundreds of models)',
-    'https://openrouter.ai/api/v1',
-    'OPENROUTER_API_KEY',
-    'sk-or-',
-    'https://openrouter.ai/keys',
-  ],
-  [
-    'together',
-    'Together AI',
-    'https://api.together.xyz/v1',
-    'TOGETHER_API_KEY',
-    undefined,
-    'https://api.together.ai/settings/api-keys',
-  ],
-  [
-    'fireworks',
-    'Fireworks',
-    'https://api.fireworks.ai/inference/v1',
-    'FIREWORKS_API_KEY',
-    'fw_',
-    'https://fireworks.ai/account/api-keys',
-  ],
-  [
-    'nvidia',
-    'NVIDIA NIM',
-    'https://integrate.api.nvidia.com/v1',
-    'NVIDIA_API_KEY',
-    'nvapi-',
-    'https://build.nvidia.com',
-  ],
-  [
-    'moonshot',
-    'Moonshot (Kimi)',
-    'https://api.moonshot.ai/v1',
-    'MOONSHOT_API_KEY',
-    undefined,
-    'https://platform.moonshot.ai/console/api-keys',
-  ],
-  [
-    'zai',
-    'Z.ai (GLM)',
-    'https://api.z.ai/api/paas/v4',
-    'ZAI_API_KEY',
-    undefined,
-    'https://z.ai/manage-apikey/apikey-list',
-  ],
-  [
-    'dashscope',
-    'Alibaba Cloud (Qwen)',
-    'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
-    'DASHSCOPE_API_KEY',
-    undefined,
-    'https://modelstudio.console.alibabacloud.com',
-  ],
-  [
-    'siliconflow',
-    'SiliconFlow',
-    'https://api.siliconflow.com/v1',
-    'SILICONFLOW_API_KEY',
-    undefined,
-    'https://cloud.siliconflow.com/account/ak',
-  ],
-  [
-    'deepinfra',
-    'DeepInfra',
-    'https://api.deepinfra.com/v1/openai',
-    'DEEPINFRA_API_KEY',
-    undefined,
-    'https://deepinfra.com/dash/api_keys',
-  ],
-  [
-    'huggingface',
-    'Hugging Face Inference',
-    'https://router.huggingface.co/v1',
-    'HF_TOKEN',
-    'hf_',
-    'https://huggingface.co/settings/tokens',
-  ],
-  [
-    'perplexity',
-    'Perplexity',
-    'https://api.perplexity.ai',
-    'PERPLEXITY_API_KEY',
-    'pplx-',
-    'https://www.perplexity.ai/settings/api',
-  ],
-  [
-    'cohere',
-    'Cohere',
-    'https://api.cohere.ai/compatibility/v1',
-    'COHERE_API_KEY',
-    undefined,
-    'https://dashboard.cohere.com/api-keys',
-  ],
-  [
-    'vercel',
-    'Vercel AI Gateway',
-    'https://ai-gateway.vercel.sh/v1',
-    'AI_GATEWAY_API_KEY',
-    undefined,
-    'https://vercel.com/ai-gateway',
-  ],
-  [
-    'github',
-    'GitHub Models',
-    'https://models.github.ai/inference',
-    'GITHUB_TOKEN',
-    undefined,
-    'https://github.com/settings/tokens',
-  ],
-  [
-    'novita',
-    'Novita AI',
-    'https://api.novita.ai/v3/openai',
-    'NOVITA_API_KEY',
-    undefined,
-    'https://novita.ai/settings/key-management',
-  ],
-  [
-    'hyperbolic',
-    'Hyperbolic',
-    'https://api.hyperbolic.xyz/v1',
-    'HYPERBOLIC_API_KEY',
-    undefined,
-    'https://app.hyperbolic.xyz/settings',
-  ],
-  [
-    'sambanova',
-    'SambaNova',
-    'https://api.sambanova.ai/v1',
-    'SAMBANOVA_API_KEY',
-    undefined,
-    'https://cloud.sambanova.ai/apis',
-  ],
-];
+  'openai | OpenAI | https://api.openai.com/v1 | OPENAI_API_KEY | sk- | https://platform.openai.com/api-keys',
+  'gemini | Google Gemini | https://generativelanguage.googleapis.com | GEMINI_API_KEY | AIza | https://aistudio.google.com/apikey',
+  'xai | xAI (Grok) | https://api.x.ai/v1 | XAI_API_KEY | xai- | https://console.x.ai',
+  'mistral | Mistral | https://api.mistral.ai/v1 | MISTRAL_API_KEY | - | https://console.mistral.ai/api-keys',
+  'deepseek | DeepSeek | https://api.deepseek.com/v1 | DEEPSEEK_API_KEY | - | https://platform.deepseek.com/api_keys',
+  'groq | Groq | https://api.groq.com/openai/v1 | GROQ_API_KEY | gsk_ | https://console.groq.com/keys',
+  'cerebras | Cerebras | https://api.cerebras.ai/v1 | CEREBRAS_API_KEY | csk- | https://cloud.cerebras.ai',
+  'openrouter | OpenRouter (hundreds of models) | https://openrouter.ai/api/v1 | OPENROUTER_API_KEY | sk-or- | https://openrouter.ai/keys',
+  'together | Together AI | https://api.together.xyz/v1 | TOGETHER_API_KEY | - | https://api.together.ai/settings/api-keys',
+  'fireworks | Fireworks | https://api.fireworks.ai/inference/v1 | FIREWORKS_API_KEY | fw_ | https://fireworks.ai/account/api-keys',
+  'nvidia | NVIDIA NIM | https://integrate.api.nvidia.com/v1 | NVIDIA_API_KEY | nvapi- | https://build.nvidia.com',
+  'moonshot | Moonshot (Kimi) | https://api.moonshot.ai/v1 | MOONSHOT_API_KEY | - | https://platform.moonshot.ai/console/api-keys',
+  'zai | Z.ai (GLM) | https://api.z.ai/api/paas/v4 | ZAI_API_KEY | - | https://z.ai/manage-apikey/apikey-list',
+  'dashscope | Alibaba Cloud (Qwen) | https://dashscope-intl.aliyuncs.com/compatible-mode/v1 | DASHSCOPE_API_KEY | - | https://modelstudio.console.alibabacloud.com',
+  'siliconflow | SiliconFlow | https://api.siliconflow.com/v1 | SILICONFLOW_API_KEY | - | https://cloud.siliconflow.com/account/ak',
+  'deepinfra | DeepInfra | https://api.deepinfra.com/v1/openai | DEEPINFRA_API_KEY | - | https://deepinfra.com/dash/api_keys',
+  'huggingface | Hugging Face Inference | https://router.huggingface.co/v1 | HF_TOKEN | hf_ | https://huggingface.co/settings/tokens',
+  'perplexity | Perplexity | https://api.perplexity.ai | PERPLEXITY_API_KEY | pplx- | https://www.perplexity.ai/settings/api',
+  'cohere | Cohere | https://api.cohere.ai/compatibility/v1 | COHERE_API_KEY | - | https://dashboard.cohere.com/api-keys',
+  'vercel | Vercel AI Gateway | https://ai-gateway.vercel.sh/v1 | AI_GATEWAY_API_KEY | - | https://vercel.com/ai-gateway',
+  'github | GitHub Models | https://models.github.ai/inference | GITHUB_TOKEN | - | https://github.com/settings/tokens',
+  'novita | Novita AI | https://api.novita.ai/v3/openai | NOVITA_API_KEY | - | https://novita.ai/settings/key-management',
+  'hyperbolic | Hyperbolic | https://api.hyperbolic.xyz/v1 | HYPERBOLIC_API_KEY | - | https://app.hyperbolic.xyz/settings',
+  'sambanova | SambaNova | https://api.sambanova.ai/v1 | SAMBANOVA_API_KEY | - | https://cloud.sambanova.ai/apis',
+]
+  .map((line) => line.split(' | ').map((f) => (f === '-' ? undefined : f)))
+  .map(([name = '', label = '', baseUrl = '', keyEnv, keyPrefix, signup]) => [
+    name,
+    label,
+    baseUrl,
+    keyEnv,
+    keyPrefix,
+    signup,
+  ]);
 
 const LOCAL: [string, string, string][] = [
   ['ollama', 'Ollama', 'http://localhost:11434/v1'],
@@ -324,12 +171,7 @@ async function testEndpoint(
   const ep = config.providers.endpoints[name];
   const timeoutMs = ep ? parseDuration(ep.request_timeout) : 10_000;
   const opts = { name, baseUrl, apiKey, timeoutMs, ...(io.fetch ? { fetch: io.fetch } : {}) };
-  const provider =
-    kind === 'responses'
-      ? new ResponsesProvider(opts)
-      : kind === 'gemini'
-        ? new GeminiProvider(opts)
-        : new OpenAICompatProvider(opts);
+  const provider = makeEndpointProvider(kind, opts);
   try {
     // 1-token test call: tiny maxTokens, no tools.
     const res = await provider.complete({

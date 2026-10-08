@@ -22,15 +22,17 @@ const fixAdd: Script = ({ turn }) =>
   ][turn] ?? say('done');
 
 /** The worker script, plus a reviewer that answers with `review` (or garbage). */
-function withReviewer(review: unknown): Provider & { reviews: number } {
+function withReviewer(review: unknown): Provider & { reviews: number; models: string[] } {
   const worker = new ScriptedProvider(fixAdd);
   const p = {
     name: 'anthropic',
     reviews: 0,
+    models: [] as string[],
     complete(req: CompletionRequest): Promise<CompletionResponse> {
       if (!req.system.some((b) => b.text.includes('strict senior engineer')))
         return worker.complete(req);
       p.reviews++;
+      p.models.push(req.model);
       return Promise.resolve({
         content:
           review === 'garbage'
@@ -45,12 +47,14 @@ function withReviewer(review: unknown): Provider & { reviews: number } {
   return p;
 }
 
-async function cycleWith(review: unknown) {
+async function cycleWith(review: unknown, models?: 'cheap' | 'worker' | 'planner') {
   const provider = withReviewer(review);
   const t = await startTestRun({
     provider,
     plan,
-    config: { review: { enabled: true, audit: false } },
+    config: {
+      review: { enabled: true, audit: false, ...(models ? { review_models: models } : {}) },
+    },
   });
   await runBaseline(t.run);
   const v = await runOneCycle(t.run, 'M1.T01');
@@ -92,5 +96,12 @@ describe('review before commit', () => {
     const { v, provider } = await cycleWith('garbage');
     expect(provider.reviews).toBe(1);
     expect(v.verdict).toBe('accept');
+  });
+
+  it('reviews on the worker models by default, the planner models when asked', async () => {
+    const dflt = await cycleWith({ findings: [] });
+    expect(dflt.provider.models).toEqual(['claude-sonnet-5-5']);
+    const strong = await cycleWith({ findings: [] }, 'planner');
+    expect(strong.provider.models).toEqual(['claude-opus-5-5']);
   });
 });
