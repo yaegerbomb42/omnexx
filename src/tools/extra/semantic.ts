@@ -43,18 +43,14 @@ function semanticTool(config: OmnexxConfig, ref: string): Tool<typeof schema> {
         const r = await index.refresh();
         const hits = await index.search(input.query, input.limit ?? 6);
         if (!hits.length) return ok(`nothing indexed matches "${input.query}"`);
-        const head = r.embedded
-          ? `(indexed ${r.embedded} changed file${r.embedded === 1 ? '' : 's'})\n\n`
-          : '';
-        return ok(
-          head +
-            hits
-              .map((h) => {
-                const t = ctx.redactor.text(h.text);
-                return `## ${h.path}:${h.start}-${h.end} (score ${h.score.toFixed(2)})\n${t.length > SNIPPET_CHARS ? `${t.slice(0, SNIPPET_CHARS)}…` : t}`;
-              })
-              .join('\n\n'),
-        );
+        const plural = r.embedded === 1 ? '' : 's';
+        const head = r.embedded ? `(indexed ${r.embedded} changed file${plural})\n\n` : '';
+        const shown = hits.map((h) => {
+          const t = ctx.redactor.text(h.text);
+          const body = t.length > SNIPPET_CHARS ? `${t.slice(0, SNIPPET_CHARS)}…` : t;
+          return `## ${h.path}:${h.start}-${h.end} (score ${h.score.toFixed(2)})\n${body}`;
+        });
+        return ok(head + shown.join('\n\n'));
       } catch (err) {
         return fail(`semantic search failed: ${(err as Error).message}; use search instead`);
       }

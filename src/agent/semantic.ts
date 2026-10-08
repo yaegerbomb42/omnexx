@@ -17,14 +17,23 @@ export interface EmbeddingEndpoint {
 
 const BATCH = 64;
 const MAX_FILE_BYTES = 200_000;
-const CODE =
-  /\.(m?[jt]sx?|c[jt]s|py|go|rs|java|kt|swift|rb|php|cs|c|h|cc|cpp|hpp|scala|sh|sql|vue|svelte|lua|dart|ex|exs|md|toml|ya?ml|json)$/i;
+const CODE_EXTS = new Set(
+  'js mjs cjs jsx ts mts cts tsx py go rs java kt swift rb php cs c h cc cpp hpp scala sh sql vue svelte lua dart ex exs md toml yaml yml json'.split(
+    ' ',
+  ),
+);
+const isCode = (p: string): boolean => CODE_EXTS.has(p.slice(p.lastIndexOf('.') + 1).toLowerCase());
+const trimSlashes = (u: string): string => {
+  let end = u.length;
+  while (end > 0 && u[end - 1] === '/') end--;
+  return u.slice(0, end);
+};
 
 /** One OpenAI-compatible /embeddings call per batch of up to 64 texts. */
 export async function embed(ep: EmbeddingEndpoint, texts: readonly string[]): Promise<number[][]> {
   const out: number[][] = [];
   for (let i = 0; i < texts.length; i += BATCH) {
-    const res = await (ep.fetch ?? fetch)(`${ep.baseUrl.replace(/\/+$/, '')}/embeddings`, {
+    const res = await (ep.fetch ?? fetch)(`${trimSlashes(ep.baseUrl)}/embeddings`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -128,14 +137,14 @@ export class SemanticIndex {
     let idx: IndexFile = raw ? (JSON.parse(raw) as IndexFile) : { model: this.ep.model, files: {} };
     if (idx.model !== this.ep.model) idx = { model: this.ep.model, files: {} };
     const paths = (await trackedFiles(this.root))
-      .filter((p) => CODE.test(p) && !isSecretPath(p))
+      .filter((p) => isCode(p) && !isSecretPath(p))
       .slice(0, this.opts.maxFiles);
     const keep: IndexFile['files'] = {};
     const todo: { path: string; hash: string; lines: string[] }[] = [];
     for (const p of paths) {
       const text = await readFile(join(this.root, p), 'utf8').catch(() => undefined);
       if (text === undefined || text.length > MAX_FILE_BYTES || text.includes('\0')) continue;
-      const hash = createHash('sha1').update(text).digest('hex');
+      const hash = createHash('sha256').update(text).digest('hex');
       const known = idx.files[p];
       if (known?.hash === hash) keep[p] = known;
       else todo.push({ path: p, hash, lines: text.split('\n') });
