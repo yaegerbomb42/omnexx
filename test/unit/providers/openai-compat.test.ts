@@ -245,3 +245,62 @@ describe('model chains and the router', () => {
     await expect(router.complete({ ...req, route: 'zz' })).rejects.toThrow(/not available/);
   });
 });
+
+describe('model limits and refusals', () => {
+  const ok = { choices: [{ finish_reason: 'stop', message: { content: 'hi' } }] };
+  const make = (url: string) =>
+    new OpenAICompatProvider({ name: 'pool', baseUrl: url, apiKey: 'k', timeoutMs: 5_000 });
+
+  it('learns a model output limit from a 400 and retries at it, then asks for no more', async () => {
+    const srv = await mockServer((r, res) => {
+      const body = JSON.parse(r.body) as { max_tokens: number };
+      if (body.max_tokens > 8192)
+        json(res, 400, {
+          error: {
+            message:
+              '<400> InternalError.Algo.InvalidParameter: Range of max_tokens should be [1, 8192]',
+          },
+        });
+      else json(res, 200, ok);
+    });
+    const p = make(srv.url);
+    const big = { ...req, maxTokens: 32_000, toolChoice: undefined };
+    await p.complete(big);
+    await p.complete(big);
+    const sent = srv.requests.map((r) => (JSON.parse(r.body) as { max_tokens: number }).max_tokens);
+    expect(sent).toEqual([32_000, 8192, 8192]);
+  });
+
+  it('a content-filter refusal fails over to the next model', async () => {
+    const srv = await mockServer((_r, res) => {
+      json(res, 400, {
+        error: {
+          code: 'data_inspection_failed',
+          message: 'Input text data may contain inappropriate content.',
+        },
+      });
+    });
+    const err = await make(srv.url)
+      .complete(req)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).contentFilter).toBe(true);
+    expect(shouldFailover(err)).toBe(true);
+    // An ordinary 400 still doesn't.
+    expect(shouldFailover(new ProviderError('bad', { retryable: false, status: 400 }))).toBe(false);
+  });
+
+  it('an error event inside a 200 stream is typed like an HTTP error', async () => {
+    const srv = await mockServer((_r, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(
+        `data: ${JSON.stringify({ error: { code: 429, message: 'quota exceeded' } })}\n\ndata: [DONE]\n\n`,
+      );
+    });
+    const err = await make(srv.url)
+      .complete({ ...req, onDelta: () => undefined })
+      .catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 429, retryable: true });
+    expect((err as Error).message).toMatch(/quota exceeded/);
+  });
+});

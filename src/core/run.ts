@@ -304,7 +304,8 @@ export class Run {
       } catch (err) {
         if (!shouldFailover(err)) throw err;
         if (isQuotaError(err)) this.markExhausted(`${model.provider}:${model.id}`);
-        else this.coolProvider(model.provider, err.retryable ? 60_000 : 30 * 60_000);
+        else if (!err.contentFilter)
+          this.coolProvider(model.provider, err.retryable ? 60_000 : 30 * 60_000);
         this.events.emit('provider.failover', {
           provider: model.provider,
           model: model.id,
