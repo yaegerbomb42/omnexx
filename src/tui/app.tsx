@@ -295,6 +295,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       else if (key.downArrow) void session.rankKey({ down: true });
       else if (ch === ' ') void session.rankKey({ grab: true });
       else if (ch === 'a') void session.rankKey({ add: true });
+      else if (ch === 'm') void session.rankKey({ mode: true });
       else if (ch === 'x' || key.backspace || key.delete) void session.rankKey({ remove: true });
       else if (key.escape || key.return || ch === 'q') void session.rankKey({ close: true });
       return;
@@ -303,6 +304,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       if (key.upArrow) session.pickerKey({ up: true });
       else if (key.downArrow) session.pickerKey({ down: true });
       else if (key.return) session.pickerKey({ enter: true });
+      else if (key.tab) session.pickerKey({ toggle: true });
       else if (key.escape) session.pickerKey({ close: true });
       else if (key.backspace || key.delete) session.pickerKey({ back: true });
       else if (ch && !key.ctrl && !key.meta) session.pickerKey({ char: ch });

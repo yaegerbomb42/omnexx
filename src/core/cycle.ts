@@ -364,6 +364,10 @@ export async function stepAct(run: Run): Promise<void> {
     provider: run.deps.provider,
     models: route.chain,
     providerBlocked: (p) => run.providerBlocked(p),
+    modelExhausted: (r) => run.modelExhausted(r),
+    markExhausted: (r) => {
+      run.markExhausted(r);
+    },
     coolProvider: (p, ms) => {
       run.coolProvider(p, ms);
     },

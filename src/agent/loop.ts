@@ -7,6 +7,7 @@ import { costUsd, type ResolvedModel } from '../providers/pricing.js';
 import { StopRequested, withRetry } from '../providers/retry.js';
 import { narrateTool } from '../telemetry/narrate.js';
 import { shouldFailover } from '../providers/router.js';
+import { isQuotaError } from '../providers/sticky.js';
 import { ProviderError } from '../errors.js';
 import {
   totalInput,
@@ -57,6 +58,10 @@ export interface LoopDeps {
   providerBlocked?: (provider: string) => string | undefined;
   /** Skip this provider for a while after it failed. */
   coolProvider?: (provider: string, ms: number) => void;
+  /** Whether this provider:model is out of quota (skipped until its quota resets). */
+  modelExhausted?: (ref: string) => boolean;
+  /** Record that this provider:model is out of quota, so the chain moves past it. */
+  markExhausted?: (ref: string) => void;
   tools: readonly Tool[];
   toolCtx: ToolContext;
   budget: OmnexxConfig['budget'];
@@ -215,6 +220,11 @@ export async function runAgentLoop(
           const skipped: string[] = [];
           let onlyBudget = true;
           for (const m of deps.models) {
+            if (deps.modelExhausted?.(`${m.provider}:${m.id}`)) {
+              onlyBudget = false;
+              skipped.push(`${m.provider}:${m.id}: out of quota`);
+              continue;
+            }
             const blocked = deps.providerBlocked?.(m.provider);
             if (blocked) {
               if (!blocked.includes('max_usd')) onlyBudget = false;
@@ -262,8 +272,11 @@ export async function runAgentLoop(
                 sawServerError = true;
                 lastServerFailure = m;
               }
-              // Transient trouble: retry this provider soon. Key, quota or model problems: much later.
-              deps.coolProvider?.(m.provider, err.retryable ? 60_000 : 30 * 60_000);
+              // Out of quota: only this model is done, the provider's other models may still have some.
+              if (deps.markExhausted && isQuotaError(err))
+                deps.markExhausted(`${m.provider}:${m.id}`);
+              // Transient trouble: retry this provider soon. Key or model problems: much later.
+              else deps.coolProvider?.(m.provider, err.retryable ? 60_000 : 30 * 60_000);
               deps.events.emit('provider.failover', {
                 provider: m.provider,
                 model: m.id,

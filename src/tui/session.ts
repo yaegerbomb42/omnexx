@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { parse } from 'shell-quote';
 import { brand, type Brand } from '../cli/brand.js';
@@ -10,6 +11,7 @@ import {
   connectFromEnv,
   describeConnect,
   envKeys,
+  findKeyInText,
   looksLikeKey,
   type EnvKey,
 } from '../cli/connect.js';
@@ -29,7 +31,8 @@ import {
   type ModelPickerState,
   type RankState,
 } from './model-picker.js';
-import { readRanking, writeRanking } from '../config/ranking.js';
+import { readPoolMode, readRanking, writePoolMode, writeRanking } from '../config/ranking.js';
+import { QuotaLedger } from '../providers/quota-ledger.js';
 import { compactPlanView, planCounts } from '../core/plan.js';
 import { resolvePaths } from '../core/paths.js';
 import { listRunIds, RunStore } from '../core/run-store.js';
@@ -64,7 +67,7 @@ export const SLASH: readonly SlashCommand[] = [
   },
   {
     name: 'models',
-    help: 'rank your models: #1 chats, the rest are fallbacks for every role and helper',
+    help: 'your model pool: tick models, pick top-first or random, each runs until its quota is out',
   },
   { name: 'agents', help: 'every long run on this machine: watch, attach, pause, stop' },
   { name: 'pause', help: 'pause the agent after its current step (/resume to continue)' },
@@ -327,6 +330,33 @@ export class Session {
       }
       return;
     }
+    // A key inside a sentence ("my groq key is gsk_…"): connect it, and keep it out of the chat.
+    const found = !text.startsWith('/') && !looksLikeKey(text) ? findKeyInText(text) : undefined;
+    if (found) {
+      this.push('user', text.replace(found.key, maskKey(found.key)));
+      if (found.provider)
+        await this.connect(found.provider, found.key).catch((err: unknown) => {
+          this.push('err', describeError(err));
+        });
+      else {
+        this.pendingKey = found.key;
+        this.push(
+          'system',
+          `that looks like an API key. which provider is it for? (e.g. ${['mistral', 'together', 'deepinfra'].join(', ')}; /providers lists all)`,
+        );
+      }
+      return;
+    }
+    if (this.pendingKey && /^[a-z][a-z0-9_-]*$/i.test(text.trim())) {
+      const key = this.pendingKey;
+      this.pendingKey = undefined;
+      this.push('user', text);
+      await this.connect(text.trim().toLowerCase(), key).catch((err: unknown) => {
+        this.push('err', describeError(err));
+      });
+      return;
+    }
+    this.pendingKey = undefined;
     // A pasted key is never echoed, kept in history, or sent anywhere but the credentials file.
     const key = looksLikeKey(text);
     if (!key) this.history.push(text);
@@ -410,15 +440,30 @@ export class Session {
   /** The picker asked for a key or URL: the next message is that, not a chat message. */
   awaiting: 'key' | 'url' | undefined;
 
+  /** A key found without a provider name: the next one-word message names its provider. */
+  private pendingKey: string | undefined;
+
   /** The open /models ranking editor. */
   rankView: RankState | undefined;
   /** What choosing in the picker does: switch chat, or add to the ranking. */
   private pickFor: 'chat' | 'rank' = 'chat';
 
   async openRanking(): Promise<void> {
-    const ranked = await readRanking(resolvePaths(this.io.env));
-    this.rankView = { ranked, cursor: 0, grabbed: false };
+    this.rankView = await this.rankState(0);
     this.changed();
+  }
+
+  private async rankState(cursor: number): Promise<RankState> {
+    const paths = resolvePaths(this.io.env);
+    const ranked = await readRanking(paths);
+    const out = new QuotaLedger(join(paths.configHome, 'quota.json')).all();
+    return {
+      ranked,
+      mode: await readPoolMode(paths),
+      exhausted: new Set(Object.keys(out)),
+      cursor: Math.min(cursor, Math.max(0, ranked.length - 1)),
+      grabbed: false,
+    };
   }
 
   /** Keys while the ranking editor is open; every change is saved to models.json at once. */
@@ -428,6 +473,7 @@ export class Session {
     grab?: boolean;
     add?: boolean;
     remove?: boolean;
+    mode?: boolean;
     close?: boolean;
   }): Promise<void> {
     const v = this.rankView;
@@ -446,12 +492,15 @@ export class Session {
       this.push(
         'system',
         v.ranked.length
-          ? `ranking saved: ${v.ranked.map((r, i) => `${i + 1}. ${r}`).join('  ')}. new chats and runs use it; /model switches this chat`
+          ? `pool saved (${v.mode === 'random' ? 'random order' : 'top first'}): ${v.ranked.map((r, i) => `${i + 1}. ${r}`).join('  ')}. new chats and runs use it; /model switches this chat`
           : 'no ranking: roles use your config.toml models',
       );
     } else if (k.up) move(-1);
     else if (k.down) move(1);
-    else if (k.grab) v.grabbed = !v.grabbed && v.ranked.length > 0;
+    else if (k.mode) {
+      v.mode = v.mode === 'random' ? 'ordered' : 'random';
+      await writePoolMode(resolvePaths(this.io.env), v.mode);
+    } else if (k.grab) v.grabbed = !v.grabbed && v.ranked.length > 0;
     else if (k.remove) {
       v.ranked.splice(v.cursor, 1);
       v.cursor = Math.max(0, Math.min(v.cursor, v.ranked.length - 1));
@@ -471,7 +520,14 @@ export class Session {
     this.changed();
     try {
       const { items, unreachable } = await loadModelChoices(this.io);
-      this.modelPicker = { items, unreachable, query: '', cursor: 0, current: this.chatModelName };
+      this.modelPicker = {
+        items,
+        unreachable,
+        query: '',
+        cursor: 0,
+        current: this.chatModelName,
+        ...(this.pickFor === 'rank' ? { checked: new Set<string>() } : {}),
+      };
     } finally {
       this.busy = undefined;
       this.changed();
@@ -485,6 +541,7 @@ export class Session {
     enter?: boolean;
     close?: boolean;
     back?: boolean;
+    toggle?: boolean;
     char?: string;
   }): void {
     const p = this.modelPicker;
@@ -498,7 +555,14 @@ export class Session {
       }
     } else if (k.up) p.cursor = Math.max(0, p.cursor - 1);
     else if (k.down) p.cursor = Math.min(shown.length - 1, p.cursor + 1);
-    else if (k.back) {
+    else if (k.toggle && p.checked) {
+      const it = shown[Math.min(p.cursor, shown.length - 1)];
+      if (it?.kind === 'model') {
+        if (p.checked.has(it.ref)) p.checked.delete(it.ref);
+        else p.checked.add(it.ref);
+        p.cursor = Math.min(shown.length - 1, p.cursor + 1);
+      }
+    } else if (k.back) {
       p.query = p.query.slice(0, -1);
       p.cursor = 0;
     } else if (k.char) {
@@ -508,14 +572,15 @@ export class Session {
       const it = shown[Math.min(p.cursor, shown.length - 1)];
       this.modelPicker = undefined;
       if (it?.kind === 'model' && this.pickFor === 'rank') {
-        // Picked for the ranking: append it and go back to the editor.
+        // Picked for the pool: append the ticked models (or this one) and go back to the editor.
         this.pickFor = 'chat';
+        const add = p.checked?.size ? [...p.checked] : [it.ref];
         void (async () => {
           const paths = resolvePaths(this.io.env);
           const ranked = await readRanking(paths);
-          if (!ranked.includes(it.ref)) ranked.push(it.ref);
+          for (const r of add) if (!ranked.includes(r)) ranked.push(r);
           await writeRanking(paths, ranked);
-          this.rankView = { ranked, cursor: ranked.length - 1, grabbed: false };
+          this.rankView = await this.rankState(ranked.length - 1);
           this.changed();
         })();
       } else if (it?.kind === 'model')

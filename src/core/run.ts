@@ -9,6 +9,8 @@ import { LlmJudge } from '../judge/llm.js';
 import { preflight, spentInWindow } from '../guard/budget.js';
 import { costUsd, resolveChain, type ResolvedModel } from '../providers/pricing.js';
 import { shouldFailover } from '../providers/router.js';
+import { QuotaLedger } from '../providers/quota-ledger.js';
+import { isQuotaError } from '../providers/sticky.js';
 import type { CompletionRequest, CompletionResponse, Provider, Usage } from '../providers/types.js';
 import { scrubEnv } from '../security/env-scrub.js';
 import type { PolicyContext } from '../security/command-policy.js';
@@ -72,6 +74,7 @@ export class Run {
   ) {
     this.startedAt = deps.clock.now();
     this.baseActiveMs = state.activeMs;
+    this.quota = new QuotaLedger(join(deps.paths.configHome, 'quota.json'), () => deps.clock.now());
     this.redactor = Redactor.fromEnv(deps.env, deps.secrets ?? []);
     this.events = new EventLog(store.eventsPath, state.runId, this.redactor, deps.clock);
     this.events.cycle = state.cycle;
@@ -223,6 +226,18 @@ export class Run {
     return undefined;
   }
 
+  /** Models out of quota, shared with every other run and chat on this machine. */
+  readonly quota: QuotaLedger;
+
+  modelExhausted(ref: string): boolean {
+    return this.quota.exhaustedAt(ref) !== undefined;
+  }
+
+  markExhausted(ref: string): void {
+    this.quota.mark(ref);
+    this.events.emit('provider.quota_exhausted', { model: ref });
+  }
+
   coolProvider(provider: string, ms: number): void {
     this.cooling.set(provider, this.clock.now() + ms);
   }
@@ -253,6 +268,10 @@ export class Run {
   ): Promise<{ res: CompletionResponse; model: ResolvedModel } | undefined> {
     const errors: string[] = [];
     for (const model of this.chains[opts.chain ?? 'cheap']) {
+      if (this.modelExhausted(`${model.provider}:${model.id}`)) {
+        errors.push(`${model.provider}:${model.id}: out of quota`);
+        continue;
+      }
       const blocked = this.providerBlocked(model.provider);
       if (blocked) {
         errors.push(`${model.provider}: ${blocked}`);
@@ -283,7 +302,8 @@ export class Run {
         return { res, model };
       } catch (err) {
         if (!shouldFailover(err)) throw err;
-        this.coolProvider(model.provider, err.retryable ? 60_000 : 30 * 60_000);
+        if (isQuotaError(err)) this.markExhausted(`${model.provider}:${model.id}`);
+        else this.coolProvider(model.provider, err.retryable ? 60_000 : 30 * 60_000);
         this.events.emit('provider.failover', {
           provider: model.provider,
           model: model.id,
