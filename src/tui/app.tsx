@@ -7,6 +7,7 @@ import type { Entry, Session } from './session.js';
 
 import { CYAN, GRAY, GREEN, RED } from './colors.js';
 import { DiffView } from './diff.js';
+import { RunCard } from './run-card.js';
 import { AgentsView } from './agents.js';
 import { ModelPicker, RankEditor } from './model-picker.js';
 import type { TodoItem } from '../tools/todo.js';
@@ -459,6 +460,20 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       </Static>
       <Box flexDirection="column" marginTop={1}>
         {showPlan && session.plan && <PlanBox plan={session.plan} rows={12} />}
+        {session.runId && session.showRunCard && !session.modelPicker && !session.rankView && (
+          <RunCard
+            width={width}
+            info={{
+              runId: session.runId,
+              alive: session.runAlive,
+              phase: session.info?.phase,
+              done: session.info?.done ?? 0,
+              tasks: session.info?.tasks ?? 0,
+              t: session.telemetry,
+              now: Date.now(),
+            }}
+          />
+        )}
         {session.diffView && <DiffView view={session.diffView} width={width} />}
         {session.agentsView && <AgentsView state={session.agentsView} width={width} />}
         {session.modelPicker && <ModelPicker state={session.modelPicker} width={width} />}

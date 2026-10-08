@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { CYAN, GRAY, GREEN, RED } from './colors.js';
+import { AMBER, CYAN, GRAY, GREEN, PINK, RED } from './colors.js';
 
 export type Mood =
   'hello' | 'idle' | 'sleepy' | 'listening' | 'thinking' | 'working' | 'happy' | 'sad' | 'startled';
@@ -38,6 +38,8 @@ const R1 = '  /       \\';
 const R2 = ' |         |';
 const R3 = '  \\       /';
 const BOTTOM = "   '-...-'";
+/** Row 3 with rosy cheeks, for happy moments. */
+const R3_BLUSH = '  \\ ~   ~ /';
 
 /** The open eye with the iris looking at `look`. */
 function eye(look: Look, iris = '(@)', top = TOP): MascotFrame['rows'] {
@@ -45,6 +47,13 @@ function eye(look: Look, iris = '(@)', top = TOP): MascotFrame['rows'] {
   const r = look.y + 2;
   rows[r] = place(rows[r] ?? '', iris, look.x, r === 2);
   return rows;
+}
+
+/** Rosy cheeks under the eye. */
+function blush(rows: MascotFrame['rows']): MascotFrame['rows'] {
+  const r = [...rows] as MascotFrame['rows'];
+  if (!/[(][^)]+[)]/.test(r[3])) r[3] = pad(R3_BLUSH);
+  return r;
 }
 
 /** A glance around the room for idle moments: mostly center, sometimes left or right. */
@@ -74,7 +83,9 @@ export function mascotFrame(
   switch (mood) {
     case 'hello':
       return {
-        rows: blink ? closed() : eye({ x: tick % 4 < 2 ? -1 : 1, y: 0 }, '(@)', '   .-~~~-. o/'),
+        rows: blink
+          ? closed()
+          : blush(eye({ x: tick % 4 < 2 ? -1 : 1, y: 0 }, '(@)', '   .-~~~-. o/')),
         caption: say || 'hi! what are we building?',
       };
     case 'idle':
@@ -98,7 +109,13 @@ export function mascotFrame(
     case 'happy': {
       const spark = tick % 2 === 0 ? '*' : '+';
       return {
-        rows: eye({ x: 0, y: 0 }, '(^)', ` ${spark} .-~~~-. ${spark}`),
+        rows: blush(
+          eye(
+            { x: 0, y: 0 },
+            say.includes('milestone') ? '(♥)' : '(^)',
+            ` ${spark} .-~~~-. ${spark}`,
+          ),
+        ),
         caption: say || 'yay, it works!',
       };
     }
@@ -135,6 +152,18 @@ const MOOD_COLOR: Record<Mood, string> = {
   startled: CYAN,
 };
 
+const IRIS_COLOR: Record<Mood, string> = {
+  hello: PINK,
+  idle: CYAN,
+  sleepy: GRAY,
+  listening: CYAN,
+  thinking: AMBER,
+  working: CYAN,
+  happy: PINK,
+  sad: RED,
+  startled: AMBER,
+};
+
 export function Mascot({
   mood,
   tick,
@@ -149,11 +178,23 @@ export function Mascot({
   const f = mascotFrame(mood, tick, say, look);
   return (
     <Box flexDirection="column" width={NEX_WIDTH}>
-      {f.rows.map((r, i) => (
-        <Text key={i} color={MOOD_COLOR[mood]}>
-          {r}
-        </Text>
-      ))}
+      {f.rows.map((r, i) => {
+        // The iris and cheeks get their own colour; the lid stays the mood colour.
+        const parts = r.split(/([(][^)]{1,2}[)]|~(?= ))/);
+        return (
+          <Text key={i} color={MOOD_COLOR[mood]}>
+            {parts.map((p, k) =>
+              k % 2 === 1 ? (
+                <Text key={k} color={p.startsWith('~') ? PINK : IRIS_COLOR[mood]} bold>
+                  {p}
+                </Text>
+              ) : (
+                p
+              ),
+            )}
+          </Text>
+        );
+      })}
     </Box>
   );
 }
