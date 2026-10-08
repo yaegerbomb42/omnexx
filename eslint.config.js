@@ -9,6 +9,7 @@ export default tseslint.config(
       'coverage/**',
       'node_modules/**',
       'test/fixtures/**',
+      'bench/suites/*/*/solution/**',
       'test/.build/**',
       'eslint.config.js',
     ],

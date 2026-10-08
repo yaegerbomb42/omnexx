@@ -7,3 +7,4 @@ test/fixtures
 .changeset/*.md
 test/.build
 .claude/
+bench/suites/*/*/solution/
