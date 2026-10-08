@@ -84,6 +84,16 @@ export const MORE_SLASH = [
   'doctor',
 ];
 
+export type Mode = 'chat' | 'plan' | 'run';
+
+const MODE_INTRO: Record<Mode, string> = {
+  chat: 'chat mode: each message is worked on right here in your checkout; checks run after edits',
+  plan: 'plan mode: the agent investigates and proposes a plan without changing anything; /go to carry it out',
+  run: 'run mode: your text starts a long run, or steers the live one',
+};
+
+const NEXT_MODE: Record<Mode, Mode> = { chat: 'plan', plan: 'run', run: 'chat' };
+
 /** Commands that never return or need the real terminal. */
 const BLOCKED = new Set(['supervise', 'service']);
 const MAX_ENTRIES = 5_000;
@@ -105,7 +115,7 @@ export class Session {
   quit = false;
   chat: Chat | undefined;
   /** What plain text does: start or steer a long run, or code turn by turn. */
-  mode: 'run' | 'chat' | 'plan' = 'chat';
+  mode: Mode = 'chat';
   /** A y/n question from chat mode waiting on the person (permission to go past a guard). */
   pending: { question: string; resolve: (yes: boolean) => void } | undefined;
   private code: CodeChat | undefined;
@@ -342,21 +352,14 @@ export class Session {
     });
   }
 
-  setMode(mode: 'run' | 'chat' | 'plan'): void {
+  setMode(mode: Mode): void {
     this.mode = mode;
-    this.push(
-      'system',
-      mode === 'chat'
-        ? 'chat mode: each message is worked on right here in your checkout; checks run after edits'
-        : mode === 'plan'
-          ? 'plan mode: the agent investigates and proposes a plan without changing anything; /go to carry it out'
-          : 'run mode: your text starts a long run, or steers the live one',
-    );
+    this.push('system', MODE_INTRO[mode]);
   }
 
   /** shift+tab: chat → plan → run → chat. */
   nextMode(): void {
-    this.setMode(this.mode === 'chat' ? 'plan' : this.mode === 'plan' ? 'run' : 'chat');
+    this.setMode(NEXT_MODE[this.mode]);
   }
 
   /** Nex's latest reaction and what it says; the TUI turns this into a mood each tick. */
