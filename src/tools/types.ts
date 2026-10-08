@@ -51,6 +51,8 @@ export type SubagentKind = (typeof SUBAGENT_KINDS)[number];
 export interface ToolOutput {
   content: string;
   isError?: boolean;
+  /** The tool did the loop's job (e.g. the plan is written): end the loop after this turn. */
+  final?: boolean;
 }
 
 export interface Tool<S extends z.ZodType = z.ZodType> {

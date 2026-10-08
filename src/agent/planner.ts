@@ -169,7 +169,10 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
         );
       try {
         written = applyPlanUpdate(run.plan, input, goal.text.trim());
-        return Promise.resolve(ok(`plan accepted: ${written.nodes.length} nodes`));
+        return Promise.resolve({
+          ...ok(`plan accepted: ${written.nodes.length} nodes`),
+          final: true,
+        });
       } catch (err) {
         return Promise.resolve(
           fail(

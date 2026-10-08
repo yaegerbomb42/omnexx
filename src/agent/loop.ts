@@ -400,6 +400,7 @@ export async function runAgentLoop(
       continue;
     }
 
+    const finished = { now: false };
     const runCall = async (call: (typeof calls)[number]): Promise<ContentBlock> => {
       const tool = byName.get(call.name);
       let content: string;
@@ -428,6 +429,7 @@ export async function runAgentLoop(
           const out = await tool.run(parsed.data, deps.toolCtx);
           content = out.content;
           isError = out.isError === true;
+          if (out.final && !isError) finished.now = true;
         }
       }
       content = deps.toolCtx.redactor.text(content);
@@ -458,6 +460,8 @@ export async function runAgentLoop(
       deps.events.emit('steer.applied', { count: steer.length, turn: turns });
     }
     messages.push({ role: 'user', content: results });
+    // Weaker models keep calling tools after the job is done; don't pay for that.
+    if (finished.now) return end('done');
 
     const finding = deps.watch?.afterTurn(turns, cycleTokens, calls);
     if (finding) {
