@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { readTextOr, writeFileAtomic } from '../core/atomic.js';
 import type { RunStore } from '../core/run-store.js';
+import { clip } from '../core/plan.js';
 import { ok, type Tool } from '../tools/types.js';
 
 export const INTENT_FILE = 'intent.md';
@@ -53,6 +54,18 @@ export async function readIntent(store: RunStore): Promise<string> {
   return (await readTextOr(store.file(INTENT_FILE), '')).trim();
 }
 
+/** Clip over-long prose instead of costing the planner a turn on a length error. */
+export function normalizeIntent(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
+  const out: Record<string, unknown> = { ...raw };
+  if (typeof out.product === 'string') out.product = clip(out.product, 1_200);
+  if (typeof out.users === 'string') out.users = clip(out.users, 400);
+  for (const f of ['done', 'assumptions', 'checks'])
+    if (Array.isArray(out[f]))
+      out[f] = (out[f] as unknown[]).map((x) => (typeof x === 'string' ? clip(x, 300) : x));
+  return out;
+}
+
 /** Planner-only tool (initial planning): record the inferred intent as intent.md in the run dir. */
 export function writeIntentTool(
   store: RunStore,
@@ -63,6 +76,7 @@ export function writeIntentTool(
     description:
       'Record what the user actually wants: the product, its users, observable "done" conditions, the assumptions you made, and the checks you will add. Call once, before write_plan.',
     schema: intentSchema,
+    normalize: normalizeIntent,
     readOnly: true,
     async run(input) {
       await writeFileAtomic(store.file(INTENT_FILE), `${renderIntent(input)}\n`);

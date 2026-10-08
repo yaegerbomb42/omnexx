@@ -1,6 +1,6 @@
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { appendFile, cp, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AgentRunner } from './base.ts';
@@ -26,6 +26,8 @@ export interface OmnexxRunnerOptions {
   hours?: number;
   /** `OMNEXX_HOME` for bench runs, so they never mix with the user's own runs. */
   home?: string;
+  /** Keep improving after the goal is met (off: the bench measures the cost of meeting the goal). */
+  beyond?: boolean;
 }
 
 /**
@@ -69,7 +71,12 @@ export class OmnexxRunner extends AgentRunner {
     const start = Date.now();
     const { timedOut } = await this.spawnWithTimeout('node', args, {
       cwd: workDir,
-      env: { ...process.env, OMNEXX_HOME: home, CI: '1' },
+      env: {
+        ...process.env,
+        OMNEXX_HOME: home,
+        OMNEXX_CONFIG_HOME: await benchConfigHome(home, this.opts.beyond ?? false),
+        CI: '1',
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
       // The run stops itself at --hours; the margin covers planning and teardown.
       timeoutMs: hours * 3_600_000 + 10 * 60_000,
@@ -98,6 +105,23 @@ export function metricsFromState(state: RunState, wall_ms: number): BenchmarkRes
     wall_ms,
     interventions: 0,
   };
+}
+
+/**
+ * A copy of the user's config (their providers, models and quota state) with beyond mode set,
+ * so a bench run never edits the real config.
+ */
+async function benchConfigHome(home: string, beyond: boolean): Promise<string> {
+  const src =
+    process.env.OMNEXX_CONFIG_HOME ??
+    join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'omnexx');
+  const dest = join(home, 'config');
+  if (existsSync(src)) await cp(src, dest, { recursive: true });
+  else await mkdir(dest, { recursive: true });
+  const file = join(dest, 'config.toml');
+  const text = await readFile(file, 'utf-8').catch(() => '');
+  if (!/^\[beyond\]/m.test(text)) await appendFile(file, `\n[beyond]\nenabled = ${beyond}\n`);
+  return dest;
 }
 
 async function hasScript(dir: string, name: string): Promise<boolean> {

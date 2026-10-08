@@ -82,6 +82,23 @@ const KIND_SYNONYMS: Record<string, (typeof TASK_KINDS)[number]> = {
   chore: 'refactor',
 };
 
+/** Prose limits from nodeInputSchema. Over-long prose is clipped, never rejected; checks are never clipped. */
+const PROSE_MAX = { title: 200, why: 1_000 } as const;
+const PROSE_LIST_MAX = { acceptance: 500, steps: 300 } as const;
+
+/** Cut text to `max` characters, marking the cut. */
+export function clip(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+/** `m1`, `M01`, `3`, `Milestone 2` → `M1`; anything else is left for the schema to reject. */
+function milestoneId(id: unknown): unknown {
+  if (typeof id === 'number' && Number.isInteger(id) && id > 0) return `M${id}`;
+  if (typeof id !== 'string') return id;
+  const m = /^\s*(?:m|milestone\s*)?0*(\d+)\s*$/i.exec(id);
+  return m ? `M${m[1]}` : id;
+}
+
 /** One node as models tend to write it: lists as a single string, `description` for `why`, extras. */
 function normalizeNode(raw: unknown, extraKeys: readonly string[] = []): unknown {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
@@ -99,6 +116,13 @@ function normalizeNode(raw: unknown, extraKeys: readonly string[] = []): unknown
         .map((l) => l.replace(/^\s*(?:[-*]|\d+\.)\s+/, '').trim())
         .filter(Boolean);
   }
+  for (const [f, max] of Object.entries(PROSE_MAX))
+    if (typeof out[f] === 'string') out[f] = clip(out[f], max);
+  for (const [f, max] of Object.entries(PROSE_LIST_MAX)) {
+    const v = out[f];
+    if (Array.isArray(v))
+      out[f] = (v as unknown[]).map((x) => (typeof x === 'string' ? clip(x, max) : x));
+  }
   if (typeof out.kind === 'string' && !(TASK_KINDS as readonly string[]).includes(out.kind)) {
     const k = KIND_SYNONYMS[out.kind.toLowerCase()];
     if (k) out.kind = k;
@@ -109,7 +133,8 @@ function normalizeNode(raw: unknown, extraKeys: readonly string[] = []): unknown
 
 /**
  * Forgive shape slips before validation: a list sent as one string, `description` for `why`,
- * `check` for `checks`, unknown keys, a `kind` synonym, park entries as bare ids, and task ids
+ * `check` for `checks`, unknown keys, a `kind` synonym, over-long prose (clipped), loose milestone
+ * ids (`m1`, `M01`, `Milestone 1`), park entries as bare ids, and task ids
  * that don't follow `M<n>.T<nn>` (renumbered under their milestone, with dependsOn updated).
  * Each would otherwise cost the planner a turn; weaker models can spend all of them and never
  * write a plan. What the plan means is still checked strictly.
@@ -121,6 +146,8 @@ export function normalizePlanUpdate(raw: unknown, prev?: Plan): unknown {
   const milestones = r.milestones.map((m: unknown) => {
     const node = normalizeNode(m, ['tasks']);
     if (typeof node !== 'object' || node === null) return node;
+    const n = node as { id?: unknown };
+    n.id = milestoneId(n.id);
     const tasks = (node as { tasks?: unknown }).tasks;
     return Array.isArray(tasks) ? { ...node, tasks: tasks.map((t) => normalizeNode(t)) } : node;
   });
