@@ -478,13 +478,38 @@ export class Session {
     }
   }
 
+  /** Session toggles (/yolo, /card): handled outside the big command switch. */
+  private toggle(cmd: string): boolean {
+    if (cmd === 'yolo') {
+      this.autoApprove = !this.autoApprove;
+      if (this.autoApprove && this.pending) {
+        this.pending.resolve(true);
+        this.pending = undefined;
+      }
+      this.push(
+        'system',
+        this.autoApprove
+          ? 'auto-approve on: guard questions get a yes (hard-denied commands stay denied)'
+          : 'auto-approve off: you will be asked again',
+      );
+      return true;
+    }
+    if (cmd === 'card') {
+      this.showRunCard = !this.showRunCard;
+      this.push('system', `run card ${this.showRunCard ? 'on' : 'off'}`);
+      return true;
+    }
+    return false;
+  }
+
   /** Say yes to every guard question (config policy.auto_approve, or /yolo). */
   autoApprove = false;
 
   /** Chat mode asks the person before going past a guard; the TUI shows it above the input. */
   ask(question: string): Promise<boolean> {
     if (this.autoApprove) {
-      this.push('system', `auto-approved: ${question.replace(/\s*\[y\/N\]\s*$/i, '')}`);
+      const q = question.trimEnd();
+      this.push('system', `auto-approved: ${q.endsWith('[y/N]') ? q.slice(0, -5).trimEnd() : q}`);
       return Promise.resolve(true);
     }
     return new Promise((resolve) => {
@@ -860,6 +885,7 @@ export class Session {
     const words = parse(line).filter((w): w is string => typeof w === 'string');
     const [cmd = '', ...args] = words;
     const rest = line.slice(cmd.length).trim();
+    if (this.toggle(cmd)) return;
     switch (cmd) {
       case 'help':
         this.push('system', helpText(this.b));
@@ -881,23 +907,6 @@ export class Session {
         if (rest) await this.startRun(rest);
         else this.setMode('run');
         return;
-      case 'yolo':
-        this.autoApprove = !this.autoApprove;
-        if (this.autoApprove && this.pending) {
-          this.pending.resolve(true);
-          this.pending = undefined;
-        }
-        this.push(
-          'system',
-          this.autoApprove
-            ? 'auto-approve on: guard questions get a yes (hard-denied commands stay denied)'
-            : 'auto-approve off: you will be asked again',
-        );
-        break;
-      case 'card':
-        this.showRunCard = !this.showRunCard;
-        this.push('system', `run card ${this.showRunCard ? 'on' : 'off'}`);
-        break;
       case 'plan':
         if (rest) await this.cli(['run', '--plan-only', rest], 'planning');
         else await this.cli(['plan', ...(this.runId ? [this.runId] : [])]);
