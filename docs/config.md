@@ -246,3 +246,18 @@ In-cycle context control runs before each turn and works on every provider. Past
 | `embeddings`  | unset   | `"provider:model"` on an OpenAI-compatible `/embeddings` endpoint (e.g. `"mistral:codestral-embed"`). Set it to give the agent `semantic_search` (find code by meaning). |
 | `max_files`   | `4000`  | Files indexed at most. The index lives next to the repo's memory and only re-embeds files that changed.                                                                  |
 | `chunk_lines` | `60`    | Lines per indexed chunk (a quarter overlap).                                                                                                                             |
+
+## `[review]`
+
+Earned done. On by default; each part costs model calls, so tune it to your budget.
+
+| Key              | Default     | Meaning                                                                                                                      |
+| ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`        | `true`      | Review each change that passed the gates before it is committed; blocking findings send it back                              |
+| `review_models`  | `"worker"`  | Which role's models review (`cheap`, `worker`, `planner`). Reviews are frequent, so the worker's models keep them affordable |
+| `block_on`       | `"blocker"` | Severity that rejects a change (`blocker` or `major`)                                                                        |
+| `strict_checks`  | `true`      | Refuse plans whose task checks only look for files or text                                                                   |
+| `audit`          | `true`      | Before a run may finish, audit the result against the goal's "done when" list; gaps become a new milestone                   |
+| `audit_models`   | `"planner"` | Which role's models audit (rare and judgement-heavy)                                                                         |
+| `max_audits`     | `3`         | Audit rounds before the run finishes anyway                                                                                  |
+| `max_diff_chars` | `40000`     | Larger diffs are cut (head and tail kept) before review                                                                      |

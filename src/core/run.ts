@@ -247,8 +247,8 @@ export class Run {
       estimatedInputTokens: number;
       maxOutputTokens: number;
       role: string;
-      /** Which chain to try: the cheap one (default), or the planner's for judgement calls. */
-      chain?: 'cheap' | 'planner';
+      /** Which role's chain to try: the cheap one (default), or the worker's / planner's. */
+      chain?: 'cheap' | 'worker' | 'planner';
     },
   ): Promise<{ res: CompletionResponse; model: ResolvedModel } | undefined> {
     const errors: string[] = [];
