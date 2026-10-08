@@ -22,7 +22,7 @@ import { estimateTokens } from '../core/tokens.js';
 import { loadInstructions, renderInstructions } from '../instructions/load.js';
 import type { ResolvedModel } from '../providers/pricing.js';
 import { resolveModelLenient } from '../providers/profiles.js';
-import type { Message, Provider } from '../providers/types.js';
+import type { ContentBlock, Message, Provider } from '../providers/types.js';
 import { scrubEnv } from '../security/env-scrub.js';
 import { PathJail } from '../security/paths.js';
 import { Redactor } from '../security/redact.js';
@@ -299,7 +299,11 @@ export class CodeChat {
   }
 
   /** One message: the agent works until it replies. */
-  async send(text: string, view: ChatView, opts: { plan?: boolean } = {}): Promise<void> {
+  async send(
+    text: string,
+    view: ChatView,
+    opts: { plan?: boolean; images?: ContentBlock[] } = {},
+  ): Promise<void> {
     // Plan mode: read-only tools, and the ask goes in the message (the cached prefix is unchanged).
     const tools = opts.plan ? this.tools.filter((t) => t.readOnly) : this.tools;
     const ask = opts.plan ? `${PLAN_MODE}\n\n${text}` : text;
@@ -318,7 +322,7 @@ export class CodeChat {
         {
           system: this.system,
           history: this.history,
-          first: { role: 'user', content: [{ type: 'text', text: ask }] },
+          first: { role: 'user', content: [{ type: 'text', text: ask }, ...(opts.images ?? [])] },
           tools: tools.map(toolSpec),
         },
         {

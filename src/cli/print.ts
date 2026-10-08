@@ -1,3 +1,4 @@
+import { attachImages } from '../tui/attach.js';
 import { CodeChat, type ChatView } from '../tui/code-chat.js';
 import type { CliIO } from './io.js';
 import { EXIT } from './exit-codes.js';
@@ -45,6 +46,8 @@ export async function printCommand(
     },
     todo: () => undefined,
   };
-  await chat.send(text, view);
+  const att = await attachImages(text, io.cwd);
+  if (att.attached.length) io.stderr.write(`attached ${att.attached.join(', ')}\n`);
+  await chat.send(text, view, att.blocks.length ? { images: att.blocks } : {});
   return st.failed ? EXIT.error : EXIT.ok;
 }

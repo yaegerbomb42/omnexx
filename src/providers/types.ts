@@ -4,8 +4,12 @@ export type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; toolUseId: string; content: string; isError?: boolean }
+  /** An image the person attached (base64, no data: prefix). */
+  | { type: 'image'; mediaType: ImageMediaType; data: string }
   /** Provider-specific blocks (e.g. thinking with signatures) that must be sent back verbatim. */
   | { type: 'opaque'; provider: string; block: unknown };
+
+export type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
 
 export interface Message {
   role: 'user' | 'assistant';
