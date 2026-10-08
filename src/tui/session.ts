@@ -13,6 +13,7 @@ import type { TodoItem } from '../tools/todo.js';
 import { classifyMarkdown, type MdKind } from './markdown.js';
 import { parseDiff, type DiffViewState } from './diff.js';
 import { loadAgents, type AgentsState } from './agents.js';
+import { attachImages } from './attach.js';
 import { commandDirs, expandCommand, loadCustomCommands, type CustomCommand } from './commands.js';
 import type { Mood } from './mascot.js';
 import {
@@ -621,7 +622,14 @@ export class Session {
       }
       let next: string | undefined = text;
       while (next !== undefined) {
-        await code.send(next, this.view, { plan: this.mode === 'plan' });
+        // Images the message points at (dragged-in paths) go to the model with it.
+        const att = await attachImages(next, this.io.cwd);
+        if (att.attached.length) this.push('system', `attached ${att.attached.join(', ')}`);
+        if (att.skipped.length) this.push('system', `not attached: ${att.skipped.join(', ')}`);
+        await code.send(next, this.view, {
+          plan: this.mode === 'plan',
+          ...(att.blocks.length ? { images: att.blocks } : {}),
+        });
         // Messages that arrived after its last step: answer them now, not never.
         const left = code.takeLeftovers();
         next = left.length ? left.join('\n') : undefined;

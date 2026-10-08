@@ -10,6 +10,8 @@ export type NotifyKind =
  */
 export interface NotifyPayload {
   kind: NotifyKind;
+  /** A link to open (the run's PR). */
+  url?: string;
   runId: string;
   repo: string;
   status?: string;
@@ -60,6 +62,7 @@ export function formatPush(p: NotifyPayload): {
   if (counts.length) lines.push(counts.join(' · '));
   if (p.taskTitle) lines.push(`Task: ${p.taskTitle.slice(0, 120)}`);
   if (p.hint) lines.push(p.hint.slice(0, 160));
+  if (p.url) lines.push(p.url);
   return {
     title: TITLES[p.kind],
     body: lines.join('\n'),

@@ -132,11 +132,20 @@ No endpoints are built in: any OpenAI-compatible server (OpenAI, OpenRouter, Gro
 
 ## `[git]`
 
-| Key       | Default    | Meaning                                                                |
-| --------- | ---------- | ---------------------------------------------------------------------- |
-| `push`    | `"none"`   | `"branch"` pushes `omnexx/<runId>` (never force) after each checkpoint |
-| `remote`  | `"origin"` |                                                                        |
-| `open_pr` | `false`    | `true` fails: not implemented (M5)                                     |
+| Key       | Default        | Meaning                                                                                                                                                                                |
+| --------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `push`    | `"none"`       | `"branch"` pushes `omnexx/<runId>` (never force) after each checkpoint                                                                                                                 |
+| `remote`  | `"origin"`     |                                                                                                                                                                                        |
+| `open_pr` | `false`        | At the end of a run with commits: push the branch and open a PR with `gh` (title from the goal, the report as body); the link goes into the finish notification. Needs `gh auth login` |
+| `pr_base` | current branch | The PR's base branch                                                                                                                                                                   |
+
+## `[notify.webhook]` (optional)
+
+| Key          | Default                                        | Meaning                                                                 |
+| ------------ | ---------------------------------------------- | ----------------------------------------------------------------------- |
+| `url_env`    | required                                       | Env var holding a Slack or Discord incoming-webhook URL (it's a secret) |
+| `events`     | `finished, needs-human, budget, crash, outage` | Which events post                                                       |
+| `timeout_ms` | `5000`                                         |                                                                         |
 
 ## `[notify.ntfy]` (optional)
 

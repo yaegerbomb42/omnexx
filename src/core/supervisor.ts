@@ -1,4 +1,6 @@
 import { PlannerIncomplete, runPlanner } from '../agent/planner.js';
+import { allOf, WebhookNotifier } from '../notify/webhook.js';
+import { openPullRequest } from '../git/pr.js';
 import { closeSession } from '../tools/extra/browser.js';
 import { saveToRepoMemory } from './repo-memory.js';
 import { renderCodemap, type Codemap } from '../agent/codemap.js';
@@ -742,13 +744,15 @@ export async function supervise(
     };
   }
   const ntfy = deps.config.notify.ntfy;
-  const notifier =
-    opts.notifier ??
-    (ntfy
-      ? new NtfyNotifier(ntfy, deps.env, run.redactor, deps.fetch, (ok, detail) =>
-          run.events.emit(ok ? 'notify.sent' : 'notify.failed', { detail }),
-        )
-      : nullNotifier);
+  const onResult = (ok: boolean, detail: string): void => {
+    run.events.emit(ok ? 'notify.sent' : 'notify.failed', { detail });
+  };
+  const hook = deps.config.notify.webhook;
+  const channels = [
+    ...(ntfy ? [new NtfyNotifier(ntfy, deps.env, run.redactor, deps.fetch, onResult)] : []),
+    ...(hook ? [new WebhookNotifier(hook, deps.env, run.redactor, deps.fetch, onResult)] : []),
+  ];
+  const notifier = opts.notifier ?? (channels.length ? allOf(channels) : nullNotifier);
   const sup = new Supervisor(run, notifier, opts);
   const resumed = run.state.phase !== 'init';
   if (resumed) {
@@ -852,6 +856,7 @@ export async function supervise(
     cycles: run.state.cycle,
   });
   await writeReport(run.store, run.state, run.plan, deps.clock.now());
+  const prUrl = deps.config.git.open_pr ? await openPullRequest(run) : undefined;
   const kind: NotifyKind =
     outcome.status === 'needs-human'
       ? 'needs-human'
@@ -872,6 +877,7 @@ export async function supervise(
       usd: run.state.spend.usd,
       budgetUsd: deps.config.budget.max_usd,
       hint: `${outcome.reason}. Report: omnexx report ${runId}`,
+      ...(prUrl ? { url: prUrl } : {}),
     }),
   );
   stopHeartbeat();

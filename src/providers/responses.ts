@@ -62,6 +62,11 @@ function toInput(req: CompletionRequest): { role: string; content: unknown }[] {
           content: [{ type: 'function_call_output', call_id: b.toolUseId, output: b.content }],
         });
       else if (b.type === 'text') out.push({ role: 'user', content: b.text });
+      else if (b.type === 'image')
+        out.push({
+          role: 'user',
+          content: [{ type: 'input_image', image_url: `data:${b.mediaType};base64,${b.data}` }],
+        });
     }
   }
   return out;

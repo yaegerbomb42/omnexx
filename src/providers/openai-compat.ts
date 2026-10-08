@@ -15,9 +15,11 @@ export interface OpenAICompatOptions {
   fetch?: typeof fetch;
 }
 
+type ChatPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
+
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
+  content: string | ChatPart[] | null;
   tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[];
   tool_call_id?: string;
 }
@@ -68,6 +70,7 @@ export function toChatMessages(req: CompletionRequest): ChatMessage[] {
       continue;
     }
     const texts: string[] = [];
+    const images: ChatPart[] = [];
     for (const b of m.content) {
       if (b.type === 'tool_result')
         out.push({
@@ -76,8 +79,15 @@ export function toChatMessages(req: CompletionRequest): ChatMessage[] {
           content: b.isError ? `ERROR: ${b.content}` : b.content,
         });
       else if (b.type === 'text') texts.push(b.text);
+      else if (b.type === 'image')
+        images.push({
+          type: 'image_url',
+          image_url: { url: `data:${b.mediaType};base64,${b.data}` },
+        });
     }
-    if (texts.length) out.push({ role: 'user', content: texts.join('\n\n') });
+    if (images.length)
+      out.push({ role: 'user', content: [{ type: 'text', text: texts.join('\n\n') }, ...images] });
+    else if (texts.length) out.push({ role: 'user', content: texts.join('\n\n') });
   }
   return out;
 }

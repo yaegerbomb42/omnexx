@@ -19,6 +19,7 @@ interface GeminiPart {
   text?: string;
   functionCall?: { name?: string; args?: unknown };
   functionResponse?: { name?: string; response?: unknown };
+  inlineData?: { mimeType: string; data: string };
 }
 interface GeminiContent {
   role?: string;
@@ -50,6 +51,8 @@ function toContents(req: CompletionRequest): GeminiContent[] {
           functionResponse: { name: b.toolUseId, response: { result: b.content } },
         });
       else if (b.type === 'text') parts.push({ text: b.text });
+      else if (b.type === 'image')
+        parts.push({ inlineData: { mimeType: b.mediaType, data: b.data } });
     }
     if (parts.length) out.push({ role: 'user', parts });
   }
