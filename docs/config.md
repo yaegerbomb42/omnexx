@@ -207,11 +207,12 @@ In-cycle context control runs before each turn and works on every provider. Past
 
 ## `[policy]`
 
-| Key               | Default | Meaning                                                                           |
-| ----------------- | ------- | --------------------------------------------------------------------------------- |
-| `deny`            | `[]`    | Extra command names the agent's `bash` may not run                                |
-| `allow_network`   | `false` | Allow `curl`/`wget` (never piped into a shell)                                    |
-| `env_passthrough` | `[]`    | Extra env var names for child processes (secret-looking names are dropped anyway) |
+| Key               | Default | Meaning                                                                                                                  |
+| ----------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `deny`            | `[]`    | Extra command names the agent's `bash` may not run                                                                       |
+| `allow_network`   | `false` | Allow `curl`/`wget` (never piped into a shell)                                                                           |
+| `env_passthrough` | `[]`    | Extra env var names for child processes (secret-looking names are dropped anyway)                                        |
+| `auto_approve`    | `false` | Chat: answer yes to every "allow this?" guard question; `/yolo` toggles it per session. Hard-denied commands stay denied |
 
 ## `[service]`
 

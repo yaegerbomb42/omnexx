@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { loadConfig } from '../config/load.js';
 import { Writable } from 'node:stream';
 import { parse } from 'shell-quote';
 import { brand, type Brand } from '../cli/brand.js';
@@ -76,6 +77,7 @@ export const SLASH: readonly SlashCommand[] = [
     help: 'your model pool: tick models, pick top-first or random, each runs until its quota is out',
   },
   { name: 'agents', help: 'every long run on this machine: watch, attach, pause, stop' },
+  { name: 'yolo', help: 'approve every "allow this?" question automatically (toggle)' },
   { name: 'card', help: 'show or hide the live run card (health, progress, models, quota)' },
   { name: 'pause', help: 'pause the agent after its current step (/resume to continue)' },
   { name: 'resume', help: 'continue where the agent paused' },
@@ -193,6 +195,10 @@ export class Session {
 
   /** First-run hint: with no provider set up, say how to add one before anything else. */
   async greet(firstRun = false): Promise<void> {
+    const { config } = await loadConfig({ cwd: this.io.cwd, env: this.io.env }).catch(() => ({
+      config: undefined,
+    }));
+    if (config?.policy.auto_approve) this.autoApprove = true;
     const ready = await hasProvider(this.io).catch(() => true);
     if (ready && !firstRun) return;
     const found = await envKeys(this.io).catch(() => [] as EnvKey[]);
@@ -472,8 +478,15 @@ export class Session {
     }
   }
 
+  /** Say yes to every guard question (config policy.auto_approve, or /yolo). */
+  autoApprove = false;
+
   /** Chat mode asks the person before going past a guard; the TUI shows it above the input. */
   ask(question: string): Promise<boolean> {
+    if (this.autoApprove) {
+      this.push('system', `auto-approved: ${question.replace(/\s*\[y\/N\]\s*$/i, '')}`);
+      return Promise.resolve(true);
+    }
     return new Promise((resolve) => {
       this.pending = { question, resolve };
       this.changed();
@@ -868,6 +881,19 @@ export class Session {
         if (rest) await this.startRun(rest);
         else this.setMode('run');
         return;
+      case 'yolo':
+        this.autoApprove = !this.autoApprove;
+        if (this.autoApprove && this.pending) {
+          this.pending.resolve(true);
+          this.pending = undefined;
+        }
+        this.push(
+          'system',
+          this.autoApprove
+            ? 'auto-approve on: guard questions get a yes (hard-denied commands stay denied)'
+            : 'auto-approve off: you will be asked again',
+        );
+        break;
       case 'card':
         this.showRunCard = !this.showRunCard;
         this.push('system', `run card ${this.showRunCard ? 'on' : 'off'}`);
