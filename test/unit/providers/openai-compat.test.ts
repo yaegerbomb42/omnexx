@@ -264,7 +264,8 @@ describe('model limits and refusals', () => {
       else json(res, 200, ok);
     });
     const p = make(srv.url);
-    const big = { ...req, maxTokens: 32_000, toolChoice: undefined };
+    const big: CompletionRequest = { ...req, maxTokens: 32_000 };
+    delete big.toolChoice;
     await p.complete(big);
     await p.complete(big);
     const sent = srv.requests.map((r) => (JSON.parse(r.body) as { max_tokens: number }).max_tokens);
