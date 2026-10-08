@@ -8,6 +8,7 @@ import { recallTool } from './recall.js';
 import { rememberTool } from './remember.js';
 import { searchTool } from './search.js';
 import { taskTool } from './task.js';
+import { runningContextTool } from './running-context.js';
 import type { OmnexxConfig } from '../config/schema.js';
 import * as extraSources from './extra/index.js';
 import type { ToolSource } from './extra/types.js';
@@ -25,6 +26,7 @@ export const WORKER_TOOLS: readonly Tool[] = [
   rememberTool,
   recallTool,
   taskTool,
+  runningContextTool,
 ] as Tool[];
 
 export const READ_ONLY_TOOLS: readonly Tool[] = WORKER_TOOLS.filter((t) => t.readOnly);

@@ -39,6 +39,7 @@ import { applyRemember, renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
 import { getNode, type PlanNode } from './plan.js';
 import { MemoryHarness } from './memory/index.js';
+import { RunningContext } from './running-context.js';
 import { closeSession } from '../tools/extra/browser.js';
 import { subagentRunner } from '../agent/subagent.js';
 import type { PendingVerdict } from './run-store.js';
@@ -321,6 +322,9 @@ export async function stepAct(run: Run): Promise<void> {
 
   const edited = new Set<string>();
   const toolCtx = toolContext(run, edited);
+  const running = new RunningContext(run.store, task.id, () => run.clock.now());
+  toolCtx.runningContext = running;
+  const runningText = await running.forPrompt();
   const [goal, intent, notes, progressTail, codemap] = await Promise.all([
     run.store.readGoal(),
     readIntent(run.store),
@@ -351,6 +355,7 @@ export async function stepAct(run: Run): Promise<void> {
     progressTail,
     evidence: task.evidence.slice(-3),
     ...(assembled.text ? { memory: assembled.text } : {}),
+    ...(runningText ? { runningContext: runningText } : {}),
     tools: tools.map(toolSpec),
   });
   run.events.emit('cycle.context', {
@@ -731,12 +736,28 @@ export async function stepRecord(run: Run): Promise<void> {
     run.state.recordedCycle = run.state.cycle;
   } else if (run.state.recordedCycle !== run.state.cycle) {
     task.attempts++;
+    // The harness keeps the running context current even when the model forgets to.
+    const running = new RunningContext(run.store, task.id, () => run.clock.now());
+    const said =
+      p.summary
+        .split('\n')
+        .find((l) => l.trim())
+        ?.trim()
+        .slice(0, 300) ?? '';
+    await running.add(
+      'checkpoint',
+      p.verdict === 'accept'
+        ? `Accepted${p.done ? ': the task is done' : ' (not done yet)'}. ${said}`
+        : `Rejected: ${p.reasons.join('; ').slice(0, 600)}. Tried: ${said}`,
+      `cycle ${run.state.cycle}`,
+    );
     if (p.verdict === 'accept') {
       task.consecutiveRejections = 0;
       if (p.done) {
         task.status = 'done';
         task.doneAtCycle = run.state.cycle;
         task.evidence = [];
+        await running.archive();
       } else task.status = 'doing';
     } else {
       task.status = 'doing';

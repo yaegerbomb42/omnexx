@@ -11,6 +11,7 @@ import { loadConfig } from '../config/load.js';
 import { parseDuration } from '../config/duration.js';
 import { EventLog, type OmnexxEvent } from '../core/events.js';
 import { RunStore } from '../core/run-store.js';
+import { RunningContext } from '../core/running-context.js';
 import { readTextOr, writeJsonAtomic } from '../core/atomic.js';
 import { runsDir } from '../core/paths.js';
 import { restoreTree, snapshotTree } from './undo.js';
@@ -187,6 +188,7 @@ export class CodeChat {
       edited: new Set(),
       reads: new Map(),
       ask,
+      runningContext: new RunningContext(store, 'chat'),
     };
     const tools = [
       ...(await workerTools(config)).filter((t) => !CHAT_DENIED.has(t.name)),
@@ -445,11 +447,18 @@ export class CodeChat {
     if (cut === undefined || cut === 0) return;
     const head = this.history.slice(0, cut);
     const summary = await this.summarize(head).catch(() => undefined);
+    // Your own running context survives the summary verbatim: it's where the work stands.
+    const running = (await this.ctx.runningContext?.forPrompt()) ?? '';
     if (!summary) return;
     this.history = [
       {
         role: 'user',
-        content: [{ type: 'text', text: `Summary of our conversation so far:\n${summary}` }],
+        content: [
+          {
+            type: 'text',
+            text: `Summary of our conversation so far:\n${summary}${running ? `\n\n${running}` : ''}`,
+          },
+        ],
       },
       {
         role: 'assistant',
@@ -527,5 +536,7 @@ export class CodeChat {
   clear(): void {
     this.history = [];
     this.contextUsed = this.baseTokens();
+    // A fresh conversation starts a fresh running context; the old one is kept with the chat.
+    void this.ctx.runningContext?.archive();
   }
 }

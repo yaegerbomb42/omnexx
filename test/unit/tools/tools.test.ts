@@ -261,6 +261,7 @@ describe('registry', () => {
       'read_log',
       'recall',
       'remember',
+      'running_context',
       'search',
       'task',
     ]);

@@ -20,6 +20,8 @@ export interface CycleInputs {
    * system breakpoint, so it never invalidates the cached prefix.
    */
   memory?: string;
+  /** The task's running context: the agent's own living memory from earlier cycles. */
+  runningContext?: string;
   tools: ToolSpec[];
 }
 
@@ -49,6 +51,10 @@ export function buildCycleContext(i: CycleInputs): {
   }
   if (!i.memory && i.evidence.length)
     parts.push(`# Evidence from earlier attempts\n\n${i.evidence.join('\n\n')}`);
+  if (i.runningContext)
+    parts.push(
+      `# Your running context for ${i.task.id} (where the work stands; keep adding with running_context)\n\n${i.runningContext}`,
+    );
   parts.push(
     `# Your task now\n\nWork on ${i.task.id}: ${i.task.title}. Stop calling tools and summarize when it is done or you are blocked.`,
   );
