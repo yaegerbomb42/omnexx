@@ -305,3 +305,22 @@ describe('model limits and refusals', () => {
     expect((err as Error).message).toMatch(/quota exceeded/);
   });
 });
+
+describe('quota errors in odd shapes', () => {
+  it('a 400 FastAPI-style "out of quota" reads its message and fails over', async () => {
+    const srv = await mockServer((_r, res) => {
+      json(res, 400, {
+        detail: 'Model glm-5.3 has exhausted its 1,000,000 token quota and is retired.',
+      });
+    });
+    const p = new OpenAICompatProvider({
+      name: 'pool',
+      baseUrl: srv.url,
+      apiKey: 'k',
+      timeoutMs: 5_000,
+    });
+    const err = await p.complete(req).catch((e: unknown) => e);
+    expect((err as Error).message).toMatch(/exhausted its 1,000,000 token quota/);
+    expect(shouldFailover(err)).toBe(true);
+  });
+});

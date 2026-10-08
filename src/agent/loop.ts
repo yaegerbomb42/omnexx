@@ -259,6 +259,7 @@ export async function runAgentLoop(
                 err instanceof ProviderError &&
                 err.status === 400 &&
                 !err.contentFilter &&
+                !isQuotaError(err) &&
                 badRequests++ < BAD_REQUEST_RETRIES
               ) {
                 deps.events.emit('provider.retry_400', {

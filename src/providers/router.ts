@@ -1,4 +1,5 @@
 import { ProviderError } from '../errors.js';
+import { isQuotaError } from './sticky.js';
 import type { CompletionRequest, CompletionResponse, Provider } from './types.js';
 
 /** Dispatches each call to the configured provider named in `req.route` (default "anthropic"). */
@@ -29,13 +30,13 @@ export class ProviderRouter implements Provider {
 
 /**
  * Whether to move on to the next model in a chain after this error. A 400 is our own malformed
- * request, so trying elsewhere won't help (unless a content filter refused it); anything else (outage, rate limit, quota, bad key,
+ * request, so trying elsewhere won't help (unless a content filter refused it or it says the model is out of quota); anything else (outage, rate limit, quota, bad key,
  * unknown model) might work on another provider.
  */
 export function shouldFailover(err: unknown): err is ProviderError {
   return (
     err instanceof ProviderError &&
-    (err.status !== 400 || err.contentFilter) &&
+    (err.status !== 400 || err.contentFilter || isQuotaError(err)) &&
     err.message !== 'request aborted'
   );
 }
