@@ -11,5 +11,6 @@ export { hooks } from './hooks.js';
 export { mcp } from './mcp.js';
 export { review } from './review.js';
 export { router } from './router.js';
+export { search } from './search.js';
 export { security } from './security.js';
 export { web } from './web.js';

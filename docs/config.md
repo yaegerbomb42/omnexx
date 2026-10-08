@@ -229,3 +229,11 @@ In-cycle context control runs before each turn and works on every provider. Past
 ## Environment variables
 
 `OMNEXX_HOME` (state, default `~/.omnexx`), `OMNEXX_CONFIG_HOME` (default `~/.config/omnexx`), `OMNEXX_ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEY`, and overrides: `OMNEXX_SANDBOX`, `OMNEXX_BUDGET_MAX_USD`, `OMNEXX_BUDGET_MAX_USD_PER_DAY`, `OMNEXX_BUDGET_MAX_HOURS`, `OMNEXX_BUDGET_MAX_CYCLES`, `OMNEXX_BUDGET_MAX_TURNS_PER_CYCLE`, `OMNEXX_MODELS_PLANNER`, `OMNEXX_MODELS_WORKER`, `OMNEXX_MODELS_CHEAP`, `OMNEXX_GIT_PUSH`, `OMNEXX_JUDGE_KIND`, `OMNEXX_JUDGE_MODE`, `OMNEXX_JUDGE_NIMBLE_URL`, `OMNEXX_NTFY_SERVER`, `OMNEXX_NTFY_TOPIC`.
+
+## `[search]`
+
+| Key           | Default | Meaning                                                                                                                                                                  |
+| ------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `embeddings`  | unset   | `"provider:model"` on an OpenAI-compatible `/embeddings` endpoint (e.g. `"mistral:codestral-embed"`). Set it to give the agent `semantic_search` (find code by meaning). |
+| `max_files`   | `4000`  | Files indexed at most. The index lives next to the repo's memory and only re-embeds files that changed.                                                                  |
+| `chunk_lines` | `60`    | Lines per indexed chunk (a quarter overlap).                                                                                                                             |

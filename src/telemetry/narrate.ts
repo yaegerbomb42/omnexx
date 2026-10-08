@@ -78,6 +78,8 @@ export function narrateTool(name: string, input: Record<string, unknown>): strin
       return `asking a helper: ${clip(s(input.description), 60)}`;
     case 'todo':
       return 'updating the todo list';
+    case 'semantic_search':
+      return `looking through the codebase for ${clip(s(input.query), 50)}`;
     case 'web_search':
       return `searching the web for ${clip(s(input.query), 50)}`;
     case 'web_fetch':
