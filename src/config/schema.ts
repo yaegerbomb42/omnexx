@@ -150,8 +150,10 @@ export const providersSchema = z.strictObject({
 export const gitSchema = z.strictObject({
   push: z.enum(['none', 'branch']).default('none'),
   remote: z.string().default('origin'),
-  /** Opening a PR at the end is planned for M5. `true` fails at run start. */
+  /** At the end of a run with commits: push the branch and open a PR with `gh`. */
   open_pr: z.boolean().default(false),
+  /** The PR's base branch; default: the branch the checkout is on when the run ends. */
+  pr_base: z.string().optional(),
 });
 
 export const NOTIFY_EVENTS = [
@@ -174,8 +176,18 @@ export const ntfySchema = z.strictObject({
   timeout_ms: z.number().int().positive().default(5_000),
 });
 
+/** A Slack- or Discord-compatible incoming webhook (the URL is a secret: read from an env var). */
+export const webhookSchema = z.strictObject({
+  url_env: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
+  events: z
+    .array(z.enum(NOTIFY_EVENTS))
+    .default(['finished', 'needs-human', 'budget', 'crash', 'outage']),
+  timeout_ms: z.number().int().positive().default(5_000),
+});
+
 export const notifySchema = z.strictObject({
   ntfy: ntfySchema.optional(),
+  webhook: webhookSchema.optional(),
 });
 
 export const JUDGE_USES = [

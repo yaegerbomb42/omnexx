@@ -138,6 +138,8 @@ function toParam(b: ContentBlock): ContentBlockParam {
         content: b.content,
         ...(b.isError ? { is_error: true } : {}),
       };
+    case 'image':
+      return { type: 'image', source: { type: 'base64', media_type: b.mediaType, data: b.data } };
     case 'opaque':
       return b.block as ContentBlockParam;
   }
