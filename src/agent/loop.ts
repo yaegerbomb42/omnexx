@@ -258,6 +258,7 @@ export async function runAgentLoop(
               if (
                 err instanceof ProviderError &&
                 err.status === 400 &&
+                !err.contentFilter &&
                 badRequests++ < BAD_REQUEST_RETRIES
               ) {
                 deps.events.emit('provider.retry_400', {
@@ -275,8 +276,10 @@ export async function runAgentLoop(
               // Out of quota: only this model is done, the provider's other models may still have some.
               if (deps.markExhausted && isQuotaError(err))
                 deps.markExhausted(`${m.provider}:${m.id}`);
+              // A content filter refused this request only: the provider stays usable.
               // Transient trouble: retry this provider soon. Key or model problems: much later.
-              else deps.coolProvider?.(m.provider, err.retryable ? 60_000 : 30 * 60_000);
+              else if (!err.contentFilter)
+                deps.coolProvider?.(m.provider, err.retryable ? 60_000 : 30 * 60_000);
               deps.events.emit('provider.failover', {
                 provider: m.provider,
                 model: m.id,

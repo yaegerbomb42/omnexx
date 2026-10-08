@@ -40,7 +40,7 @@ interface ChatResponse {
     completion_tokens?: number;
     prompt_tokens_details?: { cached_tokens?: number };
   };
-  error?: { message?: string };
+  error?: { message?: string; code?: string | number; type?: string };
 }
 
 /** Map our provider-neutral conversation to Chat Completions messages. */
@@ -105,8 +105,24 @@ function mapStop(r: string | undefined, hasCalls: boolean): StopReason {
  * LiteLLM proxy, Ollama, vLLM. Plain `fetch`, no SDK. Caching is whatever the endpoint does on
  * its own; reported cached prompt tokens are billed at the cache-read rate.
  */
+/** "Range of max_tokens should be [1, 8192]", "max_tokens must be less than or equal to 8192"… */
+const MAX_TOKENS_LIMIT =
+  /max_(?:completion_)?tokens\D{0,60}?(?:\[\s*1\s*,\s*|less than or equal to\s*|at most\s*|<=\s*|maximum(?: value)?(?: is| of)?\s*)(\d{3,7})/i;
+
+/** The model's output limit when a 400 says the requested max_tokens was too high. */
+export function maxTokensLimit(message: string): number | undefined {
+  const m = MAX_TOKENS_LIMIT.exec(message);
+  return m?.[1] ? Number(m[1]) : undefined;
+}
+
+/** A provider-side content filter refused the request (another model may accept it). */
+const CONTENT_FILTER =
+  /data_inspection_failed|content[_ ](?:filter|policy|management)|inappropriate content|safety (?:system|filter)/i;
+
 export class OpenAICompatProvider implements Provider {
   readonly name: string;
+  /** Output limits learned from 400s, per model: later calls ask for no more than this. */
+  private readonly outputCaps = new Map<string, number>();
 
   constructor(private readonly opts: OpenAICompatOptions) {
     this.name = opts.name;
@@ -116,21 +132,26 @@ export class OpenAICompatProvider implements Provider {
    * Thinking switches differ per model, and a pool can route each request to a different one:
    * some refuse non-streaming calls unless `enable_thinking: false` is sent, thinking-only models
    * refuse that same flag. So a 400 about `enable_thinking` flips the flag for this request and
-   * tries again (at most twice); nothing is remembered between requests.
+   * tries again (at most twice). A 400 saying max_tokens is above the model's limit records that
+   * limit for the model and retries at it.
    */
   async complete(req: CompletionRequest): Promise<CompletionResponse> {
     let thinking: boolean | undefined;
     for (let i = 0; ; i++) {
       try {
-        return await this.attempt(req, thinking);
+        const cap = this.outputCaps.get(req.model);
+        return await this.attempt(
+          cap && cap < req.maxTokens ? { ...req, maxTokens: cap } : req,
+          thinking,
+        );
       } catch (err) {
-        if (
-          i >= 2 ||
-          !(err instanceof ProviderError) ||
-          err.status !== 400 ||
-          !/enable_thinking/i.test(err.message)
-        )
-          throw err;
+        if (i >= 3 || !(err instanceof ProviderError) || err.status !== 400) throw err;
+        const limit = maxTokensLimit(err.message);
+        if (limit && limit < (this.outputCaps.get(req.model) ?? req.maxTokens)) {
+          this.outputCaps.set(req.model, limit);
+          continue;
+        }
+        if (!/enable_thinking/i.test(err.message)) throw err;
         thinking = thinking === false ? undefined : false;
       }
     }
@@ -190,6 +211,7 @@ export class OpenAICompatProvider implements Provider {
     } catch (err) {
       if (req.signal?.aborted)
         throw new ProviderError('request aborted', { retryable: false, cause: err });
+      if (err instanceof ProviderError) throw err;
       throw new ProviderError(`${this.name} returned non-JSON (HTTP ${res.status})`, {
         retryable: res.status >= 500,
         status: res.status,
@@ -198,6 +220,13 @@ export class OpenAICompatProvider implements Provider {
     }
     if (!res.ok) {
       const s = res.status;
+      const message = data.error?.message ?? '';
+      if (CONTENT_FILTER.test(`${message} ${String(data.error?.code ?? '')}`))
+        throw new ProviderError(`${this.name} content filter refused the request: ${message}`, {
+          retryable: false,
+          status: s,
+          contentFilter: true,
+        });
       throw new ProviderError(
         `${this.name} error ${s}: ${data.error?.message ?? 'request failed'}`,
         {
@@ -265,13 +294,36 @@ interface StreamChunk {
     };
   }[];
   usage?: ChatResponse['usage'];
-  error?: { message?: string };
+  error?: { message?: string; code?: string | number; type?: string };
 }
 
 /**
  * Assemble a server-sent-events Chat Completions stream into the shape the non-streaming
  * response has, calling `onDelta` for every piece of text and reasoning as it arrives.
  */
+function streamErrorStatus(e: { code?: string | number; type?: string }): number {
+  const code = Number(e.code);
+  if (Number.isInteger(code) && code >= 400 && code < 600) return code;
+  if (/invalid_request|invalid_parameter/i.test(`${e.type ?? ''} ${e.code ?? ''}`)) return 400;
+  return 502;
+}
+
+/** An error sent inside a 200 stream (proxies and pools do this): typed like an HTTP one. */
+function streamError(e: {
+  message?: string;
+  code?: string | number;
+  type?: string;
+}): ProviderError {
+  const message = e.message ?? 'stream error';
+  const status = streamErrorStatus(e);
+  const contentFilter = CONTENT_FILTER.test(`${message} ${e.code ?? ''}`);
+  return new ProviderError(`stream error: ${message}`, {
+    retryable: !contentFilter && (status === 429 || status >= 500),
+    status,
+    contentFilter,
+  });
+}
+
 async function readStream(
   body: ReadableStream<Uint8Array>,
   onDelta: NonNullable<CompletionRequest['onDelta']>,
@@ -299,7 +351,7 @@ async function readStream(
       } catch {
         continue;
       }
-      if (c.error) throw new Error(c.error.message ?? 'stream error');
+      if (c.error) throw streamError(c.error);
       model ??= c.model;
       if (c.usage) usage = c.usage;
       const choice = c.choices?.[0];
