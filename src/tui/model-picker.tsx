@@ -5,10 +5,7 @@ import { loadConfig } from '../config/load.js';
 import { resolvePaths } from '../core/paths.js';
 import { discoverModels } from '../providers/discovery.js';
 import { envKeys } from '../cli/connect.js';
-<<<<<<< HEAD
 import type { PoolMode } from '../config/ranking.js';
-=======
->>>>>>> origin/next
 import { CYAN, GRAY, GREEN } from './colors.js';
 
 export type PickerItem =
