@@ -12,6 +12,7 @@ import { CodeChat, type ChatLine } from './code-chat.js';
 import type { TodoItem } from '../tools/todo.js';
 import { classifyMarkdown, type MdKind } from './markdown.js';
 import { parseDiff, type DiffViewState } from './diff.js';
+import { loadAgents, type AgentsState } from './agents.js';
 import { attachImages } from './attach.js';
 import { commandDirs, expandCommand, loadCustomCommands, type CustomCommand } from './commands.js';
 import type { Mood } from './mascot.js';
@@ -58,6 +59,7 @@ export const SLASH: readonly SlashCommand[] = [
     name: 'models',
     help: 'rank your models: #1 chats, the rest are fallbacks for every role and helper',
   },
+  { name: 'agents', help: 'every long run on this machine: watch, attach, pause, stop' },
   { name: 'pause', help: 'pause the agent after its current step (/resume to continue)' },
   { name: 'resume', help: 'continue where the agent paused' },
   { name: 'stop', help: 'stop the agent now (same as esc)' },
@@ -758,6 +760,9 @@ export class Session {
       case 'chat':
         this.setMode('chat');
         return;
+      case 'agents':
+        await this.openAgents();
+        return;
       case 'models':
         await this.openRanking();
         return;
@@ -830,6 +835,50 @@ export class Session {
         await this.cli([cmd, ...args]);
       }
     }
+  }
+
+  /** The open /agents view: every long run on this machine. */
+  agentsView: AgentsState | undefined;
+  private agentsAt = 0;
+
+  async openAgents(): Promise<void> {
+    this.agentsView = { rows: await loadAgents(resolvePaths(this.io.env), this.now()), cursor: 0 };
+    this.agentsAt = this.now();
+    this.changed();
+  }
+
+  /** Called on the TUI's tick: refresh the agents view every 2 s while it is open. */
+  async refreshAgents(): Promise<void> {
+    const v = this.agentsView;
+    if (!v || this.now() - this.agentsAt < 2_000) return;
+    this.agentsAt = this.now();
+    const selected = v.rows[v.cursor]?.runId;
+    const rows = await loadAgents(resolvePaths(this.io.env), this.now());
+    if (!this.agentsView) return;
+    const at = rows.findIndex((r) => r.runId === selected);
+    this.agentsView = {
+      rows,
+      cursor: at >= 0 ? at : Math.min(v.cursor, Math.max(0, rows.length - 1)),
+    };
+    this.changed();
+  }
+
+  /** Keys while the agents view is open. */
+  async agentsKey(k: 'up' | 'down' | 'attach' | 'pause' | 'stop' | 'close'): Promise<void> {
+    const v = this.agentsView;
+    if (!v) return;
+    const row = v.rows[v.cursor];
+    if (k === 'close') this.agentsView = undefined;
+    else if (k === 'up') v.cursor = Math.max(0, v.cursor - 1);
+    else if (k === 'down') v.cursor = Math.min(v.rows.length - 1, v.cursor + 1);
+    else if (row && k === 'attach') {
+      this.agentsView = undefined;
+      await this.attach(row.runId);
+    } else if (row && k === 'pause')
+      await this.cli([row.phase === 'paused' ? 'resume' : 'pause', row.runId]);
+    else if (row && k === 'stop') await this.cli(['stop', row.runId]);
+    this.agentsAt = 0;
+    this.changed();
   }
 
   /** The open /diff viewer, if any; it takes over the keys until closed. */
