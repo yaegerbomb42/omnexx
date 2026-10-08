@@ -259,6 +259,11 @@ export const policySchema = z.strictObject({
   allow_network: z.boolean().default(false),
   /** Extra environment variable names passed through to child processes. */
   env_passthrough: z.array(z.string()).default([]),
+  /**
+   * Chat: answer yes to every "allow this?" question (commands and paths past a guard) instead of
+   * asking. Hard-denied commands stay denied. `/yolo` toggles it for one session.
+   */
+  auto_approve: z.boolean().default(false),
 });
 
 export const serviceSchema = z.strictObject({
