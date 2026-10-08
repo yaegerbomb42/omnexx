@@ -41,6 +41,7 @@ interface ChatResponse {
     prompt_tokens_details?: { cached_tokens?: number };
   };
   error?: { message?: string; code?: string | number; type?: string };
+  detail?: unknown;
 }
 
 /** Map our provider-neutral conversation to Chat Completions messages. */
@@ -220,21 +221,19 @@ export class OpenAICompatProvider implements Provider {
     }
     if (!res.ok) {
       const s = res.status;
-      const message = data.error?.message ?? '';
+      // OpenAI shape, or FastAPI-style proxies: { "detail": "…" }.
+      const message = data.error?.message ?? (typeof data.detail === 'string' ? data.detail : '');
       if (CONTENT_FILTER.test(`${message} ${String(data.error?.code ?? '')}`))
         throw new ProviderError(`${this.name} content filter refused the request: ${message}`, {
           retryable: false,
           status: s,
           contentFilter: true,
         });
-      throw new ProviderError(
-        `${this.name} error ${s}: ${data.error?.message ?? 'request failed'}`,
-        {
-          retryable: s === 408 || s === 409 || s === 429 || s >= 500,
-          status: s,
-          ...(s === 401 || s === 403 ? { hint: `check the key for ${this.name}` } : {}),
-        },
-      );
+      throw new ProviderError(`${this.name} error ${s}: ${message || 'request failed'}`, {
+        retryable: s === 408 || s === 409 || s === 429 || s >= 500,
+        status: s,
+        ...(s === 401 || s === 403 ? { hint: `check the key for ${this.name}` } : {}),
+      });
     }
     const choice = data.choices?.[0];
     const msg = choice?.message;
