@@ -122,6 +122,7 @@ export class Run {
       roleChains: this.chains,
       events: this.events,
       now: () => deps.clock.now(),
+      modelExhausted: (r) => this.modelExhausted(r),
     });
   }
 

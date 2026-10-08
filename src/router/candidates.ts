@@ -28,6 +28,33 @@ const refsOf = (c: string | readonly string[]): readonly string[] =>
   typeof c === 'string' ? [c] : c;
 
 /**
+ * Quality and speed read off a model's name, for pool models (which hold every role, so the role
+ * says nothing). Size in billions when the name has it, else well-known tier words.
+ */
+export function guessFromName(
+  ref: string,
+): { quality: Candidate['quality']; speed: Candidate['speed'] } | undefined {
+  const id = ref.slice(ref.indexOf(':') + 1).toLowerCase();
+  const sizes = [...id.matchAll(/(\d+(?:\.\d+)?)b(?![a-z])/g)].map((m) => Number(m[1]));
+  const size = sizes.length ? Math.max(...sizes) : undefined;
+  if (
+    /(^|[-_/.])(nano|mini|lite|small|tiny|flash|haiku|instant)([-_/.]|$)/.test(id) ||
+    (size !== undefined && size <= 14)
+  )
+    return { quality: 'low', speed: 'fast' };
+  if (
+    /(opus|ultra|large|max|(^|[-_/.])pro([-_/.]|$)|-r1|reason|thinking|kimi-k2|glm-4\.[5-9]|gpt-5|sonnet)/.test(
+      id,
+    ) ||
+    (size !== undefined && size >= 100)
+  )
+    return { quality: 'high', speed: 'slow' };
+  if (size !== undefined || /(medium|coder|code|chat|turbo)/.test(id))
+    return { quality: 'mid', speed: 'normal' };
+  return undefined;
+}
+
+/**
  * Every model the user configured (role chains plus `models.extra`), deduplicated in a stable
  * order. Quality and speed come from the profile, else from the strongest role the model holds.
  */
@@ -49,13 +76,14 @@ export function listCandidates(config: OmnexxConfig): Candidate[] {
       (a, r) => (!a || RANK[ROLE_QUALITY[r]] > RANK[ROLE_QUALITY[a]] ? r : a),
       undefined,
     );
+    const guess = roles.length === 3 ? guessFromName(ref) : undefined;
     return {
       ref,
       model: resolveModel(ref, config),
       roles,
       profile,
-      quality: profile.quality ?? (best ? ROLE_QUALITY[best] : 'mid'),
-      speed: profile.speed ?? (best ? ROLE_SPEED[best] : 'normal'),
+      quality: profile.quality ?? guess?.quality ?? (best ? ROLE_QUALITY[best] : 'mid'),
+      speed: profile.speed ?? guess?.speed ?? (best ? ROLE_SPEED[best] : 'normal'),
     };
   });
 }

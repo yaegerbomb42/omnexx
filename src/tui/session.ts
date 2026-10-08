@@ -31,7 +31,13 @@ import {
   type ModelPickerState,
   type RankState,
 } from './model-picker.js';
-import { readPoolMode, readRanking, writePoolMode, writeRanking } from '../config/ranking.js';
+import {
+  POOL_MODES,
+  readPoolMode,
+  readRanking,
+  writePoolMode,
+  writeRanking,
+} from '../config/ranking.js';
 import { QuotaLedger } from '../providers/quota-ledger.js';
 import { compactPlanView, planCounts } from '../core/plan.js';
 import { resolvePaths } from '../core/paths.js';
@@ -116,6 +122,8 @@ const MAX_ENTRIES = 5_000;
  * Everything the TUI does, without React: a transcript of entries, the attached run's live
  * telemetry and plan, and slash commands that reuse the real CLI with its output captured.
  */
+const POOL_LABEL = { ordered: 'top first', random: 'random order', smart: 'Nimble picks' } as const;
+
 export class Session {
   entries: Entry[] = [];
   telemetry: Telemetry = emptyTelemetry();
@@ -492,13 +500,13 @@ export class Session {
       this.push(
         'system',
         v.ranked.length
-          ? `pool saved (${v.mode === 'random' ? 'random order' : 'top first'}): ${v.ranked.map((r, i) => `${i + 1}. ${r}`).join('  ')}. new chats and runs use it; /model switches this chat`
+          ? `pool saved (${POOL_LABEL[v.mode]}): ${v.ranked.map((r, i) => `${i + 1}. ${r}`).join('  ')}. new chats and runs use it; /model switches this chat`
           : 'no ranking: roles use your config.toml models',
       );
     } else if (k.up) move(-1);
     else if (k.down) move(1);
     else if (k.mode) {
-      v.mode = v.mode === 'random' ? 'ordered' : 'random';
+      v.mode = POOL_MODES[(POOL_MODES.indexOf(v.mode) + 1) % POOL_MODES.length] ?? 'ordered';
       await writePoolMode(resolvePaths(this.io.env), v.mode);
     } else if (k.grab) v.grabbed = !v.grabbed && v.ranked.length > 0;
     else if (k.remove) {

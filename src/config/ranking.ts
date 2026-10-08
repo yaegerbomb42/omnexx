@@ -13,8 +13,11 @@ export const MAX_RANKED = 64;
 /**
  * How the pool is walked. `ordered`: top first, each model until it runs out of quota. `random`:
  * the same, in a shuffled order (reshuffled daily, when quotas reset) so load spreads evenly.
+ * `smart`: a local Nimble model picks the best model with quota left for each action, falling
+ * back to the pool order when Nimble isn't running.
  */
-export type PoolMode = 'ordered' | 'random';
+export type PoolMode = 'ordered' | 'random' | 'smart';
+export const POOL_MODES: readonly PoolMode[] = ['ordered', 'random', 'smart'];
 
 async function readFileJson(p: OmnexxPaths): Promise<{ ranked?: unknown; mode?: unknown }> {
   try {
@@ -28,7 +31,8 @@ async function readFileJson(p: OmnexxPaths): Promise<{ ranked?: unknown; mode?: 
 }
 
 export async function readPoolMode(p: OmnexxPaths): Promise<PoolMode> {
-  return (await readFileJson(p)).mode === 'random' ? 'random' : 'ordered';
+  const mode = (await readFileJson(p)).mode;
+  return POOL_MODES.find((m) => m === mode) ?? 'ordered';
 }
 
 export async function writePoolMode(p: OmnexxPaths, mode: PoolMode): Promise<void> {

@@ -81,3 +81,18 @@ describe('keys pasted in a sentence', () => {
     ).toBeUndefined();
   });
 });
+
+describe('smart pool mode', () => {
+  it('turns on Nimble routing (route only) when no judge is set up', async () => {
+    const { loadConfig } = await import('../../../src/config/load.js');
+    const env = await isolatedEnv();
+    const paths = resolvePaths(env);
+    await writeRanking(paths, ['anthropic:sonnet', 'anthropic:haiku']);
+    await writePoolMode(paths, 'smart');
+    const { config } = await loadConfig({ cwd: await tempDir(), env });
+    expect(config.judge.kind).toBe('nimble');
+    expect(config.judge.uses).toEqual(['route']);
+    await writePoolMode(paths, 'ordered');
+    expect((await loadConfig({ cwd: await tempDir(), env })).config.judge.kind).toBe('none');
+  });
+});

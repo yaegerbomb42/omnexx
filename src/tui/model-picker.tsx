@@ -147,6 +147,12 @@ export interface RankState {
   grabbed: boolean;
 }
 
+const MODE_HINT: Record<PoolMode, string> = {
+  ordered: 'order: top first. each model until its quota runs out, then the next',
+  random: 'order: random. one model at a time, in a daily shuffle, until its quota runs out',
+  smart: 'order: smart. Nimble picks the best model with quota left per action (else top first)',
+};
+
 const ROLE_HINT = [
   'chat, planner, worker and helpers try this first',
   'first fallback',
@@ -165,11 +171,7 @@ export function RankEditor({ state, width }: { state: RankState; width: number }
           {'  ↑↓ move · space pick up/drop · a add · x remove · m order · esc done'}
         </Text>
       </Text>
-      <Text color={GRAY}>
-        {state.mode === 'random'
-          ? 'order: random. one model at a time, in a daily shuffle, until its quota runs out'
-          : 'order: top first. each model until its quota runs out, then the next'}
-      </Text>
+      <Text color={GRAY}>{MODE_HINT[state.mode]}</Text>
       {state.ranked.length === 0 && (
         <Text color={GRAY}>
           empty: roles use your config.toml models. press a to add your best model first.
@@ -183,7 +185,7 @@ export function RankEditor({ state, width }: { state: RankState; width: number }
           <Text color={GRAY}>
             {state.exhausted.has(ref)
               ? '  out of quota, back after reset'
-              : `  ${state.mode === 'random' ? 'in the pool' : (ROLE_HINT[i] ?? 'fallback')}`}
+              : `  ${state.mode !== 'ordered' ? 'in the pool' : (ROLE_HINT[i] ?? 'fallback')}`}
           </Text>
         </Text>
       ))}
