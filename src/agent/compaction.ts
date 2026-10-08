@@ -30,8 +30,19 @@ export const cycleSummarySchema = z.object({
 });
 export type CycleSummary = z.infer<typeof cycleSummarySchema>;
 
+/** Roughly what a vision model charges for one image, whatever its base64 length. */
+const IMAGE_TOKENS = 1_500;
+
 export function contextTokens(messages: readonly Message[]): number {
-  return estimateTokens(JSON.stringify(messages));
+  let images = 0;
+  const text = JSON.stringify(messages, (_k, v: unknown) => {
+    if (v && typeof v === 'object' && (v as { type?: unknown }).type === 'image') {
+      images++;
+      return undefined;
+    }
+    return v;
+  });
+  return estimateTokens(text) + images * IMAGE_TOKENS;
 }
 
 /**
