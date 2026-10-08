@@ -24,7 +24,7 @@ describe('auto-approve', () => {
     await s.greet();
     expect(await s.ask('run `git -C . status`? [y/N]')).toBe(true);
     expect(s.entries.at(-1)?.text).toMatch(/auto-approved: run `git -C \. status`\?$/);
-    await s.slash('yolo');
+    await s.submit('/yolo');
     let answered = false;
     void s.ask('again? [y/N]').then(() => (answered = true));
     await new Promise((r) => setTimeout(r, 20));
