@@ -165,3 +165,35 @@ describe('thinking lines', () => {
     expect(lines.at(-1)).toBe('out:It exports a.');
   });
 });
+
+describe('plan mode', () => {
+  it('investigates read-only, then /go carries the plan out with every tool', async () => {
+    const seen: CompletionRequest[] = [];
+    const provider: Provider = {
+      name: 'anthropic',
+      complete(req) {
+        seen.push({ ...req, messages: structuredClone(req.messages) });
+        return Promise.resolve(reply([{ type: 'text', text: 'Plan: 1. edit a.js 2. test' }], req));
+      },
+    };
+    const s = await chatSession(provider);
+    s.nextMode();
+    expect(s.mode).toBe('plan');
+    await s.submit('add input validation');
+    const planTools = seen[0]?.tools.map((t) => t.name) ?? [];
+    expect(planTools).toContain('read');
+    for (const w of ['write_file', 'str_replace', 'bash']) expect(planTools).not.toContain(w);
+    expect(lastUserText(seen[0] as CompletionRequest)).toMatch(
+      /^\[Plan mode\][\s\S]*add input validation$/,
+    );
+    expect(s.entries.at(-1)?.text).toMatch(/plan ready: \/go/);
+
+    await s.submit('/go');
+    expect(s.mode).toBe('chat');
+    const goTools = seen[1]?.tools.map((t) => t.name) ?? [];
+    expect(goTools).toContain('write_file');
+    expect(lastUserText(seen[1] as CompletionRequest)).toMatch(/The plan is approved/);
+    // The approval carries the plan conversation with it.
+    expect(seen[1]?.messages.length).toBe(3);
+  });
+});

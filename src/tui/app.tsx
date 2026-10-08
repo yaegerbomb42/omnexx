@@ -163,11 +163,7 @@ function StatusBar({ session, width }: { session: Session; width: number }) {
   ) : (
     <Text color={GRAY}>no run attached</Text>
   );
-  const right = session.runId
-    ? `${t.model ?? '–'} · ${fmtTokens(t.tokens.input + t.tokens.output)} tok · cache ${Math.round(cacheHitRate(t) * 100)}% · $${t.usd.toFixed(2)} · ✓${t.commits} ✗${t.rejects}`
-    : session.mode === 'chat'
-      ? `${session.chatModelName ?? 'chat'}${session.context ? ` · ctx ${fmtTokens(session.context.used)}/${fmtTokens(session.context.limit)}` : ''} · chat mode`
-      : `run mode · feed ${session.verbosity}`;
+  const right = statusRight(session);
   return (
     <Box width={width} justifyContent="space-between">
       {left}
@@ -176,6 +172,34 @@ function StatusBar({ session, width }: { session: Session; width: number }) {
       </Text>
     </Box>
   );
+}
+
+/** What the empty input box suggests, by what the session is waiting for. */
+function placeholderFor(session: Session): string {
+  if (session.chat) return `message ${session.chat.ref} (/setup off to leave)`;
+  if (session.awaiting === 'key') return 'paste the API key, then enter';
+  if (session.awaiting === 'url') return '<url> [key] [--name alias]';
+  if (session.pending) return 'y to allow, anything else to refuse';
+  if (session.mode === 'plan')
+    return session.busy
+      ? 'type to steer the plan while it investigates'
+      : 'what should we plan? (nothing changes until you /go)';
+  if (session.mode === 'chat')
+    return session.busy
+      ? 'type to steer the agent while it works'
+      : 'what should we build or change? (shift+tab: plan, then long run)';
+  return session.runAlive ? 'steer the run, or /command' : 'what should omnexx build? (or /help)';
+}
+
+/** The status bar's right side: run telemetry, or the chat model and context use. */
+function statusRight(session: Session): string {
+  const t = session.telemetry;
+  if (session.runId)
+    return `${t.model ?? '–'} · ${fmtTokens(t.tokens.input + t.tokens.output)} tok · cache ${Math.round(cacheHitRate(t) * 100)}% · $${t.usd.toFixed(2)} · ✓${t.commits} ✗${t.rejects}`;
+  if (session.mode === 'run') return `run mode · feed ${session.verbosity}`;
+  const ctx = session.context;
+  const used = ctx ? ` · ctx ${fmtTokens(ctx.used)}/${fmtTokens(ctx.limit)}` : '';
+  return `${session.chatModelName ?? 'chat'}${used} · ${session.mode} mode`;
 }
 
 /** Width of the "omnexx" title column; Nex's eye sits right after it. */
@@ -290,7 +314,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       return;
     }
     if (key.shift && key.tab) {
-      session.setMode(session.mode === 'run' ? 'chat' : 'run');
+      session.nextMode();
       return;
     }
     if (key.ctrl && ch === 'd') {
@@ -404,21 +428,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
   };
   const showMascot = width >= 60 && session.mascot;
 
-  const placeholder = session.chat
-    ? `message ${session.chat.ref} (/setup off to leave)`
-    : session.awaiting === 'key'
-      ? 'paste the API key, then enter'
-      : session.awaiting === 'url'
-        ? '<url> [key] [--name alias]'
-        : session.pending
-          ? 'y to allow, anything else to refuse'
-          : session.mode === 'chat'
-            ? session.busy
-              ? 'type to steer the agent while it works'
-              : 'what should we build or change? (shift+tab: long run mode)'
-            : session.runAlive
-              ? 'steer the run, or /command'
-              : 'what should omnexx build? (or /help)';
+  const placeholder = placeholderFor(session);
 
   return (
     <>
@@ -448,7 +458,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
               <Text color={CYAN}>
                 {SPINNER[frame]} {session.busy}
                 <Text color={GRAY}>
-                  {session.mode === 'chat' ? '  (esc to stop, type to steer)' : ''}
+                  {session.mode === 'run' ? '' : '  (esc to stop, type to steer)'}
                 </Text>
               </Text>
             )}
@@ -471,7 +481,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
               <Text color={GREEN} bold>
                 omnexx
               </Text>
-              <Text color={GRAY}>{session.mode === 'chat' ? 'chat' : 'long run'}</Text>
+              <Text color={GRAY}>{session.mode === 'run' ? 'long run' : session.mode}</Text>
             </Box>
             <Mascot mood={mood} tick={tick} say={say} look={look} />
             <SpeechBubble

@@ -42,6 +42,9 @@ export const CHAT_SYSTEM = `You are Omnexx in chat mode: a coding agent working 
 - Some actions need their OK (paths outside the repo, commands the policy refuses); they are asked for you. If they say no, find another way or explain.
 - Ask a question instead of guessing when the request is ambiguous and the choice matters.`;
 
+/** Prepended to a message in plan mode. */
+const PLAN_MODE = `[Plan mode] Don't change anything yet: no edits and no commands. Investigate with the read-only tools, then reply with a concrete step-by-step plan: the files to change and how, the approach, how you will test it, and any risks or questions for me. Put the steps in the todo list. Stop after the plan; I'll approve it or ask for changes.`;
+
 /** Where a chat's conversation is saved, inside its store. */
 const CHAT_FILE = 'chat.json';
 
@@ -296,7 +299,10 @@ export class CodeChat {
   }
 
   /** One message: the agent works until it replies. */
-  async send(text: string, view: ChatView): Promise<void> {
+  async send(text: string, view: ChatView, opts: { plan?: boolean } = {}): Promise<void> {
+    // Plan mode: read-only tools, and the ask goes in the message (the cached prefix is unchanged).
+    const tools = opts.plan ? this.tools.filter((t) => t.readOnly) : this.tools;
+    const ask = opts.plan ? `${PLAN_MODE}\n\n${text}` : text;
     this.view = view;
     this.snapshots.push({
       tree: await snapshotTree(this.ctx.jail.root),
@@ -312,13 +318,13 @@ export class CodeChat {
         {
           system: this.system,
           history: this.history,
-          first: { role: 'user', content: [{ type: 'text', text }] },
-          tools: this.tools.map(toolSpec),
+          first: { role: 'user', content: [{ type: 'text', text: ask }] },
+          tools: tools.map(toolSpec),
         },
         {
           provider: this.provider,
           models: this.models,
-          tools: this.tools,
+          tools,
           toolCtx: this.ctx,
           budget: { ...this.config.budget, max_turns_per_cycle: 200 },
           maxTokens: this.config.providers.anthropic.max_tokens,

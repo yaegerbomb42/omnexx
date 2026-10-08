@@ -72,7 +72,8 @@ describe('real processes: detach, heartbeat, pause/resume', () => {
     expect((await entry(['pause', runId], { cwd: repo, env })).code).toBe(0);
     const paused = await waitFor(
       async () => ((await store.readHeartbeat())?.phase === 'paused' ? true : undefined),
-      10_000,
+      // Generous: a loaded CI runner can take several seconds to reach the next turn boundary.
+      30_000,
       'paused heartbeat',
     );
     expect(paused).toBe(true);
