@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.0
+
+- **Any provider, set up in one step.** 24 hosted providers by name (OpenAI, Gemini, xAI,
+  Mistral, DeepSeek, Groq, Cerebras, OpenRouter, Together, Fireworks, NVIDIA, Moonshot, Z.ai,
+  Qwen/DashScope, SiliconFlow, DeepInfra, Hugging Face, Perplexity, Cohere, Vercel AI Gateway,
+  GitHub Models, Novita, Hyperbolic, SambaNova), plus Anthropic and 6 local servers (Ollama,
+  LM Studio, vLLM, llama.cpp, LiteLLM, Jan). Paste a key, even inside a sentence ("my mistral
+  key is …"), and omnexx adds the provider; keys never reach a model. `/connect env` adopts the
+  keys already in your environment without copying them.
+- **First-run welcome**: connect a model, ask, review, in three steps.
+- **Model pool** (`/models`): tick any number of models; pick top-first, random (a daily
+  shuffle) or smart (a local Nimble model picks per action). Each model is used until it runs
+  out of quota, then the next; the quota ledger is per model and shared by every session.
+- **Earned done.** Every change gets an independent review before commit, and a run may only
+  finish after an audit against your "done when" list. Review runs on your worker models by
+  default (no paid model unless you configured one).
+- **runningContext**: a living note per task that every cycle starts from, archived when the
+  task is done.
+- **Chat**: plan mode, `/undo`, `--continue`, `omnexx -p` for scripts, custom slash commands
+  (`.omnexx/commands`, `.claude/commands`), image attachments, `/agents` to watch every run on
+  this machine, and Nex, the eye that follows your cursor.
+- **Memory and search**: lessons persist per repo across runs and chats; `semantic_search`
+  finds code by meaning.
+- **Runs**: a walkthrough per milestone, an optional PR at the end, Slack/Discord webhooks, a
+  hardened browser tool for multi-step web tasks.
+
 ## 0.3.0
 
 - **Works like Claude Code.** Bare `omnexx` opens a chat that codes in your checkout: every

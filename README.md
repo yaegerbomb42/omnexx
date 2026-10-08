@@ -27,14 +27,19 @@ tests, typecheck and lint, and keeps going. Close the terminal any time; `omnexx
 | stops when the context fills | fresh context every cycle, so it never runs out                  |
 | "done" = the model says so   | done = your tests, types, lint and a real browser check all pass |
 | stops at the literal ask     | infers the intended build, ships it, then hardens and polishes   |
-| one model per session        | a router picks the model for every action                        |
+| one model per session        | a pool of models, each used until its quota runs out             |
+| "done" when the model stops  | an independent review per change and an audit before finishing   |
 
 ### Providers in one step
 
 At the `omnexx` prompt:
 
-- **Paste an API key.** Anthropic, OpenAI, OpenRouter, Groq, xAI, Gemini and Fireworks keys are
-  recognised by their prefix; the key is saved to a 0600 file and never shown.
+- **Paste an API key**, on its own or in a sentence ("here's my mistral key …"). 25 hosted
+  providers are known by name; the key is saved to a 0600 file, never shown and never sent to a
+  model. `omnexx providers list` shows them all.
+- **`/connect env`**: use the keys already in your environment (only the variable name is saved).
+- **`/models`**: tick the models to use and how: top-first, random, or smart (Nimble picks).
+  Each runs until its quota is out, then the next takes over.
 - **`/connect ollama`** (or `lmstudio`, `vllm`, `litellm`): a local model, no key.
 - **`/connect https://host/v1 KEY`**: any OpenAI-compatible endpoint.
 - **`/chat`**: talk to a connected model directly and ask it to set up more ("add my groq key").
@@ -59,7 +64,7 @@ Omnexx is the loop around the model:
 - **Crash-safe.** Atomic state, a phase machine, a lock with boot-id staleness, `--detach`, and a systemd user unit or launchd agent that resumes runs after a reboot.
 - **Checkpoints and a morning-after report.** Each finished milestone is tagged; `omnexx report` writes `REPORT.md` with the outcome, the plan tree, what changed, test deltas, where it struggled, spend, decisions it needs from you, and how to merge.
 - **Optional docker sandbox.** `sandbox = "docker"` runs the agent's commands and your gates in a locked-down container with only the worktree mounted.
-- **Any provider, with failover.** Anthropic plus any OpenAI-compatible endpoint (OpenAI, OpenRouter, LiteLLM, Ollama). Each role can list a chain of models; a failing or capped provider hands the call to the next. Per-provider spend caps.
+- **Any provider, with failover.** Anthropic, Gemini, the OpenAI Responses API and any OpenAI-compatible endpoint. Each role can list a chain of models; a failing or capped provider hands the call to the next. Per-provider spend caps.
 - **Helpers and memory.** The agent can hand read-only questions to helper agents that run in parallel with their own context, and `recall` searches the whole run's history, not just the last few cycles.
 - **Your checkout is never touched.** Work happens in a git worktree on `omnexx/<runId>`; nothing is pushed unless you opt in.
 
@@ -106,12 +111,15 @@ Planned for M3 and later, and not in this build:
 
 - Ladder rung 4 (a planner-proposed different approach).
 - Real worker adapters (Aider, OpenCode, Cline, Pi, Hermes, OpenHands, Claude Code). The interface, lifecycle and safety checks exist and are tested with a fake worker; enabling a worker fails with "adapter not available until M3". See [docs/workers.md](docs/workers.md).
-- `open_pr`, the benchmark harness. Token-saving claims for helpers and memory are not measured yet.
+- The benchmark harness. Token-saving claims for helpers and memory are not measured yet.
 - Nothing has run longer than about 20 minutes in testing; set `--budget` and `--hours` for long runs.
+
+Review costs: `[review]` runs on your worker models unless you set `review_models`; with a paid
+worker each reviewed change is one extra call. See [docs/config.md](docs/config.md).
 
 ## Docs
 
-[Architecture](docs/architecture.md) · [Config](docs/config.md) · [Safety](docs/safety.md) · [Judge](docs/judge.md) · [Workers](docs/workers.md) · [VPS quickstart](docs/deploy-vps.md) · [Decisions](docs/DECISIONS.md) · [Plan](docs/PLAN.md)
+[Architecture](docs/architecture.md) · [Config](docs/config.md) · [Safety](docs/safety.md) · [Judge](docs/judge.md) · [Workers](docs/workers.md) · [VPS quickstart](docs/deploy-vps.md) · [Decisions](docs/DECISIONS.md) · [Plan](docs/PLAN.md) · [Comparison](docs/comparison.md)
 
 ## License
 
