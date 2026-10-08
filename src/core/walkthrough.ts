@@ -4,6 +4,7 @@ import { git } from '../git/git.js';
 import { writeFileAtomic } from './atomic.js';
 import { readEvents } from './events.js';
 import { childrenOf, type PlanNode } from './plan.js';
+import { RunningContext } from './running-context.js';
 import type { Run } from './run.js';
 
 /** The newest gate screenshot taken after `since` (ms), as a path relative to the run dir. */
@@ -65,6 +66,17 @@ export async function writeWalkthrough(run: Run, m: PlanNode): Promise<string> {
     ...(mine ? [`- Checkpoint: \`${mine.tag}\` at ${mine.sha.slice(0, 10)}`] : []),
     ...(shot ? ['', '## How it looks', '', `![page after ${m.id}](../${shot})`] : []),
     '',
+    ...(
+      await RunningContext.archived(
+        run.store,
+        tasks.map((t) => t.id),
+      )
+    ).flatMap((c) => [
+      `## Running context: ${c.key}`,
+      '',
+      c.text.replace(/^# Running context: [^\n]*\n/, '').trim(),
+      '',
+    ]),
     '## Commits',
     '',
     '```',

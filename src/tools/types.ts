@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import type { EventLog } from '../core/events.js';
 import type { Executor } from '../core/exec.js';
 import type { RunStore } from '../core/run-store.js';
+import type { RunningContext } from '../core/running-context.js';
 import type { PolicyContext } from '../security/command-policy.js';
 import { OutsideRootError, type PathJail } from '../security/paths.js';
 import type { Redactor } from '../security/redact.js';
@@ -38,6 +39,8 @@ export interface ToolContext {
    * set it, so there nothing can be overridden.
    */
   ask?: (question: string) => Promise<boolean>;
+  /** The current task's (or chat's) running context; unset where there is none. */
+  runningContext?: RunningContext;
   /** Runs a read-only child agent (the `task` tool). Unset inside a child: no recursion. */
   subagent?: (description: string, kind: SubagentKind) => Promise<string>;
 }

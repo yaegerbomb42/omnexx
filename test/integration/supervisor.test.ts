@@ -364,7 +364,7 @@ describe('M2: stuck handling, budget and judge', () => {
       config: {
         gates: [GATE],
         // Just above one worst-case call (tools + prompt), so it must pause between cycles.
-        budget: { max_usd_per_day: 0.04, max_hours: 2 },
+        budget: { max_usd_per_day: 0.045, max_hours: 2 },
         providers: { anthropic: { max_tokens: 500 } },
       },
     });
