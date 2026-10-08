@@ -185,3 +185,44 @@ describe('cycleAction', () => {
     expect(cycleAction(t({ consecutiveRejections: 1 }))).toBe('debug-failure');
   });
 });
+
+describe('smart pool routing', () => {
+  it('guesses tiers from model names', async () => {
+    const { guessFromName } = await import('../../../src/router/candidates.js');
+    expect(guessFromName('p:gpt-oss-120b')).toEqual({ quality: 'high', speed: 'slow' });
+    expect(guessFromName('p:qwen3.5-9b')).toEqual({ quality: 'low', speed: 'fast' });
+    expect(guessFromName('p:gemini-2.5-flash')).toEqual({ quality: 'low', speed: 'fast' });
+    expect(guessFromName('p:codestral-latest')).toEqual({ quality: 'mid', speed: 'normal' });
+    expect(guessFromName('p:something')).toBeUndefined();
+  });
+
+  it('never offers the judge a model that is out of quota', async () => {
+    const pool = ['local:big-120b', 'local:small-8b', 'local:coder-32b'];
+    const config = defaultConfig({
+      ...nimble,
+      models: { planner: pool, worker: pool, cheap: pool },
+      providers: { endpoints: { local: { base_url: 'http://localhost:11434/v1', free: true } } },
+    });
+    let offered: string[] = [];
+    const judge: Judge = {
+      kind: 'fake',
+      ask: (_use, _facts, qs) => {
+        const q = qs[0];
+        offered = q?.type === 'choice' ? [...q.options] : [];
+        return answer('local:coder-32b', 0.9).ask(_use, _facts, qs);
+      },
+    };
+    const chain = resolveChain(pool, config);
+    const router = new ModelRouter({
+      config,
+      judge,
+      roleChains: { planner: chain, worker: chain, cheap: chain },
+      now: () => 0,
+      modelExhausted: (r) => r === 'local:big-120b',
+    });
+    const d = await router.pick({ action: 'edit-large' });
+    expect(offered).toEqual(['local:small-8b', 'local:coder-32b']);
+    expect(d.by).toBe('judge');
+    expect(ids(d.chain)[0]).toBe('local:coder-32b');
+  });
+});

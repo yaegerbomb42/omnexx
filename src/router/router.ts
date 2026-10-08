@@ -29,6 +29,8 @@ export interface RouterDeps {
   roleChains: Record<'planner' | 'worker' | 'cheap', ResolvedModel[]>;
   events?: EventLog;
   now: () => number;
+  /** Models out of quota: never offered to the judge, so it picks among ones that can answer. */
+  modelExhausted?: (ref: string) => boolean;
 }
 
 /**
@@ -89,7 +91,9 @@ export class ModelRouter {
     }
 
     const needs = ctx.needs ?? {};
-    const fit = this.candidates.filter((c) => !unfit(c, needs));
+    const fit = this.candidates.filter(
+      (c) => !unfit(c, needs) && !this.deps.modelExhausted?.(`${c.model.provider}:${c.model.id}`),
+    );
     // Rules: keep the role chain, but skip models that can't do the action when others can.
     const ruleChain = (): RouteDecision => {
       const usable = roleChain.filter((m) => fit.some((c) => same(c.model, m)));

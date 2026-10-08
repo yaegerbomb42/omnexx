@@ -27,6 +27,44 @@ export function providerForKey(text: string): string | undefined {
   return KEY_PREFIXES.find(([p]) => t.startsWith(p))?.[1];
 }
 
+/** A token long and random enough to be a secret: 24+ chars mixing letters and digits. */
+const SECRETISH = /^[A-Za-z0-9][A-Za-z0-9_.-]{23,}$/;
+
+export interface FoundKey {
+  key: string;
+  /** Undefined when the key has no telltale prefix and the text names no provider. */
+  provider: string | undefined;
+}
+
+/**
+ * An API key inside a message ("here's my mistral key abc123…"): a token with a known prefix, or
+ * a secret-looking token next to a provider name the catalog knows. Detection is local; the key is
+ * never sent to a model.
+ */
+export function findKeyInText(text: string): FoundKey | undefined {
+  const tokens = text.split(/[\s"'`,;()<>]+/).map((t) => t.replace(/[.:]+$/, ''));
+  for (const t of tokens) {
+    const provider = providerForKey(t);
+    if (provider) return { key: t, provider };
+  }
+  const key = tokens.find(
+    (t) => SECRETISH.test(t) && /\d/.test(t) && /[A-Za-z]/.test(t) && !/^https?/i.test(t),
+  );
+  if (!key) return undefined;
+  const words = text.toLowerCase();
+  const named = Object.entries(PROVIDER_TEMPLATES).find(
+    ([name, t]) =>
+      name !== 'custom' &&
+      !t.local &&
+      (new RegExp(`\\b${name}\\b`).test(words) ||
+        (t.label !== undefined && words.includes(t.label.toLowerCase()))),
+  );
+  if (named) return { key, provider: named[0] };
+  return /\b(api[ _-]?key|key|token|secret)\b/.test(words)
+    ? { key, provider: undefined }
+    : undefined;
+}
+
 export function looksLikeKey(text: string): boolean {
   return providerForKey(text) !== undefined;
 }
@@ -195,10 +233,11 @@ export async function envKeys(io: CliIO): Promise<EnvKey[]> {
 export async function connectFromEnv(io: CliIO): Promise<EnvKey[]> {
   const found = await envKeys(io);
   const file = userConfigFile(resolvePaths(io.env));
-  for (const k of found) {
+  // One after another: every block is appended to the same file.
+  await found.reduce(async (prev, k) => {
+    await prev;
     const t = PROVIDER_TEMPLATES[k.name];
-    if (!t) continue;
-    await appendEndpointBlock(file, k.name, { ...t, keyEnv: k.keyEnv });
-  }
+    if (t) await appendEndpointBlock(file, k.name, { ...t, keyEnv: k.keyEnv });
+  }, Promise.resolve());
   return found;
 }

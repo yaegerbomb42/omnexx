@@ -242,6 +242,10 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
         })
       ).chain,
       providerBlocked: (p) => run.providerBlocked(p),
+      modelExhausted: (r) => run.modelExhausted(r),
+      markExhausted: (r) => {
+        run.markExhausted(r);
+      },
       coolProvider: (p, ms) => {
         run.coolProvider(p, ms);
       },

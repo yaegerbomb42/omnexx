@@ -14,6 +14,7 @@ import { RunStore } from '../core/run-store.js';
 import { RunningContext } from '../core/running-context.js';
 import { readTextOr, writeJsonAtomic } from '../core/atomic.js';
 import { runsDir } from '../core/paths.js';
+import { QuotaLedger } from '../providers/quota-ledger.js';
 import { restoreTree, snapshotTree } from './undo.js';
 import { renderNotes } from '../core/notes.js';
 import type { OmnexxPaths } from '../core/paths.js';
@@ -330,6 +331,17 @@ export class CodeChat {
         {
           provider: this.provider,
           models: this.models,
+          ...(this.paths
+            ? (() => {
+                const quota = new QuotaLedger(join(this.paths.configHome, 'quota.json'));
+                return {
+                  modelExhausted: (r: string) => quota.exhaustedAt(r) !== undefined,
+                  markExhausted: (r: string) => {
+                    quota.mark(r);
+                  },
+                };
+              })()
+            : {}),
           tools,
           toolCtx: this.ctx,
           budget: { ...this.config.budget, max_turns_per_cycle: 200 },

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { rankingLayer, readRanking } from './ranking.js';
+import { rankingLayer, readPoolMode, readRanking } from './ranking.js';
 import { parse as parseToml, TomlError } from 'smol-toml';
 import type { z } from 'zod';
 import { ConfigError } from '../errors.js';
@@ -175,7 +175,8 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<LoadedConfig>
     : await readTomlLayer(join(opts.cwd, PROJECT_CONFIG));
   if (project) layers.push(project);
   // /models ranking: above your config.toml, below a project's omnexx.toml and flags.
-  const ranked = rankingLayer(await readRanking(paths));
+  const poolMode = await readPoolMode(paths);
+  const ranked = rankingLayer(await readRanking(paths), poolMode);
   if (ranked) layers.push({ source: 'your /models ranking (models.json)', data: ranked });
   const user = await readTomlLayer(userConfigFile(paths));
   if (user) layers.push(user);
@@ -186,6 +187,15 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<LoadedConfig>
     const first = parsed.error.issues[0];
     if (!first) throw new ConfigError('invalid configuration');
     throw formatConfigIssue(first, layers);
+  }
+  // Smart pool: Nimble picks the model per action. With no judge set up, borrow Nimble for
+  // routing only; when Nimble isn't running the router falls back to the pool order.
+  if (poolMode === 'smart' && ranked) {
+    if (parsed.data.judge.kind === 'none') {
+      parsed.data.judge.kind = 'nimble';
+      parsed.data.judge.uses = ['route'];
+    }
+    if (parsed.data.router.kind === 'rules') parsed.data.router.kind = 'auto';
   }
   return {
     config: parsed.data,

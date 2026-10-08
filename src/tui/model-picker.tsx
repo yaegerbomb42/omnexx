@@ -5,6 +5,7 @@ import { loadConfig } from '../config/load.js';
 import { resolvePaths } from '../core/paths.js';
 import { discoverModels } from '../providers/discovery.js';
 import { envKeys } from '../cli/connect.js';
+import type { PoolMode } from '../config/ranking.js';
 import { CYAN, GRAY, GREEN } from './colors.js';
 
 export type PickerItem =
@@ -18,6 +19,8 @@ export interface ModelPickerState {
   query: string;
   cursor: number;
   current: string | undefined;
+  /** Picking for the pool: tab ticks several models, enter adds them all. */
+  checked?: Set<string>;
   /** Providers whose model list couldn't be fetched (server down, bad key). */
   unreachable: string[];
 }
@@ -103,7 +106,7 @@ export function ModelPicker({ state, width }: { state: ModelPickerState; width: 
         </Text>
         <Text
           color={GRAY}
-        >{`  ${models} match${models === 1 ? '' : 'es'} · type to filter · ↑↓ · enter · esc`}</Text>
+        >{`  ${models} match${models === 1 ? '' : 'es'} · type to filter · ↑↓ ·${state.checked ? ` tab tick (${state.checked.size}) · enter add ticked ·` : ' enter ·'} esc`}</Text>
       </Text>
       <Text>
         <Text color={GRAY}>{'filter: '}</Text>
@@ -112,9 +115,11 @@ export function ModelPicker({ state, width }: { state: ModelPickerState; width: 
       </Text>
       {page.map((it, i) => {
         const at = start + i === cursor;
+        const box =
+          state.checked && it.kind === 'model' ? (state.checked.has(it.ref) ? '[x] ' : '[ ] ') : '';
         const label =
           it.kind === 'model'
-            ? `${it.ref}${it.ref === state.current ? '  (current)' : ''}`
+            ? `${box}${it.ref}${it.ref === state.current ? '  (current)' : ''}`
             : it.label;
         return (
           <Text key={it.kind === 'model' ? it.ref : it.kind} inverse={at} wrap="truncate-end">
@@ -134,10 +139,19 @@ export function ModelPicker({ state, width }: { state: ModelPickerState; width: 
 
 export interface RankState {
   ranked: string[];
+  mode: PoolMode;
+  /** Refs out of quota right now (skipped until their quota resets). */
+  exhausted: Set<string>;
   cursor: number;
   /** Space picked the row up: ↑↓ move it instead of the cursor. */
   grabbed: boolean;
 }
+
+const MODE_HINT: Record<PoolMode, string> = {
+  ordered: 'order: top first. each model until its quota runs out, then the next',
+  random: 'order: random. one model at a time, in a daily shuffle, until its quota runs out',
+  smart: 'order: smart. Nimble picks the best model with quota left per action (else top first)',
+};
 
 const ROLE_HINT = [
   'chat, planner, worker and helpers try this first',
@@ -151,10 +165,13 @@ export function RankEditor({ state, width }: { state: RankState; width: number }
     <Box flexDirection="column" borderStyle="single" borderColor={GREEN} paddingX={1} width={width}>
       <Text>
         <Text color={GREEN} bold>
-          your model ranking
+          your model pool
         </Text>
-        <Text color={GRAY}>{'  ↑↓ move · space pick up/drop · a add · x remove · esc done'}</Text>
+        <Text color={GRAY}>
+          {'  ↑↓ move · space pick up/drop · a add · x remove · m order · esc done'}
+        </Text>
       </Text>
+      <Text color={GRAY}>{MODE_HINT[state.mode]}</Text>
       {state.ranked.length === 0 && (
         <Text color={GRAY}>
           empty: roles use your config.toml models. press a to add your best model first.
@@ -165,7 +182,11 @@ export function RankEditor({ state, width }: { state: RankState; width: number }
           <Text color={i === state.cursor && state.grabbed ? CYAN : GREEN}>
             {`${i + 1}. ${i === state.cursor && state.grabbed ? '⇕ ' : ''}${ref}`}
           </Text>
-          <Text color={GRAY}>{`  ${ROLE_HINT[i] ?? 'fallback'}`}</Text>
+          <Text color={GRAY}>
+            {state.exhausted.has(ref)
+              ? '  out of quota, back after reset'
+              : `  ${state.mode !== 'ordered' ? 'in the pool' : (ROLE_HINT[i] ?? 'fallback')}`}
+          </Text>
         </Text>
       ))}
     </Box>
