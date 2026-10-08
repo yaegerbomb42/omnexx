@@ -6,7 +6,7 @@ import { parseDuration } from '../config/duration.js';
 import { realClock, type Clock } from '../core/clock.js';
 import { resolvePaths, type OmnexxPaths } from '../core/paths.js';
 import type { RunDeps, RunHooks } from '../core/run.js';
-import { NotImplementedError, UsageError } from '../errors.js';
+import { UsageError } from '../errors.js';
 import { AnthropicProvider } from '../providers/anthropic.js';
 import { GeminiProvider } from '../providers/gemini.js';
 import { OpenAICompatProvider } from '../providers/openai-compat.js';
@@ -38,7 +38,6 @@ export async function resolveRunDeps(
   hooks?: RunHooks,
 ): Promise<ResolvedDeps> {
   const { config } = await loadConfig({ cwd, env: io.env, flags });
-  if (config.git.open_pr) throw new NotImplementedError('git.open_pr', 'M5');
   const enabledWorker = Object.entries(config.workers.backends).find(([, w]) => w.enabled);
   if (enabledWorker) {
     throw new UsageError(

@@ -120,6 +120,8 @@ export const stateSchema = z.object({
   acceptedCommits: z.number().default(0),
   /** Improvement rounds planned after the goal was met (beyond mode). */
   beyondRounds: z.number().int().default(0),
+  /** The PR `[git] open_pr` opened for this run's branch. */
+  prUrl: z.string().optional(),
   /** Pre-finish audits run so far (each may add a milestone of gaps to close). */
   auditRounds: z.number().int().default(0),
   rejectedCycles: z.number().default(0),
