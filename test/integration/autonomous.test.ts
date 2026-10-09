@@ -2,24 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { readEvents } from '../../src/core/events.js';
 import { supervise } from '../../src/core/supervisor.js';
 import {
-  existing,
+  addMilestone,
   fileTask,
   fileWorker,
   firstText,
   planner,
   scenario,
 } from '../support/scenarios.js';
-import { call, say, ScriptedProvider, type Script } from '../support/scripted-provider.js';
-import { makeRepo, startTestRun } from '../support/harness.js';
+import { say, ScriptedProvider, type Script } from '../support/scripted-provider.js';
+import { FAST_SUPERVISE, makeRepo, PASSING_GATE, startTestRun } from '../support/harness.js';
 
-const GATE = { name: 'test', run: 'node -e 0', timeout: '1m' };
-const opts = {
-  bootId: 'b',
-  heartbeatMs: 50,
-  controlPollMs: 20,
-  pausePollMs: 10,
-  notifier: { notify: () => Promise.resolve() },
-};
+const GATE = PASSING_GATE;
+const opts = FAST_SUPERVISE;
 
 /** Ships M1; improvement round 1 adds M2; every later round finds nothing. Records the prompts. */
 function autoPlanner(prompts: string[]): Script {
@@ -30,16 +24,7 @@ function autoPlanner(prompts: string[]): Script {
     if (!text.includes('improvement round')) return base(m);
     prompts.push(text);
     if (text.includes('improvement round 1.')) {
-      return call('write_plan', {
-        milestones: [
-          ...existing(m).map((e) => ({
-            id: e.id,
-            title: e.title,
-            tasks: e.tasks.map((t) => fileTask(t.id)),
-          })),
-          { id: 'M2', title: 'Harden', tasks: [fileTask('M2.T01')] },
-        ],
-      });
+      return addMilestone(m, { id: 'M2', title: 'Harden', tasks: [fileTask('M2.T01')] });
     }
     return base(m);
   };

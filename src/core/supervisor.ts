@@ -598,14 +598,7 @@ class Supervisor {
     const r = this.run;
     const cfg = r.config.beyond;
     const auto = r.config.autonomous.enabled;
-    if (!cfg.enabled && !auto) return false;
-    if (!auto && r.state.beyondRounds >= cfg.max_rounds) return false;
-    // Autonomous runs use the clock to the end; only the wrap-up reserve is kept back.
-    const minLeft = r.config.budget.wrapup_reserve * 2;
-    if (r.budgetLeftFraction() < (auto ? minLeft : Math.max(cfg.min_budget_left, minLeft))) {
-      r.events.emit('beyond.skip', { reason: 'budget', left: r.budgetLeftFraction() });
-      return false;
-    }
+    if (!this.beyondAllowed()) return false;
     const before = r.requirePlan().nodes.length;
     const round = r.state.beyondRounds + 1;
     const scope = auto
@@ -622,14 +615,31 @@ class Supervisor {
     const added = r.requirePlan().nodes.length - before;
     r.state.beyondRounds = round;
     const found = added > 0 && runnableTasks(r.requirePlan()).length > 0;
-    if (auto) {
-      r.state.idleRounds = found ? 0 : r.state.idleRounds + 1;
-      if (!found) r.events.emit('autonomous.idle', { round, idle: r.state.idleRounds });
-    }
+    if (auto) this.countIdle(round, found);
     await r.save();
     r.events.emit('beyond.round', { round, added });
     if (auto && !found) return r.state.idleRounds < r.config.autonomous.max_idle_rounds;
     return found;
+  }
+
+  /** Whether another improvement round may start: enabled, under the round cap, budget left. */
+  private beyondAllowed(): boolean {
+    const r = this.run;
+    const cfg = r.config.beyond;
+    const auto = r.config.autonomous.enabled;
+    if (!auto && (!cfg.enabled || r.state.beyondRounds >= cfg.max_rounds)) return false;
+    // Autonomous runs use the clock to the end; only the wrap-up reserve is kept back.
+    const minLeft = r.config.budget.wrapup_reserve * 2;
+    if (r.budgetLeftFraction() >= (auto ? minLeft : Math.max(cfg.min_budget_left, minLeft)))
+      return true;
+    r.events.emit('beyond.skip', { reason: 'budget', left: r.budgetLeftFraction() });
+    return false;
+  }
+
+  private countIdle(round: number, found: boolean): void {
+    const r = this.run;
+    r.state.idleRounds = found ? 0 : r.state.idleRounds + 1;
+    if (!found) r.events.emit('autonomous.idle', { round, idle: r.state.idleRounds });
   }
 
   /**
