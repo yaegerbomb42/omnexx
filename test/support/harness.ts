@@ -58,6 +58,7 @@ export async function startTestRun(opts: {
     review: { enabled: false, audit: false, strict_checks: false },
     // Tests keep the real HOME; never let the host's ~/.claude/skills into a test run's prompts.
     skills: { import_claude: false },
+    agents: { import_claude: false },
     ...opts.config,
   });
   const clock = new FakeClock();

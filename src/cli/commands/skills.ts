@@ -1,10 +1,9 @@
-import { cp, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { basename, join, resolve, sep } from 'node:path';
+import { rm } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import type { Command } from 'commander';
 import { loadConfig } from '../../config/load.js';
 import { resolvePaths } from '../../core/paths.js';
-import { git } from '../../git/git.js';
+import { addSkills, isGitUrl } from '../../integrations/install.js';
 import { listSkillsWithSource, skillDirs, type SkillRoots } from '../../instructions/skills.js';
 import { EXIT } from '../exit-codes.js';
 import { println, type CliIO } from '../io.js';
@@ -18,26 +17,7 @@ const SOURCE_LABEL = {
   repo: 'repo .omnexx',
 } as const;
 
-const isGitUrl = (s: string) => /^(https?|ssh|file):\/\/|^git@/.test(s) || s.endsWith('.git');
-
-const exists = (p: string) =>
-  stat(p).then(
-    () => true,
-    () => false,
-  );
-
-/** Skill folders under `root`: root itself when it holds a SKILL.md, else each child (or `skills/*`) that does. */
-export async function findSkillFolders(root: string): Promise<string[]> {
-  if (await exists(join(root, 'SKILL.md'))) return [root];
-  const out: string[] = [];
-  for (const base of [root, join(root, 'skills')]) {
-    const entries = await readdir(base, { withFileTypes: true }).catch(() => []);
-    for (const e of entries)
-      if (e.isDirectory() && (await exists(join(base, e.name, 'SKILL.md'))))
-        out.push(join(base, e.name));
-  }
-  return out;
-}
+export { findSkillFolders } from '../../integrations/install.js';
 
 async function roots(io: CliIO): Promise<SkillRoots> {
   const { config } = await loadConfig({ cwd: io.cwd, env: io.env });
@@ -81,35 +61,19 @@ export const register: CommandRegistrar = (program: Command, io: CliIO, setExit)
     )
     .option('--force', 'replace a skill of the same name')
     .action(async (source: string, opts: { force?: boolean }) => {
-      let tmp: string | undefined;
-      try {
-        let root = resolve(io.cwd, source);
-        if (isGitUrl(source)) {
-          tmp = await mkdtemp(join(tmpdir(), 'omnexx-skill-'));
-          await git(tmp, ['clone', '--depth', '1', '--', source, 'repo']);
-          root = join(tmp, 'repo');
-        }
-        const folders = await findSkillFolders(root);
-        if (!folders.length) {
-          println(io.stderr, `No SKILL.md found in ${source} (or its subfolders or skills/).`);
-          setExit(EXIT.error);
-          return;
-        }
-        const added: string[] = [];
-        for (const f of folders) {
-          const dest = join(userDir(), basename(f));
-          if ((await exists(dest)) && !opts.force) {
-            println(io.stderr, `skip ${basename(f)}: already installed (--force to replace)`);
-            continue;
-          }
-          await rm(dest, { recursive: true, force: true });
-          await cp(f, dest, { recursive: true, filter: (p) => !p.split(sep).includes('.git') });
-          added.push(basename(f));
-        }
-        if (added.length) println(io.stdout, `Added ${added.join(', ')} to ${userDir()}`);
-      } finally {
-        if (tmp) await rm(tmp, { recursive: true, force: true });
+      const r = await addSkills(
+        isGitUrl(source) ? source : resolve(io.cwd, source),
+        userDir(),
+        opts.force,
+      );
+      if (!r.found) {
+        println(io.stderr, `No SKILL.md found in ${source} (or its subfolders or skills/).`);
+        setExit(EXIT.error);
+        return;
       }
+      for (const name of r.skipped)
+        println(io.stderr, `skip ${name}: already installed (--force to replace)`);
+      if (r.added.length) println(io.stdout, `Added ${r.added.join(', ')} to ${userDir()}`);
     });
 
   cmd

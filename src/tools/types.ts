@@ -7,6 +7,13 @@ import type { PolicyContext } from '../security/command-policy.js';
 import { OutsideRootError, type PathJail } from '../security/paths.js';
 import type { Redactor } from '../security/redact.js';
 
+/** An agent card a helper plays: its instructions and the tools it asked for. */
+export interface HelperCard {
+  name: string;
+  prompt: string;
+  tools: readonly string[];
+}
+
 export interface ToolContext {
   /** Where `bash` runs: the host, or the run's sandbox. */
   exec?: Executor;
@@ -41,8 +48,11 @@ export interface ToolContext {
   ask?: (question: string) => Promise<boolean>;
   /** The current task's (or chat's) running context; unset where there is none. */
   runningContext?: RunningContext;
-  /** Runs a read-only child agent (the `task` tool). Unset inside a child: no recursion. */
-  subagent?: (description: string, kind: SubagentKind) => Promise<string>;
+  /**
+   * Runs a read-only child agent (the `task` and `agent` tools), optionally playing an agent
+   * card. Unset inside a child: no recursion.
+   */
+  subagent?: (description: string, kind: SubagentKind, card?: HelperCard) => Promise<string>;
 }
 
 export const SUBAGENT_KINDS = ['explore', 'research', 'review'] as const;

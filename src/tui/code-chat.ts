@@ -19,7 +19,7 @@ import { restoreTree, snapshotTree } from './undo.js';
 import { renderNotes } from '../core/notes.js';
 import type { OmnexxPaths } from '../core/paths.js';
 import { readRepoNotes, saveToRepoMemory } from '../core/repo-memory.js';
-import { realClock } from '../core/clock.js';
+import { realClock, type Clock } from '../core/clock.js';
 import { estimateTokens } from '../core/tokens.js';
 import { loadInstructions, renderInstructions } from '../instructions/load.js';
 import type { ResolvedModel } from '../providers/pricing.js';
@@ -28,7 +28,9 @@ import type { ContentBlock, Message, Provider } from '../providers/types.js';
 import { scrubEnv } from '../security/env-scrub.js';
 import { PathJail } from '../security/paths.js';
 import { Redactor } from '../security/redact.js';
-import { workerTools, toolSpec } from '../tools/registry.js';
+import { readOnlyTools, workerTools, toolSpec } from '../tools/registry.js';
+import type { ToolWhere } from '../tools/extra/types.js';
+import { helperRunner } from '../agent/subagent.js';
 import { todoTool, type TodoItem } from '../tools/todo.js';
 import type { Tool, ToolContext } from '../tools/types.js';
 import { runGates } from '../verify/gates.js';
@@ -213,7 +215,36 @@ export class CodeChat {
     ];
     const chat = new CodeChat(config, deps.provider, tools, system, ctx, events, store, ref);
     chat.paths = paths;
+    // Chat gets helpers too (the task and agent tools), on the chat model and the chat's spend.
+    ctx.subagent = chat.helpers({ repoRoot: jail.root, env: io.env }, clock);
     return chat;
+  }
+
+  /** Read-only helpers that run on this chat's model, budget and spend. */
+  helpers(where: ToolWhere, clock: Clock): NonNullable<ToolContext['subagent']> {
+    const cfg = this.config.context;
+    return helperRunner(
+      {
+        tools: () => readOnlyTools(this.config, where),
+        models: () => Promise.resolve(this.models),
+        maxTokens: Math.min(this.config.providers.anthropic.max_tokens, 4_096),
+        limits: { tokens: cfg.subagent_max_tokens, turns: cfg.subagent_max_turns },
+        loop: {
+          provider: this.provider,
+          budget: this.config.budget,
+          clock,
+          events: this.events,
+          spentUsd: () => this.usd,
+          onUsage: (_u, usd) => {
+            this.usd += usd;
+            return Promise.resolve();
+          },
+          control: () => Promise.resolve(this.paused ? 'pause' : 'continue'),
+          pausePollMs: 300,
+        },
+      },
+      this.ctx,
+    );
   }
 
   /** "provider:model" of the model chat talks to. */
