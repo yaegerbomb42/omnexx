@@ -250,6 +250,8 @@ export const contextSchema = z.strictObject({
   clear_tool_results_at: z.number().int().positive().default(60_000),
   /** The newest tool results that are never cleared. */
   keep_tool_results: z.number().int().nonnegative().default(6),
+  /** Minimum token clearing batch size when removing old tool results. */
+  min_clear_tokens: z.number().int().positive().default(4_000),
   /** In-cycle: past this many context tokens, summarize older turns with the cheap model. */
   compact_at: z.number().int().positive().default(100_000),
   /** Recent assistant turns kept verbatim through a compaction. */
