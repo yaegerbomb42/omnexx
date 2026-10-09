@@ -46,6 +46,8 @@ SonarCloud findings from the #20 integration merge are still open.
   compaction keeps the open `todo` items (from the last call, or an earlier summary on a second
   compaction); summaries that overshoot the schema are clipped, not dropped; and when the cheap
   model fails, a fact-only summary still compacts instead of letting context grow to the cap.
+  Part 3: `read` clips lines over 2k chars and stops a range at ~60k chars (a 400-line read of a
+  minified or generated file used to put hundreds of KB in context).
 
 - **2026-10-06 (single agent):** merged #23–#26. Browser gates can now be declared
   (`kind = "browser"`, serves the app on `$PORT`); uncaught page errors count as failures; new

@@ -291,3 +291,21 @@ describe('tool schemas the API accepts', () => {
     expect((await rememberTool.run({ action: 'remove' }, ctx)).isError).toBe(true);
   });
 });
+
+describe('read size caps', () => {
+  it('clips huge lines and stops a range at the char budget', async () => {
+    const root = await repo();
+    await writeFile(join(root, 'src/min.js'), `${'a'.repeat(10_000)}\n${'b;'.repeat(1_000)}\n`);
+    await writeFile(
+      join(root, 'src/wide.js'),
+      Array.from({ length: 300 }, () => 'c'.repeat(1_500)).join('\n'),
+    );
+    const ctx = await toolContext(root);
+    const min = await readTool.run({ path: 'src/min.js' }, ctx);
+    expect(min.content).toContain('[line is 10000 chars');
+    expect(min.content.length).toBeLessThan(5_000);
+    const wide = await readTool.run({ path: 'src/wide.js' }, ctx);
+    expect(wide.content.length).toBeLessThan(62_000);
+    expect(wide.content).toMatch(/\(lines \d+-300 not shown\)/);
+  });
+});
