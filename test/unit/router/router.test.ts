@@ -3,10 +3,10 @@ import { defaultConfig } from '../../../src/config/load.js';
 import type { ConfigInput } from '../../../src/config/schema.js';
 import { planNodeSchema } from '../../../src/core/plan.js';
 import type { Judge, JudgeResult } from '../../../src/judge/types.js';
-import { resolveChain } from '../../../src/providers/pricing.js';
+import { resolveChain, type ResolvedModel } from '../../../src/providers/pricing.js';
 import { listCandidates, unfit } from '../../../src/router/candidates.js';
 import { cycleAction, cycleRoute } from '../../../src/router/classify.js';
-import { ModelRouter } from '../../../src/router/router.js';
+import { escalationChain, ModelRouter } from '../../../src/router/router.js';
 
 const BASE: ConfigInput = {
   models: {
@@ -150,7 +150,7 @@ describe('ModelRouter', () => {
     expect(llm.router.mode).toBe('rules');
   });
 
-  it('routes planning to the planner chain and escalated tasks to high quality only', async () => {
+  it('routes planning to the planner chain and escalated tasks away from the usual worker', async () => {
     const { router } = setup(BASE);
     expect(ids((await router.pick({ action: 'plan' })).chain)).toEqual([
       'anthropic:claude-opus-5-5',
@@ -163,7 +163,17 @@ describe('ModelRouter', () => {
       escalated: true,
     });
     const d = await router.pick(cycleRoute(task, 0.5));
-    expect(ids(d.chain)).toEqual(['anthropic:claude-opus-5-5']);
+    expect(ids(d.chain)[0]).toBe('anthropic:claude-opus-5-5');
+    expect(ids(d.chain).at(-1)).toMatch(/sonnet/);
+  });
+
+  it('escalation never starts with the model the task was stuck on', () => {
+    const m = (id: string) => ({ provider: 'p', id }) as unknown as ResolvedModel;
+    const chain = escalationChain({ planner: [m('a'), m('b')], worker: [m('a'), m('c')] });
+    expect(chain.map((x) => x.id)).toEqual(['b', 'c', 'a']);
+    expect(escalationChain({ planner: [m('a')], worker: [m('a')] }).map((x) => x.id)).toEqual([
+      'a',
+    ]);
   });
 });
 

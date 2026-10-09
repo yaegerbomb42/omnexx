@@ -22,11 +22,12 @@ export function cycleAction(task: PlanNode): RouteAction {
   }
 }
 
-/** Route context for a worker cycle. An escalated task only gets high-quality models. */
+/** Route context for a worker cycle. An escalated task goes to a different, stronger model. */
 export function cycleRoute(task: PlanNode, budgetLeft: number): RouteContext {
   return {
     action: cycleAction(task),
-    needs: { tools: true, ...(task.escalated ? { minQuality: 'high' as const } : {}) },
+    ...(task.escalated ? { escalate: true } : {}),
+    needs: { tools: true },
     facts: {
       task: `${task.id} ${task.title}`.slice(0, 200),
       kind: task.kind,

@@ -18,6 +18,7 @@ import { runAgentLoop } from './loop.js';
 import { subagentRunner } from './subagent.js';
 import { PLANNER_SYSTEM } from './prompts.js';
 import { readIntent, writeIntentTool } from './intent.js';
+import { dryRunChecks } from './check-dryrun.js';
 import type { RouteAction } from '../router/actions.js';
 
 /** The planner loop ended (caps, stop, refusal) before a valid plan was written. */
@@ -154,6 +155,9 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   const goal = await run.store.readGoal();
   const intent = await readIntent(run.store);
   let written: Plan | undefined;
+  const dryRuns = new Map<string, { exitCode: number | null; output: string }>();
+  // Rejections for checks that already pass; past the limit the plan is taken as is.
+  let passRejects = 0;
   const writePlan: Tool<typeof planUpdateSchema> = {
     name: 'write_plan',
     description:
@@ -161,20 +165,35 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     schema: planUpdateSchema,
     normalize: (input) => normalizePlanUpdate(input, run.plan),
     readOnly: true,
-    run(input) {
+    async run(input) {
       const broken = brokenChecks(input, run.config.review.strict_checks);
       if (broken.length)
-        return Promise.resolve(
-          fail(`plan rejected: checks that cannot pass:\n${broken.join('\n')}`),
+        return fail(`plan rejected: checks that cannot pass:\n${broken.join('\n')}`);
+      const dry = await dryRunChecks(run, input, dryRuns);
+      if (dry.broken.length) {
+        run.events.emit('plan.check_rejected', { reason: 'broken', count: dry.broken.length });
+        return fail(
+          `plan rejected: these checks fail to run at all (fix the command, quoting first):\n${dry.broken.join('\n\n')}`,
         );
+      }
+      // Before the run's first commit the code is what the user wants changed: a task whose checks
+      // all pass already can't show its change, and would close with nothing done.
+      if (dry.alreadyPass.length && run.state.acceptedCommits === 0 && passRejects < 2) {
+        passRejects++;
+        run.events.emit('plan.check_rejected', {
+          reason: 'already_pass',
+          count: dry.alreadyPass.length,
+        });
+        return fail(
+          `plan rejected: every check of these tasks already passes on the current code, so none can show the change. Give each a check that fails now and passes once the task is done (a test for the new or fixed behaviour), or mark it kind "investigate":\n${dry.alreadyPass.join('\n')}`,
+        );
+      }
       try {
         written = applyPlanUpdate(run.plan, input, goal.text.trim());
-        return Promise.resolve(ok(`plan accepted: ${written.nodes.length} nodes`));
+        return ok(`plan accepted: ${written.nodes.length} nodes`);
       } catch (err) {
-        return Promise.resolve(
-          fail(
-            `plan rejected: ${err instanceof OmnexxError ? `${err.message}${err.hint ? ` (${err.hint})` : ''}` : (err as Error).message}`,
-          ),
+        return fail(
+          `plan rejected: ${err instanceof OmnexxError ? `${err.message}${err.hint ? ` (${err.hint})` : ''}` : (err as Error).message}`,
         );
       }
     },
