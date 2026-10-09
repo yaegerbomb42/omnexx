@@ -16,6 +16,66 @@ export const reviewSchema = z.object({
   summary: z.string().max(600).default(''),
 });
 
+const SEVERITY: Record<string, Finding['severity']> = {
+  blocker: 'blocker',
+  critical: 'blocker',
+  major: 'major',
+  high: 'major',
+  important: 'major',
+  minor: 'minor',
+  medium: 'minor',
+  low: 'minor',
+  info: 'minor',
+  nit: 'minor',
+};
+const PROBLEM_KEYS = [
+  'problem',
+  'finding',
+  'issue',
+  'description',
+  'gap',
+  'title',
+  'text',
+  'message',
+];
+const FINE = /^(ok|pass(ed)?|confirmed|met|done|resolved|none|fine)$/i;
+const str = (v: unknown, n: number): string => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+
+/**
+ * Models answer the findings tool in their own words: other field names, "critical" or "high"
+ * for severity, a finding that only confirms something is fine, more than 20 items. Map those
+ * onto the schema instead of discarding the whole review. A missing severity counts as minor,
+ * so a garbled answer never blocks work it couldn't describe.
+ */
+export function coerceReview(input: unknown): z.infer<typeof reviewSchema> | undefined {
+  if (typeof input !== 'object' || input === null) return undefined;
+  const o = input as Record<string, unknown>;
+  const raw = Array.isArray(o.findings)
+    ? (o.findings as unknown[])
+    : Array.isArray(o.gaps)
+      ? (o.gaps as unknown[])
+      : Array.isArray(o.issues)
+        ? (o.issues as unknown[])
+        : [];
+  const findings: Finding[] = [];
+  for (const item of raw) {
+    const f =
+      typeof item === 'string' ? { problem: item } : ((item ?? {}) as Record<string, unknown>);
+    if (FINE.test(str(f.status, 40))) continue;
+    const problem = PROBLEM_KEYS.map((k) => str(f[k], 600)).find((v) => v.length >= 3);
+    if (!problem) continue;
+    findings.push({
+      severity: SEVERITY[str(f.severity ?? f.level ?? f.priority, 20).toLowerCase()] ?? 'minor',
+      file: str(f.file ?? f.path, 300),
+      problem,
+      fix: str(f.fix ?? f.suggestion ?? f.recommendation, 600),
+    });
+  }
+  const listed = ['findings', 'gaps', 'issues'].some((k) => Array.isArray(o[k]));
+  if (!listed && typeof o.summary !== 'string') return undefined;
+  return { findings: findings.slice(0, 20), summary: str(o.summary, 600) };
+}
+
 const REVIEW_SYSTEM = `You are a strict senior engineer reviewing a change before it is committed by an autonomous coding agent. The tests already pass; your job is what tests miss.
 
 Report only real problems, each with a severity:
@@ -80,8 +140,7 @@ async function ask(
     },
   );
   const call = done?.res.content.find((b) => b.type === 'tool_use');
-  const parsed = reviewSchema.safeParse(call?.type === 'tool_use' ? call.input : undefined);
-  return parsed.success ? parsed.data : undefined;
+  return coerceReview(call?.type === 'tool_use' ? call.input : undefined);
 }
 
 /**

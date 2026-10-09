@@ -114,6 +114,30 @@ export const POISON_PROBE_AFTER = 3;
 /** The provider answers a trivial request but keeps failing this one: retrying can't help. */
 class PoisonedRequest extends Error {}
 
+/**
+ * Top-level string values that hold a JSON array or object, decoded (once; nested strings too).
+ * The input itself when nothing needed decoding, so callers can tell.
+ */
+export function decodeJsonStrings(input: unknown): unknown {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return input;
+  let changed = false;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    out[k] = v;
+    if (typeof v !== 'string') continue;
+    const t = v.trim();
+    if (!(t.startsWith('[') && t.endsWith(']')) && !(t.startsWith('{') && t.endsWith('}')))
+      continue;
+    try {
+      out[k] = JSON.parse(t) as unknown;
+      changed = true;
+    } catch {
+      // Not JSON after all: leave it for the schema to reject.
+    }
+  }
+  return changed ? out : input;
+}
+
 /** Estimated tokens of the conversation by kind: tool results (by tool), tool calls, text. */
 export function messageSegments(messages: readonly Message[]): {
   messages: number;
@@ -452,9 +476,16 @@ export async function runAgentLoop(
         content = `unknown tool ${call.name}; the tools are: ${[...byName.keys()].join(', ')} (list files with bash, e.g. \`ls -R src\`)`;
         isError = true;
       } else {
-        const parsed = tool.schema.safeParse(
-          tool.normalize ? tool.normalize(call.input) : call.input,
-        );
+        const input = tool.normalize ? tool.normalize(call.input) : call.input;
+        let parsed = tool.schema.safeParse(input);
+        // Models often send a nested array or object as a JSON string ("milestones": "[{…}]").
+        if (!parsed.success) {
+          const decoded = decodeJsonStrings(input);
+          if (decoded !== input) {
+            const again = tool.schema.safeParse(tool.normalize ? tool.normalize(decoded) : decoded);
+            if (again.success) parsed = again;
+          }
+        }
         if (!parsed.success) {
           content = `invalid input for ${call.name}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
           isError = true;

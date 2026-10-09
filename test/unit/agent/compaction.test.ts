@@ -277,3 +277,20 @@ describe('lenient summaries', () => {
     expect(s.inProgress).toBe('checking tests');
   });
 });
+
+describe('decodeJsonStrings', () => {
+  it('decodes top-level strings holding JSON arrays or objects, else returns the input', async () => {
+    const { decodeJsonStrings } = await import('../../../src/agent/loop.js');
+    const input = { milestones: ' [{"id":"M1"}] ', meta: '{"a":1}', title: 'plain', bad: '[oops' };
+    expect(decodeJsonStrings(input)).toEqual({
+      milestones: [{ id: 'M1' }],
+      meta: { a: 1 },
+      title: 'plain',
+      bad: '[oops',
+    });
+    const same = { title: 'plain', n: 1 };
+    expect(decodeJsonStrings(same)).toBe(same);
+    expect(decodeJsonStrings('x')).toBe('x');
+    expect(decodeJsonStrings([1])).toEqual([1]);
+  });
+});
