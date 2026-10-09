@@ -151,10 +151,23 @@ export function isWeakCheck(cmd: string): boolean {
     );
 }
 
+/** Turn deadlines for the planner: explore, then commit to a plan with what is known. */
+const PLAN_NUDGES = [
+  {
+    at: 12,
+    text: 'You have explored enough to plan. Call write_plan now with what you know. Where you are unsure, add a task of kind "investigate" instead of reading more.',
+  },
+  {
+    at: 20,
+    text: 'Stop exploring. Your next call must be write_plan; the run cannot continue without a plan.',
+  },
+] as const;
+
 export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   const goal = await run.store.readGoal();
   const intent = await readIntent(run.store);
   let written: Plan | undefined;
+  let planTurns = 0;
   const dryRuns = new Map<string, { exitCode: number | null; output: string }>();
   // Rejections for checks that already pass; past the limit the plan is taken as is.
   let passRejects = 0;
@@ -280,6 +293,16 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       control: () => run.control(),
       signal: run.abort.signal,
       parallelTasks: run.config.context.subagent_parallel,
+      // Planners explore like workers when left alone: on a large repo glm-5.3 read for 46
+      // turns and hit the token cap three times without a plan. Ask for the plan on a deadline.
+      pendingInput: () => {
+        planTurns++;
+        if (written) return [];
+        const nudge = PLAN_NUDGES.find((n) => n.at === planTurns);
+        if (!nudge) return [];
+        run.events.emit('planner.nudge', { turn: planTurns });
+        return [nudge.text];
+      },
     },
   );
   if (!written) {

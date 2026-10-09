@@ -98,6 +98,17 @@ describe('search', () => {
     expect(js).toEqual(['src/a.ts:2:  return a + b;']);
     expect(await _internal.viaJs('KEY', root, '**/*.ts')).toEqual([]);
   });
+
+  it('accepts a file as path and searches just that file', async () => {
+    const root = await repo();
+    const ctx = await toolContext(root);
+    const r = await searchTool.run({ pattern: 'return a', path: 'src/a.ts' }, ctx);
+    expect(r.isError).toBeUndefined();
+    expect(r.content).toContain('a.ts:2:');
+    expect(await _internal.viaJs('return a', join(root, 'src'), undefined, 'a.ts')).toEqual([
+      'a.ts:2:  return a + b;',
+    ]);
+  });
 });
 
 describe('edit tools', () => {
