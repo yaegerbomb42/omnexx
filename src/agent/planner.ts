@@ -37,6 +37,9 @@ export type PlannerMode =
   | { kind: 'beyond'; round: number; maxRounds: number }
   | { kind: 'audit'; round: number; gaps: string };
 
+/** The running context belongs to a task's worker cycles; finding integrations to chat and worker turns; the plan is the planner's checklist. */
+const PLANNER_DENIED = new Set(['running_context', 'integrations_search', 'todo']);
+
 /** The rubric beyond mode ranks improvements against, once the goal itself is met. */
 export const BEYOND_RUBRIC = [
   'correctness hardening: error paths, input validation, edge cases the tests miss',
@@ -217,11 +220,9 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       }
     },
   };
-  // The running context belongs to a task's worker cycles, not to planning.
   const tools = [
     ...(await readOnlyTools(run.config, { repoRoot: run.worktree, env: run.deps.env })).filter(
-      // Planning plans; finding integrations belongs to chat and worker turns.
-      (t) => t.name !== 'running_context' && t.name !== 'integrations_search',
+      (t) => !PLANNER_DENIED.has(t.name),
     ),
     writePlan as Tool,
   ];

@@ -29,6 +29,7 @@ import {
 } from './compaction.js';
 import { turnRequest } from './context.js';
 import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
+import { todoItemsOf, todoNudge, todoTool, type TodoItem } from '../tools/todo.js';
 
 /** Thrown inside the retry loop when a pre-flight check refuses the call; ends the cycle, never retried. */
 class BudgetStopSignal extends Error {
@@ -186,6 +187,8 @@ export async function runAgentLoop(
   let turns = 0;
   let cycleTokens = 0;
   let finalText = '';
+  let todos: readonly TodoItem[] = [];
+  let todoNudged = false;
   const byName = new Map(deps.tools.map((t) => [t.name, t]));
   const end = (e: LoopEnd): LoopResult => ({ end: e, turns, finalText, usage, usd, messages });
   // The stable prefix never changes within a cycle; size it once for the per-turn breakdown.
@@ -449,8 +452,17 @@ export async function runAgentLoop(
     const thought = calls.length ? text || res.reasoning?.trim() : undefined;
     if (thought) deps.events.emit('agent.thinking', { text: thought.slice(0, 600) });
     if (res.stopReason === 'refusal') return end('refusal');
+    for (const c of calls) if (c.name === todoTool.name) todos = todoItemsOf(c.input) ?? todos;
     if (calls.length === 0) {
       const late = deps.pendingInput?.() ?? [];
+      const open = todos.filter((i) => i.status !== 'done');
+      if (!late.length && open.length && !todoNudged) {
+        // Models often stop with the checklist half ticked; one reminder, then trust the answer.
+        todoNudged = true;
+        deps.events.emit('todo.nudge', { open: open.length });
+        messages.push({ role: 'user', content: [{ type: 'text', text: todoNudge(open) }] });
+        continue;
+      }
       if (!late.length) return end('done');
       // The person wrote while the model was finishing: answer that before ending the turn.
       messages.push({ role: 'user', content: [{ type: 'text', text: steeringText(late) }] });

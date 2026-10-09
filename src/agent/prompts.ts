@@ -17,6 +17,8 @@ How to work:
 - Edit with str_replace / multi_edit. Use write_file only for new or small files.
 - Run the relevant tests with bash before you finish. Commands block until done; never poll or sleep.
 - Keep your running context current with running_context: progress after each meaningful step, the solution when something works, dead ends so they are never retried, and a checkpoint of where you are before you stop. It is shown to you again every cycle.
+- Start with a todo list (todo tool) of the steps for this task, shown live to the person watching. One item in_progress at a time; mark each done as you finish it. Finish every item, or drop the ones the task turned out not to need, before you stop.
+- Pull in wider context only when you need it with the context tool: general (goal, intent, lessons), repo (codebase map), heat (files changing most lately), recent (your running context). When you work out something worth keeping about the codebase (architecture, where things live), rewrite your repo notes with context update; they carry over to later cycles and runs.
 - Record durable repo facts with remember (how to run things, environment needs, pitfalls). Keep entries short.
 - When the task is complete (or you are blocked), stop calling tools and reply with a short summary: what you changed, what you verified, what is left. If blocked, say exactly why.`;
 

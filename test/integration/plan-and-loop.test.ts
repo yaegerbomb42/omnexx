@@ -95,6 +95,7 @@ describe('run --plan-only', () => {
     expect((await store.readState()).status).toBe('planned');
     expect((await store.readPlan())?.nodes.map((n) => n.id)).toEqual(['M1', 'M1.T01', 'M2']);
     expect(provider.requests[0]?.tools.map((t) => t.name).sort()).toEqual([
+      'context',
       'outline',
       'read',
       'read_log',
