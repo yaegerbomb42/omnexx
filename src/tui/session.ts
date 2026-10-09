@@ -86,6 +86,7 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'go', help: 'plan mode: approve the plan and carry it out' },
   { name: 'undo', help: 'put the files back as they were before the last message' },
   { name: 'skills', help: 'skills omnexx can use; /skills add <path|git-url>' },
+  { name: 'mcp', help: 'MCP servers: /mcp add <name>, /mcp search <q>, /mcp import' },
   { name: 'compact', help: 'summarize the conversation to free up context' },
   { name: 'clear', help: 'start a fresh conversation' },
   { name: 'help', help: 'this list' },
@@ -1029,6 +1030,9 @@ export class Session {
         this.todos = [];
         this.code?.clear();
         this.push('system', 'chat conversation cleared');
+        return;
+      case 'mcp':
+        await this.cli(['mcp', ...(args.length ? args : ['list'])]);
         return;
       case 'skills':
         await this.cli(['skills', ...(args.length ? args : ['list'])]);

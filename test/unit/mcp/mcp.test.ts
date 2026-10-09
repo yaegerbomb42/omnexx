@@ -63,6 +63,7 @@ describe('MCP Client Manager', () => {
         env: [],
         headers_env: {},
         allow_tools: ['*'],
+        inherit_env: false,
         timeout: '10s',
       },
     });
@@ -84,6 +85,7 @@ describe('MCP Client Manager', () => {
         env: [],
         headers_env: {},
         allow_tools: ['echo'],
+        inherit_env: false,
         timeout: '10s',
       },
     });
@@ -101,6 +103,7 @@ describe('MCP Client Manager', () => {
         env: ['FAKE_MCP_CRASH_FIRST'],
         headers_env: {},
         allow_tools: ['*'],
+        inherit_env: false,
         timeout: '10s',
       },
     });
