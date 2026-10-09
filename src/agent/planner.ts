@@ -34,7 +34,7 @@ export type PlannerMode =
   | { kind: 'expand'; milestoneId: string }
   | { kind: 'replan'; reason: string }
   | { kind: 'split'; taskId: string; reason: string }
-  | { kind: 'beyond'; round: number; maxRounds: number }
+  | { kind: 'beyond'; round: number; maxRounds?: number; focus?: string }
   | { kind: 'audit'; round: number; gaps: string };
 
 /** The rubric beyond mode ranks improvements against, once the goal itself is met. */
@@ -81,7 +81,7 @@ function instruction(mode: PlannerMode, plan: Plan | undefined): string {
     return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nEvery task is marked done, but an independent audit of the result against what the user asked for found these gaps:\n${mode.gaps}\n\nAdd ONE new milestone (the next free M id) titled "Audit ${mode.round}: close the gaps", with one task per gap (merge trivial ones), each with a check that runs the code and proves the gap is closed. Don't change existing nodes. Call write_plan with just that milestone.`;
   }
   if (mode.kind === 'beyond') {
-    return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nThe goal is met: every milestone and task is done and its checks pass. This is improvement round ${mode.round} of at most ${mode.maxRounds}. Work like the best engineer on the team would after shipping: look at the code and pick the few improvements with the highest real value, ranked against:\n${BEYOND_RUBRIC.map((r) => `- ${r}`).join('\n')}\n\nAdd ONE new milestone with 2-6 tasks. Every task must add or tighten a check (a new test, a stricter lint or type rule, a benchmark threshold) so its value is verified, not claimed. No cosmetic churn, no rewrites for taste. If nothing clears that bar, call write_plan with the plan unchanged: that ends the run.`;
+    return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nThe goal is met: every milestone and task is done and its checks pass. This is improvement round ${mode.round}${mode.maxRounds ? ` of at most ${mode.maxRounds}` : ''}.${mode.focus ? ` This round focuses on: ${mode.focus}. Look hard for real work in that area before deciding there is none.` : ''} Work like the best engineer on the team would after shipping: look at the code and pick the few improvements with the highest real value, ranked against:\n${BEYOND_RUBRIC.map((r) => `- ${r}`).join('\n')}\n\nAdd ONE new milestone with 2-6 tasks. Every task must add or tighten a check (a new test, a stricter lint or type rule, a benchmark threshold) so its value is verified, not claimed. No cosmetic churn, no rewrites for taste. If nothing clears that bar, call write_plan with the plan unchanged${mode.focus ? ': the next round tries another area' : ': that ends the run'}.`;
   }
   return `Current plan:\n${view}\n\nExisting ids (keep every one):\n${full}\n\nRe-plan because: ${mode.reason}. You may split, add or reorder nodes under the affected milestone, and park nodes with a reason. Never delete a node. Call write_plan with the milestones you changed (anything you leave out is kept unchanged).`;
 }

@@ -83,6 +83,10 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'resume', help: 'continue where the agent paused' },
   { name: 'stop', help: 'stop the agent now (same as esc)' },
   { name: 'diff', help: 'browse what changed' },
+  {
+    name: 'autonomous',
+    help: 'work on the repo for a set time: /autonomous 8h [goal] (default: improve it)',
+  },
   { name: 'go', help: 'plan mode: approve the plan and carry it out' },
   { name: 'undo', help: 'put the files back as they were before the last message' },
   { name: 'skills', help: 'skills omnexx can use; /skills add <path|git-url>' },
@@ -111,6 +115,10 @@ export const MORE_SLASH = [
 ];
 
 export type Mode = 'chat' | 'plan' | 'run';
+
+/** `/autonomous 8h` with no goal. */
+export const AUTONOMOUS_DEFAULT_GOAL =
+  'Improve this repository: fix bugs, add missing tests, harden error handling, speed up slow paths, and clean up real duplication. Keep everything working.';
 
 const MODE_INTRO: Record<Mode, string> = {
   chat: 'chat mode: each message is worked on right here in your checkout; checks run after edits',
@@ -875,8 +883,8 @@ export class Session {
     this.push('system', `steering note added to ${id}; it applies from the next cycle`);
   }
 
-  private async startRun(goal: string): Promise<void> {
-    const { code, out } = await this.cli(['run', '--detach', goal], 'starting run');
+  private async startRun(goal: string, extra: readonly string[] = []): Promise<void> {
+    const { code, out } = await this.cli(['run', '--detach', ...extra, goal], 'starting run');
     const id = out
       .split('\n')
       .find((l) => /^\S+$/.test(l.trim()))
@@ -910,6 +918,18 @@ export class Session {
         if (rest) await this.startRun(rest);
         else this.setMode('run');
         return;
+      case 'autonomous': {
+        const [time, ...goal] = args;
+        if (!time) {
+          this.push(
+            'system',
+            'usage: /autonomous <time> [goal], e.g. /autonomous 8h make it faster',
+          );
+          return;
+        }
+        await this.startRun(goal.join(' ') || AUTONOMOUS_DEFAULT_GOAL, ['--for', time]);
+        return;
+      }
       case 'plan':
         if (rest) await this.cli(['run', '--plan-only', rest], 'planning');
         else await this.cli(['plan', ...(this.runId ? [this.runId] : [])]);
@@ -1209,6 +1229,7 @@ export function helpText(b: Brand): string {
     '  chat mode (default): the agent works on your message right here, showing every step',
     '    type while it works to steer it (it reads your message at its next step); esc stops it',
     '  run mode (shift+tab, or /run <goal>): a long unattended run on its own branch',
+    '  /autonomous 8h [goal]: keep improving the repo until the time is up',
     '  in /setup: your text goes to that model, which can add providers for you',
   ].join('\n');
 }

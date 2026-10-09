@@ -1,4 +1,4 @@
-import { PlannerIncomplete, runPlanner } from '../agent/planner.js';
+import { BEYOND_RUBRIC, PlannerIncomplete, runPlanner } from '../agent/planner.js';
 import { allOf, WebhookNotifier } from '../notify/webhook.js';
 import { openPullRequest } from '../git/pr.js';
 import { closeSession } from '../tools/extra/browser.js';
@@ -597,22 +597,58 @@ class Supervisor {
   private async planBeyond(): Promise<boolean> {
     const r = this.run;
     const cfg = r.config.beyond;
-    if (!cfg.enabled || r.state.beyondRounds >= cfg.max_rounds) return false;
-    if (
-      r.budgetLeftFraction() < Math.max(cfg.min_budget_left, r.config.budget.wrapup_reserve * 2)
-    ) {
+    const auto = r.config.autonomous.enabled;
+    if (!cfg.enabled && !auto) return false;
+    if (!auto && r.state.beyondRounds >= cfg.max_rounds) return false;
+    // Autonomous runs use the clock to the end; only the wrap-up reserve is kept back.
+    const minLeft = r.config.budget.wrapup_reserve * 2;
+    if (r.budgetLeftFraction() < (auto ? minLeft : Math.max(cfg.min_budget_left, minLeft))) {
       r.events.emit('beyond.skip', { reason: 'budget', left: r.budgetLeftFraction() });
       return false;
     }
     const before = r.requirePlan().nodes.length;
     const round = r.state.beyondRounds + 1;
-    r.events.emit('beyond.start', { round, maxRounds: cfg.max_rounds });
-    await runPlanner(r, { kind: 'beyond', round, maxRounds: cfg.max_rounds });
+    const scope = auto
+      ? { focus: autonomousFocus(r.config.autonomous.focus, round) }
+      : { maxRounds: cfg.max_rounds };
+    r.events.emit('beyond.start', { round, ...scope });
+    try {
+      await runPlanner(r, { kind: 'beyond', round, ...scope });
+    } catch (err) {
+      // One bad planning round must not end a day-long run; it counts as a round with no work.
+      if (!auto || !(err instanceof PlannerIncomplete)) throw err;
+      r.events.emit('autonomous.round_failed', { round, end: err.end });
+    }
     const added = r.requirePlan().nodes.length - before;
     r.state.beyondRounds = round;
+    const found = added > 0 && runnableTasks(r.requirePlan()).length > 0;
+    if (auto) {
+      r.state.idleRounds = found ? 0 : r.state.idleRounds + 1;
+      if (!found) r.events.emit('autonomous.idle', { round, idle: r.state.idleRounds });
+    }
     await r.save();
     r.events.emit('beyond.round', { round, added });
-    return added > 0 && runnableTasks(r.requirePlan()).length > 0;
+    if (auto && !found) return r.state.idleRounds < r.config.autonomous.max_idle_rounds;
+    return found;
+  }
+
+  /**
+   * Autonomous mode has nobody to ask: work that can't proceed because something it needs was
+   * parked is parked too, so the run moves on to the next improvement round. The report lists it.
+   */
+  private async parkBlocked(): Promise<boolean> {
+    const r = this.run;
+    const blocked = r
+      .requirePlan()
+      .nodes.filter((n) => n.status !== 'done' && n.status !== 'parked');
+    if (!blocked.length) return false;
+    for (const n of blocked) {
+      n.status = 'parked';
+      n.parkedReason = 'autonomous: blocked by parked work';
+    }
+    await r.savePlan();
+    r.events.emit('autonomous.skipped', { nodes: blocked.map((n) => n.id) });
+    return true;
   }
 
   /** Milestones, rolling-wave expansion, and the end-of-plan decision. Returns a task id or an outcome. */
@@ -668,11 +704,12 @@ class Supervisor {
     const openMilestones = plan.nodes.filter(
       (n) => n.type === 'milestone' && n.status !== 'done' && n.status !== 'parked',
     );
+    // Autonomous runs skip parked work instead of stopping to ask; the report lists it.
+    const auto = r.config.autonomous.enabled;
     if (
-      counts.parked === 0 &&
       counts.todo === 0 &&
       openMilestones.length === 0 &&
-      plan.nodes.every((n) => n.status !== 'parked')
+      (auto || plan.nodes.every((n) => n.status !== 'parked'))
     ) {
       if (await this.planAudit()) return this.select();
       if (await this.planBeyond()) return this.select();
@@ -683,6 +720,7 @@ class Supervisor {
         reason: `all ${counts.tasks} tasks and ${counts.milestones} milestones done${rounds ? ` (goal plus ${rounds} improvement round${rounds === 1 ? '' : 's'})` : ''}`,
       };
     }
+    if (r.config.autonomous.enabled && (await this.parkBlocked())) return this.select();
     const parked = plan.nodes.filter((n) => n.status === 'parked').length;
     r.events.emit('ladder.rung', { rung: 'stop_and_ask', parked });
     return {
@@ -916,4 +954,10 @@ async function notifierSafe(fn: () => Promise<void>): Promise<void> {
   } catch {
     // Notifications are best effort; NtfyNotifier already logs its own failures.
   }
+}
+
+/** Autonomous round n's focus: the user's areas first, then the beyond rubric, round robin. */
+export function autonomousFocus(extra: readonly string[], round: number): string {
+  const areas = [...extra, ...BEYOND_RUBRIC];
+  return areas[(round - 1) % areas.length] ?? '';
 }

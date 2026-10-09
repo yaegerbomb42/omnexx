@@ -374,7 +374,30 @@ const beyondStartLine: Formatter = (e) => [
   'quiet',
   'info',
   'beyond',
-  `goal met; planning improvement round ${num(e.round)}/${num(e.maxRounds)}`,
+  e.focus
+    ? `round ${num(e.round)}: looking at ${clip(str(e.focus), 70)}`
+    : `goal met; planning improvement round ${num(e.round)}/${num(e.maxRounds)}`,
+];
+
+const autonomousIdleLine: Formatter = (e) => [
+  'normal',
+  'info',
+  'auto',
+  `round ${num(e.round)} found nothing (${num(e.idle)} in a row)`,
+];
+
+const autonomousSkippedLine: Formatter = (e) => [
+  'normal',
+  'warn',
+  'auto',
+  `skipping blocked work: ${Array.isArray(e.nodes) ? e.nodes.map(str).join(', ') : ''}`,
+];
+
+const autonomousRoundFailedLine: Formatter = (e) => [
+  'normal',
+  'warn',
+  'auto',
+  `round ${num(e.round)}: planner ended (${str(e.end)}); trying the next area`,
 ];
 
 const beyondRoundLine: Formatter = (e) =>
@@ -428,6 +451,9 @@ const FORMATTERS: Partial<Record<string, Formatter>> = {
   'judge.next_move': judgeNextMoveLine,
   'notes.update': notesUpdateLine,
   'intent.update': intentUpdateLine,
+  'autonomous.idle': autonomousIdleLine,
+  'autonomous.round_failed': autonomousRoundFailedLine,
+  'autonomous.skipped': autonomousSkippedLine,
   'beyond.start': beyondStartLine,
   'beyond.round': beyondRoundLine,
   'beyond.skip': beyondSkipLine,
