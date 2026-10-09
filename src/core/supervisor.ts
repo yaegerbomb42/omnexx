@@ -31,6 +31,7 @@ import { judgeGate } from '../verify/ratchet.js';
 import {
   prepareWorktree,
   runBaseline,
+  runChecks,
   stepAct,
   stepCommit,
   stepRecord,
@@ -640,8 +641,26 @@ class Supervisor {
       await runPlanner(r, { kind: 'expand', milestoneId: expand.id });
       const m = getNode(r.requirePlan(), expand.id);
       if (!childrenOf(r.requirePlan(), m.id).length) {
-        m.status = 'parked';
-        m.parkedReason = 'the planner could not expand it into tasks';
+        // No tasks came out. Planners add setup milestones ("install deps, confirm the baseline")
+        // with nothing to change: if its checks pass, it's done. Otherwise park it, but don't let
+        // it block the milestones after it forever (a whole run once stalled on one).
+        const checks = m.checks.length ? await runChecks(r, m, `${m.id}-noexpand`) : [];
+        if (checks.length && checks.every((c) => c.pass)) {
+          m.status = 'done';
+          r.events.emit('milestone.no_work', { milestone: m.id });
+        } else {
+          m.status = 'parked';
+          m.parkedReason = 'the planner could not expand it into tasks';
+          const released = r
+            .requirePlan()
+            .nodes.filter((n) => n.dependsOn.includes(m.id))
+            .map((n) => {
+              n.dependsOn = n.dependsOn.filter((d) => d !== m.id);
+              return n.id;
+            });
+          if (released.length)
+            r.events.emit('milestone.released', { parked: m.id, released });
+        }
         await r.savePlan();
       }
       return this.select();

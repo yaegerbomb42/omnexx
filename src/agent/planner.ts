@@ -20,6 +20,7 @@ import { PLANNER_SYSTEM } from './prompts.js';
 import { readIntent, writeIntentTool } from './intent.js';
 import { dryRunChecks } from './check-dryrun.js';
 import type { RouteAction } from '../router/actions.js';
+import { totalInput } from '../providers/types.js';
 
 /** The planner loop ended (caps, stop, refusal) before a valid plan was written. */
 export class PlannerIncomplete extends StateError {
@@ -155,10 +156,12 @@ export function isWeakCheck(cmd: string): boolean {
 const PLAN_NUDGES = [
   {
     at: 12,
+    tokenShare: 0.5,
     text: 'You have explored enough to plan. Call write_plan now with what you know. Where you are unsure, add a task of kind "investigate" instead of reading more.',
   },
   {
     at: 20,
+    tokenShare: 0.75,
     text: 'Stop exploring. Your next call must be write_plan; the run cannot continue without a plan.',
   },
 ] as const;
@@ -168,6 +171,9 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   const intent = await readIntent(run.store);
   let written: Plan | undefined;
   let planTurns = 0;
+  let planTokens = 0;
+  // How many nudges were sent; each is sent once.
+  let nudged = 0;
   const dryRuns = new Map<string, { exitCode: number | null; output: string }>();
   // Rejections for checks that already pass; past the limit the plan is taken as is.
   let passRejects = 0;
@@ -289,7 +295,10 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       events: run.events,
       spentUsd: () => run.state.spend.usd,
       spentTodayUsd: () => run.spentToday(),
-      onUsage: (u, usd, model, provider) => run.addSpend(u, usd, model, 'planner', provider),
+      onUsage: (u, usd, model, provider) => {
+        planTokens += totalInput(u) + u.output;
+        return run.addSpend(u, usd, model, 'planner', provider);
+      },
       control: () => run.control(),
       signal: run.abort.signal,
       parallelTasks: run.config.context.subagent_parallel,
@@ -298,9 +307,14 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       pendingInput: () => {
         planTurns++;
         if (written) return [];
-        const nudge = PLAN_NUDGES.find((n) => n.at === planTurns);
+        // By turns or by tokens, whichever comes first: on a big repo each turn re-sends ~30k.
+        const cap = run.config.budget.max_tokens_per_cycle;
+        const nudge = PLAN_NUDGES.find(
+          (n, i) => i >= nudged && (planTurns >= n.at || planTokens >= cap * n.tokenShare),
+        );
         if (!nudge) return [];
-        run.events.emit('planner.nudge', { turn: planTurns });
+        nudged = PLAN_NUDGES.indexOf(nudge) + 1;
+        run.events.emit('planner.nudge', { turn: planTurns, tokens: planTokens });
         return [nudge.text];
       },
     },

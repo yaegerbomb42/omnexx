@@ -36,6 +36,39 @@ async function superviseTest(t: TestRun, pushes: NotifyPayload[] = []) {
   return supervise(t.run.deps, t.run.state.runId, fastOpts(pushes));
 }
 
+describe('milestones the planner cannot expand', () => {
+  const run = async (check: string) => {
+    const plan = planner([
+      { id: 'M0', title: 'Install and confirm the baseline', checks: [check] },
+      { id: 'M1', title: 'Real work', dependsOn: ['M0'], tasks: [fileTask('M1.T01')] },
+    ]);
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider: new ScriptedProvider(scenario(plan, fileWorker)),
+      config: { gates: [GATE] },
+    });
+    await superviseTest(t);
+    return { t, events: await readEvents(t.run.store.eventsPath) };
+  };
+
+  it('counts one with passing checks as done, so the work after it runs', async () => {
+    const { t, events } = await run('true');
+    expect(types(events, 'milestone.no_work').map((e) => e.milestone)).toEqual(['M0']);
+    const saved = await t.run.store.readPlan();
+    expect(saved && getNode(saved, 'M1.T01').status).toBe('done');
+  });
+
+  it('parks one with failing checks but releases what depended on it', async () => {
+    const { t, events } = await run('false');
+    expect(types(events, 'milestone.released')[0]).toMatchObject({
+      parked: 'M0',
+      released: ['M1'],
+    });
+    const saved = await t.run.store.readPlan();
+    expect(saved && getNode(saved, 'M1.T01').status).toBe('done');
+  });
+});
+
 describe('M2: hierarchical plan, milestones, checkpoints and the report', () => {
   it('runs a 3-milestone plan milestone by milestone with rolling-wave expansion and a failing-milestone re-plan', async () => {
     const plan = planner(
