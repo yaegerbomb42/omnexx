@@ -3,7 +3,7 @@ import { readIntent } from '../../src/agent/intent.js';
 import { readEvents } from '../../src/core/events.js';
 import { supervise } from '../../src/core/supervisor.js';
 import {
-  existing,
+  addMilestone,
   fileTask,
   fileWorker,
   firstText,
@@ -11,16 +11,10 @@ import {
   scenario,
 } from '../support/scenarios.js';
 import { call, say, ScriptedProvider, type Script } from '../support/scripted-provider.js';
-import { makeRepo, startTestRun } from '../support/harness.js';
+import { FAST_SUPERVISE, makeRepo, PASSING_GATE, startTestRun } from '../support/harness.js';
 
-const GATE = { name: 'test', run: 'node -e 0', timeout: '1m' };
-const opts = {
-  bootId: 'b',
-  heartbeatMs: 50,
-  controlPollMs: 20,
-  pausePollMs: 10,
-  notifier: { notify: () => Promise.resolve() },
-};
+const GATE = PASSING_GATE;
+const opts = FAST_SUPERVISE;
 
 /** Writes intent on the initial plan; in improvement round 1 adds M2; finds nothing in round 2. */
 function beyondPlanner(): Script {
@@ -38,15 +32,10 @@ function beyondPlanner(): Script {
     if (m.turn === 1 && text.startsWith('There is no plan yet')) return base({ ...m, turn: 0 });
     if (m.turn > 0) return say('Done.');
     if (text.includes('improvement round 1 of at most 3')) {
-      return call('write_plan', {
-        milestones: [
-          ...existing(m).map((e) => ({
-            id: e.id,
-            title: e.title,
-            tasks: e.tasks.map((t) => fileTask(t.id)),
-          })),
-          { id: 'M2', title: 'Harden', tasks: [fileTask('M2.T01'), fileTask('M2.T02')] },
-        ],
+      return addMilestone(m, {
+        id: 'M2',
+        title: 'Harden',
+        tasks: [fileTask('M2.T01'), fileTask('M2.T02')],
       });
     }
     return base(m);

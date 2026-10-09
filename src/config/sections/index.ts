@@ -6,6 +6,7 @@
  * Keep lines sorted by export name.
  */
 export { agents } from './agents.js';
+export { autonomous } from './autonomous.js';
 export { beyond } from './beyond.js';
 export { browser } from './browser.js';
 export { hooks } from './hooks.js';

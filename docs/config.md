@@ -264,6 +264,19 @@ In-cycle context control runs before each turn and works on every provider. Past
 | `remote.<name>.url`         | –       | A remote A2A agent: its card URL or base URL                                      |
 | `remote.<name>.headers_env` | `{}`    | Headers to send: env var name, `secret:<KEY>`, or literal                         |
 
+## `[autonomous]`
+
+`omnexx run --for 8h "<goal>"` (or `/autonomous 8h [goal]` in the app) turns this on. Once the goal is met it
+keeps planning improvement rounds until the time is up: no round cap, each round aimed at the next focus area
+(yours first, then the built-in rubric), and work blocked by a parked task is skipped instead of stopping the
+run to ask. `--for` also sets `budget.max_hours`; `budget.max_usd` still applies.
+
+| Key               | Default | Meaning                                                                   |
+| ----------------- | ------- | ------------------------------------------------------------------------- |
+| `enabled`         | `false` | Set by `--for`                                                            |
+| `max_idle_rounds` | `8`     | Stop early after this many rounds in a row that found nothing worth doing |
+| `focus`           | `[]`    | Extra focus areas tried first, e.g. `["move the API to tRPC"]`            |
+
 ## `[review]`
 
 Earned done. On by default; each part costs model calls, so tune it to your budget.

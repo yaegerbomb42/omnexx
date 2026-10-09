@@ -3,16 +3,10 @@ import { readEvents } from '../../src/core/events.js';
 import { supervise } from '../../src/core/supervisor.js';
 import { fileTask, planner, scenario } from '../support/scenarios.js';
 import { call, say, ScriptedProvider, type Script } from '../support/scripted-provider.js';
-import { makeRepo, startTestRun } from '../support/harness.js';
+import { FAST_SUPERVISE, makeRepo, PASSING_GATE, startTestRun } from '../support/harness.js';
 
-const GATE = { name: 'test', run: 'node -e 0', timeout: '1m' };
-const opts = {
-  bootId: 'b',
-  heartbeatMs: 50,
-  controlPollMs: 20,
-  pausePollMs: 10,
-  notifier: { notify: () => Promise.resolve() },
-};
+const GATE = PASSING_GATE;
+const opts = FAST_SUPERVISE;
 
 /** Writes a two-item list, does the work, stops with one item open, then closes it when nudged. */
 const forgetfulWorker: Script = (m) => {

@@ -81,6 +81,7 @@ omnexx init                   # detects package manager and gates, asks before w
 export ANTHROPIC_API_KEY=...  # or: omnexx auth set anthropic
 omnexx run --plan-only "Port src/legacy to strict TypeScript"
 omnexx run --detach --budget 5 --hours 2 "Port src/legacy to strict TypeScript"
+omnexx run --detach --for 8h "improve this repo"   # autonomous: keeps going until the time is up
 omnexx status && omnexx logs -f
 omnexx report                 # in the morning
 ```
@@ -89,19 +90,19 @@ Requires Node 22+, git and (recommended) ripgrep.
 
 ## Commands
 
-| Command                                                                 |                                                                                                                                                                          |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `omnexx init [--yes]`                                                   | Detect gates, write `omnexx.toml`                                                                                                                                        |
-| `omnexx run "<goal>"`                                                   | Plan, then cycle. `--goal-file`, `--detach`, `--budget`, `--hours`, `--gate`, `--model-worker`, `--push branch`, `--from`, `--plan-only`, `--i-know-there-are-no-checks` |
-| `omnexx status [runId] [--json]`                                        | Phase, task, progress, spend, heartbeat                                                                                                                                  |
-| `omnexx logs [runId] [-f] [--events\|--progress\|--cmd <id>]`           | Human view of the event log                                                                                                                                              |
-| `omnexx plan [runId] [--edit]`                                          | Show the plan, or edit `goal.md` (picked up next cycle)                                                                                                                  |
-| `omnexx pause\|resume\|stop [runId] [--now]`                            | Control a run; `resume` also restarts a crashed supervisor                                                                                                               |
-| `omnexx resume --all`                                                   | What the service runs at boot                                                                                                                                            |
-| `omnexx runs` · `diff [--since <milestone>]` · `checkpoints` · `report` | Inspect results                                                                                                                                                          |
-| `omnexx service install\|uninstall\|status [--dry-run]`                 | systemd user unit (Linux) or launchd agent (macOS)                                                                                                                       |
-| `omnexx doctor [--offline] [--json]`                                    | Environment checks; never prints your key                                                                                                                                |
-| `omnexx auth set\|clear anthropic`                                      | Store the key in a 0600 file                                                                                                                                             |
+| Command                                                                 |                                                                                                                                                                                                |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `omnexx init [--yes]`                                                   | Detect gates, write `omnexx.toml`                                                                                                                                                              |
+| `omnexx run "<goal>"`                                                   | Plan, then cycle. `--goal-file`, `--detach`, `--budget`, `--hours`, `--for` (autonomous), `--gate`, `--model-worker`, `--push branch`, `--from`, `--plan-only`, `--i-know-there-are-no-checks` |
+| `omnexx status [runId] [--json]`                                        | Phase, task, progress, spend, heartbeat                                                                                                                                                        |
+| `omnexx logs [runId] [-f] [--events\|--progress\|--cmd <id>]`           | Human view of the event log                                                                                                                                                                    |
+| `omnexx plan [runId] [--edit]`                                          | Show the plan, or edit `goal.md` (picked up next cycle)                                                                                                                                        |
+| `omnexx pause\|resume\|stop [runId] [--now]`                            | Control a run; `resume` also restarts a crashed supervisor                                                                                                                                     |
+| `omnexx resume --all`                                                   | What the service runs at boot                                                                                                                                                                  |
+| `omnexx runs` · `diff [--since <milestone>]` · `checkpoints` · `report` | Inspect results                                                                                                                                                                                |
+| `omnexx service install\|uninstall\|status [--dry-run]`                 | systemd user unit (Linux) or launchd agent (macOS)                                                                                                                                             |
+| `omnexx doctor [--offline] [--json]`                                    | Environment checks; never prints your key                                                                                                                                                      |
+| `omnexx auth set\|clear anthropic`                                      | Store the key in a 0600 file                                                                                                                                                                   |
 
 Exit codes: `0` finished, `2` needs a human, `3` budget stop, `4` stopped by you, `1` error.
 

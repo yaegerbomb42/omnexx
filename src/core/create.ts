@@ -53,6 +53,7 @@ export async function createRun(o: CreateRunOptions): Promise<RunStore> {
     },
     acceptedCommits: 0,
     beyondRounds: 0,
+    idleRounds: 0,
     auditRounds: 0,
     rejectedCycles: 0,
     lastProgressAt: o.now,

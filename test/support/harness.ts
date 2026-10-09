@@ -19,6 +19,18 @@ export const NODE_TEST_GATE = {
 };
 
 /** A temp git repo seeded from test/fixtures/repos/<name>, with one commit. */
+/** A gate that always passes, for runs whose tasks are checked by their own checks. */
+export const PASSING_GATE = { name: 'test', run: 'node -e 0', timeout: '1m' };
+
+/** Fast supervisor timings and a silent notifier for integration tests. */
+export const FAST_SUPERVISE = {
+  bootId: 'b',
+  heartbeatMs: 50,
+  controlPollMs: 20,
+  pausePollMs: 10,
+  notifier: { notify: () => Promise.resolve() },
+};
+
 export async function fixtureRepo(name: string): Promise<string> {
   const repo = await tempRepo();
   const src = join('test/fixtures/repos', name);

@@ -36,6 +36,24 @@ async function superviseTest(t: TestRun, pushes: NotifyPayload[] = []) {
   return supervise(t.run.deps, t.run.state.runId, fastOpts(pushes));
 }
 
+/** The impossible-task fixture: one task no change can pass, so it always ends up parked. */
+const impossiblePlan = () =>
+  planner([
+    {
+      id: 'M1',
+      title: 'Math',
+      tasks: [{ id: 'M1.T01', title: 'Make 2+2 both 4 and 5', checks: ['node --test'] }],
+    },
+  ]);
+const impossibleWorker: Script = (m) =>
+  m.turn === 0
+    ? call('str_replace', {
+        path: 'src/math.js',
+        old_str: 'return a + b;',
+        new_str: `return a + b + ${m.attempt};`,
+      })
+    : say(`Tried +${m.attempt}`);
+
 describe('milestones the planner cannot expand', () => {
   const run = async (check: string) => {
     const plan = planner([
@@ -191,22 +209,29 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
 });
 
 describe('M2: stuck handling, budget and judge', () => {
+  it('autonomous: a parked task skips its blocked milestone instead of stopping to ask', async () => {
+    // Arrange
+    const plan = impossiblePlan();
+    const worker = impossibleWorker;
+    const t = await startTestRun({
+      fixture: 'impossible-task',
+      provider: new ScriptedProvider(scenario(plan, worker)),
+      config: { gates: [GATE], autonomous: { enabled: true, max_idle_rounds: 1 } },
+    });
+
+    // Act
+    const out = await superviseTest(t, []);
+
+    // Assert
+    expect(out).toMatchObject({ status: 'finished' });
+    const events = await readEvents(t.run.store.eventsPath);
+    expect(types(events, 'autonomous.skipped').flatMap((e) => e.nodes)).toEqual(['M1']);
+    expect(types(events, 'ladder.rung').map((e) => e.rung)).not.toContain('stop_and_ask');
+  });
+
   it('impossible-task: 3 rejections escalate to the strong model, 3 more ask the planner to split it (it cannot), then it parks; nothing runnable → needs-human (exit 2) and a push', async () => {
-    const plan = planner([
-      {
-        id: 'M1',
-        title: 'Math',
-        tasks: [{ id: 'M1.T01', title: 'Make 2+2 both 4 and 5', checks: ['node --test'] }],
-      },
-    ]);
-    const worker: Script = (m) =>
-      m.turn === 0
-        ? call('str_replace', {
-            path: 'src/math.js',
-            old_str: 'return a + b;',
-            new_str: `return a + b + ${m.attempt};`,
-          })
-        : say(`Tried +${m.attempt}`);
+    const plan = impossiblePlan();
+    const worker = impossibleWorker;
     const t = await startTestRun({
       fixture: 'impossible-task',
       provider: new ScriptedProvider(scenario(plan, worker)),

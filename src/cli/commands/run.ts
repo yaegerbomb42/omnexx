@@ -8,6 +8,7 @@ import { createRun } from '../../core/create.js';
 import { compactPlanView } from '../../core/plan.js';
 import { Run } from '../../core/run.js';
 import { UsageError } from '../../errors.js';
+import { parseDuration } from '../../config/duration.js';
 import type { ConfigInput } from '../../config/schema.js';
 import { selfEntry, spawnDetached } from '../../daemon/detach.js';
 import { brand } from '../brand.js';
@@ -24,6 +25,8 @@ export interface RunFlags {
   planOnly?: boolean;
   budget?: string;
   hours?: string;
+  /** Autonomous mode for this long, e.g. "8h" or "2d". */
+  for?: string;
   gate?: string[];
   sandbox?: string;
   modelWorker?: string;
@@ -39,8 +42,15 @@ export function flagsToConfig(f: RunFlags): ConfigInput {
       throw new UsageError(`--${name} expects a positive number, got "${v}"`);
     return n;
   };
-  const budget = { max_usd: num(f.budget, 'budget'), max_hours: num(f.hours, 'hours') };
+  const auto = autonomousHours(f);
+  const budget = {
+    max_usd: num(f.budget, 'budget'),
+    max_hours: auto ?? num(f.hours, 'hours'),
+    // A day of work is many cycles; the clock is the cap, not the cycle count.
+    ...(auto ? { max_cycles: AUTONOMOUS_MAX_CYCLES } : {}),
+  };
   return {
+    ...(auto ? { autonomous: { enabled: true } } : {}),
     ...(budget.max_usd !== undefined || budget.max_hours !== undefined
       ? { budget: Object.fromEntries(Object.entries(budget).filter(([, v]) => v !== undefined)) }
       : {}),
@@ -55,6 +65,22 @@ export function flagsToConfig(f: RunFlags): ConfigInput {
       : {}),
     ...(f.push ? { git: { push: f.push as 'none' } } : {}),
   };
+}
+
+const AUTONOMOUS_MAX_CYCLES = 100_000;
+
+/** `--for 8h`: autonomous mode's time budget in hours, or undefined without the flag. */
+function autonomousHours(f: RunFlags): number | undefined {
+  if (f.for === undefined) return undefined;
+  if (f.hours !== undefined) throw new UsageError('give --for or --hours, not both');
+  let ms: number;
+  try {
+    ms = parseDuration(f.for);
+  } catch {
+    throw new UsageError(`--for expects a duration like "45m", "8h" or "2d", got "${f.for}"`);
+  }
+  if (ms <= 0) throw new UsageError(`--for expects a positive duration, got "${f.for}"`);
+  return ms / 3_600_000;
 }
 
 export async function readGoal(

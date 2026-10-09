@@ -114,6 +114,10 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .option('--budget <usd>', 'run-level spend cap in USD')
     .option('--hours <n>', 'wall-clock cap in hours')
     .option(
+      '--for <duration>',
+      'autonomous mode: keep improving the repo for this long (e.g. 45m, 8h, 2d)',
+    )
+    .option(
       '--gate <command>',
       'gate command (repeatable)',
       (v: string, prev: string[] | undefined) => [...(prev ?? []), v],

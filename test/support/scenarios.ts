@@ -111,3 +111,19 @@ export function manyTasks(n: number, perMilestone = 10): MilestoneSpec[] {
   }
   return ms;
 }
+
+/** A write_plan call that keeps every existing milestone and adds `milestone`. */
+export const addMilestone = (
+  m: ScriptMeta,
+  milestone: { id: string; title: string; tasks: object[] },
+): ScriptedTurn =>
+  call('write_plan', {
+    milestones: [
+      ...existing(m).map((e) => ({
+        id: e.id,
+        title: e.title,
+        tasks: e.tasks.map((t) => fileTask(t.id)),
+      })),
+      milestone,
+    ],
+  });
