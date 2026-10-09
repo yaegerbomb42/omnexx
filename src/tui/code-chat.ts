@@ -364,6 +364,7 @@ export class CodeChat {
           compaction: {
             settings: {
               clearAt: this.config.context.clear_tool_results_at,
+              minClearTokens: this.config.context.min_clear_tokens,
               keepToolResults: this.config.context.keep_tool_results,
               compactAt: Number.MAX_SAFE_INTEGER,
               keepTurns: this.config.context.compact_keep_turns,

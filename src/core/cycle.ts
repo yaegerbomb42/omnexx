@@ -411,6 +411,7 @@ export async function stepAct(run: Run): Promise<void> {
     compaction: {
       settings: {
         clearAt: run.config.context.clear_tool_results_at,
+        minClearTokens: run.config.context.min_clear_tokens,
         keepToolResults: run.config.context.keep_tool_results,
         compactAt: run.config.context.compact_at,
         keepTurns: run.config.context.compact_keep_turns,

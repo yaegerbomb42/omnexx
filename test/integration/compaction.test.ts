@@ -65,6 +65,7 @@ describe('in-cycle compaction', () => {
         models: { cheap: 'side:tiny' },
         context: {
           clear_tool_results_at: 2_000,
+          min_clear_tokens: 100,
           keep_tool_results: 2,
           compact_at: 2_500,
           compact_keep_turns: 2,
