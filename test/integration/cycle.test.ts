@@ -307,6 +307,31 @@ describe('M1: one full cycle with the scripted provider', () => {
   });
 });
 
+describe('shared checks', () => {
+  it('never skips a task for free when its only check is one every task shares', async () => {
+    const provider = new ScriptedProvider(() => say('nothing to change'));
+    const t = await startTestRun({
+      fixture: 'ts-failing-test',
+      provider,
+      plan: {
+        milestones: [
+          {
+            id: 'M1',
+            title: 'Inventory',
+            tasks: [
+              { id: 'M1.T01', title: 'Receive stock', checks: ['true'] },
+              { id: 'M1.T02', title: 'Ship stock', checks: ['true'] },
+            ],
+          },
+        ],
+      },
+    });
+    t.run.state.acceptedCommits = 1;
+    await runOneCycle(t.run, 'M1.T02');
+    expect(provider.requests.length).toBeGreaterThan(0);
+  });
+});
+
 describe('suspect checks', () => {
   it('parks a task whose check fails the same way twice while the agent has nothing to change', async () => {
     const t = await startTestRun({

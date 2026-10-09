@@ -476,13 +476,14 @@ export async function runAgentLoop(
         content = `unknown tool ${call.name}; the tools are: ${[...byName.keys()].join(', ')} (list files with bash, e.g. \`ls -R src\`)`;
         isError = true;
       } else {
-        const input = tool.normalize ? tool.normalize(call.input) : call.input;
-        let parsed = tool.schema.safeParse(input);
+        const prepare = (v: unknown) => (tool.normalize ? tool.normalize(v) : v);
+        let parsed = tool.schema.safeParse(prepare(call.input));
         // Models often send a nested array or object as a JSON string ("milestones": "[{…}]").
+        // Decode before normalizing: a normalizer may reshape the string beyond recovery.
         if (!parsed.success) {
-          const decoded = decodeJsonStrings(input);
-          if (decoded !== input) {
-            const again = tool.schema.safeParse(tool.normalize ? tool.normalize(decoded) : decoded);
+          const decoded = decodeJsonStrings(call.input);
+          if (decoded !== call.input) {
+            const again = tool.schema.safeParse(prepare(decoded));
             if (again.success) parsed = again;
           }
         }

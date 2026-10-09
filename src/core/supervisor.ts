@@ -687,13 +687,19 @@ class Supervisor {
         const picked = await this.select();
         if (typeof picked !== 'string') return picked;
         await this.cycle(picked);
+        // Retries are per wedge, not per run: a long run may hit several over its hours.
+        this.plannerRetries = 0;
       } catch (err) {
         if (!(err instanceof PlannerIncomplete)) throw err;
         r.events.emit('planner.incomplete', { end: err.end });
-        // A planner that got wedged (a request the provider chokes on, or turns burned on
-        // invalid plans) gets a fresh conversation before the run stops for a human.
+        // A planner that got wedged (a request the provider chokes on, turns or tokens burned on
+        // invalid plans, or a model that stopped without a valid plan) gets a fresh conversation
+        // before the run stops for a human: one bad planning turn shouldn't end a long run.
         if (
-          (err.end === 'stuck' || err.end === 'max_turns_per_cycle') &&
+          (err.end === 'stuck' ||
+            err.end === 'max_turns_per_cycle' ||
+            err.end === 'max_tokens_per_cycle' ||
+            err.end === 'done') &&
           this.plannerRetries < PLANNER_RETRIES
         ) {
           this.plannerRetries++;

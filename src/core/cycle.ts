@@ -308,7 +308,13 @@ export async function stepAct(run: Run): Promise<void> {
 
   // Checks that pass before the run has changed anything passed on the code the user wants
   // changed, so they prove nothing: until the first accepted commit the agent looks for itself.
-  if (task.checks.length && task.attempts === 0 && run.state.acceptedCommits > 0) {
+  // A check every other task also uses (the whole test file) says nothing about this task, so
+  // the free skip needs at least one check of the task's own.
+  const shared = new Set(
+    plan.nodes.filter((n) => n.id !== task.id).flatMap((n) => n.checks.map((c) => c.trim())),
+  );
+  const ownCheck = task.checks.some((c) => !shared.has(c.trim()));
+  if (task.checks.length && task.attempts === 0 && run.state.acceptedCommits > 0 && ownCheck) {
     const pre = await runChecks(run, task, `${run.state.cycle}-pre`);
     if (pre.every((c) => c.pass)) {
       run.events.emit('task.already_done', { task: task.id });

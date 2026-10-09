@@ -294,3 +294,26 @@ describe('decodeJsonStrings', () => {
     expect(decodeJsonStrings([1])).toEqual([1]);
   });
 });
+
+describe('write_plan with milestones sent as a JSON string', () => {
+  it('validates once decoded before the planner normalizes it', async () => {
+    const { decodeJsonStrings } = await import('../../../src/agent/loop.js');
+    const { normalizePlanUpdate, planUpdateSchema } = await import('../../../src/core/plan.js');
+    const raw = {
+      milestones: JSON.stringify([
+        {
+          id: 'M1',
+          title: 'Reservations',
+          acceptance: ['rule 9 behaves per spec'],
+          checks: ['node --test test/reservations.test.js'],
+          tasks: [{ id: 'M1.T01', title: 'Add reserve()', checks: ['node --test test/r.test.js'] }],
+        },
+      ]),
+    };
+    expect(planUpdateSchema.safeParse(normalizePlanUpdate(raw, undefined)).success).toBe(false);
+    const fixed = planUpdateSchema.safeParse(
+      normalizePlanUpdate(decodeJsonStrings(raw), undefined),
+    );
+    expect(fixed.success).toBe(true);
+  });
+});
