@@ -2,7 +2,9 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import {
   cycleSummarySchema,
+  coerceSummary,
   ensureFacts,
+  factSummary,
   transcriptFor,
   type CycleSummary,
 } from '../agent/compaction.js';
@@ -295,8 +297,7 @@ async function summarizeCycle(
     },
   );
   const call = done?.res.content.find((b) => b.type === 'tool_use');
-  const parsed = cycleSummarySchema.safeParse(call?.type === 'tool_use' ? call.input : undefined);
-  return parsed.success ? parsed.data : undefined;
+  return coerceSummary(call?.type === 'tool_use' ? call.input : undefined);
 }
 
 /** ACT: zero-cost preflight on the task's checks, then the agent loop with a fresh context. */
@@ -407,8 +408,9 @@ export async function stepAct(run: Run): Promise<void> {
         keepTurns: run.config.context.compact_keep_turns,
       },
       summarize: async (head) => {
-        const s = await summarizeCycle(run, task, head);
-        return s && ensureFacts(s, head, edited);
+        const s = await summarizeCycle(run, task, head).catch(() => undefined);
+        if (!s) run.events.emit('context.fact_summary', { turns: head.length });
+        return ensureFacts(s ?? factSummary(head), head, edited);
       },
     },
   });

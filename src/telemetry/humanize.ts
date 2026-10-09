@@ -284,6 +284,10 @@ const contextCompactFailedLine: Formatter = (e) => {
   return ['verbose', 'warn', 'compact', `skipped: ${clip(str(e.reason), 70)}`];
 };
 
+const contextFactSummaryLine: Formatter = () => {
+  return ['verbose', 'warn', 'compact', 'summarizer unavailable; compacted from facts only'];
+};
+
 const providerFailoverLine: Formatter = (e) => {
   return [
     'normal',
@@ -389,6 +393,7 @@ const FORMATTERS: Partial<Record<string, Formatter>> = {
   'context.cleared': contextClearedLine,
   'context.compacted': contextCompactedLine,
   'context.compact_failed': contextCompactFailedLine,
+  'context.fact_summary': contextFactSummaryLine,
   'provider.failover': providerFailoverLine,
   'provider.retry': providerRetryLine,
   'provider.outage': providerOutageLine,

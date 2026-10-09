@@ -42,7 +42,10 @@ SonarCloud findings from the #20 integration merge are still open.
   Clearing waits until ≥ 4k tokens (or clearAt/10) would go: before, every turn past `clear_at`
   cleared one more result and broke the prompt cache each turn. Bash output clips lines over 500
   chars (minified/base64 lines used to pass whole). `turn` events carry `segments`, tokens by
-  system/tools/messages/tool results by tool, so the bench can show where tokens go.
+  system/tools/messages/tool results by tool, so the bench can show where tokens go. Part 2:
+  compaction keeps the open `todo` items (from the last call, or an earlier summary on a second
+  compaction); summaries that overshoot the schema are clipped, not dropped; and when the cheap
+  model fails, a fact-only summary still compacts instead of letting context grow to the cap.
 
 - **2026-10-06 (single agent):** merged #23–#26. Browser gates can now be declared
   (`kind = "browser"`, serves the app on `$PORT`); uncaught page errors count as failures; new
@@ -369,8 +372,10 @@ Read first: `src/tools/bash.ts`, `src/tools/types.ts`, `src/verify/**`, `src/sec
       (≥ 4k tokens) so each prompt-cache miss buys real savings._
 - [ ] Incremental codemap (symbol index via tree-sitter, updated on commit, not rebuilt).
 - [ ] Diff-aware reads: `read` returns "unchanged since turn X" instead of repeating content.
-- [ ] Compaction by cheap model (router `compact` action) with a quality check: compacted
-      summary must retain open TODOs, failing test ids and touched files.
+- [x] Compaction by cheap model (router `compact` action) with a quality check: compacted
+      summary must retain open TODOs, failing test ids and touched files. _Open `todo` items,
+      edited files and last error are filled in from facts; overshooting answers are clipped, and
+      a failed summarizer falls back to a fact-only summary (`context.fact_summary`)._
 - [ ] Token budget per action learned from history; early termination when a cycle's marginal
       tokens stop producing edits.
 - **Accept:** on the bench long-horizon spec, ≥ 40% fewer input tokens per accepted commit vs.

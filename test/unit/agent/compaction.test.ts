@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   clearedStub,
+  coerceSummary,
+  factSummary,
+  ensureFacts,
+  openTodos,
   clearOldToolResults,
   contextTokens,
   manageContext,
@@ -215,5 +219,61 @@ describe('messageSegments', () => {
     expect(s.byTool.bash).toBe(s.toolResults);
     expect(s.toolResults).toBeGreaterThan(1_900);
     expect(s.messages).toBeGreaterThan(s.toolResults);
+  });
+});
+
+describe('open todos survive compaction', () => {
+  const summary: CycleSummary = { done: [], inProgress: 'x', filesTouched: [], nextStep: 'y' };
+  const todoCall = (items: unknown): Message => ({
+    role: 'assistant',
+    content: [{ type: 'tool_use', id: 'td', name: 'todo', input: { items } }],
+  });
+
+  it('takes the last todo call and drops done items', () => {
+    const head = [
+      todoCall([{ text: 'old', status: 'pending' }]),
+      todoCall([
+        { text: 'write test', status: 'done' },
+        { text: 'fix parser', status: 'in_progress' },
+        { text: 'run gates', status: 'pending' },
+      ]),
+    ];
+    const s = ensureFacts(summary, head, []);
+    expect(s.openTodos).toEqual(['[in_progress] fix parser', '[pending] run gates']);
+    expect(renderSummary(s)).toContain('- [pending] run gates');
+  });
+
+  it('carries them through a second compaction from the earlier summary text', () => {
+    const earlier = renderSummary({ ...summary, openTodos: ['[pending] run gates'] });
+    const head: Message[] = [{ role: 'user', content: [{ type: 'text', text: earlier }] }];
+    expect(openTodos(head)).toEqual(['[pending] run gates']);
+    expect(openTodos(convo(2))).toBeUndefined();
+  });
+});
+
+describe('lenient summaries', () => {
+  it('clips an overshooting answer instead of dropping it', () => {
+    const s = coerceSummary({
+      done: Array.from({ length: 40 }, (_, i) => `step ${i}`),
+      inProgress: 'x'.repeat(900),
+      filesTouched: 'src/a.ts',
+      nextStep: 'go',
+      openTodos: 7,
+    });
+    expect(s?.done).toHaveLength(30);
+    expect(s?.inProgress).toHaveLength(600);
+    expect(s?.filesTouched).toEqual(['src/a.ts']);
+    expect(s?.openTodos).toBeUndefined();
+    expect(coerceSummary({ done: [] })).toBeUndefined();
+    expect(coerceSummary('nope')).toBeUndefined();
+  });
+
+  it('builds a fact-only summary from the transcript', () => {
+    const head = convo(3);
+    head.splice(1, 0, { role: 'assistant', content: [{ type: 'text', text: 'checking tests' }] });
+    const s = factSummary(head);
+    expect(s.done).toHaveLength(3);
+    expect(s.done[0]).toContain('bash {"command":"step 0"}');
+    expect(s.inProgress).toBe('checking tests');
   });
 });
