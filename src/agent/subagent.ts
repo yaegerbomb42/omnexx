@@ -21,6 +21,8 @@ then file paths and the evidence behind them. Say plainly what you could not det
 /** Tools a helper may never have: they write, or would let it start more helpers. */
 const DENIED = new Set([
   'task',
+  // A helper's checklist would replace the parent's on screen.
+  'todo',
   'agent',
   'remember',
   'write_plan',

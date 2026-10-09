@@ -31,7 +31,7 @@ import { Redactor } from '../security/redact.js';
 import { readOnlyTools, workerTools, toolSpec } from '../tools/registry.js';
 import type { ToolWhere } from '../tools/extra/types.js';
 import { helperRunner } from '../agent/subagent.js';
-import { todoTool, type TodoItem } from '../tools/todo.js';
+import type { TodoItem } from '../tools/todo.js';
 import type { Tool, ToolContext } from '../tools/types.js';
 import { runGates } from '../verify/gates.js';
 
@@ -39,6 +39,7 @@ export const CHAT_SYSTEM = `You are Omnexx in chat mode: a coding agent working 
 
 - Do what they ask, then stop and reply briefly: what you changed and what you checked.
 - For anything with more than two steps, write a todo list first with the todo tool and keep it current: one item in_progress at a time, done as you finish.
+- Use the context tool to pull in wider context (general, repo, heat, recent) only when it helps; save what you learn about the codebase with context update.
 - Before each tool call, say in one short sentence what you are about to do and why.
 - Explore with the codebase map, outline, search and ranged reads. Edit with str_replace / multi_edit; write_file for new or small files.
 - Run the relevant tests with bash before you finish when you changed code.
@@ -193,12 +194,9 @@ export class CodeChat {
       ask,
       runningContext: new RunningContext(store, 'chat'),
     };
-    const tools = [
-      ...(await workerTools(config, { repoRoot: jail.root, env: io.env })).filter(
-        (t) => !CHAT_DENIED.has(t.name),
-      ),
-      todoTool as Tool,
-    ];
+    const tools = (await workerTools(config, { repoRoot: jail.root, env: io.env })).filter(
+      (t) => !CHAT_DENIED.has(t.name),
+    );
     const instructions = renderInstructions(await loadInstructions(jail.root, jail.root));
     const codemap = renderCodemap(
       await buildCodemap(jail.root),

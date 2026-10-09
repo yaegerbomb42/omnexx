@@ -19,7 +19,7 @@ import {
 import { maskKey } from '../auth/keys.js';
 import { Chat, defaultChatRef, hasProvider } from './chat.js';
 import { CodeChat, type ChatLine } from './code-chat.js';
-import type { TodoItem } from '../tools/todo.js';
+import { todoItemsOf, type TodoItem } from '../tools/todo.js';
 import { classifyMarkdown, type MdKind } from './markdown.js';
 import { parseDiff, type DiffViewState } from './diff.js';
 import { loadAgents, type AgentsState } from './agents.js';
@@ -329,6 +329,7 @@ export class Session {
     const events = await this.tail.read();
     for (const e of events) {
       fold(this.telemetry, e);
+      this.trackRunTodos(e);
       const line = humanize(e, { brand: this.b, verbosity: this.verbosity });
       if (line) this.push('feed', line);
       this.reactToRun(e);
@@ -351,6 +352,12 @@ export class Session {
     } else if (events.length) {
       this.changed();
     }
+  }
+
+  /** An attached run's worker checklist: replaced on each update, cleared when a new task starts. */
+  private trackRunTodos(e: { type: string; [k: string]: unknown }): void {
+    if (e.type === 'cycle.start') this.todos = [];
+    else if (e.type === 'todo.update') this.todos = todoItemsOf({ items: e.items }) ?? this.todos;
   }
 
   /** Run a CLI command with its output captured into the transcript. */
