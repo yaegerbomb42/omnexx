@@ -4,6 +4,7 @@
  * Each export must be a ToolSource (see ./types.ts). Keep lines sorted by export name.
  */
 export { source as browser } from './browser.js';
+export { source as integrations } from './integrations.js';
 export { source as mcp } from './mcp.js';
 export { source as semantic_search } from './semantic.js';
 export { source as skill } from './skill.js';

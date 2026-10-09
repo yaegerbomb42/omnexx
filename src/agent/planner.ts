@@ -182,7 +182,8 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   // The running context belongs to a task's worker cycles, not to planning.
   const tools = [
     ...(await readOnlyTools(run.config, { repoRoot: run.worktree, env: run.deps.env })).filter(
-      (t) => t.name !== 'running_context',
+      // Planning plans; finding integrations belongs to chat and worker turns.
+      (t) => t.name !== 'running_context' && t.name !== 'integrations_search',
     ),
     writePlan as Tool,
   ];

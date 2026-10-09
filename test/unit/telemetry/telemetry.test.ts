@@ -32,6 +32,29 @@ const h = (e: OmnexxEvent, verbosity: Verbosity = 'verbose'): string | undefined
   humanize(e, { brand: plain, verbosity, utc: true });
 
 describe('humanize', () => {
+  it('renders integration installs and suggestions', () => {
+    expect(
+      h(
+        ev('integration.installed', {
+          kind: 'mcp',
+          server: 'io.github.microsoft/playwright-mcp',
+          as: 'playwright-mcp',
+        }),
+      ),
+    ).toMatch(/install\s+MCP server io\.github\.microsoft\/playwright-mcp as playwright-mcp$/);
+    expect(h(ev('integration.installed', { kind: 'skill', names: ['tidy', 'lint'] }))).toMatch(
+      /skills tidy, lint$/,
+    );
+    expect(
+      h(
+        ev('integration.suggested', { kind: 'mcp', server: 'io.github.someone/x', trusted: false }),
+      ),
+    ).toMatch(/MCP server io\.github\.someone\/x \(unknown publisher\) \(see report\)$/);
+    expect(h(ev('integration.suggested', { kind: 'skill', source: 'https://x/s.git' }))).toMatch(
+      /skills from https:\/\/x\/s\.git \(see report\)$/,
+    );
+  });
+
   it('renders the core feed lines', () => {
     expect(
       h(ev('tool.call', { tool: 'read', input: '{"path":"src/a.ts","start":40,"end":120}' })),

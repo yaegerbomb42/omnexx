@@ -27,6 +27,23 @@ only that server's table: comments and the rest of your config stay as you wrote
 
 In the TUI: `/mcp`, `/mcp add <name>`, `/mcp search <q>`, `/mcp import`.
 
+### Or just ask omnexx
+
+The agent has two tools for this: `integrations_search` (registry search, or the skills available
+here) and `integrations_install` (an MCP server from the registry, or skills from a path or git
+URL). Say "set up the Playwright MCP server" or "add the skills from <git url>" in chat. Who
+approves an install:
+
+| Where                                       | What happens                                                                                       |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Chat                                        | It shows publisher and what will run, and asks you (`y/N`)                                         |
+| Chat in yolo mode, or `policy.auto_approve` | Installs without asking (the feed shows what it installed)                                         |
+| Unattended run without `auto_approve`       | Installs nothing; the suggestion and the exact command go to REPORT.md under "Needs your decision" |
+
+Settings a server needs (a token) are never guessed: the agent asks you for them or points you at
+`omnexx mcp add … --set`. New MCP tools are available from the next cycle of a run, or in a new
+chat. Planners and read-only helpers don't get these tools.
+
 ## Configuration
 
 MCP servers can be configured in your `omnexx.toml` or user configuration `~/.config/omnexx/config.toml`:

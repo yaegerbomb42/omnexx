@@ -18,7 +18,7 @@ Use the tools to answer the question, then reply with a summary under 600 words:
 then file paths and the evidence behind them. Say plainly what you could not determine.`;
 
 /** Tools a helper may never have: they write, or would let it start more helpers. */
-const DENIED = new Set(['task', 'remember', 'write_plan', 'write_intent']);
+const DENIED = new Set(['task', 'remember', 'write_plan', 'write_intent', 'integrations_search']);
 
 /**
  * A child agent with its own fresh context and token cap. Returns its final answer only, so

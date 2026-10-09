@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Command } from 'commander';
 import type { CommandRegistrar } from './extra/types.js';
 import { resolvePaths, userConfigFile } from '../../core/paths.js';
@@ -16,47 +16,15 @@ import {
   type RegistryHit,
 } from '../../integrations/registry.js';
 import { readSecrets, SECRET_PREFIX, writeServerSecrets } from '../../integrations/secrets.js';
-import { removeTable, setTable, type TomlValue } from '../../integrations/toml-edit.js';
+import { removeTable } from '../../integrations/toml-edit.js';
+import {
+  installRegistryServer,
+  readConfigText,
+  tomlFor,
+  writeServer,
+} from '../../integrations/install.js';
 
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
-
-async function readConfigText(file: string): Promise<string> {
-  try {
-    return await readFile(file, 'utf8');
-  } catch {
-    return '';
-  }
-}
-
-/** Write one `[mcp.servers.<name>]` table, leaving the rest of the file (and its comments) alone. */
-export async function writeServer(
-  file: string,
-  name: string,
-  server: Record<string, TomlValue | undefined>,
-): Promise<void> {
-  const next = setTable(await readConfigText(file), ['mcp', 'servers', name], server);
-  await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, next, 'utf8');
-}
-
-/** The TOML keys for a server; empty defaults are left out to keep the table short. */
-function tomlFor(s: {
-  command?: string | undefined;
-  args?: readonly string[];
-  url?: string | undefined;
-  env?: Readonly<Record<string, string>> | readonly string[];
-  headers_env?: Readonly<Record<string, string>>;
-}): Record<string, TomlValue | undefined> {
-  const env = s.env && (Array.isArray(s.env) ? s.env.length : Object.keys(s.env).length);
-  const headers = s.headers_env && Object.keys(s.headers_env).length;
-  return {
-    command: s.command,
-    args: s.command && s.args?.length ? s.args : undefined,
-    url: s.url,
-    env: env ? s.env : undefined,
-    headers_env: headers ? s.headers_env : undefined,
-  };
-}
 
 /** Values for the settings a registry entry asks for: from `--set KEY=VALUE`, else prompted. */
 async function collectNeeds(
@@ -203,8 +171,7 @@ export const register: CommandRegistrar = (
             setExit(EXIT.error);
             return;
           }
-          await writeServer(file, plan.name, tomlFor(plan.config));
-          await writeServerSecrets(configHome(), plan.name, values);
+          await installRegistryServer(file, configHome(), plan, values);
           println(
             io.stdout,
             `Added MCP server "${plan.name}". Check it with: omnexx mcp test ${plan.name}`,
