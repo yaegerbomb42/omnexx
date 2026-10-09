@@ -48,6 +48,12 @@ SonarCloud findings from the #20 integration merge are still open.
   model fails, a fact-only summary still compacts instead of letting context grow to the cap.
   Part 3: `read` clips lines over 2k chars and stops a range at ~60k chars (a 400-line read of a
   minified or generated file used to put hundreds of KB in context).
+  Part 4, first live bench of this branch (Mistral + Ollama cloud gpt-oss-120b, $0): task-01
+  resolved, 88 turns, 327k tokens (82% cache reads), 3.7 min. Half the tokens went to one task
+  rejected 6× for "no changes": the planner's check had escaped quotes (`grep -cE \"…\"`) and
+  could never pass. Now two "no changes" rejects with identical failing check output park the task
+  (`check.suspect`). Mistral 429'd on its single key: endpoints take `api_key_envs` and rotate
+  keys on 429.
 
 - **2026-10-06 (single agent):** merged #23–#26. Browser gates can now be declared
   (`kind = "browser"`, serves the app on `$PORT`); uncaught page errors count as failures; new
