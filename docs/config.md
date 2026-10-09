@@ -194,15 +194,16 @@ An in-cycle signal ends the cycle as `stuck` (events `stuck.in_cycle`, then `stu
 
 ## `[context]`
 
-| Key                     | Default                                                                   |
-| ----------------------- | ------------------------------------------------------------------------- |
-| `progress_tail`         | `5` progress entries in each cycle's context                              |
-| `notes_max_tokens`      | `1500` (lessons file cap)                                                 |
-| `repo_map_max_tokens`   | `3000` (codebase map cap)                                                 |
-| `clear_tool_results_at` | `60000` estimated context tokens: elide old tool results over 1,000 chars |
-| `keep_tool_results`     | `6` newest tool results never cleared                                     |
-| `compact_at`            | `100000` estimated context tokens: summarize older turns                  |
-| `compact_keep_turns`    | `4` recent assistant turns kept verbatim                                  |
+| Key                     | Default                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| `progress_tail`         | `5` progress entries in each cycle's context                                          |
+| `notes_max_tokens`      | `1500` (lessons file cap)                                                             |
+| `repo_map_max_tokens`   | `3000` (codebase map cap)                                                             |
+| `clear_tool_results_at` | `60000` estimated context tokens: elide old tool results over 1,000 chars             |
+| `min_clear_tokens`      | `4000` minimum tokens a clear must free, or it is skipped (avoid a prompt-cache miss) |
+| `keep_tool_results`     | `6` newest tool results never cleared                                                 |
+| `compact_at`            | `100000` estimated context tokens: summarize older turns                              |
+| `compact_keep_turns`    | `4` recent assistant turns kept verbatim                                              |
 
 In-cycle context control runs before each turn and works on every provider. Past `clear_tool_results_at`, old large tool results become a one-line note telling the model to re-run the tool. If the context is still past `compact_at`, the cheap chain summarizes the older turns into a structured summary (done, in progress, files touched, last error, next step) that is appended to the cycle's first message; at least two older turns are needed, so it never re-compacts on consecutive turns. A failed or budget-refused summary leaves the context as is, and `max_tokens_per_cycle` still ends a cycle that outgrows both. Events: `context.cleared`, `context.compacted`, `context.compact_failed`. Keep `compact_at` under the smallest context window in your worker chain.
 
