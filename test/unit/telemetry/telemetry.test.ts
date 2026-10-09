@@ -98,6 +98,24 @@ describe('humanize', () => {
     ).toBe('12:04:31 · model    p:m  in 2.0k out 300 · cache 90% · $0.012 · 2.3s');
   });
 
+  it('renders warn lines for suspect checks, rejected plans and unavailable audits', () => {
+    expect(
+      h(ev('check.suspect', { task: 'M2.T01', checks: ['npm run lint', 'npm run typecheck'] })),
+    ).toBe('12:04:31 ! suspect  M2.T01: checks may be wrong  npm run lint; npm run typecheck');
+    expect(h(ev('plan.check_rejected', { reason: 'already_pass', count: 3 }))).toBe(
+      '12:04:31 ! plan     3 checks already pass; plan rejected',
+    );
+    expect(h(ev('plan.check_rejected', { reason: 'broken', count: 1 }))).toBe(
+      "12:04:31 ! plan     1 checks can't run; plan rejected",
+    );
+    expect(h(ev('audit.unavailable', { error: 'HTTP 599: upstream dropped it' }))).toBe(
+      '12:04:31 ! audit    no answer: HTTP 599: upstream dropped it',
+    );
+    expect(h(ev('check.suspect', { task: 'M2.T01', checks: [] }), 'normal')).toBe(
+      '12:04:31 ! suspect  M2.T01: checks may be wrong',
+    );
+  });
+
   it('filters by verbosity and hides internal events', () => {
     const turn = ev('turn', { tokens: {} });
     expect(h(turn, 'normal')).toBeUndefined();

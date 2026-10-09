@@ -288,6 +288,24 @@ const contextFactSummaryLine: Formatter = () => {
   return ['verbose', 'warn', 'compact', 'summarizer unavailable; compacted from facts only'];
 };
 
+const checkSuspectLine: Formatter = (e) => {
+  const checks = Array.isArray(e.checks) ? e.checks.map(str).filter(Boolean) : [];
+  const which = checks.length ? `  ${clip(checks.join('; '), 50)}` : '';
+  return ['normal', 'warn', 'suspect', `${str(e.task)}: checks may be wrong${which}`];
+};
+
+const planCheckRejectedLine: Formatter = (e) => {
+  const why = str(e.reason) === 'already_pass' ? 'already pass' : "can't run";
+  return ['normal', 'warn', 'plan', `${num(e.count)} checks ${why}; plan rejected`];
+};
+
+const auditUnavailableLine: Formatter = (e) => [
+  'normal',
+  'warn',
+  'audit',
+  `no answer: ${clip(str(e.error), 70)}`,
+];
+
 const providerFailoverLine: Formatter = (e) => {
   return [
     'normal',
@@ -394,6 +412,9 @@ const FORMATTERS: Partial<Record<string, Formatter>> = {
   'context.compacted': contextCompactedLine,
   'context.compact_failed': contextCompactFailedLine,
   'context.fact_summary': contextFactSummaryLine,
+  'check.suspect': checkSuspectLine,
+  'plan.check_rejected': planCheckRejectedLine,
+  'audit.unavailable': auditUnavailableLine,
   'provider.failover': providerFailoverLine,
   'provider.retry': providerRetryLine,
   'provider.outage': providerOutageLine,
