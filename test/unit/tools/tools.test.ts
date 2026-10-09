@@ -270,6 +270,7 @@ describe('registry', () => {
     expect(a).toBe(b);
     expect(a).not.toContain('$schema');
     expect(READ_ONLY_TOOLS.map((t) => t.name).sort()).toEqual([
+      'context',
       'outline',
       'read',
       'read_log',
@@ -278,6 +279,7 @@ describe('registry', () => {
       'running_context',
       'search',
       'task',
+      'todo',
     ]);
     expect(JSON.stringify(sortKeys({ b: 1, a: [{ d: 1, c: 2 }] }))).toBe(
       '{"a":[{"c":2,"d":1}],"b":1}',

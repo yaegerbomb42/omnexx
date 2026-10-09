@@ -359,6 +359,32 @@ const notesUpdateLine: Formatter = (e) => {
   return ['verbose', 'info', 'lesson', clip(str(e.text ?? e.id), 70)];
 };
 
+const todoUpdateLine: Formatter = (e) => {
+  const items = Array.isArray(e.items) ? (e.items as { text?: unknown; status?: unknown }[]) : [];
+  const done = items.filter((i) => i.status === 'done').length;
+  const now = items.find((i) => i.status === 'in_progress');
+  return [
+    'normal',
+    'info',
+    'todo',
+    `${done}/${items.length}${now ? ` · now: ${clip(str(now.text), 60)}` : ''}`,
+  ];
+};
+
+const todoNudgeLine: Formatter = (e) => [
+  'normal',
+  'warn',
+  'todo',
+  `stopped with ${num(e.open)} open item(s); asked to finish or drop them`,
+];
+
+const scopeUpdateLine: Formatter = (e) => [
+  'verbose',
+  'info',
+  'context',
+  `${str(e.scope)} notes updated (${num(e.chars)} chars)`,
+];
+
 const goalChangedLine: Formatter = () => {
   return ['quiet', 'info', 'steer', 'goal updated; picked up this cycle'];
 };
@@ -450,6 +476,9 @@ const FORMATTERS: Partial<Record<string, Formatter>> = {
   'control.resumed': controlResumedLine,
   'judge.next_move': judgeNextMoveLine,
   'notes.update': notesUpdateLine,
+  'todo.update': todoUpdateLine,
+  'todo.nudge': todoNudgeLine,
+  'context.scope_update': scopeUpdateLine,
   'intent.update': intentUpdateLine,
   'autonomous.idle': autonomousIdleLine,
   'autonomous.round_failed': autonomousRoundFailedLine,

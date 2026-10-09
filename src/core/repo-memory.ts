@@ -10,7 +10,10 @@ import { estimateTokens } from './tokens.js';
  * Lessons about one repository that outlive any single run or chat: how to run things, env needs,
  * conventions, pitfalls. Keyed by the origin remote (clones share it), else by the repo path.
  */
-export async function repoMemoryFile(paths: OmnexxPaths, repoRoot: string): Promise<string> {
+export async function repoMemoryFile(
+  paths: Pick<OmnexxPaths, 'home'>,
+  repoRoot: string,
+): Promise<string> {
   const remote = (
     await git(repoRoot, ['config', '--get', 'remote.origin.url'], { allowFailure: true })
   ).stdout.trim();
@@ -25,7 +28,10 @@ export async function repoMemoryFile(paths: OmnexxPaths, repoRoot: string): Prom
   return join(paths.home, 'repos', `${slug}-${key}`, 'notes.json');
 }
 
-export async function readRepoNotes(paths: OmnexxPaths, repoRoot: string): Promise<Note[]> {
+export async function readRepoNotes(
+  paths: Pick<OmnexxPaths, 'home'>,
+  repoRoot: string,
+): Promise<Note[]> {
   const raw = await readTextOr(await repoMemoryFile(paths, repoRoot), '[]');
   const parsed = notesSchema.safeParse(JSON.parse(raw));
   return parsed.success ? parsed.data : [];

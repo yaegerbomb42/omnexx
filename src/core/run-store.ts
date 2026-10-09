@@ -193,12 +193,15 @@ export const sha256 = (s: string): string => createHash('sha256').update(s).dige
 /** Every file of one run, under `$OMNEXX_HOME/runs/<runId>/` (outside the repo, plan §3.3). */
 export class RunStore {
   readonly dir: string;
+  /** The omnexx home (runs, repo memory), for state that outlives this run. */
+  readonly home: string;
 
   constructor(
     paths: OmnexxPaths,
     readonly runId: string,
   ) {
     this.dir = runDir(paths, runId);
+    this.home = paths.home;
   }
 
   file(name: string): string {
