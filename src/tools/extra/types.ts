@@ -7,5 +7,11 @@ import type { Tool } from '../types.js';
  * prefix stays byte-stable no matter which sources are present.
  */
 export interface ToolSource {
-  load(config: OmnexxConfig): readonly Tool[] | Promise<readonly Tool[]>;
+  load(config: OmnexxConfig, where?: ToolWhere): readonly Tool[] | Promise<readonly Tool[]>;
+}
+
+/** Where the tools will run: the repo (or worktree) and the environment of that run or chat. */
+export interface ToolWhere {
+  repoRoot: string;
+  env: NodeJS.ProcessEnv;
 }

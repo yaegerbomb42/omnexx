@@ -16,7 +16,7 @@ describe('extra tool sources', () => {
   const config = defaultConfig();
 
   it('keeps core tools first, then extras sorted by name regardless of source order', async () => {
-    const tools = await workerTools(config, {
+    const tools = await workerTools(config, undefined, {
       zeta: { load: () => [fake('web_fetch', true)] },
       alpha: { load: () => Promise.resolve([fake('browser')]) },
     });
@@ -25,18 +25,20 @@ describe('extra tool sources', () => {
       'browser',
       'web_fetch',
     ]);
-    const ro = await readOnlyTools(config, { a: { load: () => [fake('web_fetch', true)] } });
+    const ro = await readOnlyTools(config, undefined, {
+      a: { load: () => [fake('web_fetch', true)] },
+    });
     expect(ro.map((t) => t.name)).toContain('web_fetch');
   });
 
   it('rejects a name that collides with a core or another extra tool', async () => {
-    await expect(workerTools(config, { a: { load: () => [fake('bash')] } })).rejects.toThrow(
-      /duplicate tool name "bash"/,
-    );
+    await expect(
+      workerTools(config, undefined, { a: { load: () => [fake('bash')] } }),
+    ).rejects.toThrow(/duplicate tool name "bash"/);
   });
 
   it('with no sources registered, matches the core tool list exactly', async () => {
-    expect(await workerTools(config, {})).toEqual(WORKER_TOOLS);
+    expect(await workerTools(config, undefined, {})).toEqual(WORKER_TOOLS);
   });
 
   it('the default barrel contributes the skill tool after the core tools', async () => {

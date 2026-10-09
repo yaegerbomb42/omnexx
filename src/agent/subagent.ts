@@ -31,7 +31,9 @@ export function subagentRunner(
   let n = 0;
   return async (description, kind) => {
     const id = ++n;
-    const tools = (await readOnlyTools(run.config)).filter((t) => !DENIED.has(t.name));
+    const tools = (
+      await readOnlyTools(run.config, { repoRoot: run.worktree, env: run.deps.env })
+    ).filter((t) => !DENIED.has(t.name));
     const ctx: ToolContext = {
       ...parent,
       edited: new Set(),

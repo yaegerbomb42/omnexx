@@ -43,27 +43,46 @@ const text = renderInstructions(loaded); // or renderInstructions() after a load
 
 ## Skills
 
-Skills live in `.omnexx/skills/<name>/SKILL.md` (repo) and `~/.config/omnexx/skills/<name>/SKILL.md`
-(user; honours `OMNEXX_CONFIG_HOME` and `XDG_CONFIG_HOME`). The format is Claude Code's: a flat
-YAML frontmatter block with `name` and `description`, then the body. When `name` is missing or
-differs from the directory, the frontmatter name wins and the directory name is the fallback; a
-repo skill shadows a user skill with the same name.
+Skills are folders with a `SKILL.md`, in Claude Code's format: a flat YAML frontmatter block with
+`name` and `description`, then the body. When `name` is missing the directory name is used. They
+are read in place, never copied, from these folders (a later one shadows a skill of the same name
+in an earlier one):
+
+1. Claude Code's user skills, `~/.claude/skills` (when `[skills] import_claude`, on by default)
+2. every folder in `[skills] dirs` (`~` is the home folder; relative paths are from the repo)
+3. omnexx user skills, `~/.config/omnexx/skills` (honours `OMNEXX_CONFIG_HOME`, `XDG_CONFIG_HOME`)
+4. the repo's `.claude/skills` (when `import_claude`), then the repo's `.omnexx/skills`
+
+Set them up with `omnexx skills` or `/skills` in the TUI:
+
+| Command                             | What it does                                                        |
+| ----------------------------------- | ------------------------------------------------------------------- |
+| `omnexx skills list`                | every skill, where it comes from, its description                   |
+| `omnexx skills add <path\|git-url>` | copy a skill, a folder of them, or a repo's `skills/` into your own |
+| `omnexx skills remove <name>`       | remove one you added (skills from other sources are left alone)     |
+| `omnexx skills import`              | show the Claude Code skills in use                                  |
 
 ```ts
-const roots = { repoRoot, env }; // env for the user config home
-const list = await listSkills(roots); // [{name, description}], sorted by name — goes in the prefix
+const roots = {
+  repoRoot,
+  env,
+  dirs: config.skills.dirs,
+  importClaude: config.skills.import_claude,
+};
+const list = await listSkills(roots); // [{name, description}], sorted by name
 const skill = await loadSkill('commit-style', roots); // body ≤ 6k tokens, frontmatter stripped
 ```
 
 - Bodies over **6k tokens** are cut with a `… (truncated)` note; `skill.truncated` says so.
-- Both functions are deterministic: sorted directory scans, repo-before-user merge.
+- Both functions are deterministic: sorted directory scans, fixed folder order.
 
 ## The `skill` tool
 
 `src/tools/extra/skill.ts` registers `skill({ name })` (read-only) through the extra-tool barrel.
-It always loads — the tool list (and therefore the cached prefix) must not change when skills
-appear or disappear; the skill _names_ are what the prompt lists. Unknown names return an error
-listing the available skills.
+It always loads. Its description lists every available skill (name and description, cut to ~6k
+characters), built once per cycle, so the model knows what exists without guessing; the list only
+changes the prompt prefix when skills are added or removed. Unknown names return an error listing
+the available skills.
 
 Wiring notes (who calls what) live in `docs/integration-notes.md` under **W10**; hook config and
 semantics live in [hooks.md](hooks.md).

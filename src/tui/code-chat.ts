@@ -192,7 +192,9 @@ export class CodeChat {
       runningContext: new RunningContext(store, 'chat'),
     };
     const tools = [
-      ...(await workerTools(config)).filter((t) => !CHAT_DENIED.has(t.name)),
+      ...(await workerTools(config, { repoRoot: jail.root, env: io.env })).filter(
+        (t) => !CHAT_DENIED.has(t.name),
+      ),
       todoTool as Tool,
     ];
     const instructions = renderInstructions(await loadInstructions(jail.root, jail.root));

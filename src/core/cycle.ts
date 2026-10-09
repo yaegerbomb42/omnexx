@@ -351,7 +351,7 @@ export async function stepAct(run: Run): Promise<void> {
   memory.rescore();
   const assembled = memory.assemble();
 
-  const tools = await workerTools(run.config);
+  const tools = await workerTools(run.config, { repoRoot: run.worktree, env: run.deps.env });
   const route = await run.router.pick(cycleRoute(task, run.budgetLeftFraction()));
   const ctx = buildCycleContext({
     systemPrompt: WORKER_SYSTEM,
