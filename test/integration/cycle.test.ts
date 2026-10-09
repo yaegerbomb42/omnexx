@@ -307,6 +307,19 @@ describe('M1: one full cycle with the scripted provider', () => {
   });
 });
 
+describe('command timeout', () => {
+  it('never runs past the run’s wall-clock cap', async () => {
+    const t = await startTestRun({
+      fixture: 'ts-failing-test',
+      provider: new ScriptedProvider(() => say('unused')),
+      config: { budget: { max_hours: 0.01, max_cmd_timeout: '30m' } },
+    });
+    // 36 s of run left plus a minute to wrap up, far below the 30 m command default.
+    expect(t.run.maxCmdTimeoutMs).toBeLessThanOrEqual(96_000);
+    expect(t.run.maxCmdTimeoutMs).toBeGreaterThanOrEqual(30_000);
+  });
+});
+
 describe('shared checks', () => {
   it('never skips a task for free when its only check is one every task shares', async () => {
     const provider = new ScriptedProvider(() => say('nothing to change'));
