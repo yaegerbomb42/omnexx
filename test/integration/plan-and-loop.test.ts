@@ -12,7 +12,7 @@ import { isClean } from '../../src/git/repo.js';
 import { secretCorpus } from '../support/secrets.js';
 import { fixtureRepo, startTestRun } from '../support/harness.js';
 import { call, say, ScriptedProvider, type Script } from '../support/scripted-provider.js';
-import { isolatedEnv } from '../support/tmp.js';
+import { isolatedEnv, tempDir } from '../support/tmp.js';
 import { FakeClock } from '../support/clock.js';
 
 const planScript: Script = ({ planner, turn }) => {
@@ -79,7 +79,11 @@ async function cliRun(
 describe('run --plan-only', () => {
   it('runs the planner with read-only tools, retries a rejected plan, writes plan.json, never edits the repo', async () => {
     const repo = await fixtureRepo('ts-failing-test');
-    const env = await isolatedEnv({ ANTHROPIC_API_KEY: secretCorpus().anthropic });
+    const env = await isolatedEnv({
+      ANTHROPIC_API_KEY: secretCorpus().anthropic,
+      // An empty home: the host's ~/.claude agents and skills would change the planner's tools.
+      HOME: await tempDir('omnexx-plan-home-'),
+    });
     const provider = new ScriptedProvider(planScript);
     const r = await cliRun(['run', '--plan-only', 'Make the tests pass'], repo, env, provider);
     expect(r.err).toBe('');

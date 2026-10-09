@@ -36,6 +36,21 @@ const flakyIds = (events: readonly OmnexxEvent[]): string => {
 };
 const usd = (n: number): string => `$${n.toFixed(2)}`;
 
+/** Integrations the agent wanted but couldn't install unattended, with the command to do it. */
+function suggestions(events: readonly OmnexxEvent[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const e of events.filter((x) => x.type === 'integration.suggested')) {
+    const line =
+      e.kind === 'skill'
+        ? `- The agent suggests adding skills from ${String(e.source)}: \`omnexx skills add ${String(e.source)}\``
+        : `- The agent suggests the MCP server ${String(e.server)}${e.trusted ? '' : ' (not a known publisher: check it first)'}: \`omnexx mcp add ${String(e.server).split('/').pop() ?? ''} --pick ${String(e.server)}\``;
+    if (!seen.has(line)) out.push(line);
+    seen.add(line);
+  }
+  return out;
+}
+
 function planTree(plan: Plan | undefined): string[] {
   if (!plan) return ['(no plan was written)'];
   const out: string[] = [];
@@ -201,6 +216,7 @@ export async function writeReport(
     ...(state.status === 'needs-human'
       ? [`- The run stopped for you: ${state.statusReason ?? ''}`]
       : []),
+    ...suggestions(events),
     ...(assumptions.length
       ? [
           '',

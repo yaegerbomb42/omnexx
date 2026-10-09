@@ -4,6 +4,45 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { McpServerConfig } from '../config/sections/mcp.js';
 import { matchesAny } from '../security/glob.js';
+import { SECRET_PREFIX, type McpSecrets } from '../integrations/secrets.js';
+
+/** What every stdio server gets from the host environment, whatever its config says. */
+const BASE_ENV = [
+  'PATH',
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'TERM',
+  'TMPDIR',
+  'TEMP',
+  'TMP',
+  'SYSTEMROOT',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'USERPROFILE',
+  'XDG_CONFIG_HOME',
+  'XDG_CACHE_HOME',
+  'XDG_DATA_HOME',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY',
+  'NODE_EXTRA_CA_CERTS',
+  'DOCKER_HOST',
+];
+
+/** Package-manager settings (cache, registry, proxy) that npx / uvx servers need to install. */
+const BASE_ENV_PREFIXES = ['npm_config_', 'NPM_CONFIG_', 'UV_', 'PIP_'];
+
+export interface McpClientOptions {
+  /** The environment to read from (default process.env). */
+  env?: NodeJS.ProcessEnv;
+  /** Stored secrets by server, for `secret:<KEY>` values in env and headers. */
+  secrets?: McpSecrets;
+}
 
 export interface McpToolInfo {
   serverName: string;
@@ -34,7 +73,12 @@ export class McpClientManager {
   private servers = new Map<string, ServerInstance>();
   private toolCache: McpToolInfo[] | null = null;
 
-  constructor(serverConfigs: Record<string, McpServerConfig>) {
+  private readonly env: NodeJS.ProcessEnv;
+  private readonly secrets: McpSecrets;
+
+  constructor(serverConfigs: Record<string, McpServerConfig>, opts: McpClientOptions = {}) {
+    this.env = opts.env ?? process.env;
+    this.secrets = opts.secrets ?? {};
     for (const [name, cfg] of Object.entries(serverConfigs)) {
       this.servers.set(name, {
         config: cfg,
@@ -44,29 +88,61 @@ export class McpClientManager {
     }
   }
 
-  private resolveEnv(envConfig: string[] | Record<string, string>): Record<string, string> {
+  /**
+   * A configured value: `secret:<KEY>` reads the server's stored secret, a name of a set env var
+   * reads that variable, anything else is used as is.
+   */
+  private resolveValue(server: string, ref: string): string | undefined {
+    if (ref.startsWith(SECRET_PREFIX))
+      return this.secrets[server]?.[ref.slice(SECRET_PREFIX.length)];
+    return this.env[ref] ?? ref;
+  }
+
+  private resolveEnv(
+    server: string,
+    envConfig: string[] | Record<string, string>,
+  ): Record<string, string> {
     const env: Record<string, string> = {};
     if (Array.isArray(envConfig)) {
       for (const key of envConfig) {
-        const val = process.env[key];
+        const val = this.env[key];
         if (typeof val === 'string') env[key] = val;
       }
     } else {
-      for (const [targetKey, sourceEnv] of Object.entries(envConfig)) {
-        const val = process.env[sourceEnv] ?? sourceEnv;
-        env[targetKey] = val;
+      for (const [targetKey, ref] of Object.entries(envConfig)) {
+        const val = this.resolveValue(server, ref);
+        if (val !== undefined) env[targetKey] = val;
       }
     }
     return env;
   }
 
-  private resolveHeaders(headersEnv: Record<string, string>): Record<string, string> {
+  private resolveHeaders(
+    server: string,
+    headersEnv: Record<string, string>,
+  ): Record<string, string> {
     const headers: Record<string, string> = {};
-    for (const [headerName, envVar] of Object.entries(headersEnv)) {
-      const val = process.env[envVar] ?? envVar;
-      headers[headerName] = val;
+    for (const [headerName, ref] of Object.entries(headersEnv)) {
+      const val = this.resolveValue(server, ref);
+      if (val !== undefined) headers[headerName] = val;
     }
     return headers;
+  }
+
+  /** The environment a stdio server starts with. */
+  serverEnv(server: string, config: McpServerConfig): Record<string, string> {
+    const base: Record<string, string> = {};
+    if (config.inherit_env) {
+      for (const [k, v] of Object.entries(this.env)) if (typeof v === 'string') base[k] = v;
+    } else {
+      for (const [k, v] of Object.entries(this.env))
+        if (
+          typeof v === 'string' &&
+          (BASE_ENV.includes(k) || BASE_ENV_PREFIXES.some((p) => k.startsWith(p)))
+        )
+          base[k] = v;
+    }
+    return { ...base, ...this.resolveEnv(server, config.env) };
   }
 
   private async connectServer(name: string, instance: ServerInstance): Promise<Client> {
@@ -80,17 +156,13 @@ export class McpClientManager {
     let transport: Transport;
 
     if (config.command) {
-      const forwardedEnv = {
-        ...process.env,
-        ...this.resolveEnv(config.env),
-      };
       transport = new NodeStdioClientTransport({
         command: config.command,
         args: config.args,
-        env: forwardedEnv as Record<string, string>,
+        env: this.serverEnv(name, config),
       });
     } else if (config.url) {
-      const headers = this.resolveHeaders(config.headers_env);
+      const headers = this.resolveHeaders(name, config.headers_env);
       const url = new URL(config.url);
       transport = new StreamableHTTPClientTransport(url, {
         requestInit: { headers },

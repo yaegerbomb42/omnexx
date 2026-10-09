@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import type { ToolSource } from './types.js';
+import type { ToolSource, ToolWhere } from './types.js';
+import { resolvePaths } from '../../core/paths.js';
+import { readSecrets } from '../../integrations/secrets.js';
 import { fail, ok, type Tool, type ToolContext, type ToolOutput } from '../types.js';
 import type { OmnexxConfig } from '../../config/schema.js';
 import { resolveMcpServers } from '../../mcp/config-loader.js';
@@ -137,14 +139,17 @@ function createDirectTool(
 }
 
 export const source: ToolSource = {
-  async load(config: OmnexxConfig): Promise<readonly Tool[]> {
-    const cwd = process.cwd();
-    const serverConfigs = await resolveMcpServers(cwd, config.mcp);
+  async load(config: OmnexxConfig, where?: ToolWhere): Promise<readonly Tool[]> {
+    const env = where?.env ?? process.env;
+    const serverConfigs = await resolveMcpServers(where?.repoRoot ?? process.cwd(), config.mcp);
     if (Object.keys(serverConfigs).length === 0) {
       return [];
     }
 
-    activeManager ??= new McpClientManager(serverConfigs);
+    activeManager ??= new McpClientManager(serverConfigs, {
+      env,
+      secrets: await readSecrets(resolvePaths(env).configHome),
+    });
     const mgr = activeManager;
 
     const allTools = await mgr.listTools();

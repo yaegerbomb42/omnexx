@@ -39,6 +39,7 @@ export async function loadRepoMcpJson(repoRoot: string): Promise<Record<string, 
         url: server.url,
         headers_env: server.headers ?? {},
         allow_tools: server.allow_tools ?? ['*'],
+        inherit_env: false,
         timeout: server.timeout ?? '30s',
       };
     }

@@ -111,7 +111,6 @@ cache_read = 0.2
 | `kind`                             | `"openai"` | Chat Completions API                                                                                                                                                                                                                                                                        |
 | `base_url`                         | required   | e.g. `https://api.openai.com/v1`                                                                                                                                                                                                                                                            |
 | `api_key_env`                      | unset      | Env var holding the key; unset for local endpoints                                                                                                                                                                                                                                          |
-| `api_key_envs`                     | unset      | More env vars with keys for this endpoint; a 429 rotates to the next key (free tiers limit per key). Unset ones are skipped                                                                                                                                                                 |
 | `free`                             | `false`    | Price unknown models at $0                                                                                                                                                                                                                                                                  |
 | `request_timeout`                  | `"10m"`    |                                                                                                                                                                                                                                                                                             |
 | `sticky_random`                    | `false`    | For a pool whose `*-random` model picks a different model each request: omnexx picks one real chat model itself and keeps it (warm prompt cache) until it reports it is out of quota, then moves to the next. The pick and exhausted models are remembered in `sticky-<name>.json` for 24 h |
@@ -255,6 +254,15 @@ In-cycle context control runs before each turn and works on every provider. Past
 | --------------- | ------- | --------------------------------------------------------------------------------------- |
 | `dirs`          | `[]`    | More folders of skills (`<dir>/<name>/SKILL.md`), read in place; `~` is the home folder |
 | `import_claude` | `true`  | Also use Claude Code's skills: `~/.claude/skills` and the repo's `.claude/skills`       |
+
+## `[agents]` (see [agent-cards.md](agent-cards.md))
+
+| Key                         | Default | Meaning                                                                           |
+| --------------------------- | ------- | --------------------------------------------------------------------------------- |
+| `dirs`                      | `[]`    | More folders of agent cards (`<dir>/<name>.md`), read in place                    |
+| `import_claude`             | `true`  | Also use Claude Code's agents: `~/.claude/agents` and the repo's `.claude/agents` |
+| `remote.<name>.url`         | –       | A remote A2A agent: its card URL or base URL                                      |
+| `remote.<name>.headers_env` | `{}`    | Headers to send: env var name, `secret:<KEY>`, or literal                         |
 
 ## `[review]`
 

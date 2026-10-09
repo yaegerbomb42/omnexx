@@ -288,6 +288,24 @@ const contextFactSummaryLine: Formatter = () => {
   return ['verbose', 'warn', 'compact', 'summarizer unavailable; compacted from facts only'];
 };
 
+const integrationInstalledLine: Formatter = (e) => [
+  'normal',
+  'info',
+  'install',
+  e.kind === 'skill'
+    ? `skills ${Array.isArray(e.names) ? e.names.map(str).join(', ') : ''}`
+    : `MCP server ${str(e.server)} as ${str(e.as)}`,
+];
+
+const integrationSuggestedLine: Formatter = (e) => [
+  'normal',
+  'warn',
+  'suggest',
+  e.kind === 'skill'
+    ? `skills from ${clip(str(e.source), 60)} (see report)`
+    : `MCP server ${str(e.server)}${e.trusted ? '' : ' (unknown publisher)'} (see report)`,
+];
+
 const providerFailoverLine: Formatter = (e) => {
   return [
     'normal',
@@ -394,6 +412,8 @@ const FORMATTERS: Partial<Record<string, Formatter>> = {
   'context.compacted': contextCompactedLine,
   'context.compact_failed': contextCompactFailedLine,
   'context.fact_summary': contextFactSummaryLine,
+  'integration.installed': integrationInstalledLine,
+  'integration.suggested': integrationSuggestedLine,
   'provider.failover': providerFailoverLine,
   'provider.retry': providerRetryLine,
   'provider.outage': providerOutageLine,

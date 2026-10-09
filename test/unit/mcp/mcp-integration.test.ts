@@ -27,6 +27,7 @@ describe('MCP Tools Source and Search Mode', () => {
         env: [],
         headers_env: {},
         allow_tools: ['*'],
+        inherit_env: false,
         timeout: '10s',
       },
     };
@@ -53,6 +54,7 @@ describe('MCP Tools Source and Search Mode', () => {
         env: ['FAKE_MCP_MANY_TOOLS'],
         headers_env: {},
         allow_tools: ['*'],
+        inherit_env: false,
         timeout: '10s',
       },
     };
@@ -86,6 +88,7 @@ describe('MCP Tools Source and Search Mode', () => {
         env: [],
         headers_env: {},
         allow_tools: ['echo'],
+        inherit_env: false,
         timeout: '10s',
       },
     };

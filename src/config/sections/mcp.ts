@@ -16,6 +16,12 @@ export const mcpServerSchema = z
     url: z.url().optional(),
     headers_env: z.record(z.string(), z.string()).default({}),
     allow_tools: z.array(z.string()).default(['*']),
+    /**
+     * Give a stdio server your whole environment. Off by default: it gets only a small base
+     * (PATH, HOME, locale, temp and proxy settings) plus what `env` names, so a third-party
+     * server never sees every API key in your shell.
+     */
+    inherit_env: z.boolean().default(false),
     timeout: durationString.default('30s'),
   })
   .refine((data) => Boolean(data.command ?? data.url), {
