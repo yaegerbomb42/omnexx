@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { estimateTokens } from '../core/tokens.js';
+import { CHARS_PER_TOKEN, estimateTokens } from '../core/tokens.js';
 import type { ContentBlock, Message } from '../providers/types.js';
 
 /**
@@ -14,7 +14,12 @@ export interface CompactionSettings {
   keepToolResults: number;
   compactAt: number;
   keepTurns: number;
+  /** Clear only when at least this many tokens would go (default: MIN_CLEAR_TOKENS or clearAt/10). */
+  minClearTokens?: number;
 }
+
+/** Below this a clear saves less than the cache miss it causes on the next turn. */
+export const MIN_CLEAR_TOKENS = 4_000;
 
 /** Tool results shorter than this are never worth clearing. */
 const MIN_CLEAR_CHARS = 1_000;
@@ -27,6 +32,8 @@ export const cycleSummarySchema = z.object({
   filesTouched: z.array(z.string().max(200)).max(60),
   lastError: z.string().max(1_000).optional(),
   nextStep: z.string().max(600),
+  /** Unfinished items of the agent's `todo` checklist, as "[status] text". */
+  openTodos: z.array(z.string().max(220)).max(30).optional(),
 });
 export type CycleSummary = z.infer<typeof cycleSummarySchema>;
 
@@ -45,38 +52,63 @@ export function contextTokens(messages: readonly Message[]): number {
   return estimateTokens(text) + images * IMAGE_TOKENS;
 }
 
+/** `[exit 1, 812ms, log cmd-3-2]` at the top of a bash result names the log that keeps it whole. */
+const LOG_ID = /^\[[^\]\n]*\blog ([\w.-]+)\]/;
+
+/** How to get a cleared result back: the bash log when there is one, else the same call again. */
+export function clearedStub(
+  content: string,
+  call: { name: string; input: unknown } | undefined,
+): string {
+  const log = LOG_ID.exec(content)?.[1];
+  const what = call ? `${call.name} ${clip(JSON.stringify(call.input), 160)}` : 'a tool call';
+  const back = log ? `read_log id="${log}" has it all` : 'repeat the call if you still need it';
+  return `${CLEARED_PREFIX} ${content.length} chars of old output from ${what}; ${back}]`;
+}
+
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
 /**
  * Replace the content of all but the newest `keep` tool results that are large, with a note that
- * tells the model how to get the data back. Returns new messages; the input is not mutated.
+ * names the call and how to get the data back. Every clear rewrites earlier messages and so
+ * costs a prompt-cache miss: unless at least `minChars` would go, nothing is cleared.
+ * Returns new messages; the input is not mutated.
  */
 export function clearOldToolResults(
   messages: readonly Message[],
   keep: number,
+  minChars = 0,
 ): { messages: Message[]; cleared: number; chars: number } {
   const positions: [number, number][] = [];
+  const calls = new Map<string, { name: string; input: unknown }>();
   messages.forEach((m, i) => {
     m.content.forEach((b, j) => {
       if (b.type === 'tool_result') positions.push([i, j]);
+      else if (b.type === 'tool_use') calls.set(b.id, { name: b.name, input: b.input });
     });
   });
-  const old = new Set(positions.slice(0, Math.max(0, positions.length - keep)).map(String));
-  let cleared = 0;
-  let chars = 0;
+  const clearable = (b: ContentBlock) =>
+    b.type === 'tool_result' &&
+    b.content.length >= MIN_CLEAR_CHARS &&
+    !b.content.startsWith(CLEARED_PREFIX);
+  const old = new Set<string>();
+  let total = 0;
+  for (const [i, j] of positions.slice(0, Math.max(0, positions.length - keep))) {
+    const b = messages[i]?.content[j];
+    if (b?.type !== 'tool_result' || !clearable(b)) continue;
+    old.add(String([i, j]));
+    total += b.content.length;
+  }
+  if (!old.size || total < minChars) return { messages: [...messages], cleared: 0, chars: 0 };
   const out = messages.map((m, i) => {
     if (!m.content.some((_, j) => old.has(String([i, j])))) return m;
     const content = m.content.map((b, j): ContentBlock => {
       if (b.type !== 'tool_result' || !old.has(String([i, j]))) return b;
-      if (b.content.length < MIN_CLEAR_CHARS || b.content.startsWith(CLEARED_PREFIX)) return b;
-      cleared++;
-      chars += b.content.length;
-      return {
-        ...b,
-        content: `${CLEARED_PREFIX} ${b.content.length} chars of old tool output; run the tool again if you still need it]`,
-      };
+      return { ...b, content: clearedStub(b.content, calls.get(b.toolUseId)) };
     });
     return { ...m, content };
   });
-  return { messages: out, cleared, chars };
+  return { messages: out, cleared: old.size, chars: total };
 }
 
 /**
@@ -112,19 +144,105 @@ export function transcriptFor(messages: readonly Message[], maxBlockChars = 2_00
   return lines.join('\n');
 }
 
+const clipTo = (v: unknown, n: number): string | undefined =>
+  typeof v === 'string' ? v.slice(0, n) : undefined;
+const listOf = (v: unknown, items: number, chars: number): string[] =>
+  (Array.isArray(v) ? v : typeof v === 'string' ? [v] : [])
+    .flatMap((x: unknown) => (typeof x === 'string' ? [x.slice(0, chars)] : []))
+    .slice(0, items);
+
+/**
+ * Weak models overshoot the limits (31 items, a long line) or send a list as one string. Clip
+ * to the schema instead of throwing the whole compaction away; undefined only when it is unusable.
+ */
+export function coerceSummary(input: unknown): CycleSummary | undefined {
+  if (typeof input !== 'object' || input === null) return undefined;
+  const o = input as Record<string, unknown>;
+  const inProgress = clipTo(o.inProgress, 600);
+  const nextStep = clipTo(o.nextStep, 600);
+  if (inProgress === undefined && nextStep === undefined) return undefined;
+  const lastError = clipTo(o.lastError, 1_000);
+  const todos = listOf(o.openTodos, 30, 220);
+  const r = cycleSummarySchema.safeParse({
+    done: listOf(o.done, 30, 300),
+    inProgress: inProgress ?? '',
+    filesTouched: listOf(o.filesTouched, 60, 200),
+    nextStep: nextStep ?? '',
+    ...(lastError ? { lastError } : {}),
+    ...(todos.length ? { openTodos: todos } : {}),
+  });
+  return r.success ? r.data : undefined;
+}
+
+/**
+ * A summary from the transcript alone, for when the cheap model is unavailable or its answer is
+ * unusable: compacting with less is better than letting the context grow to the cycle cap.
+ * `ensureFacts` adds files, the last error and open todos on top.
+ */
+export function factSummary(head: readonly Message[]): CycleSummary {
+  const calls: string[] = [];
+  let lastText = '';
+  for (const m of head)
+    for (const b of m.content) {
+      if (b.type === 'tool_use') calls.push(`${b.name} ${clip(JSON.stringify(b.input), 200)}`);
+      else if (b.type === 'text' && m.role === 'assistant' && b.text.trim()) lastText = b.text;
+    }
+  return {
+    done: calls.slice(-30).map((c) => `called ${c}`.slice(0, 300)),
+    inProgress: (lastText.trim() || 'see the calls above').slice(0, 600),
+    filesTouched: [],
+    nextStep: 'Continue the task from where these calls left off.',
+  };
+}
+
 export function renderSummary(s: CycleSummary): string {
   const parts = ['# Earlier in this cycle (compacted summary)'];
   if (s.done.length) parts.push(`Done:\n${s.done.map((d) => `- ${d}`).join('\n')}`);
   parts.push(`In progress: ${s.inProgress}`);
   if (s.filesTouched.length) parts.push(`Files touched: ${s.filesTouched.join(', ')}`);
   if (s.lastError) parts.push(`Last error: ${s.lastError}`);
+  if (s.openTodos?.length)
+    parts.push(`${OPEN_TODOS_HEADER}\n${s.openTodos.map((t) => `- ${t}`).join('\n')}`);
   parts.push(`Next step: ${s.nextStep}`);
   return parts.join('\n\n');
 }
 
+const OPEN_TODOS_HEADER = 'Open todos (your todo list; send the whole list again to update it):';
+
+/**
+ * The unfinished items of the newest todo list in `head`: from the last `todo` call, else from
+ * an earlier compaction's summary (which holds them as text). Undefined when there is neither.
+ */
+export function openTodos(head: readonly Message[]): string[] | undefined {
+  for (let i = head.length - 1; i >= 0; i--) {
+    const blocks = head[i]?.content ?? [];
+    for (let j = blocks.length - 1; j >= 0; j--) {
+      const b = blocks[j];
+      if (b?.type === 'tool_use' && b.name === 'todo') {
+        const items = (b.input as { items?: unknown }).items;
+        if (!Array.isArray(items)) continue;
+        return items.flatMap((it: unknown) => {
+          const { text, status } = (it ?? {}) as { text?: unknown; status?: unknown };
+          return typeof text === 'string' && status !== 'done'
+            ? [`[${typeof status === 'string' ? status : 'pending'}] ${text}`.slice(0, 220)]
+            : [];
+        });
+      }
+      if (b?.type === 'text' && b.text.includes(OPEN_TODOS_HEADER)) {
+        const block = b.text.split(OPEN_TODOS_HEADER)[1]?.split('\n\n')[0] ?? '';
+        return block
+          .split('\n')
+          .filter((l) => l.startsWith('- '))
+          .map((l) => l.slice(2));
+      }
+    }
+  }
+  return undefined;
+}
+
 /**
  * The cheap model's summary must not lose what the next turn depends on: every file edited
- * this cycle and the most recent error. Fill them in from the facts when it dropped them.
+ * this cycle, the most recent error and the open todo items. Fill them in from the facts.
  */
 export function ensureFacts(
   s: CycleSummary,
@@ -140,7 +258,14 @@ export function ensureFacts(
     const last = errors.at(-1);
     if (last) lastError = last.slice(0, 1_000);
   }
-  return { ...s, filesTouched: files, ...(lastError ? { lastError } : {}) };
+  // The todo calls are facts; the summarizer's paraphrase of them is not.
+  const todos = openTodos(head) ?? s.openTodos;
+  return {
+    ...s,
+    filesTouched: files,
+    ...(lastError ? { lastError } : {}),
+    ...(todos?.length ? { openTodos: todos.slice(0, 30) } : {}),
+  };
 }
 
 /** First message + summary, then the kept tail. The tail starts with an assistant turn. */
@@ -166,7 +291,12 @@ export async function manageContext(
   let current = messages;
   let tokens = contextTokens(current);
   if (tokens > settings.clearAt) {
-    const r = clearOldToolResults(current, settings.keepToolResults);
+    const r = clearOldToolResults(
+      current,
+      settings.keepToolResults,
+      (settings.minClearTokens ?? Math.min(MIN_CLEAR_TOKENS, settings.clearAt / 10)) *
+        CHARS_PER_TOKEN,
+    );
     if (r.cleared) {
       const after = contextTokens(r.messages);
       emit({

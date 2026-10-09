@@ -42,6 +42,9 @@ export interface RunDeps {
 }
 
 /** Everything one supervisor needs for one run. Owns state persistence and phase transitions. */
+/** Even at the very end of a run, a command gets this long. */
+const MIN_CMD_TIMEOUT_MS = 30_000;
+
 export class Run {
   readonly events: EventLog;
   readonly redactor: Redactor;
@@ -155,8 +158,14 @@ export class Run {
     };
   }
 
+  /**
+   * The command timeout, but never past the run's wall-clock cap (plus a minute to wrap up): a
+   * hanging test suite must not hold a run far beyond --hours, where nothing can stop it.
+   */
   get maxCmdTimeoutMs(): number {
-    return parseDuration(this.config.budget.max_cmd_timeout);
+    const cap = parseDuration(this.config.budget.max_cmd_timeout);
+    const left = this.config.budget.max_hours * 3_600_000 - this.elapsedMs() + 60_000;
+    return Math.max(MIN_CMD_TIMEOUT_MS, Math.min(cap, left));
   }
 
   /** Wall-clock the run has been active, across supervisor restarts. */

@@ -18,7 +18,9 @@ import { runAgentLoop } from './loop.js';
 import { subagentRunner } from './subagent.js';
 import { PLANNER_SYSTEM } from './prompts.js';
 import { readIntent, writeIntentTool } from './intent.js';
+import { dryRunChecks } from './check-dryrun.js';
 import type { RouteAction } from '../router/actions.js';
+import { totalInput } from '../providers/types.js';
 
 /** The planner loop ended (caps, stop, refusal) before a valid plan was written. */
 export class PlannerIncomplete extends StateError {
@@ -150,10 +152,31 @@ export function isWeakCheck(cmd: string): boolean {
     );
 }
 
+/** Turn deadlines for the planner: explore, then commit to a plan with what is known. */
+const PLAN_NUDGES = [
+  {
+    at: 12,
+    tokenShare: 0.5,
+    text: 'You have explored enough to plan. Call write_plan now with what you know. Where you are unsure, add a task of kind "investigate" instead of reading more.',
+  },
+  {
+    at: 20,
+    tokenShare: 0.75,
+    text: 'Stop exploring. Your next call must be write_plan; the run cannot continue without a plan.',
+  },
+] as const;
+
 export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   const goal = await run.store.readGoal();
   const intent = await readIntent(run.store);
   let written: Plan | undefined;
+  let planTurns = 0;
+  let planTokens = 0;
+  // How many nudges were sent; each is sent once.
+  let nudged = 0;
+  const dryRuns = new Map<string, { exitCode: number | null; output: string }>();
+  // Rejections for checks that already pass; past the limit the plan is taken as is.
+  let passRejects = 0;
   const writePlan: Tool<typeof planUpdateSchema> = {
     name: 'write_plan',
     description:
@@ -161,20 +184,35 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     schema: planUpdateSchema,
     normalize: (input) => normalizePlanUpdate(input, run.plan),
     readOnly: true,
-    run(input) {
+    async run(input) {
       const broken = brokenChecks(input, run.config.review.strict_checks);
       if (broken.length)
-        return Promise.resolve(
-          fail(`plan rejected: checks that cannot pass:\n${broken.join('\n')}`),
+        return fail(`plan rejected: checks that cannot pass:\n${broken.join('\n')}`);
+      const dry = await dryRunChecks(run, input, dryRuns);
+      if (dry.broken.length) {
+        run.events.emit('plan.check_rejected', { reason: 'broken', count: dry.broken.length });
+        return fail(
+          `plan rejected: these checks fail to run at all (fix the command, quoting first):\n${dry.broken.join('\n\n')}`,
         );
+      }
+      // Before the run's first commit the code is what the user wants changed: a task whose checks
+      // all pass already can't show its change, and would close with nothing done.
+      if (dry.alreadyPass.length && run.state.acceptedCommits === 0 && passRejects < 2) {
+        passRejects++;
+        run.events.emit('plan.check_rejected', {
+          reason: 'already_pass',
+          count: dry.alreadyPass.length,
+        });
+        return fail(
+          `plan rejected: every check of these tasks already passes on the current code, so none can show the change. Give each a check that fails now and passes once the task is done (a test for the new or fixed behaviour), or mark it kind "investigate":\n${dry.alreadyPass.join('\n')}`,
+        );
+      }
       try {
         written = applyPlanUpdate(run.plan, input, goal.text.trim());
-        return Promise.resolve(ok(`plan accepted: ${written.nodes.length} nodes`));
+        return ok(`plan accepted: ${written.nodes.length} nodes`);
       } catch (err) {
-        return Promise.resolve(
-          fail(
-            `plan rejected: ${err instanceof OmnexxError ? `${err.message}${err.hint ? ` (${err.hint})` : ''}` : (err as Error).message}`,
-          ),
+        return fail(
+          `plan rejected: ${err instanceof OmnexxError ? `${err.message}${err.hint ? ` (${err.hint})` : ''}` : (err as Error).message}`,
         );
       }
     },
@@ -257,10 +295,28 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       events: run.events,
       spentUsd: () => run.state.spend.usd,
       spentTodayUsd: () => run.spentToday(),
-      onUsage: (u, usd, model, provider) => run.addSpend(u, usd, model, 'planner', provider),
+      onUsage: (u, usd, model, provider) => {
+        planTokens += totalInput(u) + u.output;
+        return run.addSpend(u, usd, model, 'planner', provider);
+      },
       control: () => run.control(),
       signal: run.abort.signal,
       parallelTasks: run.config.context.subagent_parallel,
+      // Planners explore like workers when left alone: on a large repo glm-5.3 read for 46
+      // turns and hit the token cap three times without a plan. Ask for the plan on a deadline.
+      pendingInput: () => {
+        planTurns++;
+        if (written) return [];
+        // By turns or by tokens, whichever comes first: on a big repo each turn re-sends ~30k.
+        const cap = run.config.budget.max_tokens_per_cycle;
+        const nudge = PLAN_NUDGES.find(
+          (n, i) => i >= nudged && (planTurns >= n.at || planTokens >= cap * n.tokenShare),
+        );
+        if (!nudge) return [];
+        nudged = PLAN_NUDGES.indexOf(nudge) + 1;
+        run.events.emit('planner.nudge', { turn: planTurns, tokens: planTokens });
+        return [nudge.text];
+      },
     },
   );
   if (!written) {

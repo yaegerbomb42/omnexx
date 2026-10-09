@@ -2,7 +2,9 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import {
   cycleSummarySchema,
+  coerceSummary,
   ensureFacts,
+  factSummary,
   transcriptFor,
   type CycleSummary,
 } from '../agent/compaction.js';
@@ -295,8 +297,7 @@ async function summarizeCycle(
     },
   );
   const call = done?.res.content.find((b) => b.type === 'tool_use');
-  const parsed = cycleSummarySchema.safeParse(call?.type === 'tool_use' ? call.input : undefined);
-  return parsed.success ? parsed.data : undefined;
+  return coerceSummary(call?.type === 'tool_use' ? call.input : undefined);
 }
 
 /** ACT: zero-cost preflight on the task's checks, then the agent loop with a fresh context. */
@@ -305,7 +306,15 @@ export async function stepAct(run: Run): Promise<void> {
   const task = getNode(plan, run.state.taskId ?? '');
   await prepareWorktree(run);
 
-  if (task.checks.length && task.attempts === 0) {
+  // Checks that pass before the run has changed anything passed on the code the user wants
+  // changed, so they prove nothing: until the first accepted commit the agent looks for itself.
+  // A check every other task also uses (the whole test file) says nothing about this task, so
+  // the free skip needs at least one check of the task's own.
+  const shared = new Set(
+    plan.nodes.filter((n) => n.id !== task.id).flatMap((n) => n.checks.map((c) => c.trim())),
+  );
+  const ownCheck = task.checks.some((c) => !shared.has(c.trim()));
+  if (task.checks.length && task.attempts === 0 && run.state.acceptedCommits > 0 && ownCheck) {
     const pre = await runChecks(run, task, `${run.state.cycle}-pre`);
     if (pre.every((c) => c.pass)) {
       run.events.emit('task.already_done', { task: task.id });
@@ -407,8 +416,9 @@ export async function stepAct(run: Run): Promise<void> {
         keepTurns: run.config.context.compact_keep_turns,
       },
       summarize: async (head) => {
-        const s = await summarizeCycle(run, task, head);
-        return s && ensureFacts(s, head, edited);
+        const s = await summarizeCycle(run, task, head).catch(() => undefined);
+        if (!s) run.events.emit('context.fact_summary', { turns: head.length });
+        return ensureFacts(s ?? factSummary(head), head, edited);
       },
     },
   });
@@ -764,6 +774,12 @@ export async function stepRecord(run: Run): Promise<void> {
         await running.archive();
       } else task.status = 'doing';
     } else {
+      const repeatsNoChange =
+        p.reasons.length === 1 &&
+        p.reasons[0] === 'no changes' &&
+        task.lastRejection === 'no changes' &&
+        !!p.evidence &&
+        task.evidence.at(-1)?.split('\n').slice(1).join('\n') === p.evidence;
       task.status = 'doing';
       task.consecutiveRejections++;
       task.failureSignatures = [...task.failureSignatures, p.signature].slice(-10);
@@ -780,6 +796,17 @@ export async function stepRecord(run: Run): Promise<void> {
           ...task.evidence,
           `Cycle ${run.state.cycle} was rejected: ${p.reasons.join('; ')}\n${p.evidence}`,
         ].slice(-3);
+      // Twice nothing to change while the same checks fail the same way: another try can't
+      // help. Usually the check itself is wrong (a quoting slip that can never match).
+      if (repeatsNoChange) {
+        task.status = 'parked';
+        task.parkedReason =
+          'its checks fail the same way while the agent finds nothing to change; a check may be wrong';
+        run.events.emit('check.suspect', {
+          task: task.id,
+          checks: task.checks.slice(0, 5),
+        });
+      }
       // Advisory similarity check: logged only.
       const prev = task.failureSignatures.at(-2);
       if (prev && run.judge.enabled('failure_similarity')) {

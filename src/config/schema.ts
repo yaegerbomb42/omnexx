@@ -59,7 +59,8 @@ const modelRef = z
   .regex(/^[a-z][a-z0-9_-]*:\S+$/, 'expected "<provider>:<alias-or-model-id>"');
 
 /** One model, or a failover chain tried in order (e.g. ["anthropic:sonnet", "openrouter:sonnet"]). */
-const modelChain = z.union([modelRef, z.array(modelRef).min(1).max(8)]);
+// Long: free pools give each model its own quota, and a run walks the chain as they run out.
+const modelChain = z.union([modelRef, z.array(modelRef).min(1).max(40)]);
 export type ModelChainInput = z.infer<typeof modelChain>;
 
 /** What a model can do and how good/fast it is; the router filters and describes candidates with it. */
@@ -114,6 +115,14 @@ export const endpointSchema = z.strictObject({
   api_key_env: z
     .string()
     .regex(/^[A-Z_][A-Z0-9_]*$/)
+    .optional(),
+  /**
+   * More env vars holding keys for the same endpoint. Calls rotate to the next key on a 429,
+   * so free tiers that rate-limit per key keep going. Unset ones are skipped.
+   */
+  api_key_envs: z
+    .array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/))
+    .max(50)
     .optional(),
   /** Price every model on this endpoint at $0 unless [pricing] says otherwise (local models). */
   free: z.boolean().default(false),

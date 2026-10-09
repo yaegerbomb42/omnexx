@@ -21,7 +21,12 @@ import {
   type Usage,
 } from '../providers/types.js';
 import type { Tool, ToolContext } from '../tools/types.js';
-import { manageContext, type CompactionSettings, type Summarize } from './compaction.js';
+import {
+  contextTokens,
+  manageContext,
+  type CompactionSettings,
+  type Summarize,
+} from './compaction.js';
 import { turnRequest } from './context.js';
 import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
 
@@ -109,6 +114,52 @@ export const POISON_PROBE_AFTER = 3;
 /** The provider answers a trivial request but keeps failing this one: retrying can't help. */
 class PoisonedRequest extends Error {}
 
+/**
+ * Top-level string values that hold a JSON array or object, decoded (once; nested strings too).
+ * The input itself when nothing needed decoding, so callers can tell.
+ */
+export function decodeJsonStrings(input: unknown): unknown {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return input;
+  let changed = false;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    out[k] = v;
+    if (typeof v !== 'string') continue;
+    const t = v.trim();
+    if (!(t.startsWith('[') && t.endsWith(']')) && !(t.startsWith('{') && t.endsWith('}')))
+      continue;
+    try {
+      out[k] = JSON.parse(t) as unknown;
+      changed = true;
+    } catch {
+      // Not JSON after all: leave it for the schema to reject.
+    }
+  }
+  return changed ? out : input;
+}
+
+/** Estimated tokens of the conversation by kind: tool results (by tool), tool calls, text. */
+export function messageSegments(messages: readonly Message[]): {
+  messages: number;
+  toolResults: number;
+  byTool: Record<string, number>;
+} {
+  const names = new Map<string, string>();
+  const byTool: Record<string, number> = {};
+  let toolResults = 0;
+  for (const m of messages)
+    for (const b of m.content) {
+      if (b.type === 'tool_use') names.set(b.id, b.name);
+      else if (b.type === 'tool_result') {
+        const t = estimateTokens(b.content);
+        toolResults += t;
+        const name = names.get(b.toolUseId) ?? 'unknown';
+        byTool[name] = (byTool[name] ?? 0) + t;
+      }
+    }
+  return { messages: contextTokens(messages), toolResults, byTool };
+}
+
 function summarizeInput(input: unknown): string {
   const s = JSON.stringify(input);
   return s.length > 300 ? `${s.slice(0, 300)}…` : s;
@@ -137,6 +188,11 @@ export async function runAgentLoop(
   let finalText = '';
   const byName = new Map(deps.tools.map((t) => [t.name, t]));
   const end = (e: LoopEnd): LoopResult => ({ end: e, turns, finalText, usage, usd, messages });
+  // The stable prefix never changes within a cycle; size it once for the per-turn breakdown.
+  const prefixTokens = {
+    system: estimateTokens(ctx.system.map((b) => b.text).join('\n')),
+    tools: estimateTokens(JSON.stringify(ctx.tools)),
+  };
 
   for (;;) {
     let signal = await deps.control();
@@ -372,6 +428,8 @@ export async function runAgentLoop(
         output: res.usage.output,
       },
       cacheReadShare: input ? res.usage.cacheRead / input : 0,
+      // Estimated input by segment, to see where the tokens go (W8 "measure first").
+      segments: { ...prefixTokens, ...messageSegments(messages) },
       usd: cost,
     });
 
@@ -418,9 +476,17 @@ export async function runAgentLoop(
         content = `unknown tool ${call.name}; the tools are: ${[...byName.keys()].join(', ')} (list files with bash, e.g. \`ls -R src\`)`;
         isError = true;
       } else {
-        const parsed = tool.schema.safeParse(
-          tool.normalize ? tool.normalize(call.input) : call.input,
-        );
+        const prepare = (v: unknown) => (tool.normalize ? tool.normalize(v) : v);
+        let parsed = tool.schema.safeParse(prepare(call.input));
+        // Models often send a nested array or object as a JSON string ("milestones": "[{…}]").
+        // Decode before normalizing: a normalizer may reshape the string beyond recovery.
+        if (!parsed.success) {
+          const decoded = decodeJsonStrings(call.input);
+          if (decoded !== call.input) {
+            const again = tool.schema.safeParse(prepare(decoded));
+            if (again.success) parsed = again;
+          }
+        }
         if (!parsed.success) {
           content = `invalid input for ${call.name}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
           isError = true;

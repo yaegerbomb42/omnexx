@@ -10,6 +10,8 @@ export interface RouteContext {
   needs?: Needs;
   /** Compact, redacted facts for the judge: task title, attempts, last failure, budget left… */
   facts?: Record<string, unknown>;
+  /** The task is stuck on the usual worker model: route it to a different, stronger one. */
+  escalate?: boolean;
 }
 
 export interface RouteDecision {
@@ -70,7 +72,9 @@ export class ModelRouter {
   }
 
   private async decide(ctx: RouteContext, start: number): Promise<RouteDecision> {
-    const roleChain = this.deps.roleChains[ACTION_ROLE[ctx.action]];
+    const roleChain = ctx.escalate
+      ? escalationChain(this.deps.roleChains)
+      : this.deps.roleChains[ACTION_ROLE[ctx.action]];
     const elapsed = (): number => this.deps.now() - start;
     const done = (
       pick: ResolvedModel | undefined,
@@ -103,7 +107,9 @@ export class ModelRouter {
       return { action: ctx.action, chain: fallback, by: 'rules', ms: elapsed() };
     };
 
-    if (this.mode === 'rules' || fit.length < 2 || !this.deps.judge) return ruleChain();
+    // Escalation is deterministic: the judge could hand the task back to the model it was stuck on.
+    if (ctx.escalate || this.mode === 'rules' || fit.length < 2 || !this.deps.judge)
+      return ruleChain();
     if (this.deps.judge.enabled && !this.deps.judge.enabled('route')) return ruleChain();
 
     const options = fit.map((c) => c.ref);
@@ -136,6 +142,22 @@ export class ModelRouter {
     if (!chosen) return { ...ruleChain(), reason: 'judge picked an unknown model' };
     return done(chosen.model, 'judge', { probability: p });
   }
+}
+
+/**
+ * For a task stuck on the worker model: the planner chain then the rest of the worker chain,
+ * with the usual worker model moved last. Re-running the model that just got stuck is no
+ * escalation, and it happens whenever the planner chain starts with the worker model.
+ */
+export function escalationChain(
+  chains: Record<'planner' | 'worker', ResolvedModel[]>,
+): ResolvedModel[] {
+  const all: ResolvedModel[] = [];
+  for (const m of [...chains.planner, ...chains.worker])
+    if (!all.some((x) => same(x, m))) all.push(m);
+  const usual = chains.worker[0];
+  if (!usual) return all;
+  return [...all.filter((m) => !same(m, usual)), ...all.filter((m) => same(m, usual))];
 }
 
 function same(a: ResolvedModel, b: ResolvedModel): boolean {

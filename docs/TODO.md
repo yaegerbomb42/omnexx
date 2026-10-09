@@ -37,6 +37,24 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-08 (context efficiency, no live runs):** `feat/context-efficiency` off `next`. Cleared
+  tool results now say which call they were and, for bash, the `read_log` id that keeps them whole.
+  Clearing waits until ≥ 4k tokens (or clearAt/10) would go: before, every turn past `clear_at`
+  cleared one more result and broke the prompt cache each turn. Bash output clips lines over 500
+  chars (minified/base64 lines used to pass whole). `turn` events carry `segments`, tokens by
+  system/tools/messages/tool results by tool, so the bench can show where tokens go. Part 2:
+  compaction keeps the open `todo` items (from the last call, or an earlier summary on a second
+  compaction); summaries that overshoot the schema are clipped, not dropped; and when the cheap
+  model fails, a fact-only summary still compacts instead of letting context grow to the cap.
+  Part 3: `read` clips lines over 2k chars and stops a range at ~60k chars (a 400-line read of a
+  minified or generated file used to put hundreds of KB in context).
+  Part 4, first live bench of this branch (Mistral + Ollama cloud gpt-oss-120b, $0): task-01
+  resolved, 88 turns, 327k tokens (82% cache reads), 3.7 min. Half the tokens went to one task
+  rejected 6× for "no changes": the planner's check had escaped quotes (`grep -cE \"…\"`) and
+  could never pass. Now two "no changes" rejects with identical failing check output park the task
+  (`check.suspect`). Mistral 429'd on its single key: endpoints take `api_key_envs` and rotate
+  keys on 429.
+
 - **2026-10-06 (single agent):** merged #23–#26. Browser gates can now be declared
   (`kind = "browser"`, serves the app on `$PORT`); uncaught page errors count as failures; new
   projects get a `page` gate (#27). W8: `recall` over run history, compaction keeps edited files
@@ -350,18 +368,22 @@ Read first: `src/tools/bash.ts`, `src/tools/types.ts`, `src/verify/**`, `src/sec
 
 ## W8. Context and token engine (our core advantage)
 
-- [ ] Measure first: per-turn breakdown of tokens by segment (system, tools, goal, plan,
-      progress, codemap, history, tool results) emitted as telemetry.
+- [x] Measure first: per-turn breakdown of tokens by segment (system, tools, goal, plan,
+      progress, codemap, history, tool results) emitted as telemetry. _`turn.segments`: system,
+      tools, messages, tool results by tool._
 - [ ] Prompt cache discipline: stable prefix ordering, 1h cache for the system+tools block on
       long runs, cache breakpoints placed by segment volatility; report cache hit rate.
 - [ ] Tiered memory: hot (current cycle), warm (`progress.md` tail + lessons), cold (codemap,
       searchable via `recall(query)` tool backed by a local BM25/embedding index).
-- [ ] Smarter tool-result clearing: keep the last N results of each tool, stub the rest with a
-      1-line summary + `read_log` handle.
+- [x] Smarter tool-result clearing: keep the last N results of each tool, stub the rest with a
+      1-line summary + `read_log` handle. _Stubs name the call and the bash log; clears are batched
+      (≥ 4k tokens) so each prompt-cache miss buys real savings._
 - [ ] Incremental codemap (symbol index via tree-sitter, updated on commit, not rebuilt).
 - [ ] Diff-aware reads: `read` returns "unchanged since turn X" instead of repeating content.
-- [ ] Compaction by cheap model (router `compact` action) with a quality check: compacted
-      summary must retain open TODOs, failing test ids and touched files.
+- [x] Compaction by cheap model (router `compact` action) with a quality check: compacted
+      summary must retain open TODOs, failing test ids and touched files. _Open `todo` items,
+      edited files and last error are filled in from facts; overshooting answers are clipped, and
+      a failed summarizer falls back to a fact-only summary (`context.fact_summary`)._
 - [ ] Token budget per action learned from history; early termination when a cycle's marginal
       tokens stop producing edits.
 - **Accept:** on the bench long-horizon spec, ≥ 40% fewer input tokens per accepted commit vs.

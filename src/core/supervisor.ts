@@ -31,6 +31,7 @@ import { judgeGate } from '../verify/ratchet.js';
 import {
   prepareWorktree,
   runBaseline,
+  runChecks,
   stepAct,
   stepCommit,
   stepRecord,
@@ -640,8 +641,25 @@ class Supervisor {
       await runPlanner(r, { kind: 'expand', milestoneId: expand.id });
       const m = getNode(r.requirePlan(), expand.id);
       if (!childrenOf(r.requirePlan(), m.id).length) {
-        m.status = 'parked';
-        m.parkedReason = 'the planner could not expand it into tasks';
+        // No tasks came out. Planners add setup milestones ("install deps, confirm the baseline")
+        // with nothing to change: if its checks pass, it's done. Otherwise park it, but don't let
+        // it block the milestones after it forever (a whole run once stalled on one).
+        const checks = m.checks.length ? await runChecks(r, m, `${m.id}-noexpand`) : [];
+        if (checks.length && checks.every((c) => c.pass)) {
+          m.status = 'done';
+          r.events.emit('milestone.no_work', { milestone: m.id });
+        } else {
+          m.status = 'parked';
+          m.parkedReason = 'the planner could not expand it into tasks';
+          const released = r
+            .requirePlan()
+            .nodes.filter((n) => n.dependsOn.includes(m.id))
+            .map((n) => {
+              n.dependsOn = n.dependsOn.filter((d) => d !== m.id);
+              return n.id;
+            });
+          if (released.length) r.events.emit('milestone.released', { parked: m.id, released });
+        }
         await r.savePlan();
       }
       return this.select();
@@ -687,13 +705,19 @@ class Supervisor {
         const picked = await this.select();
         if (typeof picked !== 'string') return picked;
         await this.cycle(picked);
+        // Retries are per wedge, not per run: a long run may hit several over its hours.
+        this.plannerRetries = 0;
       } catch (err) {
         if (!(err instanceof PlannerIncomplete)) throw err;
         r.events.emit('planner.incomplete', { end: err.end });
-        // A planner that got wedged (a request the provider chokes on, or turns burned on
-        // invalid plans) gets a fresh conversation before the run stops for a human.
+        // A planner that got wedged (a request the provider chokes on, turns or tokens burned on
+        // invalid plans, or a model that stopped without a valid plan) gets a fresh conversation
+        // before the run stops for a human: one bad planning turn shouldn't end a long run.
         if (
-          (err.end === 'stuck' || err.end === 'max_turns_per_cycle') &&
+          (err.end === 'stuck' ||
+            err.end === 'max_turns_per_cycle' ||
+            err.end === 'max_tokens_per_cycle' ||
+            err.end === 'done') &&
           this.plannerRetries < PLANNER_RETRIES
         ) {
           this.plannerRetries++;

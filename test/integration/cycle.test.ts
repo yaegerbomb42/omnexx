@@ -275,7 +275,7 @@ describe('M1: one full cycle with the scripted provider', () => {
     );
   });
 
-  it('a cycle with no changes and failing checks is rejected; already-passing checks finish at zero cost', async () => {
+  it('a cycle with no changes and failing checks is rejected; already-passing checks finish at zero cost once the run has a commit', async () => {
     const t = await startTestRun({
       fixture: 'ts-failing-test',
       provider: new ScriptedProvider(() => say('nothing to do')),
@@ -283,16 +283,84 @@ describe('M1: one full cycle with the scripted provider', () => {
     });
     await runBaseline(t.run);
     expect((await runOneCycle(t.run, 'M1.T01')).reasons).toEqual(['no changes']);
+    // Before any accepted commit a passing check proves nothing: the agent looks for itself.
+    const looked = new ScriptedProvider(() => say('nothing to change'));
+    const fresh = await startTestRun({
+      fixture: 'ts-failing-test',
+      provider: looked,
+      plan: onePlan(['true']),
+    });
+    expect(await runOneCycle(fresh.run, 'M1.T01')).toMatchObject({ verdict: 'accept', done: true });
+    expect(looked.requests.length).toBeGreaterThan(0);
+    // After one, a task whose checks already pass finishes at zero cost.
     const provider = new ScriptedProvider(() => say('unused'));
     const done = await startTestRun({
       fixture: 'ts-failing-test',
       provider,
       plan: onePlan(['true']),
     });
+    done.run.state.acceptedCommits = 1;
     const v = await runOneCycle(done.run, 'M1.T01');
     expect(v).toMatchObject({ verdict: 'accept', done: true });
     expect(provider.requests).toHaveLength(0);
-    expect(done.run.state.acceptedCommits).toBe(0);
+    expect(done.run.state.acceptedCommits).toBe(1);
+  });
+});
+
+describe('command timeout', () => {
+  it('never runs past the run’s wall-clock cap', async () => {
+    const t = await startTestRun({
+      fixture: 'ts-failing-test',
+      provider: new ScriptedProvider(() => say('unused')),
+      config: { budget: { max_hours: 0.01, max_cmd_timeout: '30m' } },
+    });
+    // 36 s of run left plus a minute to wrap up, far below the 30 m command default.
+    expect(t.run.maxCmdTimeoutMs).toBeLessThanOrEqual(96_000);
+    expect(t.run.maxCmdTimeoutMs).toBeGreaterThanOrEqual(30_000);
+  });
+});
+
+describe('shared checks', () => {
+  it('never skips a task for free when its only check is one every task shares', async () => {
+    const provider = new ScriptedProvider(() => say('nothing to change'));
+    const t = await startTestRun({
+      fixture: 'ts-failing-test',
+      provider,
+      plan: {
+        milestones: [
+          {
+            id: 'M1',
+            title: 'Inventory',
+            tasks: [
+              { id: 'M1.T01', title: 'Receive stock', checks: ['true'] },
+              { id: 'M1.T02', title: 'Ship stock', checks: ['true'] },
+            ],
+          },
+        ],
+      },
+    });
+    t.run.state.acceptedCommits = 1;
+    await runOneCycle(t.run, 'M1.T02');
+    expect(provider.requests.length).toBeGreaterThan(0);
+  });
+});
+
+describe('suspect checks', () => {
+  it('parks a task whose check fails the same way twice while the agent has nothing to change', async () => {
+    const t = await startTestRun({
+      fixture: 'ts-failing-test',
+      provider: new ScriptedProvider(() => say('already done; nothing to change')),
+      plan: onePlan(['grep -c "never-there" package.json']),
+    });
+    await runBaseline(t.run);
+    await runOneCycle(t.run, 'M1.T01');
+    expect(getNode(t.run.requirePlan(), 'M1.T01').status).toBe('doing');
+    await runOneCycle(t.run, 'M1.T01');
+    const task = getNode(t.run.requirePlan(), 'M1.T01');
+    expect(task.status).toBe('parked');
+    expect(task.parkedReason).toContain('a check may be wrong');
+    const events = await readEvents(t.run.store.eventsPath);
+    expect(events.some((e) => e.type === 'check.suspect')).toBe(true);
   });
 });
 
