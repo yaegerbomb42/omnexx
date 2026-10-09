@@ -231,6 +231,9 @@ describe('bash + read_log', () => {
     );
     expect(t).toContain('Error: mid');
     expect(t.split('\n').length).toBeLessThan(160);
+    const long = trimOutput(`ok\n${'z'.repeat(5_000)}`, 'cmd-y');
+    expect(long.length).toBeLessThan(600);
+    expect(long).toContain('[5000 chars]');
   });
 });
 

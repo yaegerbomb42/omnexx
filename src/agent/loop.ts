@@ -21,7 +21,12 @@ import {
   type Usage,
 } from '../providers/types.js';
 import type { Tool, ToolContext } from '../tools/types.js';
-import { manageContext, type CompactionSettings, type Summarize } from './compaction.js';
+import {
+  contextTokens,
+  manageContext,
+  type CompactionSettings,
+  type Summarize,
+} from './compaction.js';
 import { turnRequest } from './context.js';
 import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
 
@@ -109,6 +114,28 @@ export const POISON_PROBE_AFTER = 3;
 /** The provider answers a trivial request but keeps failing this one: retrying can't help. */
 class PoisonedRequest extends Error {}
 
+/** Estimated tokens of the conversation by kind: tool results (by tool), tool calls, text. */
+export function messageSegments(messages: readonly Message[]): {
+  messages: number;
+  toolResults: number;
+  byTool: Record<string, number>;
+} {
+  const names = new Map<string, string>();
+  const byTool: Record<string, number> = {};
+  let toolResults = 0;
+  for (const m of messages)
+    for (const b of m.content) {
+      if (b.type === 'tool_use') names.set(b.id, b.name);
+      else if (b.type === 'tool_result') {
+        const t = estimateTokens(b.content);
+        toolResults += t;
+        const name = names.get(b.toolUseId) ?? 'unknown';
+        byTool[name] = (byTool[name] ?? 0) + t;
+      }
+    }
+  return { messages: contextTokens(messages), toolResults, byTool };
+}
+
 function summarizeInput(input: unknown): string {
   const s = JSON.stringify(input);
   return s.length > 300 ? `${s.slice(0, 300)}…` : s;
@@ -137,6 +164,11 @@ export async function runAgentLoop(
   let finalText = '';
   const byName = new Map(deps.tools.map((t) => [t.name, t]));
   const end = (e: LoopEnd): LoopResult => ({ end: e, turns, finalText, usage, usd, messages });
+  // The stable prefix never changes within a cycle; size it once for the per-turn breakdown.
+  const prefixTokens = {
+    system: estimateTokens(ctx.system.map((b) => b.text).join('\n')),
+    tools: estimateTokens(JSON.stringify(ctx.tools)),
+  };
 
   for (;;) {
     let signal = await deps.control();
@@ -372,6 +404,8 @@ export async function runAgentLoop(
         output: res.usage.output,
       },
       cacheReadShare: input ? res.usage.cacheRead / input : 0,
+      // Estimated input by segment, to see where the tokens go (W8 "measure first").
+      segments: { ...prefixTokens, ...messageSegments(messages) },
       usd: cost,
     });
 

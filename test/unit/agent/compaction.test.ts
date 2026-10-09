@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clearedStub,
   clearOldToolResults,
   contextTokens,
   manageContext,
@@ -62,6 +63,43 @@ describe('clearOldToolResults', () => {
     expect(clearOldToolResults(convo(4, 50), 0).cleared).toBe(0);
     const once = clearOldToolResults(convo(4), 1);
     expect(clearOldToolResults(once.messages, 1).cleared).toBe(0);
+  });
+});
+
+describe('clearing stubs and batching', () => {
+  it('names the call and points a bash result at its log', () => {
+    const stub = clearedStub('[exit 1, 812ms, log cmd-3-2]\nboom', {
+      name: 'bash',
+      input: { command: 'npm test' },
+    });
+    expect(stub).toContain('bash {"command":"npm test"}');
+    expect(stub).toContain('read_log id="cmd-3-2"');
+    expect(clearedStub('file text', { name: 'read', input: { path: 'a.ts' } })).toContain(
+      'repeat the call',
+    );
+    expect(clearedStub('x', undefined)).toContain('a tool call');
+  });
+
+  it('clears nothing until enough would go to pay for the cache miss', () => {
+    expect(clearOldToolResults(convo(3), 2, 6_000).cleared).toBe(0);
+    const r = clearOldToolResults(convo(4), 2, 6_000);
+    expect(r.cleared).toBe(2);
+    expect(resultText(r.messages[2])).toContain('bash {"command":"step 0"}');
+  });
+
+  it('manageContext skips a clear below the minimum', async () => {
+    const events: CompactionEvent[] = [];
+    // 2 old results of 2k chars ≈ 1.3k tokens: under a 4k-token minimum.
+    const msgs = convo(3, 2_000);
+    const out = await manageContext(
+      msgs,
+      first,
+      { clearAt: 100, keepToolResults: 1, compactAt: 1e9, keepTurns: 2, minClearTokens: 4_000 },
+      undefined,
+      (e) => events.push(e),
+    );
+    expect(events).toHaveLength(0);
+    expect(out).toEqual(msgs);
   });
 });
 
@@ -167,5 +205,15 @@ describe('manageContext', () => {
       'down',
       'too few turns to compact',
     ]);
+  });
+});
+
+describe('messageSegments', () => {
+  it('splits tool-result tokens by tool', async () => {
+    const { messageSegments } = await import('../../../src/agent/loop.js');
+    const s = messageSegments(convo(2, 3_000));
+    expect(s.byTool.bash).toBe(s.toolResults);
+    expect(s.toolResults).toBeGreaterThan(1_900);
+    expect(s.messages).toBeGreaterThan(s.toolResults);
   });
 });

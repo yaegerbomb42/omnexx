@@ -11,12 +11,18 @@ export const TAIL_LINES = 120;
 const ERROR_LINE =
   /\b(error|fail(ed|ure|ing)?|exception|panic|traceback|assert(ion)?|cannot|not found|undefined)\b/i;
 
+/** Longer lines (minified bundles, base64, one-line JSON) are clipped; read_log has them whole. */
+export const MAX_LINE_CHARS = 500;
+
+const clipLine = (l: string): string =>
+  l.length > MAX_LINE_CHARS ? `${l.slice(0, MAX_LINE_CHARS)}… [${l.length} chars]` : l;
+
 /**
  * Keep the first 30 and last 120 lines plus every error-looking line in between (plan §4.4).
  * Deterministic, costs no tokens; the full output stays readable through read_log.
  */
 export function trimOutput(output: string, logId: string): string {
-  const lines = output.replace(/\s+$/, '').split('\n');
+  const lines = output.replace(/\s+$/, '').split('\n').map(clipLine);
   if (lines.length <= HEAD_LINES + TAIL_LINES) return lines.join('\n');
   const head = lines.slice(0, HEAD_LINES);
   const tail = lines.slice(-TAIL_LINES);

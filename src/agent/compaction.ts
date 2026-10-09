@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { estimateTokens } from '../core/tokens.js';
+import { CHARS_PER_TOKEN, estimateTokens } from '../core/tokens.js';
 import type { ContentBlock, Message } from '../providers/types.js';
 
 /**
@@ -14,7 +14,12 @@ export interface CompactionSettings {
   keepToolResults: number;
   compactAt: number;
   keepTurns: number;
+  /** Clear only when at least this many tokens would go (default: MIN_CLEAR_TOKENS or clearAt/10). */
+  minClearTokens?: number;
 }
+
+/** Below this a clear saves less than the cache miss it causes on the next turn. */
+export const MIN_CLEAR_TOKENS = 4_000;
 
 /** Tool results shorter than this are never worth clearing. */
 const MIN_CLEAR_CHARS = 1_000;
@@ -45,38 +50,63 @@ export function contextTokens(messages: readonly Message[]): number {
   return estimateTokens(text) + images * IMAGE_TOKENS;
 }
 
+/** `[exit 1, 812ms, log cmd-3-2]` at the top of a bash result names the log that keeps it whole. */
+const LOG_ID = /^\[[^\]\n]*\blog ([\w.-]+)\]/;
+
+/** How to get a cleared result back: the bash log when there is one, else the same call again. */
+export function clearedStub(
+  content: string,
+  call: { name: string; input: unknown } | undefined,
+): string {
+  const log = LOG_ID.exec(content)?.[1];
+  const what = call ? `${call.name} ${clip(JSON.stringify(call.input), 160)}` : 'a tool call';
+  const back = log ? `read_log id="${log}" has it all` : 'repeat the call if you still need it';
+  return `${CLEARED_PREFIX} ${content.length} chars of old output from ${what}; ${back}]`;
+}
+
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
 /**
  * Replace the content of all but the newest `keep` tool results that are large, with a note that
- * tells the model how to get the data back. Returns new messages; the input is not mutated.
+ * names the call and how to get the data back. Every clear rewrites earlier messages and so
+ * costs a prompt-cache miss: unless at least `minChars` would go, nothing is cleared.
+ * Returns new messages; the input is not mutated.
  */
 export function clearOldToolResults(
   messages: readonly Message[],
   keep: number,
+  minChars = 0,
 ): { messages: Message[]; cleared: number; chars: number } {
   const positions: [number, number][] = [];
+  const calls = new Map<string, { name: string; input: unknown }>();
   messages.forEach((m, i) => {
     m.content.forEach((b, j) => {
       if (b.type === 'tool_result') positions.push([i, j]);
+      else if (b.type === 'tool_use') calls.set(b.id, { name: b.name, input: b.input });
     });
   });
-  const old = new Set(positions.slice(0, Math.max(0, positions.length - keep)).map(String));
-  let cleared = 0;
-  let chars = 0;
+  const clearable = (b: ContentBlock) =>
+    b.type === 'tool_result' &&
+    b.content.length >= MIN_CLEAR_CHARS &&
+    !b.content.startsWith(CLEARED_PREFIX);
+  const old = new Set<string>();
+  let total = 0;
+  for (const [i, j] of positions.slice(0, Math.max(0, positions.length - keep))) {
+    const b = messages[i]?.content[j];
+    if (b?.type !== 'tool_result' || !clearable(b)) continue;
+    old.add(String([i, j]));
+    total += b.content.length;
+  }
+  if (!old.size || total < minChars) return { messages: [...messages], cleared: 0, chars: 0 };
   const out = messages.map((m, i) => {
     if (!m.content.some((_, j) => old.has(String([i, j])))) return m;
     const content = m.content.map((b, j): ContentBlock => {
       if (b.type !== 'tool_result' || !old.has(String([i, j]))) return b;
-      if (b.content.length < MIN_CLEAR_CHARS || b.content.startsWith(CLEARED_PREFIX)) return b;
-      cleared++;
-      chars += b.content.length;
-      return {
-        ...b,
-        content: `${CLEARED_PREFIX} ${b.content.length} chars of old tool output; run the tool again if you still need it]`,
-      };
+      return { ...b, content: clearedStub(b.content, calls.get(b.toolUseId)) };
     });
     return { ...m, content };
   });
-  return { messages: out, cleared, chars };
+  return { messages: out, cleared: old.size, chars: total };
 }
 
 /**
@@ -166,7 +196,12 @@ export async function manageContext(
   let current = messages;
   let tokens = contextTokens(current);
   if (tokens > settings.clearAt) {
-    const r = clearOldToolResults(current, settings.keepToolResults);
+    const r = clearOldToolResults(
+      current,
+      settings.keepToolResults,
+      (settings.minClearTokens ?? Math.min(MIN_CLEAR_TOKENS, settings.clearAt / 10)) *
+        CHARS_PER_TOKEN,
+    );
     if (r.cleared) {
       const after = contextTokens(r.messages);
       emit({

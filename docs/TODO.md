@@ -37,6 +37,13 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-08 (context efficiency, no live runs):** `feat/context-efficiency` off `next`. Cleared
+  tool results now say which call they were and, for bash, the `read_log` id that keeps them whole.
+  Clearing waits until ≥ 4k tokens (or clearAt/10) would go: before, every turn past `clear_at`
+  cleared one more result and broke the prompt cache each turn. Bash output clips lines over 500
+  chars (minified/base64 lines used to pass whole). `turn` events carry `segments`, tokens by
+  system/tools/messages/tool results by tool, so the bench can show where tokens go.
+
 - **2026-10-06 (single agent):** merged #23–#26. Browser gates can now be declared
   (`kind = "browser"`, serves the app on `$PORT`); uncaught page errors count as failures; new
   projects get a `page` gate (#27). W8: `recall` over run history, compaction keeps edited files
@@ -350,14 +357,16 @@ Read first: `src/tools/bash.ts`, `src/tools/types.ts`, `src/verify/**`, `src/sec
 
 ## W8. Context and token engine (our core advantage)
 
-- [ ] Measure first: per-turn breakdown of tokens by segment (system, tools, goal, plan,
-      progress, codemap, history, tool results) emitted as telemetry.
+- [x] Measure first: per-turn breakdown of tokens by segment (system, tools, goal, plan,
+      progress, codemap, history, tool results) emitted as telemetry. _`turn.segments`: system,
+      tools, messages, tool results by tool._
 - [ ] Prompt cache discipline: stable prefix ordering, 1h cache for the system+tools block on
       long runs, cache breakpoints placed by segment volatility; report cache hit rate.
 - [ ] Tiered memory: hot (current cycle), warm (`progress.md` tail + lessons), cold (codemap,
       searchable via `recall(query)` tool backed by a local BM25/embedding index).
-- [ ] Smarter tool-result clearing: keep the last N results of each tool, stub the rest with a
-      1-line summary + `read_log` handle.
+- [x] Smarter tool-result clearing: keep the last N results of each tool, stub the rest with a
+      1-line summary + `read_log` handle. _Stubs name the call and the bash log; clears are batched
+      (≥ 4k tokens) so each prompt-cache miss buys real savings._
 - [ ] Incremental codemap (symbol index via tree-sitter, updated on commit, not rebuilt).
 - [ ] Diff-aware reads: `read` returns "unchanged since turn X" instead of repeating content.
 - [ ] Compaction by cheap model (router `compact` action) with a quality check: compacted
