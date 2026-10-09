@@ -59,7 +59,8 @@ const modelRef = z
   .regex(/^[a-z][a-z0-9_-]*:\S+$/, 'expected "<provider>:<alias-or-model-id>"');
 
 /** One model, or a failover chain tried in order (e.g. ["anthropic:sonnet", "openrouter:sonnet"]). */
-const modelChain = z.union([modelRef, z.array(modelRef).min(1).max(8)]);
+// Long: free pools give each model its own quota, and a run walks the chain as they run out.
+const modelChain = z.union([modelRef, z.array(modelRef).min(1).max(40)]);
 export type ModelChainInput = z.infer<typeof modelChain>;
 
 /** What a model can do and how good/fast it is; the router filters and describes candidates with it. */
