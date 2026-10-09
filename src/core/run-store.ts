@@ -118,6 +118,14 @@ export const stateSchema = z.object({
     })
     .prefault({}),
   acceptedCommits: z.number().default(0),
+  /** Improvement rounds planned after the goal was met (beyond mode). */
+  beyondRounds: z.number().int().default(0),
+  /** Autonomous mode: improvement rounds in a row that added nothing. */
+  idleRounds: z.number().int().default(0),
+  /** The PR `[git] open_pr` opened for this run's branch. */
+  prUrl: z.string().optional(),
+  /** Pre-finish audits run so far (each may add a milestone of gaps to close). */
+  auditRounds: z.number().int().default(0),
   rejectedCycles: z.number().default(0),
   lastProgressAt: z.number().optional(),
   lastProgressCycle: z.number().default(0),
@@ -185,12 +193,15 @@ export const sha256 = (s: string): string => createHash('sha256').update(s).dige
 /** Every file of one run, under `$OMNEXX_HOME/runs/<runId>/` (outside the repo, plan §3.3). */
 export class RunStore {
   readonly dir: string;
+  /** The omnexx home (runs, repo memory), for state that outlives this run. */
+  readonly home: string;
 
   constructor(
     paths: OmnexxPaths,
     readonly runId: string,
   ) {
     this.dir = runDir(paths, runId);
+    this.home = paths.home;
   }
 
   file(name: string): string {

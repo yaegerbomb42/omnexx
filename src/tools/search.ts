@@ -1,5 +1,5 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import { execa } from 'execa';
 import { z } from 'zod';
 import { OmnexxError } from '../errors.js';
@@ -30,9 +30,11 @@ async function viaRg(
   pattern: string,
   dir: string,
   glob: string | undefined,
+  target = '.',
 ): Promise<string[] | undefined> {
   const args = [
     '-n',
+    '--with-filename',
     '--no-heading',
     '--color=never',
     '-C',
@@ -48,20 +50,35 @@ async function viaRg(
     '!*.key',
   ];
   if (glob) args.push('--glob', glob);
-  args.push('-e', pattern, '.');
+  args.push('-e', pattern, target);
   const r = await execa('rg', args, { cwd: dir, reject: false, stdin: 'ignore', timeout: 60_000 });
   if (r.failed && r.exitCode !== 1) {
     if ((r as { code?: string }).code === 'ENOENT') return undefined;
-    throw new Error(r.stderr.split('\n')[0] ?? 'rg failed');
+    // execa leaves stderr undefined when the spawn itself fails (e.g. cwd is a file).
+    const first = (r.stderr as string | undefined)?.split('\n')[0];
+    if (first) throw new Error(first);
+    throw new Error(r.message);
   }
   return r.stdout.split('\n').filter(Boolean);
 }
 
 /** Fallback when rg isn't installed: a bounded recursive scan. */
-async function viaJs(pattern: string, dir: string, glob: string | undefined): Promise<string[]> {
+async function viaJs(
+  pattern: string,
+  dir: string,
+  glob: string | undefined,
+  target = '.',
+): Promise<string[]> {
   const re = new RegExp(pattern);
   const globRe = glob ? globToRegExp(glob) : undefined;
   const out: string[] = [];
+  if (target !== '.') {
+    const lines = (await readFile(join(dir, target), 'utf8')).split('\n');
+    lines.forEach((l, i) => {
+      if (re.test(l)) out.push(`${target}:${i + 1}:${l.slice(0, 300)}`);
+    });
+    return out;
+  }
   const walk = async (d: string): Promise<void> => {
     for (const entry of await readdir(d, { withFileTypes: true })) {
       if (out.length >= MAX_HITS * 5) return;
@@ -101,9 +118,15 @@ export const searchTool: Tool<typeof schema> = {
       return fail(`invalid regex: ${input.pattern}`);
     }
     try {
+      // A file as `path` (models do this often): search just that file, from its directory.
+      let target = '.';
+      if ((await stat(dir).catch(() => undefined))?.isFile()) {
+        target = basename(dir);
+        dir = dirname(dir);
+      }
       const lines =
-        (await viaRg(input.pattern, dir, input.glob)) ??
-        (await viaJs(input.pattern, dir, input.glob));
+        (await viaRg(input.pattern, dir, input.glob, target)) ??
+        (await viaJs(input.pattern, dir, input.glob, target));
       const hits = lines.filter((l) => /^[^:]+:\d+:/.test(l));
       if (!hits.length) return ok('no matches');
       let shown = 0;

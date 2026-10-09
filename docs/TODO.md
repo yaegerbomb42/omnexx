@@ -8,6 +8,75 @@ Owner: Jimmy. Executors: parallel coding agents (one per workstream, see §2).
 
 ---
 
+## Status and work sessions (keep this current)
+
+Single source of truth for where things stand. Update the table and append a session entry at
+the end of every work session. Checkboxes in the workstream sections lag; trust this table.
+
+| WS  | State                                                                      | Branch / PR        |
+| --- | -------------------------------------------------------------------------- | ------------------ |
+| W0  | extension points + CI matrix landed; nightly merge job not                 | #10                |
+| W1  | TUI merged (boxes not yet audited)                                         | #14                |
+| W2  | telemetry merged                                                           | #11                |
+| W3  | router merged                                                              | #12                |
+| W4  | merged; plus paste-a-key, `/connect`, `/chat` (#25)                        | #22, #25           |
+| W5  | merged; browser gate now wired into config (#27)                           | #16, #20, #27      |
+| W6  | merged (MCP)                                                               | #18 via #20        |
+| W7  | merged (web fetch/search, same branch as W6)                               | #18 via #20        |
+| W8  | part 2: recall + compaction facts (#28); tree-sitter, learned budgets left | #15, #28           |
+| W9  | merged (intent + beyond)                                                   | #17 via #20        |
+| W10 | merged                                                                     | #19 via #20        |
+| W11 | `task` subagents, parallel fan-out (#29); token-saving unmeasured          | #29                |
+| W12 | merged; 1 item left                                                        | #13 via #20        |
+| W13 | scaffold commit only, no PR                                                | `ws/13-bench-docs` |
+| W14 | 3/5 (landed with W12)                                                      | #13 via #20        |
+| W15 | not started                                                                | –                  |
+
+Next up, in order: merge #27–#30 → W13 bench (unblocks the W8/W11 token claims) → audit W1/W2/W3/W9 boxes → W15 release.
+SonarCloud findings from the #20 integration merge are still open.
+
+### Session log
+
+- **2026-10-08 (context efficiency, no live runs):** `feat/context-efficiency` off `next`. Cleared
+  tool results now say which call they were and, for bash, the `read_log` id that keeps them whole.
+  Clearing waits until ≥ 4k tokens (or clearAt/10) would go: before, every turn past `clear_at`
+  cleared one more result and broke the prompt cache each turn. Bash output clips lines over 500
+  chars (minified/base64 lines used to pass whole). `turn` events carry `segments`, tokens by
+  system/tools/messages/tool results by tool, so the bench can show where tokens go. Part 2:
+  compaction keeps the open `todo` items (from the last call, or an earlier summary on a second
+  compaction); summaries that overshoot the schema are clipped, not dropped; and when the cheap
+  model fails, a fact-only summary still compacts instead of letting context grow to the cap.
+  Part 3: `read` clips lines over 2k chars and stops a range at ~60k chars (a 400-line read of a
+  minified or generated file used to put hundreds of KB in context).
+  Part 4, first live bench of this branch (Mistral + Ollama cloud gpt-oss-120b, $0): task-01
+  resolved, 88 turns, 327k tokens (82% cache reads), 3.7 min. Half the tokens went to one task
+  rejected 6× for "no changes": the planner's check had escaped quotes (`grep -cE \"…\"`) and
+  could never pass. Now two "no changes" rejects with identical failing check output park the task
+  (`check.suspect`). Mistral 429'd on its single key: endpoints take `api_key_envs` and rotate
+  keys on 429.
+
+- **2026-10-06 (single agent):** merged #23–#26. Browser gates can now be declared
+  (`kind = "browser"`, serves the app on `$PORT`); uncaught page errors count as failures; new
+  projects get a `page` gate (#27). W8: `recall` over run history, compaction keeps edited files
+  and last error (#28). W11: `task` subagents (#29). Found and fixed: `omnexx run` flags
+  (`--budget`, `--gate`, …) never reached the supervisor (#30). Live run "build a monkey landing
+  page" from an empty folder: 30/33 tasks, 21 commits, page gate on every cycle, $3.00.
+
+- **2026-10-05 (empty-folder start):** `omnexx run` (and a goal typed into the bare `omnexx`
+  session) in an empty folder now runs `git init`, writes a starter package.json, omnexx.toml with
+  `--if-present` build/lint/typecheck gates plus a `node --test` gate, and AGENTS.md, then commits.
+  Verified live: "build a monkey landing page" planned 13 tasks and committed M1.T01 through the gates.
+  Rough edges seen: the agent's bash tool rejects heredocs (it adapted), and the gates are only
+  as strict as the scripts the agent adds; no browser gate yet for new web projects.
+
+- **2026-10-05 (integration, single agent):** dropped parallel subagents (too much clutter).
+  Merged ws/5, 6, 9, 10 and 12 into `next` (#20). Declared the missing MCP/web deps and
+  added fake-backend browser-gate tests for CI coverage. Root-caused the disk filling up: a
+  global `merge=rizzler` driver (`cat %O %A %B > %A`) grows the file forever. The repo now
+  pins `* merge=text` in `.gitattributes`. Removed 9 stale worktrees.
+
+---
+
 ## 0. Positioning (what we are building toward)
 
 **"Why use omnexx over Claude Code?"** (shown in `omnexx --help`, README, omnexx.org, first-run)
@@ -236,23 +305,25 @@ Contracts: `Router.pick(action: ActionContext, candidates: ModelProfile[]): Prom
 
 Read first: `src/providers/**`, `src/config/schema.ts`, `src/auth/keys.ts`, `docs/config.md`.
 
-- [ ] `omnexx providers add` (interactive + flags): presets list as _templates only_ (OpenAI,
+- [x] `omnexx providers add` (interactive + flags): presets list as _templates only_ (OpenAI,
       OpenRouter, Groq, DeepSeek, Together, Fireworks, Mistral, Gemini, xAI, Ollama, LM Studio,
       vLLM, LiteLLM, custom). Writes to user config; verifies with a 1-token call.
-- [ ] `omnexx providers list|remove|test <name>`.
-- [ ] `omnexx models add <provider:model> [--tags code,fast] [--ctx 200k] [--vision]`,
+- [x] `omnexx providers list|remove|test <name>`.
+- [x] `omnexx models add <provider:model> [--tags code,fast] [--ctx 200k] [--vision]`,
       `models list` (with live discovery via `/v1/models` where supported), `models remove`,
       `models test`.
-- [ ] Model profiles in config: `[models.profiles."groq:llama-4-70b"] tags=[...] context=...`;
+- [x] Model profiles in config: `[models.profiles."groq:llama-4-70b"] tags=[...] context=...`;
       auto-filled from discovery when possible.
-- [ ] `omnexx auth set <any-provider>` stores keys in 0600 files; env still wins; macOS
+- [x] `omnexx auth set <any-provider>` stores keys in 0600 files; env still wins; macOS
       Keychain opt-in later.
-- [ ] Native Gemini provider (function calling, caching) and OpenAI Responses API provider.
-- [ ] Tool-call repair layer for weak/local models: JSON fix-ups, schema coercion, one
+- [x] Native Gemini provider (function calling, caching) and OpenAI Responses API provider.
+- [x] Tool-call repair layer for weak/local models: JSON fix-ups, schema coercion, one
       re-ask with the validation error, then fail the turn (not the run).
 - [ ] Pricing is optional everywhere: unknown price ⇒ tokens are still tracked, $ shown as "–",
-      budget falls back to token caps. (Remove the "no price" hard error.)
-- [ ] Role shorthands stay: `planner/worker/cheap` map to router fallback when router off.
+      budget falls back to token caps. (Remove the "no price" hard error.) _Lenient resolver and
+      `costOf` exist in `src/providers/profiles.ts`, but the run still uses the strict one: token
+      caps must land first, or an unpriced paid model would have no spend cap._
+- [x] Role shorthands stay: `planner/worker/cheap` map to router fallback when router off.
 - **Accept:** a fresh user with only `GROQ_API_KEY` goes `providers add groq` → `models list`
   → `omnexx` chat turn, with no TOML editing; contract tests for each provider against recorded
   fixtures.
@@ -261,54 +332,58 @@ Read first: `src/providers/**`, `src/config/schema.ts`, `src/auth/keys.ts`, `doc
 
 Read first: `src/tools/bash.ts`, `src/tools/types.ts`, `src/verify/**`, `src/security/**`.
 
-- [ ] `browser` tool backed by `agent-browser` CLI when present (detect in `doctor`), else
+- [x] `browser` tool backed by `agent-browser` CLI when present (detect in `doctor`), else
       Playwright as an optional dependency (`npx omnexx browser install`).
-- [ ] Actions: `open(url)`, `snapshot()` (accessibility tree, ref ids, trimmed ≤ 4k tokens),
+- [x] Actions: `open(url)`, `snapshot()` (accessibility tree, ref ids, trimmed ≤ 4k tokens),
       `click(ref)`, `type(ref,text)`, `press(key)`, `scroll`, `screenshot()` (vision models only;
       router-aware), `console()` (errors), `network(filter)`, `eval(js)` (off by default), `close`.
-- [ ] Session per run, headless, isolated profile in the run dir; killed on cycle end.
-- [ ] URL allowlist: default `localhost`, `127.0.0.1`, `*.local`; config `[browser] allow = [...]`.
-- [ ] Dev-server helper: `[browser] serve = "npm run dev"`, wait for port, tear down.
-- [ ] Browser gate: `[[gates]] kind = "browser" script = "e2e/omnexx/*.yaml"`: a tiny YAML DSL
+- [x] Session per run, headless, isolated profile in the run dir; killed on cycle end.
+- [x] URL allowlist: default `localhost`, `127.0.0.1`, `*.local`; config `[browser] allow = [...]`.
+- [x] Dev-server helper: `[browser] serve = "npm run dev"`, wait for port, tear down.
+- [x] Browser gate: `[[gates]] kind = "browser" script = "e2e/omnexx/*.yaml"`: a tiny YAML DSL
       (open, expect text/selector, no console errors) so UI acceptance is a real gate.
-- [ ] Context hygiene: old snapshots replaced by one-line stubs (W8 clearing).
+- [x] Context hygiene: old snapshots replaced by one-line stubs (W8 clearing).
 - **Accept:** fixture app where the agent must fix a broken button; browser gate fails before,
   passes after; disallowed URL is refused; no zombie Chromium after 100 cycles.
 
 ## W6. MCP client
 
-- [ ] Use `@modelcontextprotocol/sdk` (optional dep). stdio + streamable HTTP transports.
-- [ ] Config: `[mcp.servers.<name>] command/args/env | url/headers_env`, `allow_tools = [...]`.
-- [ ] Read `.mcp.json` (Claude Code format) for compatibility.
-- [ ] Tools exposed as `mcp__<server>__<tool>`, sorted, schema-normalised; lazy listing to keep
+- [x] Use `@modelcontextprotocol/sdk` (optional dep). stdio + streamable HTTP transports.
+- [x] Config: `[mcp.servers.<name>] command/args/env | url/headers_env`, `allow_tools = [...]`.
+- [x] Read `.mcp.json` (Claude Code format) for compatibility.
+- [x] Tools exposed as `mcp__<server>__<tool>`, sorted, schema-normalised; lazy listing to keep
       the prefix small (tool search tool when > 20 MCP tools).
-- [ ] `omnexx mcp add|list|remove|test`; `/mcp` in TUI.
-- [ ] Results trimmed and redacted like bash output.
+- [x] `omnexx mcp add|list|remove|test`; `/mcp` in TUI.
+- [x] Results trimmed and redacted like bash output.
 - **Accept:** contract tests with an in-repo fake MCP server; a filesystem MCP server works
   end to end.
 
 ## W7. Web search and fetch
 
-- [ ] `web_fetch(url)`: fetch → readability → markdown, ≤ 8k tokens, cache per run, allowlist
+- [x] `web_fetch(url)`: fetch → readability → markdown, ≤ 8k tokens, cache per run, allowlist
       respected, robots honoured.
-- [ ] `web_search(query)`: pluggable backends (Brave, Tavily, SearXNG, Exa) via user key; off
+- [x] `web_search(query)`: pluggable backends (Brave, Tavily, SearXNG, Exa) via user key; off
       when no backend configured.
 - **Accept:** recorded-HTTP tests; disabled cleanly when unconfigured.
 
 ## W8. Context and token engine (our core advantage)
 
-- [ ] Measure first: per-turn breakdown of tokens by segment (system, tools, goal, plan,
-      progress, codemap, history, tool results) emitted as telemetry.
+- [x] Measure first: per-turn breakdown of tokens by segment (system, tools, goal, plan,
+      progress, codemap, history, tool results) emitted as telemetry. _`turn.segments`: system,
+      tools, messages, tool results by tool._
 - [ ] Prompt cache discipline: stable prefix ordering, 1h cache for the system+tools block on
       long runs, cache breakpoints placed by segment volatility; report cache hit rate.
 - [ ] Tiered memory: hot (current cycle), warm (`progress.md` tail + lessons), cold (codemap,
       searchable via `recall(query)` tool backed by a local BM25/embedding index).
-- [ ] Smarter tool-result clearing: keep the last N results of each tool, stub the rest with a
-      1-line summary + `read_log` handle.
+- [x] Smarter tool-result clearing: keep the last N results of each tool, stub the rest with a
+      1-line summary + `read_log` handle. _Stubs name the call and the bash log; clears are batched
+      (≥ 4k tokens) so each prompt-cache miss buys real savings._
 - [ ] Incremental codemap (symbol index via tree-sitter, updated on commit, not rebuilt).
 - [ ] Diff-aware reads: `read` returns "unchanged since turn X" instead of repeating content.
-- [ ] Compaction by cheap model (router `compact` action) with a quality check: compacted
-      summary must retain open TODOs, failing test ids and touched files.
+- [x] Compaction by cheap model (router `compact` action) with a quality check: compacted
+      summary must retain open TODOs, failing test ids and touched files. _Open `todo` items,
+      edited files and last error are filled in from facts; overshooting answers are clipped, and
+      a failed summarizer falls back to a fact-only summary (`context.fact_summary`)._
 - [ ] Token budget per action learned from history; early termination when a cycle's marginal
       tokens stop producing edits.
 - **Accept:** on the bench long-horizon spec, ≥ 40% fewer input tokens per accepted commit vs.
@@ -342,11 +417,11 @@ improving like a top engineer until it declares itself done.
 
 ## W10. Project instructions, skills, hooks
 
-- [ ] Load `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, `OMNEXX.md` (precedence documented),
+- [x] Load `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, `OMNEXX.md` (precedence documented),
       nested per-directory files when the agent works in that directory.
-- [ ] Skills: `.omnexx/skills/<name>/SKILL.md` (Claude Code format compatible), listed by name in
+- [x] Skills: `.omnexx/skills/<name>/SKILL.md` (Claude Code format compatible), listed by name in
       the prefix, loaded on demand via a `skill(name)` tool.
-- [ ] Hooks: `[[hooks]] on = "pre_tool|post_tool|pre_commit|cycle_end|run_end" run = "…"`,
+- [x] Hooks: `[[hooks]] on = "pre_tool|post_tool|pre_commit|cycle_end|run_end" run = "…"`,
       non-zero exit on pre_* blocks with the hook's stderr fed back to the agent.
 - **Accept:** fixtures for each file type; a pre_commit hook can veto a commit.
 
@@ -360,9 +435,9 @@ improving like a top engineer until it declares itself done.
 
 ## W12. Worker backends (from PLAN §15)
 
-- [ ] Adapters: Claude Code (`claude -p`), Codex (`codex exec`), OpenCode, Aider, Cline CLI,
+- [x] Adapters: Claude Code (`claude -p`), Codex (`codex exec`), OpenCode, Aider, Cline CLI,
       Gemini CLI, Qwen Code. Each: detect, version-gate, run in its own worktree, collect diff.
-- [ ] Contract tests against recorded CLIs; timeout kills the process tree; quota rotation.
+- [x] Contract tests against recorded CLIs; timeout kills the process tree; quota rotation.
 - [ ] Router action `delegate` can choose a worker for a well-scoped task.
 - **Accept:** PLAN §M3 worker criteria.
 
@@ -378,9 +453,9 @@ improving like a top engineer until it declares itself done.
 
 - [ ] Docker sandbox default for unattended runs > 1 h (prompt in TUI to enable).
 - [ ] Browser and MCP inside the sandbox network policy; egress allowlist.
-- [ ] Secret scanner on every commit (block + rollback on hit).
-- [ ] Destructive-command policy covers new tools (browser eval, MCP tools tagged destructive).
-- [ ] Threat model update in `docs/safety.md`.
+- [x] Secret scanner on every commit (block + rollback on hit).
+- [x] Destructive-command policy covers new tools (browser eval, MCP tools tagged destructive).
+- [x] Threat model update in `docs/safety.md`.
 
 ## W15. Release, docs, site
 

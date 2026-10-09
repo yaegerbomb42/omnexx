@@ -28,6 +28,15 @@ export const gateSchema = z.strictObject({
   parser: z.enum(GATE_PARSERS).default('generic'),
   /** Re-runs of the whole gate when it shows new, named failures; ids that then pass are flaky. */
   flaky_reruns: z.number().int().min(0).max(3).default(1),
+  /**
+   * "browser": `run` starts the app (it gets a free port in $PORT), the gate waits for `url`,
+   * then checks it in a real browser with `script`'s steps, or a smoke check without one.
+   */
+  kind: z.enum(['command', 'browser']).default('command'),
+  url: z.string().default('http://localhost:${PORT}'),
+  script: z.string().optional(),
+  /** Pass without running while package.json has no script of this name (e.g. "start"). */
+  requires_script: z.string().optional(),
 });
 export type GateConfig = z.infer<typeof gateSchema>;
 
@@ -50,13 +59,32 @@ const modelRef = z
   .regex(/^[a-z][a-z0-9_-]*:\S+$/, 'expected "<provider>:<alias-or-model-id>"');
 
 /** One model, or a failover chain tried in order (e.g. ["anthropic:sonnet", "openrouter:sonnet"]). */
-const modelChain = z.union([modelRef, z.array(modelRef).min(1).max(8)]);
+// Long: free pools give each model its own quota, and a run walks the chain as they run out.
+const modelChain = z.union([modelRef, z.array(modelRef).min(1).max(40)]);
 export type ModelChainInput = z.infer<typeof modelChain>;
+
+/** What a model can do and how good/fast it is; the router filters and describes candidates with it. */
+export const modelProfileSchema = z.strictObject({
+  tags: z.array(z.string().regex(/^[a-z0-9-]+$/)).default([]),
+  /** Context window in tokens. */
+  context: z.number().int().positive().optional(),
+  tools: z.boolean().default(true),
+  vision: z.boolean().default(false),
+  speed: z.enum(['fast', 'normal', 'slow']).optional(),
+  quality: z.enum(['low', 'mid', 'high']).optional(),
+});
+export type ModelProfileConfig = z.infer<typeof modelProfileSchema>;
 
 export const modelsSchema = z.strictObject({
   planner: modelChain.default('anthropic:opus'),
   worker: modelChain.default('anthropic:sonnet'),
   cheap: modelChain.default('anthropic:haiku'),
+  /** Chat mode's model; the worker chain when unset. `/model` overrides it for a session. */
+  chat: modelRef.optional(),
+  /** Extra models the router may pick that aren't in any role chain. */
+  extra: z.array(modelRef).default([]),
+  /** Keyed by model ref, e.g. [models.profiles."groq:llama-4-70b"]. */
+  profiles: z.record(modelRef, modelProfileSchema).default({}),
 });
 
 export const priceSchema = z.strictObject({
@@ -76,18 +104,34 @@ const providerBudget = {
   max_usd_per_day: z.number().positive().optional(),
 };
 
-/** An OpenAI-compatible Chat Completions endpoint: OpenAI, OpenRouter, LiteLLM, Ollama, vLLM. */
+/**
+ * A model endpoint. `openai` is Chat Completions (OpenAI, OpenRouter, LiteLLM, Ollama, vLLM);
+ * `responses` is the OpenAI Responses API; `gemini` is Google's native API.
+ */
 export const endpointSchema = z.strictObject({
-  kind: z.literal('openai').default('openai'),
+  kind: z.enum(['openai', 'responses', 'gemini']).default('openai'),
   base_url: z.url(),
   /** Name of the env var holding the key (never the key itself). Optional for local endpoints. */
   api_key_env: z
     .string()
     .regex(/^[A-Z_][A-Z0-9_]*$/)
     .optional(),
+  /**
+   * More env vars holding keys for the same endpoint. Calls rotate to the next key on a 429,
+   * so free tiers that rate-limit per key keep going. Unset ones are skipped.
+   */
+  api_key_envs: z
+    .array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/))
+    .max(50)
+    .optional(),
   /** Price every model on this endpoint at $0 unless [pricing] says otherwise (local models). */
   free: z.boolean().default(false),
   request_timeout: durationString.default('10m'),
+  /**
+   * For pools that route a `*-random` model to a different model each request: omnexx picks one
+   * real model itself and sticks to it (warm prompt cache) until it runs out of quota.
+   */
+  sticky_random: z.boolean().default(false),
   ...providerBudget,
 });
 export type EndpointConfig = z.infer<typeof endpointSchema>;
@@ -96,6 +140,11 @@ export const anthropicSchema = z.strictObject({
   ...providerBudget,
   base_url: z.url().optional(),
   cache_ttl: z.enum(['5m', '1h']).default('5m'),
+  /**
+   * TTL for the stable prefix (tools, system, codemap, goal, notes). "auto" = 1h on runs longer
+   * than an hour: gates between cycles often outlast 5 minutes, and a 1h write is reread every cycle.
+   */
+  prefix_cache_ttl: z.enum(['auto', '5m', '1h']).default('auto'),
   /** Output cap per turn; also the worst-case output used by the budget pre-flight. */
   max_tokens: z.number().int().positive().default(16_000),
   request_timeout: durationString.default('10m'),
@@ -110,8 +159,10 @@ export const providersSchema = z.strictObject({
 export const gitSchema = z.strictObject({
   push: z.enum(['none', 'branch']).default('none'),
   remote: z.string().default('origin'),
-  /** Opening a PR at the end is planned for M5. `true` fails at run start. */
+  /** At the end of a run with commits: push the branch and open a PR with `gh`. */
   open_pr: z.boolean().default(false),
+  /** The PR's base branch; default: the branch the checkout is on when the run ends. */
+  pr_base: z.string().optional(),
 });
 
 export const NOTIFY_EVENTS = [
@@ -134,11 +185,27 @@ export const ntfySchema = z.strictObject({
   timeout_ms: z.number().int().positive().default(5_000),
 });
 
-export const notifySchema = z.strictObject({
-  ntfy: ntfySchema.optional(),
+/** A Slack- or Discord-compatible incoming webhook (the URL is a secret: read from an env var). */
+export const webhookSchema = z.strictObject({
+  url_env: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
+  events: z
+    .array(z.enum(NOTIFY_EVENTS))
+    .default(['finished', 'needs-human', 'budget', 'crash', 'outage']),
+  timeout_ms: z.number().int().positive().default(5_000),
 });
 
-export const JUDGE_USES = ['next_move', 'drift', 'failure_similarity', 'tool_safety'] as const;
+export const notifySchema = z.strictObject({
+  ntfy: ntfySchema.optional(),
+  webhook: webhookSchema.optional(),
+});
+
+export const JUDGE_USES = [
+  'next_move',
+  'drift',
+  'failure_similarity',
+  'tool_safety',
+  'route',
+] as const;
 export type JudgeUse = (typeof JUDGE_USES)[number];
 
 export const nimbleSchema = z.strictObject({
@@ -187,6 +254,11 @@ export const contextSchema = z.strictObject({
   compact_at: z.number().int().positive().default(100_000),
   /** Recent assistant turns kept verbatim through a compaction. */
   compact_keep_turns: z.number().int().positive().default(4),
+  /** `task` subagents: input+output tokens and turns each child may use. */
+  subagent_max_tokens: z.number().int().positive().default(150_000),
+  subagent_max_turns: z.number().int().positive().default(15),
+  /** `task` calls made in the same turn run together, at most this many at once. */
+  subagent_parallel: z.number().int().min(1).max(8).default(3),
 });
 
 export const policySchema = z.strictObject({
@@ -196,6 +268,11 @@ export const policySchema = z.strictObject({
   allow_network: z.boolean().default(false),
   /** Extra environment variable names passed through to child processes. */
   env_passthrough: z.array(z.string()).default([]),
+  /**
+   * Chat: answer yes to every "allow this?" question (commands and paths past a guard) instead of
+   * asking. Hard-denied commands stay denied. `/yolo` toggles it for one session.
+   */
+  auto_approve: z.boolean().default(false),
 });
 
 export const serviceSchema = z.strictObject({

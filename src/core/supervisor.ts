@@ -1,4 +1,13 @@
-import { PlannerIncomplete, runPlanner } from '../agent/planner.js';
+import { BEYOND_RUBRIC, PlannerIncomplete, runPlanner } from '../agent/planner.js';
+import { allOf, WebhookNotifier } from '../notify/webhook.js';
+import { openPullRequest } from '../git/pr.js';
+import { closeSession } from '../tools/extra/browser.js';
+import { saveToRepoMemory } from './repo-memory.js';
+import { renderCodemap, type Codemap } from '../agent/codemap.js';
+import { readIntent } from '../agent/intent.js';
+import { git } from '../git/git.js';
+import { readTextOr } from './atomic.js';
+import { auditResult, blocking, clipDiff, renderFindings } from '../verify/review.js';
 import { join } from 'node:path';
 import { EXIT } from '../cli/exit-codes.js';
 import { DockerSandbox } from '../security/sandbox-docker.js';
@@ -22,6 +31,7 @@ import { judgeGate } from '../verify/ratchet.js';
 import {
   prepareWorktree,
   runBaseline,
+  runChecks,
   stepAct,
   stepCommit,
   stepRecord,
@@ -31,7 +41,14 @@ import {
 import { startHeartbeat } from './heartbeat.js';
 import { acquireLock, defaultLockEnv, releaseLock, type LockEnv } from './lock.js';
 import { initCodemap, settleMilestones } from './milestones.js';
-import { childrenOf, getNode, nextUnexpandedMilestone, planCounts, runnableTasks } from './plan.js';
+import {
+  childrenOf,
+  getNode,
+  nextUnexpandedMilestone,
+  planCounts,
+  runnableTasks,
+  type Plan,
+} from './plan.js';
 import { writeReport } from './report.js';
 import type { RunStatus } from './run-store.js';
 import { Run, type RunDeps } from './run.js';
@@ -63,7 +80,42 @@ export const EXIT_FOR: Record<RunStatus, number> = {
 
 const MAX_MILESTONE_REPLANS = 2;
 
+/** Fold this run's lessons into the repo's memory so the next run or chat starts with them. */
+async function rememberForRepo(run: Run): Promise<void> {
+  try {
+    const added = await saveToRepoMemory(
+      run.deps.paths,
+      run.state.repoRoot,
+      await run.store.readNotes(),
+      run.config.context.notes_max_tokens,
+    );
+    if (added) run.events.emit('memory.saved', { added });
+  } catch (err) {
+    run.events.emit('memory.save_failed', { error: (err as Error).message });
+  }
+}
+
+/** How many times a task's line may be split before a stuck descendant is parked instead. */
+const MAX_SPLIT_DEPTH = 2;
+
+/** How many splits produced this task (0 for a task the planner wrote directly). */
+export function splitDepth(plan: Plan, id: string): number {
+  let depth = 0;
+  let cur = id;
+  for (;;) {
+    const parent = plan.nodes.find((n) => n.splitInto.includes(cur));
+    if (!parent) return depth;
+    depth++;
+    cur = parent.id;
+  }
+}
+
+/** Fresh planner attempts after it ends stuck or out of turns, per supervisor process. */
+const PLANNER_RETRIES = 2;
+
 class Supervisor {
+  private plannerRetries = 0;
+
   constructor(
     private readonly run: Run,
     private readonly notifier: Notifier,
@@ -169,14 +221,20 @@ class Supervisor {
             detail: climbed.detail,
           });
         if (climbed?.rung.id === 'replan_task') {
-          const split = await this.splitTask(task.id, findings.map((f) => f.detail).join('; '));
+          // A task that came out of splits that kept failing won't be saved by another split;
+          // park it so the run moves on instead of splitting forever.
+          const deep = splitDepth(r.requirePlan(), task.id) >= MAX_SPLIT_DEPTH;
+          const split =
+            !deep && (await this.splitTask(task.id, findings.map((f) => f.detail).join('; ')));
           task = getNode(r.requirePlan(), p.taskId);
           if (!split) {
             r.events.emit('ladder.rung', {
               task: task.id,
               rung: 'park',
               detail: park.apply(task, findings),
-              fallback: 'split produced no tasks',
+              fallback: deep
+                ? `already split ${MAX_SPLIT_DEPTH} levels deep`
+                : 'split produced no tasks',
             });
             task.rung = LADDER.indexOf(park);
           }
@@ -490,6 +548,119 @@ class Supervisor {
     await r.setPhase('select');
   }
 
+  /**
+   * Beyond mode: the goal is met, so ask the planner for one more round of verified improvements.
+   * True when it added runnable work; false when it's off, out of rounds or budget, or the
+   * planner found nothing worth doing (it returns the plan unchanged).
+   */
+  /**
+   * Before a run may finish: an independent auditor compares the result with what was asked (goal,
+   * inferred intent and its "done when" list). Gaps become a new milestone, so "done" is earned,
+   * not declared. Fails open; stops after `max_audits` rounds.
+   */
+  private async planAudit(): Promise<boolean> {
+    const r = this.run;
+    const cfg = r.config.review;
+    if (!cfg.audit || r.state.auditRounds >= cfg.max_audits) return false;
+    const goal = (await r.store.readGoal()).text;
+    const intent = await readIntent(r.store);
+    const codemapText = await readTextOr(r.store.file('codemap.json'), '');
+    const map = codemapText
+      ? renderCodemap(JSON.parse(codemapText) as Codemap, r.config.context.repo_map_max_tokens)
+      : '';
+    const diff = (
+      await git(r.worktree, ['diff', `${r.state.startRef}..HEAD`], { allowFailure: true })
+    ).stdout;
+    const result = await auditResult(
+      r,
+      goal,
+      intent,
+      `${map}\n\n# Everything this run changed (diff from the start)\n${clipDiff(diff, cfg.max_diff_chars * 2)}`,
+    );
+    const round = r.state.auditRounds + 1;
+    r.state.auditRounds = round;
+    await r.save();
+    if (!result) return false;
+    const gaps = blocking(result.findings, 'major');
+    r.events.emit('audit.result', { round, findings: result.findings.length, gaps: gaps.length });
+    if (!gaps.length) return false;
+    const before = r.requirePlan().nodes.length;
+    try {
+      await runPlanner(r, { kind: 'audit', round, gaps: renderFindings(gaps) });
+    } catch (err) {
+      if (!(err instanceof PlannerIncomplete)) throw err;
+      return false;
+    }
+    return r.requirePlan().nodes.length > before && runnableTasks(r.requirePlan()).length > 0;
+  }
+
+  private async planBeyond(): Promise<boolean> {
+    const r = this.run;
+    const cfg = r.config.beyond;
+    const auto = r.config.autonomous.enabled;
+    if (!this.beyondAllowed()) return false;
+    const before = r.requirePlan().nodes.length;
+    const round = r.state.beyondRounds + 1;
+    const scope = auto
+      ? { focus: autonomousFocus(r.config.autonomous.focus, round) }
+      : { maxRounds: cfg.max_rounds };
+    r.events.emit('beyond.start', { round, ...scope });
+    try {
+      await runPlanner(r, { kind: 'beyond', round, ...scope });
+    } catch (err) {
+      // One bad planning round must not end a day-long run; it counts as a round with no work.
+      if (!auto || !(err instanceof PlannerIncomplete)) throw err;
+      r.events.emit('autonomous.round_failed', { round, end: err.end });
+    }
+    const added = r.requirePlan().nodes.length - before;
+    r.state.beyondRounds = round;
+    const found = added > 0 && runnableTasks(r.requirePlan()).length > 0;
+    if (auto) this.countIdle(round, found);
+    await r.save();
+    r.events.emit('beyond.round', { round, added });
+    if (auto && !found) return r.state.idleRounds < r.config.autonomous.max_idle_rounds;
+    return found;
+  }
+
+  /** Whether another improvement round may start: enabled, under the round cap, budget left. */
+  private beyondAllowed(): boolean {
+    const r = this.run;
+    const cfg = r.config.beyond;
+    const auto = r.config.autonomous.enabled;
+    if (!auto && (!cfg.enabled || r.state.beyondRounds >= cfg.max_rounds)) return false;
+    // Autonomous runs use the clock to the end; only the wrap-up reserve is kept back.
+    const minLeft = r.config.budget.wrapup_reserve * 2;
+    if (r.budgetLeftFraction() >= (auto ? minLeft : Math.max(cfg.min_budget_left, minLeft)))
+      return true;
+    r.events.emit('beyond.skip', { reason: 'budget', left: r.budgetLeftFraction() });
+    return false;
+  }
+
+  private countIdle(round: number, found: boolean): void {
+    const r = this.run;
+    r.state.idleRounds = found ? 0 : r.state.idleRounds + 1;
+    if (!found) r.events.emit('autonomous.idle', { round, idle: r.state.idleRounds });
+  }
+
+  /**
+   * Autonomous mode has nobody to ask: work that can't proceed because something it needs was
+   * parked is parked too, so the run moves on to the next improvement round. The report lists it.
+   */
+  private async parkBlocked(): Promise<boolean> {
+    const r = this.run;
+    const blocked = r
+      .requirePlan()
+      .nodes.filter((n) => n.status !== 'done' && n.status !== 'parked');
+    if (!blocked.length) return false;
+    for (const n of blocked) {
+      n.status = 'parked';
+      n.parkedReason = 'autonomous: blocked by parked work';
+    }
+    await r.savePlan();
+    r.events.emit('autonomous.skipped', { nodes: blocked.map((n) => n.id) });
+    return true;
+  }
+
   /** Milestones, rolling-wave expansion, and the end-of-plan decision. Returns a task id or an outcome. */
   private async select(): Promise<string | Outcome> {
     const r = this.run;
@@ -516,8 +687,25 @@ class Supervisor {
       await runPlanner(r, { kind: 'expand', milestoneId: expand.id });
       const m = getNode(r.requirePlan(), expand.id);
       if (!childrenOf(r.requirePlan(), m.id).length) {
-        m.status = 'parked';
-        m.parkedReason = 'the planner could not expand it into tasks';
+        // No tasks came out. Planners add setup milestones ("install deps, confirm the baseline")
+        // with nothing to change: if its checks pass, it's done. Otherwise park it, but don't let
+        // it block the milestones after it forever (a whole run once stalled on one).
+        const checks = m.checks.length ? await runChecks(r, m, `${m.id}-noexpand`) : [];
+        if (checks.length && checks.every((c) => c.pass)) {
+          m.status = 'done';
+          r.events.emit('milestone.no_work', { milestone: m.id });
+        } else {
+          m.status = 'parked';
+          m.parkedReason = 'the planner could not expand it into tasks';
+          const released = r
+            .requirePlan()
+            .nodes.filter((n) => n.dependsOn.includes(m.id))
+            .map((n) => {
+              n.dependsOn = n.dependsOn.filter((d) => d !== m.id);
+              return n.id;
+            });
+          if (released.length) r.events.emit('milestone.released', { parked: m.id, released });
+        }
         await r.savePlan();
       }
       return this.select();
@@ -526,18 +714,23 @@ class Supervisor {
     const openMilestones = plan.nodes.filter(
       (n) => n.type === 'milestone' && n.status !== 'done' && n.status !== 'parked',
     );
+    // Autonomous runs skip parked work instead of stopping to ask; the report lists it.
+    const auto = r.config.autonomous.enabled;
     if (
-      counts.parked === 0 &&
       counts.todo === 0 &&
       openMilestones.length === 0 &&
-      plan.nodes.every((n) => n.status !== 'parked')
+      (auto || plan.nodes.every((n) => n.status !== 'parked'))
     ) {
+      if (await this.planAudit()) return this.select();
+      if (await this.planBeyond()) return this.select();
       await this.finalVerify();
+      const rounds = r.state.beyondRounds;
       return {
         status: 'finished',
-        reason: `all ${counts.tasks} tasks and ${counts.milestones} milestones done`,
+        reason: `all ${counts.tasks} tasks and ${counts.milestones} milestones done${rounds ? ` (goal plus ${rounds} improvement round${rounds === 1 ? '' : 's'})` : ''}`,
       };
     }
+    if (r.config.autonomous.enabled && (await this.parkBlocked())) return this.select();
     const parked = plan.nodes.filter((n) => n.status === 'parked').length;
     r.events.emit('ladder.rung', { rung: 'stop_and_ask', parked });
     return {
@@ -560,9 +753,25 @@ class Supervisor {
         const picked = await this.select();
         if (typeof picked !== 'string') return picked;
         await this.cycle(picked);
+        // Retries are per wedge, not per run: a long run may hit several over its hours.
+        this.plannerRetries = 0;
       } catch (err) {
         if (!(err instanceof PlannerIncomplete)) throw err;
         r.events.emit('planner.incomplete', { end: err.end });
+        // A planner that got wedged (a request the provider chokes on, turns or tokens burned on
+        // invalid plans, or a model that stopped without a valid plan) gets a fresh conversation
+        // before the run stops for a human: one bad planning turn shouldn't end a long run.
+        if (
+          (err.end === 'stuck' ||
+            err.end === 'max_turns_per_cycle' ||
+            err.end === 'max_tokens_per_cycle' ||
+            err.end === 'done') &&
+          this.plannerRetries < PLANNER_RETRIES
+        ) {
+          this.plannerRetries++;
+          r.events.emit('planner.retry', { attempt: this.plannerRetries, end: err.end });
+          continue;
+        }
         if (err.end === 'stop' || err.end === 'stop-now')
           return { status: 'user-stop', reason: 'stopped during planning' };
         return err.end === 'max_usd'
@@ -607,13 +816,15 @@ export async function supervise(
     };
   }
   const ntfy = deps.config.notify.ntfy;
-  const notifier =
-    opts.notifier ??
-    (ntfy
-      ? new NtfyNotifier(ntfy, deps.env, run.redactor, deps.fetch, (ok, detail) =>
-          run.events.emit(ok ? 'notify.sent' : 'notify.failed', { detail }),
-        )
-      : nullNotifier);
+  const onResult = (ok: boolean, detail: string): void => {
+    run.events.emit(ok ? 'notify.sent' : 'notify.failed', { detail });
+  };
+  const hook = deps.config.notify.webhook;
+  const channels = [
+    ...(ntfy ? [new NtfyNotifier(ntfy, deps.env, run.redactor, deps.fetch, onResult)] : []),
+    ...(hook ? [new WebhookNotifier(hook, deps.env, run.redactor, deps.fetch, onResult)] : []),
+  ];
+  const notifier = opts.notifier ?? (channels.length ? allOf(channels) : nullNotifier);
   const sup = new Supervisor(run, notifier, opts);
   const resumed = run.state.phase !== 'init';
   if (resumed) {
@@ -694,12 +905,17 @@ export async function supervise(
       run.events.emit('run.error', { error: (err as Error).message });
       clearInterval(watcher);
       stopHeartbeat();
+      await closeSession(runId).catch(() => undefined);
+      await rememberForRepo(run);
       await sandbox?.stop();
       await releaseLock(run.store.dir, pid);
       throw err;
     }
   }
   clearInterval(watcher);
+  // No browser outlives its run (a cycle that threw may have skipped its own cleanup).
+  await closeSession(runId).catch(() => undefined);
+  await rememberForRepo(run);
   if (outcome.status === 'user-stop') await prepareWorktree(run);
   run.state.status = outcome.status;
   run.state.statusReason = outcome.reason;
@@ -712,6 +928,7 @@ export async function supervise(
     cycles: run.state.cycle,
   });
   await writeReport(run.store, run.state, run.plan, deps.clock.now());
+  const prUrl = deps.config.git.open_pr ? await openPullRequest(run) : undefined;
   const kind: NotifyKind =
     outcome.status === 'needs-human'
       ? 'needs-human'
@@ -732,6 +949,7 @@ export async function supervise(
       usd: run.state.spend.usd,
       budgetUsd: deps.config.budget.max_usd,
       hint: `${outcome.reason}. Report: omnexx report ${runId}`,
+      ...(prUrl ? { url: prUrl } : {}),
     }),
   );
   stopHeartbeat();
@@ -746,4 +964,10 @@ async function notifierSafe(fn: () => Promise<void>): Promise<void> {
   } catch {
     // Notifications are best effort; NtfyNotifier already logs its own failures.
   }
+}
+
+/** Autonomous round n's focus: the user's areas first, then the beyond rubric, round robin. */
+export function autonomousFocus(extra: readonly string[], round: number): string {
+  const areas = [...extra, ...BEYOND_RUBRIC];
+  return areas[(round - 1) % areas.length] ?? '';
 }

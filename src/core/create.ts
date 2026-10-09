@@ -1,6 +1,7 @@
 import { basename } from 'node:path';
 import { createWorktree } from '../git/worktree.js';
 import { repoRoot } from '../git/repo.js';
+import { readRepoNotes } from './repo-memory.js';
 import { worktreesDir, type OmnexxPaths } from './paths.js';
 import { newRunId } from './run-id.js';
 import { RunStore, type RunState } from './run-store.js';
@@ -51,6 +52,9 @@ export async function createRun(o: CreateRunOptions): Promise<RunStore> {
       byProvider: {},
     },
     acceptedCommits: 0,
+    beyondRounds: 0,
+    idleRounds: 0,
+    auditRounds: 0,
     rejectedCycles: 0,
     lastProgressAt: o.now,
     lastProgressCycle: 0,
@@ -65,5 +69,8 @@ export async function createRun(o: CreateRunOptions): Promise<RunStore> {
     cycleTokens: [],
   };
   await store.writeState(state);
+  // Start from what earlier runs and chats learned about this repo.
+  const known = await readRepoNotes(o.paths, root);
+  if (known.length) await store.writeNotes(known);
   return store;
 }

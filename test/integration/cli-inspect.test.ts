@@ -68,8 +68,8 @@ describe('inspection commands on a finished run', () => {
 
     expect((await run(['runs'])).out).toContain(`${id}  finished`);
     const logs = await run(['logs', id]);
-    expect(logs.out).toMatch(/cycle task M1\.T01/);
-    expect(logs.out).toMatch(/accept M1\.T01 \(done\)/);
+    expect(logs.out).toMatch(/cycle 1\s+task M1\.T01/);
+    expect(logs.out).toMatch(/accept\s+M1\.T01 \(done\)/);
     expect((await run(['logs', '--events'])).out.split('\n')[0]).toMatch(/^\{"ts":/);
     expect((await run(['logs', '--progress'])).out).toContain('## Cycle 1');
     expect((await run(['logs', '--cmd', 'gate-c1-test'])).out).toContain('TAP version');

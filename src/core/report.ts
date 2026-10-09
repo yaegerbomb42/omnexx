@@ -1,3 +1,4 @@
+import { intentAssumptions, readIntent } from '../agent/intent.js';
 import { git } from '../git/git.js';
 import { formatDuration } from '../config/duration.js';
 import { readEvents, type OmnexxEvent } from './events.js';
@@ -34,6 +35,21 @@ const flakyIds = (events: readonly OmnexxEvent[]): string => {
   return ids.size ? `${ids.size} (${[...ids].slice(0, 10).join(', ')})` : 'none';
 };
 const usd = (n: number): string => `$${n.toFixed(2)}`;
+
+/** Integrations the agent wanted but couldn't install unattended, with the command to do it. */
+function suggestions(events: readonly OmnexxEvent[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const e of events.filter((x) => x.type === 'integration.suggested')) {
+    const line =
+      e.kind === 'skill'
+        ? `- The agent suggests adding skills from ${String(e.source)}: \`omnexx skills add ${String(e.source)}\``
+        : `- The agent suggests the MCP server ${String(e.server)}${e.trusted ? '' : ' (not a known publisher: check it first)'}: \`omnexx mcp add ${String(e.server).split('/').pop() ?? ''} --pick ${String(e.server)}\``;
+    if (!seen.has(line)) out.push(line);
+    seen.add(line);
+  }
+  return out;
+}
 
 function planTree(plan: Plan | undefined): string[] {
   if (!plan) return ['(no plan was written)'];
@@ -139,6 +155,7 @@ export async function writeReport(
   const rungs = events.filter((e) => e.type === 'ladder.rung');
   const parked = plan?.nodes.filter((n) => n.status === 'parked') ?? [];
   const workers = events.filter((e) => e.type === 'worker.result');
+  const assumptions = intentAssumptions(await readIntent(store));
   const lines = [
     `# Omnexx report: ${state.repoName} · ${state.runId}`,
     '',
@@ -154,6 +171,12 @@ export async function writeReport(
     `## ${REPORT_SECTIONS[1]}`,
     '',
     ...planTree(plan),
+    ...(state.checkpoints.length
+      ? [
+          '',
+          `Walkthroughs (what each milestone did, with evidence): ${state.checkpoints.map((c) => `walkthroughs/${c.milestoneId}.md`).join(', ')}`,
+        ]
+      : []),
     '',
     `## ${REPORT_SECTIONS[2]}`,
     '',
@@ -192,6 +215,15 @@ export async function writeReport(
       : ['- Nothing parked.']),
     ...(state.status === 'needs-human'
       ? [`- The run stopped for you: ${state.statusReason ?? ''}`]
+      : []),
+    ...suggestions(events),
+    ...(assumptions.length
+      ? [
+          '',
+          'Assumptions it made where your goal was open (change one with `omnexx steer`, then `omnexx resume`):',
+          '',
+          ...assumptions.map((a) => `- ${a}`),
+        ]
       : []),
     '',
     `## ${REPORT_SECTIONS[7]}`,

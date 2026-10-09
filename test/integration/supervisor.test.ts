@@ -36,6 +36,57 @@ async function superviseTest(t: TestRun, pushes: NotifyPayload[] = []) {
   return supervise(t.run.deps, t.run.state.runId, fastOpts(pushes));
 }
 
+/** The impossible-task fixture: one task no change can pass, so it always ends up parked. */
+const impossiblePlan = () =>
+  planner([
+    {
+      id: 'M1',
+      title: 'Math',
+      tasks: [{ id: 'M1.T01', title: 'Make 2+2 both 4 and 5', checks: ['node --test'] }],
+    },
+  ]);
+const impossibleWorker: Script = (m) =>
+  m.turn === 0
+    ? call('str_replace', {
+        path: 'src/math.js',
+        old_str: 'return a + b;',
+        new_str: `return a + b + ${m.attempt};`,
+      })
+    : say(`Tried +${m.attempt}`);
+
+describe('milestones the planner cannot expand', () => {
+  const run = async (check: string) => {
+    const plan = planner([
+      { id: 'M0', title: 'Install and confirm the baseline', checks: [check] },
+      { id: 'M1', title: 'Real work', dependsOn: ['M0'], tasks: [fileTask('M1.T01')] },
+    ]);
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider: new ScriptedProvider(scenario(plan, fileWorker)),
+      config: { gates: [GATE] },
+    });
+    await superviseTest(t);
+    return { t, events: await readEvents(t.run.store.eventsPath) };
+  };
+
+  it('counts one with passing checks as done, so the work after it runs', async () => {
+    const { t, events } = await run('true');
+    expect(types(events, 'milestone.no_work').map((e) => e.milestone)).toEqual(['M0']);
+    const saved = await t.run.store.readPlan();
+    expect(saved && getNode(saved, 'M1.T01').status).toBe('done');
+  });
+
+  it('parks one with failing checks but releases what depended on it', async () => {
+    const { t, events } = await run('false');
+    expect(types(events, 'milestone.released')[0]).toMatchObject({
+      parked: 'M0',
+      released: ['M1'],
+    });
+    const saved = await t.run.store.readPlan();
+    expect(saved && getNode(saved, 'M1.T01').status).toBe('done');
+  });
+});
+
 describe('M2: hierarchical plan, milestones, checkpoints and the report', () => {
   it('runs a 3-milestone plan milestone by milestone with rolling-wave expansion and a failing-milestone re-plan', async () => {
     const plan = planner(
@@ -108,7 +159,7 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
     expect(await isClean(t.repo)).toBe(true);
   });
 
-  it('a re-plan that deletes a node is refused and the planner has to keep it', async () => {
+  it('a re-plan that leaves nodes out keeps them unchanged instead of deleting them', async () => {
     let attempt = 0;
     const plan = (m: Parameters<Script>[0]) => {
       if (m.turn > 0) return say('ok');
@@ -122,7 +173,7 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
         });
       }
       attempt++;
-      // First expansion drops M1 entirely (refused); the retry keeps it.
+      // First expansion sends only M2; M1 is kept as it was (nodes are never deleted).
       return attempt === 1
         ? call('write_plan', {
             milestones: [{ id: 'M2', title: 'Two', tasks: [fileTask('M2.T01')] }],
@@ -151,29 +202,36 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
     );
     const t = await startTestRun({ repo: await makeRepo(), provider, config: { gates: [GATE] } });
     expect((await superviseTest(t)).status).toBe('finished');
-    expect(JSON.stringify(provider.requests.map((r) => r.messages))).toMatch(
-      /plan rejected: plan update would delete M1, M1.T01 \(nodes are never deleted/,
-    );
+    expect(JSON.stringify(provider.requests.map((r) => r.messages))).not.toMatch(/plan rejected/);
+    const final = await t.run.store.readPlan();
+    expect(final?.nodes.map((n) => n.id)).toEqual(['M1', 'M1.T01', 'M2', 'M2.T01']);
   });
 });
 
 describe('M2: stuck handling, budget and judge', () => {
+  it('autonomous: a parked task skips its blocked milestone instead of stopping to ask', async () => {
+    // Arrange
+    const plan = impossiblePlan();
+    const worker = impossibleWorker;
+    const t = await startTestRun({
+      fixture: 'impossible-task',
+      provider: new ScriptedProvider(scenario(plan, worker)),
+      config: { gates: [GATE], autonomous: { enabled: true, max_idle_rounds: 1 } },
+    });
+
+    // Act
+    const out = await superviseTest(t, []);
+
+    // Assert
+    expect(out).toMatchObject({ status: 'finished' });
+    const events = await readEvents(t.run.store.eventsPath);
+    expect(types(events, 'autonomous.skipped').flatMap((e) => e.nodes)).toEqual(['M1']);
+    expect(types(events, 'ladder.rung').map((e) => e.rung)).not.toContain('stop_and_ask');
+  });
+
   it('impossible-task: 3 rejections escalate to the strong model, 3 more ask the planner to split it (it cannot), then it parks; nothing runnable → needs-human (exit 2) and a push', async () => {
-    const plan = planner([
-      {
-        id: 'M1',
-        title: 'Math',
-        tasks: [{ id: 'M1.T01', title: 'Make 2+2 both 4 and 5', checks: ['node --test'] }],
-      },
-    ]);
-    const worker: Script = (m) =>
-      m.turn === 0
-        ? call('str_replace', {
-            path: 'src/math.js',
-            old_str: 'return a + b;',
-            new_str: `return a + b + ${m.attempt};`,
-          })
-        : say(`Tried +${m.attempt}`);
+    const plan = impossiblePlan();
+    const worker = impossibleWorker;
     const t = await startTestRun({
       fixture: 'impossible-task',
       provider: new ScriptedProvider(scenario(plan, worker)),
@@ -363,7 +421,8 @@ describe('M2: stuck handling, budget and judge', () => {
       provider: new ScriptedProvider(scenario(plan, fileWorker)),
       config: {
         gates: [GATE],
-        budget: { max_usd_per_day: 0.03, max_hours: 2 },
+        // Just above one worst-case call (tools + prompt), so it must pause between cycles.
+        budget: { max_usd_per_day: 0.045, max_hours: 2 },
         providers: { anthropic: { max_tokens: 500 } },
       },
     });

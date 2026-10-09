@@ -8,13 +8,13 @@ import { call, say, type Script, type ScriptMeta, type ScriptedTurn } from './sc
 
 type MilestoneSpec = PlanUpdate['milestones'][number];
 
-const firstText = (m: ScriptMeta): string => {
+export const firstText = (m: ScriptMeta): string => {
   const b = m.request.messages[0]?.content[0];
   return b?.type === 'text' ? b.text : '';
 };
 
 /** Existing plan ids from the planner prompt (expand/re-plan), as milestones with task ids. */
-function existing(
+export function existing(
   m: ScriptMeta,
 ): { id: string; title: string; tasks: { id: string; title: string }[] }[] {
   const raw = /Existing ids \(keep every one\):\n(\{.*\})/.exec(firstText(m))?.[1];
@@ -111,3 +111,19 @@ export function manyTasks(n: number, perMilestone = 10): MilestoneSpec[] {
   }
   return ms;
 }
+
+/** A write_plan call that keeps every existing milestone and adds `milestone`. */
+export const addMilestone = (
+  m: ScriptMeta,
+  milestone: { id: string; title: string; tasks: object[] },
+): ScriptedTurn =>
+  call('write_plan', {
+    milestones: [
+      ...existing(m).map((e) => ({
+        id: e.id,
+        title: e.title,
+        tasks: e.tasks.map((t) => fileTask(t.id)),
+      })),
+      milestone,
+    ],
+  });

@@ -1,0 +1,2 @@
+# Use git's built-in 3-way merge here, whatever global merge drivers are set.
+* merge=text

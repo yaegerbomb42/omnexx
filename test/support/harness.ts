@@ -19,6 +19,18 @@ export const NODE_TEST_GATE = {
 };
 
 /** A temp git repo seeded from test/fixtures/repos/<name>, with one commit. */
+/** A gate that always passes, for runs whose tasks are checked by their own checks. */
+export const PASSING_GATE = { name: 'test', run: 'node -e 0', timeout: '1m' };
+
+/** Fast supervisor timings and a silent notifier for integration tests. */
+export const FAST_SUPERVISE = {
+  bootId: 'b',
+  heartbeatMs: 50,
+  controlPollMs: 20,
+  pausePollMs: 10,
+  notifier: { notify: () => Promise.resolve() },
+};
+
 export async function fixtureRepo(name: string): Promise<string> {
   const repo = await tempRepo();
   const src = join('test/fixtures/repos', name);
@@ -50,7 +62,17 @@ export async function startTestRun(opts: {
 }): Promise<TestRun> {
   const repo = opts.repo ?? (await fixtureRepo(opts.fixture ?? 'ts-failing-test'));
   const env = opts.env ?? (await isolatedEnv());
-  const config = defaultConfig({ gates: [NODE_TEST_GATE], ...opts.config });
+  // Beyond mode adds planner calls after the goal is met; tests opt in explicitly.
+  const config = defaultConfig({
+    gates: [NODE_TEST_GATE],
+    beyond: { enabled: false },
+    // Review and audit add model calls; tests for them opt in explicitly.
+    review: { enabled: false, audit: false, strict_checks: false },
+    // Tests keep the real HOME; never let the host's ~/.claude/skills into a test run's prompts.
+    skills: { import_claude: false },
+    agents: { import_claude: false },
+    ...opts.config,
+  });
   const clock = new FakeClock();
   const paths = resolvePaths(env);
   const goal = opts.goal ?? 'Make the test suite pass.';

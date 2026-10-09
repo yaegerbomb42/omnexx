@@ -27,14 +27,18 @@ The container runs as your uid/gid with `--cap-drop ALL`, `no-new-privileges`, a
 
 ## `[[gates]]`
 
-| Key            | Default     | Meaning                                                                                                                                                                                                                                                      |
-| -------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `name`         | required    | Letters, digits, `_ . -`                                                                                                                                                                                                                                     |
-| `run`          | required    | Shell command, run in the worktree with a scrubbed env                                                                                                                                                                                                       |
-| `timeout`      | `"10m"`     | Capped by `budget.max_cmd_timeout`                                                                                                                                                                                                                           |
-| `level`        | `"ratchet"` | `"must-pass"`: exit 0. `"ratchet"`: no new failure ids and no more failures than the baseline                                                                                                                                                                |
-| `parser`       | `"generic"` | `vitest` (`--reporter=json --outputFile=/dev/stdout`), `jest` (`--json`), `node-test` (`--test-reporter=tap`), `tsc`, `eslint` (`-f json` or default output), `pytest` (`-rf`), `gotest` (`-json`), `generic` (exit code)                                    |
-| `flaky_reruns` | `1`         | `0`–`3`. When the gate shows new failures the parser can name, run the whole gate again; ids that then pass are flaky (event `verify.flaky`, a `flaky` lesson, a line in the report) and don't fail the cycle. Timeouts and `generic` gates are never re-run |
+| Key               | Default                      | Meaning                                                                                                                                                                                                                                                      |
+| ----------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`            | required                     | Letters, digits, `_ . -`                                                                                                                                                                                                                                     |
+| `run`             | required                     | Shell command, run in the worktree with a scrubbed env                                                                                                                                                                                                       |
+| `timeout`         | `"10m"`                      | Capped by `budget.max_cmd_timeout`                                                                                                                                                                                                                           |
+| `level`           | `"ratchet"`                  | `"must-pass"`: exit 0. `"ratchet"`: no new failure ids and no more failures than the baseline                                                                                                                                                                |
+| `parser`          | `"generic"`                  | `vitest` (`--reporter=json --outputFile=/dev/stdout`), `jest` (`--json`), `node-test` (`--test-reporter=tap`), `tsc`, `eslint` (`-f json` or default output), `pytest` (`-rf`), `gotest` (`-json`), `generic` (exit code)                                    |
+| `flaky_reruns`    | `1`                          | `0`–`3`. When the gate shows new failures the parser can name, run the whole gate again; ids that then pass are flaky (event `verify.flaky`, a `flaky` lesson, a line in the report) and don't fail the cycle. Timeouts and `generic` gates are never re-run |
+| `kind`            | `"command"`                  | `"browser"`: `run` starts the app with a free port in `$PORT`, the gate waits for `url`, opens it in a real browser (agent-browser or playwright-core) and runs `script`'s steps, then stops the app. Runs on the host                                       |
+| `url`             | `"http://localhost:${PORT}"` | Browser gates: the page to check                                                                                                                                                                                                                             |
+| `script`          | –                            | Browser gates: a YAML/TOML steps file. Without one: open, wait, the page must render content and log no console errors or uncaught exceptions                                                                                                                |
+| `requires_script` | –                            | Pass without running while `package.json` has no script of this name. The empty-folder starter uses `"start"` so non-web projects never pay                                                                                                                  |
 
 ## `[budget]` (24 h defaults, plan §14.5)
 
@@ -52,11 +56,12 @@ The container runs as your uid/gid with `--cap-drop ALL`, `no-new-privileges`, a
 
 ## `[models]` and `[pricing.<alias>]`
 
-| Key       | Default                                                                                                |
-| --------- | ------------------------------------------------------------------------------------------------------ |
-| `planner` | `"anthropic:opus"` → `claude-opus-5-5`                                                                 |
-| `worker`  | `"anthropic:sonnet"` → `claude-sonnet-5-5`                                                             |
-| `cheap`   | `"anthropic:haiku"` → `claude-haiku-4-5-20251001` (codemap purposes, notes consolidation, `llm` judge) |
+| Key       | Default                                                                                                                     |
+| --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `planner` | `"anthropic:opus"` → `claude-opus-5-5`                                                                                      |
+| `worker`  | `"anthropic:sonnet"` → `claude-sonnet-5-5`                                                                                  |
+| `cheap`   | `"anthropic:haiku"` → `claude-haiku-4-5-20251001` (codemap purposes, notes consolidation, `llm` judge)                      |
+| `chat`    | unset → the `worker` chain. The model chat mode talks to, e.g. `"pool:kimi-k2.7-code"`; `/model` overrides it for a session |
 
 Prices live in `src/providers/pricing.ts` (USD per MTok, checked 2026-10-03). Override or add one:
 
@@ -101,14 +106,15 @@ cache_write_1h = 4
 cache_read = 0.2
 ```
 
-| `[providers.endpoints.<name>]` key | Default    | Meaning                                                        |
-| ---------------------------------- | ---------- | -------------------------------------------------------------- |
-| `kind`                             | `"openai"` | Chat Completions API                                           |
-| `base_url`                         | required   | e.g. `https://api.openai.com/v1`                               |
-| `api_key_env`                      | unset      | Env var holding the key; unset for local endpoints             |
-| `free`                             | `false`    | Price unknown models at $0                                     |
-| `request_timeout`                  | `"10m"`    |                                                                |
-| `max_usd` / `max_usd_per_day`      | unset      | Per-provider caps; also accepted under `[providers.anthropic]` |
+| `[providers.endpoints.<name>]` key | Default    | Meaning                                                                                                                                                                                                                                                                                     |
+| ---------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kind`                             | `"openai"` | Chat Completions API                                                                                                                                                                                                                                                                        |
+| `base_url`                         | required   | e.g. `https://api.openai.com/v1`                                                                                                                                                                                                                                                            |
+| `api_key_env`                      | unset      | Env var holding the key; unset for local endpoints                                                                                                                                                                                                                                          |
+| `free`                             | `false`    | Price unknown models at $0                                                                                                                                                                                                                                                                  |
+| `request_timeout`                  | `"10m"`    |                                                                                                                                                                                                                                                                                             |
+| `sticky_random`                    | `false`    | For a pool whose `*-random` model picks a different model each request: omnexx picks one real chat model itself and keeps it (warm prompt cache) until it reports it is out of quota, then moves to the next. The pick and exhausted models are remembered in `sticky-<name>.json` for 24 h |
+| `max_usd` / `max_usd_per_day`      | unset      | Per-provider caps; also accepted under `[providers.anthropic]`                                                                                                                                                                                                                              |
 
 Each turn tries the chain in order. Providers over their own caps are skipped; a failing provider cools for 1 minute (transient errors) or 30 minutes (key, quota or unknown model) while the next one takes the call. If every provider is over its cap, the run stops as a budget stop; if every one is failing, the normal outage backoff applies. Events: `provider.failover`; spend per provider in `status --json` (`spend.byProvider`).
 
@@ -116,20 +122,30 @@ No endpoints are built in: any OpenAI-compatible server (OpenAI, OpenRouter, Gro
 
 ## `[providers.anthropic]`
 
-| Key               | Default     | Meaning                                                               |
-| ----------------- | ----------- | --------------------------------------------------------------------- |
-| `base_url`        | API default | e.g. a proxy                                                          |
-| `cache_ttl`       | `"5m"`      | `"5m"` or `"1h"` cache writes                                         |
-| `max_tokens`      | `16000`     | Output cap per turn; also the worst case used by the pre-flight check |
-| `request_timeout` | `"10m"`     | Per request                                                           |
+| Key                | Default     | Meaning                                                                              |
+| ------------------ | ----------- | ------------------------------------------------------------------------------------ |
+| `base_url`         | API default | e.g. a proxy                                                                         |
+| `cache_ttl`        | `"5m"`      | `"5m"` or `"1h"` cache writes for in-cycle message breakpoints                       |
+| `prefix_cache_ttl` | `"auto"`    | Stable-prefix breakpoint: `"auto"` = `"1h"` when `budget.max_hours > 1`, else `"5m"` |
+| `max_tokens`       | `16000`     | Output cap per turn; also the worst case used by the pre-flight check                |
+| `request_timeout`  | `"10m"`     | Per request                                                                          |
 
 ## `[git]`
 
-| Key       | Default    | Meaning                                                                |
-| --------- | ---------- | ---------------------------------------------------------------------- |
-| `push`    | `"none"`   | `"branch"` pushes `omnexx/<runId>` (never force) after each checkpoint |
-| `remote`  | `"origin"` |                                                                        |
-| `open_pr` | `false`    | `true` fails: not implemented (M5)                                     |
+| Key       | Default        | Meaning                                                                                                                                                                                |
+| --------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `push`    | `"none"`       | `"branch"` pushes `omnexx/<runId>` (never force) after each checkpoint                                                                                                                 |
+| `remote`  | `"origin"`     |                                                                                                                                                                                        |
+| `open_pr` | `false`        | At the end of a run with commits: push the branch and open a PR with `gh` (title from the goal, the report as body); the link goes into the finish notification. Needs `gh auth login` |
+| `pr_base` | current branch | The PR's base branch                                                                                                                                                                   |
+
+## `[notify.webhook]` (optional)
+
+| Key          | Default                                        | Meaning                                                                 |
+| ------------ | ---------------------------------------------- | ----------------------------------------------------------------------- |
+| `url_env`    | required                                       | Env var holding a Slack or Discord incoming-webhook URL (it's a secret) |
+| `events`     | `finished, needs-human, budget, crash, outage` | Which events post                                                       |
+| `timeout_ms` | `5000`                                         |                                                                         |
 
 ## `[notify.ntfy]` (optional)
 
@@ -191,11 +207,12 @@ In-cycle context control runs before each turn and works on every provider. Past
 
 ## `[policy]`
 
-| Key               | Default | Meaning                                                                           |
-| ----------------- | ------- | --------------------------------------------------------------------------------- |
-| `deny`            | `[]`    | Extra command names the agent's `bash` may not run                                |
-| `allow_network`   | `false` | Allow `curl`/`wget` (never piped into a shell)                                    |
-| `env_passthrough` | `[]`    | Extra env var names for child processes (secret-looking names are dropped anyway) |
+| Key               | Default | Meaning                                                                                                                  |
+| ----------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `deny`            | `[]`    | Extra command names the agent's `bash` may not run                                                                       |
+| `allow_network`   | `false` | Allow `curl`/`wget` (never piped into a shell)                                                                           |
+| `env_passthrough` | `[]`    | Extra env var names for child processes (secret-looking names are dropped anyway)                                        |
+| `auto_approve`    | `false` | Chat: answer yes to every "allow this?" guard question; `/yolo` toggles it per session. Hard-denied commands stay denied |
 
 ## `[service]`
 
@@ -222,3 +239,55 @@ In-cycle context control runs before each turn and works on every provider. Past
 ## Environment variables
 
 `OMNEXX_HOME` (state, default `~/.omnexx`), `OMNEXX_CONFIG_HOME` (default `~/.config/omnexx`), `OMNEXX_ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEY`, and overrides: `OMNEXX_SANDBOX`, `OMNEXX_BUDGET_MAX_USD`, `OMNEXX_BUDGET_MAX_USD_PER_DAY`, `OMNEXX_BUDGET_MAX_HOURS`, `OMNEXX_BUDGET_MAX_CYCLES`, `OMNEXX_BUDGET_MAX_TURNS_PER_CYCLE`, `OMNEXX_MODELS_PLANNER`, `OMNEXX_MODELS_WORKER`, `OMNEXX_MODELS_CHEAP`, `OMNEXX_GIT_PUSH`, `OMNEXX_JUDGE_KIND`, `OMNEXX_JUDGE_MODE`, `OMNEXX_JUDGE_NIMBLE_URL`, `OMNEXX_NTFY_SERVER`, `OMNEXX_NTFY_TOPIC`.
+
+## `[search]`
+
+| Key           | Default | Meaning                                                                                                                                                                  |
+| ------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `embeddings`  | unset   | `"provider:model"` on an OpenAI-compatible `/embeddings` endpoint (e.g. `"mistral:codestral-embed"`). Set it to give the agent `semantic_search` (find code by meaning). |
+| `max_files`   | `4000`  | Files indexed at most. The index lives next to the repo's memory and only re-embeds files that changed.                                                                  |
+| `chunk_lines` | `60`    | Lines per indexed chunk (a quarter overlap).                                                                                                                             |
+
+## `[skills]` (see [instructions.md](instructions.md#skills))
+
+| Key             | Default | Meaning                                                                                 |
+| --------------- | ------- | --------------------------------------------------------------------------------------- |
+| `dirs`          | `[]`    | More folders of skills (`<dir>/<name>/SKILL.md`), read in place; `~` is the home folder |
+| `import_claude` | `true`  | Also use Claude Code's skills: `~/.claude/skills` and the repo's `.claude/skills`       |
+
+## `[agents]` (see [agent-cards.md](agent-cards.md))
+
+| Key                         | Default | Meaning                                                                           |
+| --------------------------- | ------- | --------------------------------------------------------------------------------- |
+| `dirs`                      | `[]`    | More folders of agent cards (`<dir>/<name>.md`), read in place                    |
+| `import_claude`             | `true`  | Also use Claude Code's agents: `~/.claude/agents` and the repo's `.claude/agents` |
+| `remote.<name>.url`         | –       | A remote A2A agent: its card URL or base URL                                      |
+| `remote.<name>.headers_env` | `{}`    | Headers to send: env var name, `secret:<KEY>`, or literal                         |
+
+## `[autonomous]`
+
+`omnexx run --for 8h "<goal>"` (or `/autonomous 8h [goal]` in the app) turns this on. Once the goal is met it
+keeps planning improvement rounds until the time is up: no round cap, each round aimed at the next focus area
+(yours first, then the built-in rubric), and work blocked by a parked task is skipped instead of stopping the
+run to ask. `--for` also sets `budget.max_hours`; `budget.max_usd` still applies.
+
+| Key               | Default | Meaning                                                                   |
+| ----------------- | ------- | ------------------------------------------------------------------------- |
+| `enabled`         | `false` | Set by `--for`                                                            |
+| `max_idle_rounds` | `8`     | Stop early after this many rounds in a row that found nothing worth doing |
+| `focus`           | `[]`    | Extra focus areas tried first, e.g. `["move the API to tRPC"]`            |
+
+## `[review]`
+
+Earned done. On by default; each part costs model calls, so tune it to your budget.
+
+| Key              | Default     | Meaning                                                                                                                      |
+| ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`        | `true`      | Review each change that passed the gates before it is committed; blocking findings send it back                              |
+| `review_models`  | `"worker"`  | Which role's models review (`cheap`, `worker`, `planner`). Reviews are frequent, so the worker's models keep them affordable |
+| `block_on`       | `"blocker"` | Severity that rejects a change (`blocker` or `major`)                                                                        |
+| `strict_checks`  | `true`      | Refuse plans whose task checks only look for files or text                                                                   |
+| `audit`          | `true`      | Before a run may finish, audit the result against the goal's "done when" list; gaps become a new milestone                   |
+| `audit_models`   | `"planner"` | Which role's models audit (rare and judgement-heavy)                                                                         |
+| `max_audits`     | `3`         | Audit rounds before the run finishes anyway                                                                                  |
+| `max_diff_chars` | `40000`     | Larger diffs are cut (head and tail kept) before review                                                                      |

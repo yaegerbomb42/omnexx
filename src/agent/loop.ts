@@ -5,10 +5,13 @@ import { estimateTokens } from '../core/tokens.js';
 import { preflight, type BudgetStop } from '../guard/budget.js';
 import { costUsd, type ResolvedModel } from '../providers/pricing.js';
 import { StopRequested, withRetry } from '../providers/retry.js';
+import { narrateTool } from '../telemetry/narrate.js';
 import { shouldFailover } from '../providers/router.js';
+import { isQuotaError } from '../providers/sticky.js';
 import { ProviderError } from '../errors.js';
 import {
   totalInput,
+  type CompletionRequest,
   type CompletionResponse,
   type ContentBlock,
   type Message,
@@ -18,9 +21,15 @@ import {
   type Usage,
 } from '../providers/types.js';
 import type { Tool, ToolContext } from '../tools/types.js';
-import { manageContext, type CompactionSettings, type Summarize } from './compaction.js';
+import {
+  contextTokens,
+  manageContext,
+  type CompactionSettings,
+  type Summarize,
+} from './compaction.js';
 import { turnRequest } from './context.js';
 import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
+import { todoItemsOf, todoNudge, todoTool, type TodoItem } from '../tools/todo.js';
 
 /** Thrown inside the retry loop when a pre-flight check refuses the call; ends the cycle, never retried. */
 class BudgetStopSignal extends Error {
@@ -55,6 +64,10 @@ export interface LoopDeps {
   providerBlocked?: (provider: string) => string | undefined;
   /** Skip this provider for a while after it failed. */
   coolProvider?: (provider: string, ms: number) => void;
+  /** Whether this provider:model is out of quota (skipped until its quota resets). */
+  modelExhausted?: (ref: string) => boolean;
+  /** Record that this provider:model is out of quota, so the chain moves past it. */
+  markExhausted?: (ref: string) => void;
   tools: readonly Tool[];
   toolCtx: ToolContext;
   budget: OmnexxConfig['budget'];
@@ -78,6 +91,74 @@ export interface LoopDeps {
   compaction?: { settings: CompactionSettings; summarize?: Summarize };
   /** In-cycle stuck detection; off when unset. */
   watch?: InCycleWatch;
+  /** How many `task` calls from one turn run at once (default 1). */
+  parallelTasks?: number;
+  /** Interactive chat: stream text and reasoning as the model writes them. */
+  onDelta?: CompletionRequest['onDelta'];
+  /**
+   * Interactive chat: messages the person typed while the agent was working. Drained after
+   * every step and added to the conversation right away, so they steer the current turn.
+   */
+  pendingInput?: () => string[];
+}
+
+/** How messages typed mid-turn reach the model. */
+export const steeringText = (msgs: readonly string[]): string =>
+  `The user sent ${msgs.length === 1 ? 'a message' : 'messages'} while you were working. Read ${msgs.length === 1 ? 'it' : 'them'} now and adjust:\n${msgs.map((m) => `> ${m}`).join('\n')}`;
+
+/** Extra tries for a 400 on one call (a pool may route the retry to another model). */
+const BAD_REQUEST_RETRIES = 2;
+
+/** Failed attempts with a server error before checking whether the provider itself is up. */
+export const POISON_PROBE_AFTER = 3;
+
+/** The provider answers a trivial request but keeps failing this one: retrying can't help. */
+class PoisonedRequest extends Error {}
+
+/**
+ * Top-level string values that hold a JSON array or object, decoded (once; nested strings too).
+ * The input itself when nothing needed decoding, so callers can tell.
+ */
+export function decodeJsonStrings(input: unknown): unknown {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return input;
+  let changed = false;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    out[k] = v;
+    if (typeof v !== 'string') continue;
+    const t = v.trim();
+    if (!(t.startsWith('[') && t.endsWith(']')) && !(t.startsWith('{') && t.endsWith('}')))
+      continue;
+    try {
+      out[k] = JSON.parse(t) as unknown;
+      changed = true;
+    } catch {
+      // Not JSON after all: leave it for the schema to reject.
+    }
+  }
+  return changed ? out : input;
+}
+
+/** Estimated tokens of the conversation by kind: tool results (by tool), tool calls, text. */
+export function messageSegments(messages: readonly Message[]): {
+  messages: number;
+  toolResults: number;
+  byTool: Record<string, number>;
+} {
+  const names = new Map<string, string>();
+  const byTool: Record<string, number> = {};
+  let toolResults = 0;
+  for (const m of messages)
+    for (const b of m.content) {
+      if (b.type === 'tool_use') names.set(b.id, b.name);
+      else if (b.type === 'tool_result') {
+        const t = estimateTokens(b.content);
+        toolResults += t;
+        const name = names.get(b.toolUseId) ?? 'unknown';
+        byTool[name] = (byTool[name] ?? 0) + t;
+      }
+    }
+  return { messages: contextTokens(messages), toolResults, byTool };
 }
 
 function summarizeInput(input: unknown): string {
@@ -91,17 +172,30 @@ function summarizeInput(input: unknown): string {
  * here at a turn boundary; no tokens are spent while paused or while a command runs.
  */
 export async function runAgentLoop(
-  ctx: { system: SystemBlock[]; first: Message; tools: ToolSpec[] },
+  ctx: {
+    system: SystemBlock[];
+    first: Message;
+    tools: ToolSpec[];
+    /** Earlier turns of an interactive chat, sent before `first`. */
+    history?: readonly Message[];
+  },
   deps: LoopDeps,
 ): Promise<LoopResult> {
-  let messages: Message[] = [ctx.first];
+  let messages: Message[] = [...(ctx.history ?? []), ctx.first];
   const usage: Usage = { uncached: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0, output: 0 };
   let usd = 0;
   let turns = 0;
   let cycleTokens = 0;
   let finalText = '';
+  let todos: readonly TodoItem[] = [];
+  let todoNudged = false;
   const byName = new Map(deps.tools.map((t) => [t.name, t]));
   const end = (e: LoopEnd): LoopResult => ({ end: e, turns, finalText, usage, usd, messages });
+  // The stable prefix never changes within a cycle; size it once for the per-turn breakdown.
+  const prefixTokens = {
+    system: estimateTokens(ctx.system.map((b) => b.text).join('\n')),
+    tools: estimateTokens(JSON.stringify(ctx.tools)),
+  };
 
   for (;;) {
     let signal = await deps.control();
@@ -116,6 +210,7 @@ export async function runAgentLoop(
       deps.events.emit('control.resumed', { turn: turns });
     }
     if (signal === 'stop' || signal === 'stop-now') return end(signal);
+    if (deps.signal?.aborted) return end('stop-now');
 
     if (deps.compaction && turns > 0) {
       messages = await manageContext(
@@ -123,18 +218,72 @@ export async function runAgentLoop(
         ctx.first,
         deps.compaction.settings,
         deps.compaction.summarize,
-        ({ kind, ...rest }) => deps.events.emit(`context.${kind}`, { turn: turns, ...rest }),
+        ({ kind, ...rest }) => {
+          // Earlier read results are gone from the context now; let `read` return them again.
+          if (kind === 'cleared' || kind === 'compacted') deps.toolCtx.reads?.clear();
+          deps.events.emit(`context.${kind}`, { turn: turns, ...rest });
+        },
       );
     }
 
     let chosen: ResolvedModel | undefined;
     let res: CompletionResponse;
+    const callStart = deps.clock.now();
+    // Attempts in a row where some provider answered 5xx, and the last one that did.
+    let serverFailures = 0;
+    let badRequests = 0;
+    let lastServerFailure: ResolvedModel | undefined;
     try {
       res = await withRetry(
         async () => {
+          // After a few server errors, check whether the provider answers a trivial request.
+          // If it does and this request still fails, the request itself is the problem: an
+          // outage fails both, and one that just ended lets this attempt through.
+          if (serverFailures >= POISON_PROBE_AFTER && lastServerFailure) {
+            const m = lastServerFailure;
+            const up = await deps.provider
+              .complete({
+                model: m.id,
+                route: m.provider,
+                system: [{ text: 'Reply with: ok' }],
+                tools: [],
+                messages: [{ role: 'user', content: [{ type: 'text', text: 'ok' }] }],
+                maxTokens: 16,
+                messageBreakpoints: [],
+              })
+              .then(
+                () => true,
+                () => false,
+              );
+            if (up) {
+              // The provider is up: send the real request once more, cooling or not.
+              try {
+                const r = await deps.provider.complete({
+                  ...turnRequest(ctx, messages, m.id, deps.maxTokens),
+                  route: m.provider,
+                  ...(deps.signal ? { signal: deps.signal } : {}),
+                });
+                chosen = m;
+                return r;
+              } catch (err) {
+                if (err instanceof ProviderError && (err.status ?? 0) >= 500)
+                  throw new PoisonedRequest(
+                    `${m.provider}:${m.id} answers other requests but failed this one ${serverFailures + 1} times`,
+                  );
+                throw err;
+              }
+            }
+          }
+          let sawServerError = false;
+          let triedAny = false;
           const skipped: string[] = [];
           let onlyBudget = true;
           for (const m of deps.models) {
+            if (deps.modelExhausted?.(`${m.provider}:${m.id}`)) {
+              onlyBudget = false;
+              skipped.push(`${m.provider}:${m.id}: out of quota`);
+              continue;
+            }
             const blocked = deps.providerBlocked?.(m.provider);
             if (blocked) {
               if (!blocked.includes('max_usd')) onlyBudget = false;
@@ -152,19 +301,45 @@ export async function runAgentLoop(
               price: m.price,
             });
             if (!pf.ok) throw new BudgetStopSignal(pf.stop, pf.detail);
+            triedAny = true;
             try {
               const r = await deps.provider.complete({
                 ...req,
                 route: m.provider,
+                ...(deps.onDelta ? { onDelta: deps.onDelta } : {}),
                 ...(deps.signal ? { signal: deps.signal } : {}),
               });
               chosen = m;
               return r;
             } catch (err) {
+              // A 400 is usually our own mistake, but behind a model pool the next try can land on
+              // a different model: give it two more chances before failing the call.
+              if (
+                err instanceof ProviderError &&
+                err.status === 400 &&
+                !err.contentFilter &&
+                !isQuotaError(err) &&
+                badRequests++ < BAD_REQUEST_RETRIES
+              ) {
+                deps.events.emit('provider.retry_400', {
+                  provider: m.provider,
+                  error: err.message,
+                });
+                throw new ProviderError(err.message, { retryable: true, status: 400 });
+              }
               if (!shouldFailover(err)) throw err;
               onlyBudget = false;
-              // Transient trouble: retry this provider soon. Key, quota or model problems: much later.
-              deps.coolProvider?.(m.provider, err.retryable ? 60_000 : 30 * 60_000);
+              if ((err.status ?? 0) >= 500) {
+                sawServerError = true;
+                lastServerFailure = m;
+              }
+              // Out of quota: only this model is done, the provider's other models may still have some.
+              if (deps.markExhausted && isQuotaError(err))
+                deps.markExhausted(`${m.provider}:${m.id}`);
+              // A content filter refused this request only: the provider stays usable.
+              // Transient trouble: retry this provider soon. Key or model problems: much later.
+              else if (!err.contentFilter)
+                deps.coolProvider?.(m.provider, err.retryable ? 60_000 : 30 * 60_000);
               deps.events.emit('provider.failover', {
                 provider: m.provider,
                 model: m.id,
@@ -174,6 +349,9 @@ export async function runAgentLoop(
               skipped.push(`${m.provider}: ${err.message}`);
             }
           }
+          // Attempts where every provider was cooling down tried nothing: they don't reset it.
+          if (sawServerError) serverFailures++;
+          else if (triedAny) serverFailures = 0;
           if (skipped.length && onlyBudget)
             throw new BudgetStopSignal(
               'max_usd',
@@ -210,6 +388,17 @@ export async function runAgentLoop(
       );
     } catch (err) {
       if (err instanceof StopRequested) return end('stop');
+      // Esc in chat: end the turn cleanly, keeping every completed step.
+      if (deps.signal?.aborted) return end('stop-now');
+      if (err instanceof PoisonedRequest) {
+        const finding: StuckFinding = { signal: 'poisoned_request', detail: err.message };
+        deps.events.emit('stuck.in_cycle', {
+          signal: finding.signal,
+          detail: finding.detail,
+          turn: turns,
+        });
+        return { ...end('stuck'), stuck: finding };
+      }
       if (err instanceof BudgetStopSignal) {
         deps.events.emit('budget.preflight_stop', {
           stop: err.stop,
@@ -232,6 +421,8 @@ export async function runAgentLoop(
     deps.events.emit('turn', {
       turn: turns,
       model: res.model,
+      provider: model.provider,
+      ms: deps.clock.now() - callStart,
       stopReason: res.stopReason,
       tokens: {
         uncached: res.usage.uncached,
@@ -240,6 +431,8 @@ export async function runAgentLoop(
         output: res.usage.output,
       },
       cacheReadShare: input ? res.usage.cacheRead / input : 0,
+      // Estimated input by segment, to see where the tokens go (W8 "measure first").
+      segments: { ...prefixTokens, ...messageSegments(messages) },
       usd: cost,
     });
 
@@ -253,19 +446,59 @@ export async function runAgentLoop(
     const calls = res.content.filter(
       (b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use',
     );
+    // What the model said or reasoned on its way to a tool call: shown as "thinking".
+    // A final answer (no tool call) is shown as the reply itself, so its reasoning isn't
+    // repeated after it.
+    const thought = calls.length ? text || res.reasoning?.trim() : undefined;
+    if (thought) deps.events.emit('agent.thinking', { text: thought.slice(0, 600) });
     if (res.stopReason === 'refusal') return end('refusal');
-    if (calls.length === 0) return end('done');
+    for (const c of calls) if (c.name === todoTool.name) todos = todoItemsOf(c.input) ?? todos;
+    if (calls.length === 0) {
+      const late = deps.pendingInput?.() ?? [];
+      const open = todos.filter((i) => i.status !== 'done');
+      if (!late.length && open.length && !todoNudged) {
+        // Models often stop with the checklist half ticked; one reminder, then trust the answer.
+        todoNudged = true;
+        deps.events.emit('todo.nudge', { open: open.length });
+        messages.push({ role: 'user', content: [{ type: 'text', text: todoNudge(open) }] });
+        continue;
+      }
+      if (!late.length) return end('done');
+      // The person wrote while the model was finishing: answer that before ending the turn.
+      messages.push({ role: 'user', content: [{ type: 'text', text: steeringText(late) }] });
+      deps.events.emit('steer.applied', { count: late.length, turn: turns });
+      continue;
+    }
 
-    const results: ContentBlock[] = [];
-    for (const call of calls) {
+    const runCall = async (call: (typeof calls)[number]): Promise<ContentBlock> => {
       const tool = byName.get(call.name);
       let content: string;
       let isError: boolean;
+      const toolStart = deps.clock.now();
+      deps.events.emit('tool.start', {
+        tool: call.name,
+        doing: narrateTool(
+          call.name,
+          typeof call.input === 'object' && call.input !== null
+            ? (call.input as Record<string, unknown>)
+            : {},
+        ),
+      });
       if (!tool) {
-        content = `unknown tool ${call.name}`;
+        content = `unknown tool ${call.name}; the tools are: ${[...byName.keys()].join(', ')} (list files with bash, e.g. \`ls -R src\`)`;
         isError = true;
       } else {
-        const parsed = tool.schema.safeParse(call.input);
+        const prepare = (v: unknown) => (tool.normalize ? tool.normalize(v) : v);
+        let parsed = tool.schema.safeParse(prepare(call.input));
+        // Models often send a nested array or object as a JSON string ("milestones": "[{…}]").
+        // Decode before normalizing: a normalizer may reshape the string beyond recovery.
+        if (!parsed.success) {
+          const decoded = decodeJsonStrings(call.input);
+          if (decoded !== call.input) {
+            const again = tool.schema.safeParse(prepare(decoded));
+            if (again.success) parsed = again;
+          }
+        }
         if (!parsed.success) {
           content = `invalid input for ${call.name}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
           isError = true;
@@ -280,14 +513,27 @@ export async function runAgentLoop(
         tool: call.name,
         input: summarizeInput(call.input),
         isError,
+        // Already redacted above. Enough to see why it failed without opening the transcript.
+        ...(isError ? { error: content.slice(0, 500) } : {}),
         bytes: content.length,
+        ms: deps.clock.now() - toolStart,
       });
-      results.push({
+      return {
         type: 'tool_result',
         toolUseId: call.id,
         content,
         ...(isError ? { isError: true } : {}),
-      });
+      };
+    };
+    const results: ContentBlock[] = [];
+    // A turn of only `task` calls fans out: read-only helpers can't conflict with each other.
+    const parallel = calls.every((c) => c.name === 'task') ? (deps.parallelTasks ?? 1) : 1;
+    for (let i = 0; i < calls.length; i += parallel)
+      results.push(...(await Promise.all(calls.slice(i, i + parallel).map(runCall))));
+    const steer = deps.pendingInput?.() ?? [];
+    if (steer.length) {
+      results.push({ type: 'text', text: steeringText(steer) });
+      deps.events.emit('steer.applied', { count: steer.length, turn: turns });
     }
     messages.push({ role: 'user', content: results });
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { supervisorAlive } from '../../src/cli/commands/control.js';
 import { readEvents } from '../../src/core/events.js';
 import { readLock } from '../../src/core/lock.js';
 import { resolvePaths } from '../../src/core/paths.js';
@@ -17,6 +18,32 @@ async function commitsByCycle(worktree: string, from: string): Promise<string[]>
 }
 
 describe('real processes: detach, heartbeat, pause/resume', () => {
+  it('run flags reach the detached supervisor: --budget stops the run', async () => {
+    const { repo, env } = await processRepo({ OMNEXX_TEST_TASKS: '4' });
+    const r = await entry(['run', '--detach', '--budget', '0.0001', 'Create the four files'], {
+      cwd: repo,
+      env,
+    });
+    expect(r.code).toBe(0);
+    const store = new RunStore(resolvePaths(env), r.stdout.trim());
+    const state = await waitFor(
+      async () => {
+        const s = await store.readState().catch(() => undefined);
+        return s && !['running', 'planning', 'created'].includes(s.status) ? s : undefined;
+      },
+      60_000,
+      'run to end',
+    );
+    expect(state.status).toBe('budget-stop');
+    expect(state.acceptedCommits).toBe(0);
+    // The supervisor writes REPORT.md after the status; let it exit before temp dirs are removed.
+    await waitFor(
+      async () => (!(await supervisorAlive(store)) ? true : undefined),
+      30_000,
+      'supervisor exit',
+    );
+  });
+
   it('run --detach returns at once; the run keeps going with a fresh heartbeat; pause takes effect within a turn; resume continues to the end', async () => {
     const { repo, env } = await processRepo({ OMNEXX_TEST_TASKS: '4', OMNEXX_TEST_TURN_MS: '150' });
     const started = Date.now();
@@ -45,7 +72,8 @@ describe('real processes: detach, heartbeat, pause/resume', () => {
     expect((await entry(['pause', runId], { cwd: repo, env })).code).toBe(0);
     const paused = await waitFor(
       async () => ((await store.readHeartbeat())?.phase === 'paused' ? true : undefined),
-      10_000,
+      // Generous: a loaded CI runner can take several seconds to reach the next turn boundary.
+      30_000,
       'paused heartbeat',
     );
     expect(paused).toBe(true);

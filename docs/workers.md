@@ -1,8 +1,6 @@
 # Worker backends
 
-Omnexx stays the single agent in charge: it owns the plan, the judge, git, budgets and memory. Worker backends let it hand one tightly scoped task to another coding harness you have installed (Aider, OpenCode, Cline, Pi, Hermes, OpenHands, Claude Code), using that tool's own quota. A worker's output is **only a candidate diff**, judged by the same gates, ratchet and anti-cheat as a native cycle, then committed (with an `Omnexx-Worker: <id>` trailer) or rolled back.
-
-> **Status in this build:** the interface, the harness-side lifecycle and the safety checks are implemented and tested with a fake worker. **No real adapters exist yet; they arrive in M3**, along with routing, quota rotation, the "second opinion" ladder rung and judge-assisted worker choice. Enabling any worker today fails with "adapter not available until M3".
+Omnexx stays the single agent in charge: it owns the plan, the judge, git, budgets and memory. Worker backends let it hand one tightly scoped task to another coding harness you have installed (Aider, OpenCode, Cline, Claude Code, Codex, Gemini CLI, Qwen Code), using that tool's own quota. A worker's output is **only a candidate diff**, judged by the same gates, ratchet and anti-cheat as a native cycle, then committed (with an `Omnexx-Worker: <id>` trailer) or rolled back.
 
 ## ⚠ Terms of service and account risk
 
@@ -19,6 +17,20 @@ Automating consumer free tiers or subscriptions can violate those services' term
 | `quota`                                         | `maxRunsPerHour`, `maxRunsPerDay`, `cooldownMs`                                                                             |
 | `parseResult(exitCode, stdoutPath, stderrPath)` | `completed`, `failed`, `timeout`, `quota_exhausted`, `rate_limited` or `auth_required`, plus an optional summary and usage. |
 
+## Available Adapters (`src/workers/adapters/`)
+
+Omnexx provides verified worker backend adapters:
+
+- **Claude Code (`claude-code`)**: Runs `claude -p "<task>" --output-format stream-json --permission-mode auto --permission-prompts none --no-session-persistence`. Parses streamed JSON events for completions and cost tracking.
+- **Codex CLI (`codex`)**: Runs `codex exec -C <wt> -s workspace-write --json --ephemeral -o <lastMsg> "<task>"`.
+- **OpenCode (`opencode`)**: Runs `opencode run --dir <wt> --auto --format json "<task>"`.
+- **Aider (`aider`)**: Runs `aider --message-file <task-file> --yes-always --no-auto-commits`.
+- **Gemini CLI (`gemini-cli`)**: Runs `gemini -p "<task>"`.
+- **Qwen Code (`qwen-code`)**: Runs `qwen -p "<task>"`.
+- **Cline CLI (`cline`)**: Runs `cline --json --auto-approve true --cwd <wt> "<task>"`.
+
+Adapters always construct pure argv arrays (never raw shell strings) and run exclusively inside the isolated temporary worktree prepared by `runWorkerCycle()`.
+
 ## What the harness owns (`src/workers/lifecycle.ts`)
 
 1. **Quota and concurrency.** Skips a worker in cooldown or over its hourly/daily cap (state persisted in `$OMNEXX_HOME/workers/state.json`, so cooldowns survive restarts). A semaphore enforces `[workers] max_concurrent` (default 1).
@@ -32,17 +44,17 @@ Automating consumer free tiers or subscriptions can violate those services' term
 9. **Same judge**: VERIFY (gates, ratchet, anti-cheat, oscillation, task checks) → COMMIT or ROLLBACK (`rejected/<cycle>-<worker>.patch`) → RECORD.
 10. The worker worktree and branch are removed afterwards.
 
-Because the worker's own auto-approve means Omnexx's command policy doesn't apply inside it, `sandbox = "docker"` (M3) is recommended for unattended worker use.
+Because the worker's own auto-approve means Omnexx's command policy doesn't apply inside it, `sandbox = "docker"` is recommended for unattended worker use.
 
 ## Config
 
 ```toml
 [workers]
 max_concurrent = 1
-priority = ["aider", "opencode", "cline", "pi", "hermes", "openhands", "claude-code"]
+priority = ["aider", "opencode", "cline", "claude-code", "codex"]
 
 [workers.aider]
-enabled = false          # stays false until M3
+enabled = false          # opt-in per tool
 timeout = "20m"
 route = ["tests", "lint", "small-refactor"]
 max_runs_per_day = 40

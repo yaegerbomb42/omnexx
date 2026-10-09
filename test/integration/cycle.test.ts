@@ -40,6 +40,29 @@ async function allFiles(dir: string): Promise<string[]> {
 }
 
 describe('M1: one full cycle with the scripted provider', () => {
+  it('ranks progress and evidence in the cycle message, never in the cached prefix', async () => {
+    const provider = new ScriptedProvider(fixAdd);
+    const t = await startTestRun({ fixture: 'ts-failing-test', provider, plan: onePlan() });
+    await runBaseline(t.run);
+    const task = t.run.plan?.nodes.find((n) => n.id === 'M1.T01');
+    task?.evidence.push('typecheck failed: add() returns string');
+    await runOneCycle(t.run, 'M1.T01');
+    const events = await readEvents(t.run.events.path);
+    const banks = (events.find((e) => e.type === 'cycle.context')?.memory ?? []) as {
+      bankType: string;
+      blocks: number;
+    }[];
+    expect(banks.find((b) => b.bankType === 'working')?.blocks).toBe(1);
+
+    const req = provider.requests[0];
+    const prefix = req?.system.map((b) => b.text).join('\n\n') ?? '';
+    expect(prefix).not.toContain('Evidence from earlier attempts');
+    const first = req?.messages[0]?.content[0];
+    const text = first?.type === 'text' ? first.text : '';
+    expect(text.match(/# Evidence from earlier attempts/g)).toHaveLength(1);
+    expect(text).toContain('- typecheck failed: add() returns string');
+  });
+
   it('ts-failing-test: one checkpoint commit with trailers; the user checkout is never touched', async () => {
     const provider = new ScriptedProvider(fixAdd);
     let during: { head: string; status: string } | undefined;
@@ -241,9 +264,18 @@ describe('M1: one full cycle with the scripted provider', () => {
     expect(verdict.verdict).toBe('reject');
     expect(verdict.reasons.join('\n')).toMatch(reason);
     expect(await isClean(t.run.worktree)).toBe(true);
+    // The rule becomes a run-wide lesson, so it outlives the task's short evidence list.
+    const pitfalls = (await t.run.store.readNotes()).filter((n) => n.type === 'pitfall');
+    expect(pitfalls.length).toBeGreaterThanOrEqual(1);
+    for (const p of pitfalls) expect(p.text).toMatch(/rejected/);
+    // Another rejection for the same rule adds nothing new.
+    await runOneCycle(t.run, 'M1.T01');
+    expect((await t.run.store.readNotes()).filter((n) => n.type === 'pitfall')).toHaveLength(
+      pitfalls.length,
+    );
   });
 
-  it('a cycle with no changes and failing checks is rejected; already-passing checks finish at zero cost', async () => {
+  it('a cycle with no changes and failing checks is rejected; already-passing checks finish at zero cost once the run has a commit', async () => {
     const t = await startTestRun({
       fixture: 'ts-failing-test',
       provider: new ScriptedProvider(() => say('nothing to do')),
@@ -251,16 +283,84 @@ describe('M1: one full cycle with the scripted provider', () => {
     });
     await runBaseline(t.run);
     expect((await runOneCycle(t.run, 'M1.T01')).reasons).toEqual(['no changes']);
+    // Before any accepted commit a passing check proves nothing: the agent looks for itself.
+    const looked = new ScriptedProvider(() => say('nothing to change'));
+    const fresh = await startTestRun({
+      fixture: 'ts-failing-test',
+      provider: looked,
+      plan: onePlan(['true']),
+    });
+    expect(await runOneCycle(fresh.run, 'M1.T01')).toMatchObject({ verdict: 'accept', done: true });
+    expect(looked.requests.length).toBeGreaterThan(0);
+    // After one, a task whose checks already pass finishes at zero cost.
     const provider = new ScriptedProvider(() => say('unused'));
     const done = await startTestRun({
       fixture: 'ts-failing-test',
       provider,
       plan: onePlan(['true']),
     });
+    done.run.state.acceptedCommits = 1;
     const v = await runOneCycle(done.run, 'M1.T01');
     expect(v).toMatchObject({ verdict: 'accept', done: true });
     expect(provider.requests).toHaveLength(0);
-    expect(done.run.state.acceptedCommits).toBe(0);
+    expect(done.run.state.acceptedCommits).toBe(1);
+  });
+});
+
+describe('command timeout', () => {
+  it('never runs past the run’s wall-clock cap', async () => {
+    const t = await startTestRun({
+      fixture: 'ts-failing-test',
+      provider: new ScriptedProvider(() => say('unused')),
+      config: { budget: { max_hours: 0.01, max_cmd_timeout: '30m' } },
+    });
+    // 36 s of run left plus a minute to wrap up, far below the 30 m command default.
+    expect(t.run.maxCmdTimeoutMs).toBeLessThanOrEqual(96_000);
+    expect(t.run.maxCmdTimeoutMs).toBeGreaterThanOrEqual(30_000);
+  });
+});
+
+describe('shared checks', () => {
+  it('never skips a task for free when its only check is one every task shares', async () => {
+    const provider = new ScriptedProvider(() => say('nothing to change'));
+    const t = await startTestRun({
+      fixture: 'ts-failing-test',
+      provider,
+      plan: {
+        milestones: [
+          {
+            id: 'M1',
+            title: 'Inventory',
+            tasks: [
+              { id: 'M1.T01', title: 'Receive stock', checks: ['true'] },
+              { id: 'M1.T02', title: 'Ship stock', checks: ['true'] },
+            ],
+          },
+        ],
+      },
+    });
+    t.run.state.acceptedCommits = 1;
+    await runOneCycle(t.run, 'M1.T02');
+    expect(provider.requests.length).toBeGreaterThan(0);
+  });
+});
+
+describe('suspect checks', () => {
+  it('parks a task whose check fails the same way twice while the agent has nothing to change', async () => {
+    const t = await startTestRun({
+      fixture: 'ts-failing-test',
+      provider: new ScriptedProvider(() => say('already done; nothing to change')),
+      plan: onePlan(['grep -c "never-there" package.json']),
+    });
+    await runBaseline(t.run);
+    await runOneCycle(t.run, 'M1.T01');
+    expect(getNode(t.run.requirePlan(), 'M1.T01').status).toBe('doing');
+    await runOneCycle(t.run, 'M1.T01');
+    const task = getNode(t.run.requirePlan(), 'M1.T01');
+    expect(task.status).toBe('parked');
+    expect(task.parkedReason).toContain('a check may be wrong');
+    const events = await readEvents(t.run.store.eventsPath);
+    expect(events.some((e) => e.type === 'check.suspect')).toBe(true);
   });
 });
 

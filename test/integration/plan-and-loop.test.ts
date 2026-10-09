@@ -12,7 +12,7 @@ import { isClean } from '../../src/git/repo.js';
 import { secretCorpus } from '../support/secrets.js';
 import { fixtureRepo, startTestRun } from '../support/harness.js';
 import { call, say, ScriptedProvider, type Script } from '../support/scripted-provider.js';
-import { isolatedEnv } from '../support/tmp.js';
+import { isolatedEnv, tempDir } from '../support/tmp.js';
 import { FakeClock } from '../support/clock.js';
 
 const planScript: Script = ({ planner, turn }) => {
@@ -79,7 +79,11 @@ async function cliRun(
 describe('run --plan-only', () => {
   it('runs the planner with read-only tools, retries a rejected plan, writes plan.json, never edits the repo', async () => {
     const repo = await fixtureRepo('ts-failing-test');
-    const env = await isolatedEnv({ ANTHROPIC_API_KEY: secretCorpus().anthropic });
+    const env = await isolatedEnv({
+      ANTHROPIC_API_KEY: secretCorpus().anthropic,
+      // An empty home: the host's ~/.claude agents and skills would change the planner's tools.
+      HOME: await tempDir('omnexx-plan-home-'),
+    });
     const provider = new ScriptedProvider(planScript);
     const r = await cliRun(['run', '--plan-only', 'Make the tests pass'], repo, env, provider);
     expect(r.err).toBe('');
@@ -91,11 +95,16 @@ describe('run --plan-only', () => {
     expect((await store.readState()).status).toBe('planned');
     expect((await store.readPlan())?.nodes.map((n) => n.id)).toEqual(['M1', 'M1.T01', 'M2']);
     expect(provider.requests[0]?.tools.map((t) => t.name).sort()).toEqual([
+      'context',
       'outline',
       'read',
       'read_log',
+      'recall',
       'remember',
       'search',
+      'skill',
+      'task',
+      'write_intent',
       'write_plan',
     ]);
     expect(JSON.stringify(provider.requests.at(-1)?.messages)).toMatch(
@@ -105,6 +114,65 @@ describe('run --plan-only', () => {
     const events = await readEvents(store.eventsPath);
     expect(events.map((e) => e.type)).toContain('plan.written');
     expect(JSON.stringify(events)).not.toContain(secretCorpus().anthropic);
+  });
+
+  it('a planner that keeps exploring is told to write the plan, and then does', async () => {
+    const repo = await fixtureRepo('ts-failing-test');
+    const env = await isolatedEnv({ ANTHROPIC_API_KEY: secretCorpus().anthropic });
+    const plan = {
+      milestones: [
+        {
+          id: 'M1',
+          title: 'Fix arithmetic',
+          tasks: [{ id: 'M1.T01', title: 'Make add() add', checks: ['node --test'], size: 'S' }],
+        },
+      ],
+    };
+    const provider = new ScriptedProvider(({ planner, request }) => {
+      if (!planner) return say('not a planner request');
+      const seen = JSON.stringify(request.messages);
+      if (seen.includes('plan accepted')) return say('Plan written.');
+      return seen.includes('You have explored enough')
+        ? call('write_plan', plan)
+        : call('read', { path: 'src/math.js' });
+    });
+    const r = await cliRun(['run', '--plan-only', 'Make the tests pass'], repo, env, provider);
+    expect(r.code).toBe(0);
+    const [runId] = await listRunIds(resolvePaths(env));
+    const store = new RunStore(resolvePaths(env), runId ?? '');
+    const events = await readEvents(store.eventsPath);
+    expect(events.filter((e) => e.type === 'planner.nudge').map((e) => e.turn)).toEqual([12]);
+    expect(events.map((e) => e.type)).toContain('plan.written');
+    expect(provider.requests.length).toBeLessThanOrEqual(14);
+  });
+
+  it('the planner is also nudged by tokens, before the turn deadline', async () => {
+    const repo = await fixtureRepo('ts-failing-test');
+    const env = await isolatedEnv({ ANTHROPIC_API_KEY: secretCorpus().anthropic });
+    const plan = {
+      milestones: [
+        {
+          id: 'M1',
+          title: 'Fix arithmetic',
+          tasks: [{ id: 'M1.T01', title: 'Make add() add', checks: ['node --test'], size: 'S' }],
+        },
+      ],
+    };
+    const provider = new ScriptedProvider(({ planner, request }) => {
+      if (!planner) return say('not a planner request');
+      const seen = JSON.stringify(request.messages);
+      if (seen.includes('plan accepted')) return say('Plan written.');
+      if (seen.includes('You have explored enough')) return call('write_plan', plan);
+      // Each exploring turn reports 120k tokens: half the 400k cap is crossed after two.
+      return { ...call('read', { path: 'src/math.js' }), usage: { uncached: 120_000 } };
+    });
+    const r = await cliRun(['run', '--plan-only', 'Make the tests pass'], repo, env, provider);
+    expect(r.code).toBe(0);
+    const [runId] = await listRunIds(resolvePaths(env));
+    const store = new RunStore(resolvePaths(env), runId ?? '');
+    const events = await readEvents(store.eventsPath);
+    expect(events.filter((e) => e.type === 'planner.nudge').map((e) => e.turn)).toEqual([2]);
+    expect(events.map((e) => e.type)).toContain('plan.written');
   });
 
   it('fails clearly without a key or goal, and multi-cycle runs say they need M2', async () => {
@@ -233,6 +301,7 @@ describe('agent loop limits and control inside a cycle', () => {
     ]);
     const calls = events.filter((e) => e.type === 'tool.call');
     expect(calls.slice(0, 2).map((e) => e.isError)).toEqual([true, true]);
+    expect(String(calls[0]?.error)).toMatch(/unknown tool .*the tools are: read|invalid input/);
     expect(turnSeen).toBe(3);
 
     const stopped = await startTestRun({

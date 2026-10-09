@@ -11,12 +11,18 @@ export const TAIL_LINES = 120;
 const ERROR_LINE =
   /\b(error|fail(ed|ure|ing)?|exception|panic|traceback|assert(ion)?|cannot|not found|undefined)\b/i;
 
+/** Longer lines (minified bundles, base64, one-line JSON) are clipped; read_log has them whole. */
+export const MAX_LINE_CHARS = 500;
+
+const clipLine = (l: string): string =>
+  l.length > MAX_LINE_CHARS ? `${l.slice(0, MAX_LINE_CHARS)}… [${l.length} chars]` : l;
+
 /**
  * Keep the first 30 and last 120 lines plus every error-looking line in between (plan §4.4).
  * Deterministic, costs no tokens; the full output stays readable through read_log.
  */
 export function trimOutput(output: string, logId: string): string {
-  const lines = output.replace(/\s+$/, '').split('\n');
+  const lines = output.replace(/\s+$/, '').split('\n').map(clipLine);
   if (lines.length <= HEAD_LINES + TAIL_LINES) return lines.join('\n');
   const head = lines.slice(0, HEAD_LINES);
   const tail = lines.slice(-TAIL_LINES);
@@ -34,7 +40,10 @@ export function trimOutput(output: string, logId: string): string {
 
 const schema = z.strictObject({
   command: z.string().min(1).describe('Shell command, run in the repo root'),
-  timeout: z.string().optional().describe('e.g. "2m"; capped by the run config'),
+  timeout: z
+    .string()
+    .optional()
+    .describe('e.g. "2m" (a bare number is milliseconds); capped by the run config'),
 });
 
 export const bashTool: Tool<typeof schema> = {
@@ -43,9 +52,20 @@ export const bashTool: Tool<typeof schema> = {
     'Run a shell command in the repo root and wait for it to finish (never poll). Output is trimmed; use read_log for the full log. git writes, network, sudo and paths outside the repo are refused.',
   schema,
   readOnly: false,
+  // Models often send the timeout as a number of milliseconds.
+  normalize: (input) =>
+    typeof input === 'object' &&
+    input !== null &&
+    typeof (input as { timeout?: unknown }).timeout === 'number'
+      ? { ...input, timeout: String((input as { timeout: number }).timeout) }
+      : input,
   async run(input, ctx) {
     const verdict = checkCommand(input.command, ctx.policy);
-    if (!verdict.allowed) {
+    const allowed =
+      verdict.allowed ||
+      (ctx.ask !== undefined &&
+        (await ctx.ask(`run \`${input.command}\`? Normally refused: ${verdict.reason}`)));
+    if (!verdict.allowed && !allowed) {
       ctx.events.emit('tool.denied', {
         tool: 'bash',
         rule: verdict.rule,
@@ -58,7 +78,11 @@ export const bashTool: Tool<typeof schema> = {
     let timeoutMs = ctx.maxCmdTimeoutMs;
     if (input.timeout) {
       try {
-        timeoutMs = Math.min(parseDuration(input.timeout), ctx.maxCmdTimeoutMs);
+        // A bare number is milliseconds, as most tool APIs mean it.
+        const ms = /^\d+$/.test(input.timeout.trim())
+          ? Number(input.timeout)
+          : parseDuration(input.timeout);
+        timeoutMs = Math.min(ms, ctx.maxCmdTimeoutMs);
       } catch {
         return fail(`invalid timeout "${input.timeout}"`);
       }

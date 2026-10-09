@@ -50,14 +50,23 @@ export class GitError extends OmnexxError {
 export class ProviderError extends OmnexxError {
   readonly retryable: boolean;
   readonly status: number | undefined;
+  /** The provider's content filter refused this request; another model may take it. */
+  readonly contentFilter: boolean;
 
   constructor(
     message: string,
-    opts: { retryable: boolean; status?: number; hint?: string; cause?: unknown },
+    opts: {
+      retryable: boolean;
+      status?: number;
+      hint?: string;
+      cause?: unknown;
+      contentFilter?: boolean;
+    },
   ) {
     super('provider', message, opts.hint, { cause: opts.cause });
     this.retryable = opts.retryable;
     this.status = opts.status;
+    this.contentFilter = opts.contentFilter ?? false;
   }
 }
 

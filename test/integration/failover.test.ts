@@ -126,6 +126,27 @@ describe('provider failover inside a cycle', () => {
     expect(t.run.providerBlocked('anthropic')).toMatch(/cooling down/);
   });
 
+  it('a model out of quota is marked for that model only and skipped by later runs', async () => {
+    const dry: Provider = {
+      name: 'anthropic',
+      complete: () =>
+        Promise.reject(
+          new ProviderError('429 You exceeded your current quota', {
+            retryable: true,
+            status: 429,
+          }),
+        ),
+    };
+    const { t, verdict, events } = await run(dry, {});
+    expect(verdict).toMatchObject({ verdict: 'accept', done: true });
+    expect(events.filter((e) => e.type === 'provider.quota_exhausted')).toHaveLength(1);
+    // The provider isn't benched, only the model, and the mark is on disk for the next session.
+    expect(t.run.providerBlocked('anthropic')).toBeUndefined();
+    const sonnet = t.run.chains.worker[0];
+    expect(t.run.modelExhausted(`anthropic:${sonnet?.id ?? ''}`)).toBe(true);
+    expect(t.run.quota.all()).toHaveProperty([`anthropic:${sonnet?.id ?? ''}`]);
+  });
+
   it('a provider over its own max_usd is skipped without an error; the next one does the work', async () => {
     const primary = new ScriptedProvider(() => say('should not be called'));
     const srv = await backupServer();

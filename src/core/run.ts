@@ -9,10 +9,13 @@ import { LlmJudge } from '../judge/llm.js';
 import { preflight, spentInWindow } from '../guard/budget.js';
 import { costUsd, resolveChain, type ResolvedModel } from '../providers/pricing.js';
 import { shouldFailover } from '../providers/router.js';
+import { QuotaLedger } from '../providers/quota-ledger.js';
+import { isQuotaError } from '../providers/sticky.js';
 import type { CompletionRequest, CompletionResponse, Provider, Usage } from '../providers/types.js';
 import { scrubEnv } from '../security/env-scrub.js';
 import type { PolicyContext } from '../security/command-policy.js';
 import { Redactor } from '../security/redact.js';
+import { ModelRouter } from '../router/router.js';
 import type { ControlSignal } from '../agent/loop.js';
 import type { Clock } from './clock.js';
 import { EventLog } from './events.js';
@@ -39,10 +42,14 @@ export interface RunDeps {
 }
 
 /** Everything one supervisor needs for one run. Owns state persistence and phase transitions. */
+/** Even at the very end of a run, a command gets this long. */
+const MIN_CMD_TIMEOUT_MS = 30_000;
+
 export class Run {
   readonly events: EventLog;
   readonly redactor: Redactor;
   readonly judge: FailOpenJudge;
+  readonly router: ModelRouter;
   readonly childEnv: Record<string, string>;
   readonly tmpDir: string;
   /** First model of each role's chain (single-shot helpers use these). */
@@ -70,6 +77,7 @@ export class Run {
   ) {
     this.startedAt = deps.clock.now();
     this.baseActiveMs = state.activeMs;
+    this.quota = new QuotaLedger(join(deps.paths.configHome, 'quota.json'), () => deps.clock.now());
     this.redactor = Redactor.fromEnv(deps.env, deps.secrets ?? []);
     this.events = new EventLog(store.eventsPath, state.runId, this.redactor, deps.clock);
     this.events.cycle = state.cycle;
@@ -111,6 +119,14 @@ export class Run {
             }),
         }),
     });
+    this.router = new ModelRouter({
+      config: c,
+      judge: this.judge,
+      roleChains: this.chains,
+      events: this.events,
+      now: () => deps.clock.now(),
+      modelExhausted: (r) => this.modelExhausted(r),
+    });
   }
 
   static async open(deps: RunDeps, runId: string): Promise<Run> {
@@ -142,8 +158,14 @@ export class Run {
     };
   }
 
+  /**
+   * The command timeout, but never past the run's wall-clock cap (plus a minute to wrap up): a
+   * hanging test suite must not hold a run far beyond --hours, where nothing can stop it.
+   */
   get maxCmdTimeoutMs(): number {
-    return parseDuration(this.config.budget.max_cmd_timeout);
+    const cap = parseDuration(this.config.budget.max_cmd_timeout);
+    const left = this.config.budget.max_hours * 3_600_000 - this.elapsedMs() + 60_000;
+    return Math.max(MIN_CMD_TIMEOUT_MS, Math.min(cap, left));
   }
 
   /** Wall-clock the run has been active, across supervisor restarts. */
@@ -214,8 +236,28 @@ export class Run {
     return undefined;
   }
 
+  /** Models out of quota, shared with every other run and chat on this machine. */
+  readonly quota: QuotaLedger;
+
+  modelExhausted(ref: string): boolean {
+    return this.quota.exhaustedAt(ref) !== undefined;
+  }
+
+  markExhausted(ref: string): void {
+    this.quota.mark(ref);
+    this.events.emit('provider.quota_exhausted', { model: ref });
+  }
+
   coolProvider(provider: string, ms: number): void {
     this.cooling.set(provider, this.clock.now() + ms);
+  }
+
+  /** The smaller of the money and time budgets still left, 0..1 (the router weighs this). */
+  budgetLeftFraction(): number {
+    const b = this.config.budget;
+    const usd = 1 - this.state.spend.usd / b.max_usd;
+    const hours = 1 - this.state.activeMs / (b.max_hours * 3_600_000);
+    return Math.max(0, Math.min(1, usd, hours));
   }
 
   /**
@@ -226,10 +268,20 @@ export class Run {
    */
   async cheapComplete(
     req: Omit<CompletionRequest, 'model' | 'route'>,
-    opts: { estimatedInputTokens: number; maxOutputTokens: number; role: string },
+    opts: {
+      estimatedInputTokens: number;
+      maxOutputTokens: number;
+      role: string;
+      /** Which role's chain to try: the cheap one (default), or the worker's / planner's. */
+      chain?: 'cheap' | 'worker' | 'planner';
+    },
   ): Promise<{ res: CompletionResponse; model: ResolvedModel } | undefined> {
     const errors: string[] = [];
-    for (const model of this.chains.cheap) {
+    for (const model of this.chains[opts.chain ?? 'cheap']) {
+      if (this.modelExhausted(`${model.provider}:${model.id}`)) {
+        errors.push(`${model.provider}:${model.id}: out of quota`);
+        continue;
+      }
       const blocked = this.providerBlocked(model.provider);
       if (blocked) {
         errors.push(`${model.provider}: ${blocked}`);
@@ -260,7 +312,9 @@ export class Run {
         return { res, model };
       } catch (err) {
         if (!shouldFailover(err)) throw err;
-        this.coolProvider(model.provider, err.retryable ? 60_000 : 30 * 60_000);
+        if (isQuotaError(err)) this.markExhausted(`${model.provider}:${model.id}`);
+        else if (!err.contentFilter)
+          this.coolProvider(model.provider, err.retryable ? 60_000 : 30 * 60_000);
         this.events.emit('provider.failover', {
           provider: model.provider,
           model: model.id,

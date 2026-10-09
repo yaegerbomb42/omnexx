@@ -67,6 +67,95 @@ export const planSchema = z.strictObject({
 export type Plan = z.infer<typeof planSchema>;
 
 /** What the planner's `write_plan` tool accepts: milestones, each optionally expanded into tasks. */
+const LIST_FIELDS = ['acceptance', 'checks', 'steps', 'dependsOn', 'allow'] as const;
+const NODE_KEYS = new Set(Object.keys(nodeInputSchema.shape));
+
+const KIND_SYNONYMS: Record<string, (typeof TASK_KINDS)[number]> = {
+  test: 'tests',
+  testing: 'tests',
+  bug: 'feature',
+  fix: 'feature',
+  bugfix: 'feature',
+  doc: 'docs',
+  documentation: 'docs',
+  research: 'investigate',
+  chore: 'refactor',
+};
+
+/** One node as models tend to write it: lists as a single string, `description` for `why`, extras. */
+function normalizeNode(raw: unknown, extraKeys: readonly string[] = []): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (k === 'description' && !('why' in raw)) out.why = v;
+    else if (k === 'check' && !('checks' in raw)) out.checks = v;
+    else if (NODE_KEYS.has(k) || extraKeys.includes(k)) out[k] = v;
+  }
+  for (const f of LIST_FIELDS) {
+    const v = out[f];
+    if (typeof v === 'string')
+      out[f] = v
+        .split('\n')
+        .map((l) => l.replace(/^\s*(?:[-*]|\d+\.)\s+/, '').trim())
+        .filter(Boolean);
+  }
+  if (typeof out.kind === 'string' && !(TASK_KINDS as readonly string[]).includes(out.kind)) {
+    const k = KIND_SYNONYMS[out.kind.toLowerCase()];
+    if (k) out.kind = k;
+    else delete out.kind;
+  }
+  return out;
+}
+
+/**
+ * Forgive shape slips before validation: a list sent as one string, `description` for `why`,
+ * `check` for `checks`, unknown keys, a `kind` synonym, park entries as bare ids, and task ids
+ * that don't follow `M<n>.T<nn>` (renumbered under their milestone, with dependsOn updated).
+ * Each would otherwise cost the planner a turn; weaker models can spend all of them and never
+ * write a plan. What the plan means is still checked strictly.
+ */
+export function normalizePlanUpdate(raw: unknown, prev?: Plan): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
+  const r = raw as { milestones?: unknown; park?: unknown };
+  if (!Array.isArray(r.milestones)) return raw;
+  const milestones = r.milestones.map((m: unknown) => {
+    const node = normalizeNode(m, ['tasks']);
+    if (typeof node !== 'object' || node === null) return node;
+    const tasks = (node as { tasks?: unknown }).tasks;
+    return Array.isArray(tasks) ? { ...node, tasks: tasks.map((t) => normalizeNode(t)) } : node;
+  });
+  // Renumber malformed task ids after every id already in use under that milestone.
+  const renamed = new Map<string, string>();
+  const used = new Set((prev?.nodes ?? []).map((n) => n.id));
+  for (const m of milestones as { id?: unknown; tasks?: { id?: unknown }[] }[])
+    for (const t of m.tasks ?? []) if (typeof t.id === 'string') used.add(t.id);
+  for (const m of milestones as { id?: unknown; tasks?: { id?: unknown }[] }[]) {
+    if (typeof m.id !== 'string' || !/^M\d+$/.test(m.id)) continue;
+    for (const t of m.tasks ?? []) {
+      if (typeof t.id === 'string' && new RegExp(`^${m.id}\\.T\\d+$`).test(t.id)) continue;
+      let n = 1;
+      while (used.has(`${m.id}.T${String(n).padStart(2, '0')}`)) n++;
+      const id = `${m.id}.T${String(n).padStart(2, '0')}`;
+      used.add(id);
+      if (typeof t.id === 'string') renamed.set(t.id, id);
+      t.id = id;
+    }
+  }
+  if (renamed.size)
+    for (const m of milestones as { dependsOn?: unknown; tasks?: { dependsOn?: unknown }[] }[])
+      for (const node of [m, ...(m.tasks ?? [])])
+        if (Array.isArray(node.dependsOn))
+          node.dependsOn = node.dependsOn.map((d: unknown) =>
+            typeof d === 'string' ? (renamed.get(d) ?? d) : d,
+          );
+  const park = Array.isArray(r.park)
+    ? r.park.map((p: unknown) =>
+        typeof p === 'string' ? { id: renamed.get(p) ?? p, reason: 'parked by the planner' } : p,
+      )
+    : r.park;
+  return { ...(park !== undefined ? { park } : {}), milestones };
+}
+
 export const planUpdateSchema = z.strictObject({
   milestones: z
     .array(
@@ -126,12 +215,27 @@ export function applyPlanUpdate(prev: Plan | undefined, update: PlanUpdate, goal
       );
     }
   }
-  const missing = [...byId.keys()].filter((k) => !seen.has(k));
-  if (missing.length) {
-    throw new StateError(
-      `plan update would delete ${missing.join(', ')}`,
-      'nodes are never deleted; park them with a reason instead',
-    );
+  // Nodes are never deleted. Anything the update leaves out stays as it was, where it was, so a
+  // model can send just the milestone it changed (weaker models rarely restate the whole plan).
+  for (const old of prev?.nodes ?? []) {
+    if (seen.has(old.id)) continue;
+    seen.add(old.id);
+    const blockEnd = (milestoneId: string): number => {
+      let at = nodes.findIndex((n) => n.id === milestoneId);
+      while (at + 1 < nodes.length && nodes[at + 1]?.parentId === milestoneId) at++;
+      return at;
+    };
+    if (old.type === 'task' && old.parentId && nodes.some((n) => n.id === old.parentId)) {
+      nodes.splice(blockEnd(old.parentId) + 1, 0, old);
+      continue;
+    }
+    // An omitted milestone (its tasks follow it) goes after the milestone it followed before.
+    const prevMs = (prev?.nodes ?? []).filter((n) => n.type === 'milestone').map((n) => n.id);
+    const before = prevMs
+      .slice(0, prevMs.indexOf(old.type === 'milestone' ? old.id : (old.parentId ?? '')))
+      .reverse()
+      .find((id) => nodes.some((n) => n.id === id));
+    nodes.splice(before ? blockEnd(before) + 1 : 0, 0, old);
   }
   for (const p of parsed.park) {
     const n = nodes.find((x) => x.id === p.id);

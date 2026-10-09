@@ -28,6 +28,7 @@ import { serviceCommand } from './commands/service.js';
 import { dockerAvailable } from '../security/sandbox-docker.js';
 import { banner, brand } from './brand.js';
 import { EXIT } from './exit-codes.js';
+import { verbosityFrom } from '../telemetry/humanize.js';
 import { println, readSecret, type CliIO } from './io.js';
 
 export const VERSION: string = pkg.version;
@@ -56,10 +57,42 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     styleOptionText: (s) => b.cyan(s),
     styleArgumentText: (s) => b.dim(s),
   });
-  // Bare `omnexx`: splash plus help instead of commander's "missing command" error.
-  program.action(() => {
-    program.outputHelp();
-  });
+  // Bare `omnexx`: the interactive session on a terminal, help otherwise.
+  program.option('--no-tui', 'print help instead of opening the interactive session');
+  program.option('-c, --continue', 'continue the last chat in this folder');
+  program.option('-p, --print <prompt>', 'one chat turn without the TUI; "-" reads stdin');
+  program.option('-m, --model <model>', 'with -p: the model to use (provider:model)');
+  program.action(
+    async (opts: { tui: boolean; continue?: boolean; print?: string; model?: string }) => {
+      if (opts.print !== undefined) {
+        const { printCommand } = await import('./print.js');
+        setExit(await printCommand(io, opts.print, opts.model ? { model: opts.model } : {}));
+        return;
+      }
+      if (!io.isTTY || !opts.tui || io.env.TERM === 'dumb') {
+        program.outputHelp();
+        return;
+      }
+      const { startTui } = await import('../tui/start.js');
+      setExit(
+        await startTui(io, runCli, {
+          version: VERSION,
+          ...(opts.continue ? { continueChat: true } : {}),
+        }),
+      );
+    },
+  );
+
+  program
+    .command('watch')
+    .alias('attach')
+    .argument('[runId]', 'defaults to the most recent run')
+    .description('open the interactive session attached to a run')
+    .action(async (runId: string | undefined) => {
+      if (!io.isTTY) throw new UsageError('watch needs a terminal', 'use `omnexx logs -f` instead');
+      const { startTui } = await import('../tui/start.js');
+      setExit(await startTui(io, runCli, { version: VERSION, attach: runId ?? true }));
+    });
 
   program
     .command('init')
@@ -81,6 +114,10 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .option('--budget <usd>', 'run-level spend cap in USD')
     .option('--hours <n>', 'wall-clock cap in hours')
     .option(
+      '--for <duration>',
+      'autonomous mode: keep improving the repo for this long (e.g. 45m, 8h, 2d)',
+    )
+    .option(
       '--gate <command>',
       'gate command (repeatable)',
       (v: string, prev: string[] | undefined) => [...(prev ?? []), v],
@@ -90,6 +127,9 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .option('--push <mode>', 'none | branch')
     .option('--from <ref>', 'branch the run from this ref (default HEAD)')
     .option('--i-know-there-are-no-checks', 'allow a run without gates (limited to one cycle)')
+    .option('-q, --quiet', 'feed: only commits, verdicts and stops')
+    .option('--verbose', 'feed: every model turn and tool call')
+    .option('--debug', 'feed: every raw event')
     .action(async (goal: string | undefined, opts: FullRunFlags) => {
       const text = await readGoal(io, goal, opts.goalFile);
       setExit(opts.planOnly ? await runPlanOnly(io, text, opts) : await runCommand(io, text, opts));
@@ -119,13 +159,24 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .option('--events', 'raw JSONL events')
     .option('--progress', 'the progress journal')
     .option('--cmd <id>', 'a full command or gate log, e.g. cmd-3-1')
-    .description('human view of the event log')
+    .option('-q, --quiet', 'only commits, verdicts and stops')
+    .option('--verbose', 'every model turn and tool call')
+    .option('--debug', 'every raw event')
+    .description('live feed of what the agent is doing (-f to follow)')
     .action(
       async (
         runId: string | undefined,
-        opts: { follow?: boolean; events?: boolean; progress?: boolean; cmd?: string },
+        opts: {
+          follow?: boolean;
+          events?: boolean;
+          progress?: boolean;
+          cmd?: string;
+          quiet?: boolean;
+          verbose?: boolean;
+          debug?: boolean;
+        },
       ) => {
-        setExit(await logsCommand(io, runId, opts));
+        setExit(await logsCommand(io, runId, { ...opts, verbosity: verbosityFrom(opts) }));
       },
     );
 

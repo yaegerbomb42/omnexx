@@ -98,6 +98,17 @@ describe('search', () => {
     expect(js).toEqual(['src/a.ts:2:  return a + b;']);
     expect(await _internal.viaJs('KEY', root, '**/*.ts')).toEqual([]);
   });
+
+  it('accepts a file as path and searches just that file', async () => {
+    const root = await repo();
+    const ctx = await toolContext(root);
+    const r = await searchTool.run({ pattern: 'return a', path: 'src/a.ts' }, ctx);
+    expect(r.isError).toBeUndefined();
+    expect(r.content).toContain('a.ts:2:');
+    expect(await _internal.viaJs('return a', join(root, 'src'), undefined, 'a.ts')).toEqual([
+      'a.ts:2:  return a + b;',
+    ]);
+  });
 });
 
 describe('edit tools', () => {
@@ -175,6 +186,14 @@ describe('bash + read_log', () => {
     expect((await bashTool.run({ command: 'true', timeout: 'soon' }, ctx)).content).toMatch(
       /invalid timeout/,
     );
+    // Models often send milliseconds as a bare number (or a numeric string).
+    expect((await bashTool.run({ command: 'sleep 5', timeout: '200' }, ctx)).content).toMatch(
+      /timed out/,
+    );
+    const parsed = bashTool.schema.parse(
+      bashTool.normalize?.({ command: 'true', timeout: 120000 }),
+    );
+    expect(parsed.timeout).toBe('120000');
   });
 
   it('refuses policy violations, logs tool.denied, and calls the safety hook only for allowed commands', async () => {
@@ -223,6 +242,9 @@ describe('bash + read_log', () => {
     );
     expect(t).toContain('Error: mid');
     expect(t.split('\n').length).toBeLessThan(160);
+    const long = trimOutput(`ok\n${'z'.repeat(5_000)}`, 'cmd-y');
+    expect(long.length).toBeLessThan(600);
+    expect(long).toContain('[5000 chars]');
   });
 });
 
@@ -248,11 +270,16 @@ describe('registry', () => {
     expect(a).toBe(b);
     expect(a).not.toContain('$schema');
     expect(READ_ONLY_TOOLS.map((t) => t.name).sort()).toEqual([
+      'context',
       'outline',
       'read',
       'read_log',
+      'recall',
       'remember',
+      'running_context',
       'search',
+      'task',
+      'todo',
     ]);
     expect(JSON.stringify(sortKeys({ b: 1, a: [{ d: 1, c: 2 }] }))).toBe(
       '{"a":[{"c":2,"d":1}],"b":1}',
@@ -275,5 +302,23 @@ describe('tool schemas the API accepts', () => {
       /add needs type and text/,
     );
     expect((await rememberTool.run({ action: 'remove' }, ctx)).isError).toBe(true);
+  });
+});
+
+describe('read size caps', () => {
+  it('clips huge lines and stops a range at the char budget', async () => {
+    const root = await repo();
+    await writeFile(join(root, 'src/min.js'), `${'a'.repeat(10_000)}\n${'b;'.repeat(1_000)}\n`);
+    await writeFile(
+      join(root, 'src/wide.js'),
+      Array.from({ length: 300 }, () => 'c'.repeat(1_500)).join('\n'),
+    );
+    const ctx = await toolContext(root);
+    const min = await readTool.run({ path: 'src/min.js' }, ctx);
+    expect(min.content).toContain('[line is 10000 chars');
+    expect(min.content.length).toBeLessThan(5_000);
+    const wide = await readTool.run({ path: 'src/wide.js' }, ctx);
+    expect(wide.content.length).toBeLessThan(62_000);
+    expect(wide.content).toMatch(/\(lines \d+-300 not shown\)/);
   });
 });

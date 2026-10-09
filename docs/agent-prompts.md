@@ -61,19 +61,18 @@ Read first: src/providers/*.ts, src/auth/keys.ts, src/cli/run-deps.ts, src/cli/c
 docs/config.md, src/config/sections/ (barrel), test/unit/providers/.
 
 You own: src/providers/{gemini,responses,repair,discovery,profiles}.ts,
-src/cli/commands/{providers,models}.ts, src/auth/**, src/config/sections/models-profiles.ts,
-docs/config/providers.md, and tests for these.
+src/cli/commands/{providers,models}.ts, src/auth/**, docs/config/providers.md, and tests for these.
 
 Do, in order:
 1. Pricing optional: in src/providers/pricing.ts behaviour (via a new exported resolver in
    profiles.ts that run-deps can switch to; leave an INTEGRATION note), an unknown price no longer
    throws. Tokens are still counted, cost is `undefined`, budgets fall back to token caps,
    and display shows "–". Unit-test cost accounting with mixed priced and unpriced models.
-2. Model profiles: config `[models.profiles."<provider>:<model>"]` with tags (string[]),
-   context (int tokens), tools (bool, default true), vision (bool, default false),
-   speed ("fast"|"normal"|"slow"), quality ("low"|"mid"|"high"). Export
-   `type ModelProfile` and `listProfiles(config): ModelProfile[]`. W3 (router) depends on this
-   exact shape: keep it.
+2. Model profiles ALREADY EXIST in core (W3): `[models.profiles."<provider>:<model>"]`
+   (`modelProfileSchema` in src/config/schema.ts: tags, context, tools, vision, speed, quality)
+   and `[models] extra = [...]` for models outside the role chains. Do not redefine them.
+   Your job: `models add` writes these entries; `models list` reads them via
+   `listCandidates(config)` in src/router/candidates.ts. See docs/router.md.
 3. Discovery: `discoverModels(endpoint)` calls GET {base_url}/models (OpenAI format) and
    Ollama /api/tags; returns ids plus context length when reported. 5 s timeout, fail soft.
 4. `omnexx providers add [name]` interactive (readline, no new deps) and flags

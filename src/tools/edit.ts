@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
 import { OmnexxError } from '../errors.js';
-import { fail, ok, type Tool, type ToolContext, type ToolOutput } from './types.js';
+import { fail, ok, resolvePath, type Tool, type ToolContext, type ToolOutput } from './types.js';
 
 export const WRITE_MAX_LINES = 50;
 
@@ -23,7 +23,7 @@ async function applyEdits(
   let abs: string;
   let text: string;
   try {
-    abs = ctx.jail.resolve(path, 'write');
+    abs = await resolvePath(ctx, path, 'write');
     text = await readFile(abs, 'utf8');
   } catch (err) {
     return fail(
@@ -67,6 +67,24 @@ export const multiEditTool: Tool<typeof multiSchema> = {
   description: 'Apply several str_replace edits to one file atomically (all or nothing), in order.',
   schema: multiSchema,
   readOnly: false,
+  // Models often repeat `path` inside each edit instead of once at the top: hoist it.
+  normalize: (input) => {
+    if (typeof input !== 'object' || input === null) return input;
+    const i = input as { path?: unknown; edits?: unknown };
+    if (!Array.isArray(i.edits)) return input;
+    const inner = i.edits.find(
+      (e): e is { path: string } =>
+        typeof e === 'object' && e !== null && typeof (e as { path?: unknown }).path === 'string',
+    );
+    return {
+      ...i,
+      path: i.path ?? inner?.path,
+      edits: i.edits.map((e: unknown) => {
+        if (typeof e !== 'object' || e === null) return e;
+        return Object.fromEntries(Object.entries(e).filter(([k]) => k !== 'path'));
+      }),
+    };
+  },
   run: (input, ctx) => applyEdits(input.path, input.edits, ctx),
 };
 
@@ -80,7 +98,7 @@ export const writeFileTool: Tool<typeof writeSchema> = {
   async run(input, ctx) {
     let abs: string;
     try {
-      abs = ctx.jail.resolve(input.path, 'write');
+      abs = await resolvePath(ctx, input.path, 'write');
     } catch (err) {
       return fail(err instanceof OmnexxError ? err.message : String(err));
     }

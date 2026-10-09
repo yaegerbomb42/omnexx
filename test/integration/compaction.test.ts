@@ -28,7 +28,10 @@ describe('in-cycle compaction', () => {
     let workerTurns = 0;
     const worker = new ScriptedProvider(() => {
       workerTurns++;
-      if (workerTurns <= 6) return call('bash', { command: `printf '%04000d' ${workerTurns}` });
+      if (workerTurns <= 6)
+        return call('bash', {
+          command: `printf '%0400d\\n' ${workerTurns} 1 2 3 4 5 6 7 8 9`,
+        });
       if (workerTurns === 7)
         return call('str_replace', {
           path: 'src/math.js',

@@ -1,10 +1,15 @@
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { OmnexxError } from '../errors.js';
 import { extractSymbols, renderOutline } from './outline.js';
-import { fail, ok, type Tool } from './types.js';
+import { fail, ok, resolvePath, type Tool } from './types.js';
 
 export const MAX_READ_LINES = 400;
+/** Longer lines (minified or generated code) are clipped; search finds text inside them. */
+export const MAX_LINE_CHARS = 2_000;
+/** One read returns at most this much (~20k tokens); a range past it ends early. */
+export const MAX_READ_CHARS = 60_000;
 
 const schema = z.strictObject({
   path: z.string().describe('File path relative to the repo root'),
@@ -25,7 +30,7 @@ export const readTool: Tool<typeof schema> = {
   async run(input, ctx) {
     let text: string;
     try {
-      text = await readFile(ctx.jail.resolve(input.path, 'read'), 'utf8');
+      text = await readFile(await resolvePath(ctx, input.path, 'read'), 'utf8');
     } catch (err) {
       return fail(
         err instanceof OmnexxError
@@ -41,13 +46,33 @@ export const readTool: Tool<typeof schema> = {
       );
     }
     const start = input.start ?? 1;
-    const end = Math.min(input.end ?? lines.length, start + MAX_READ_LINES - 1, lines.length);
+    let end = Math.min(input.end ?? lines.length, start + MAX_READ_LINES - 1, lines.length);
     if (start > lines.length) return fail(`${input.path} has only ${lines.length} lines`);
-    const body = lines
-      .slice(start - 1, end)
-      .map((l, i) => `${String(start + i).padStart(5)}  ${l}`)
-      .join('\n');
+    const shown: string[] = [];
+    let size = 0;
+    for (let n = start; n <= end; n++) {
+      const l = lines[n - 1] ?? '';
+      const row = `${String(n).padStart(5)}  ${l.length > MAX_LINE_CHARS ? `${l.slice(0, MAX_LINE_CHARS)}… [line is ${l.length} chars; search for text in it]` : l}`;
+      if (shown.length && size + row.length > MAX_READ_CHARS) {
+        end = n - 1;
+        break;
+      }
+      shown.push(row);
+      size += row.length + 1;
+    }
+    const body = shown.join('\n');
     const more = end < lines.length ? `\n(lines ${end + 1}-${lines.length} not shown)` : '';
-    return ok(`${body}${more}`);
+    const out = `${body}${more}`;
+    if (ctx.reads) {
+      const key = `${input.path}:${start}-${end}`;
+      const hash = createHash('sha256').update(out).digest('hex');
+      if (ctx.reads.get(key) === hash) {
+        return ok(
+          `${input.path}:${start}-${end} is unchanged since you read it earlier this cycle; that result is still in your context above.`,
+        );
+      }
+      ctx.reads.set(key, hash);
+    }
+    return ok(out);
   },
 };
