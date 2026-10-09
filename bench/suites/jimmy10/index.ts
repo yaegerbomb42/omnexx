@@ -59,6 +59,9 @@ export class Jimmy10Suite implements Suite {
   }
 }
 
+/** A hidden check that runs longer counts as a fail. */
+const CHECK_TIMEOUT_MS = 5 * 60_000;
+
 async function runBash(
   script: string | null,
   cwd: string,
@@ -66,8 +69,18 @@ async function runBash(
 ): Promise<number | null> {
   const args = script ? [script] : ['-c', inline ?? 'true'];
   const env = { ...process.env, npm_config_cache: NPM_CACHE };
-  const child = spawn('bash', args, { cwd, env, stdio: 'ignore' });
+  // Own process group, so a timeout kills the test runner the script started too: a task
+  // whose bug is a hang (task-06) otherwise keeps the hidden check alive forever.
+  const child = spawn('bash', args, { cwd, env, stdio: 'ignore', detached: true });
+  const timer = setTimeout(() => {
+    try {
+      if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
+    } catch {
+      // Already gone.
+    }
+  }, CHECK_TIMEOUT_MS);
   const [code] = (await once(child, 'exit')) as [number | null];
+  clearTimeout(timer);
   return code;
 }
 
