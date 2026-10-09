@@ -255,6 +255,15 @@ In-cycle context control runs before each turn and works on every provider. Past
 | `dirs`          | `[]`    | More folders of skills (`<dir>/<name>/SKILL.md`), read in place; `~` is the home folder |
 | `import_claude` | `true`  | Also use Claude Code's skills: `~/.claude/skills` and the repo's `.claude/skills`       |
 
+## `[agents]` (see [agent-cards.md](agent-cards.md))
+
+| Key                         | Default | Meaning                                                                           |
+| --------------------------- | ------- | --------------------------------------------------------------------------------- |
+| `dirs`                      | `[]`    | More folders of agent cards (`<dir>/<name>.md`), read in place                    |
+| `import_claude`             | `true`  | Also use Claude Code's agents: `~/.claude/agents` and the repo's `.claude/agents` |
+| `remote.<name>.url`         | –       | A remote A2A agent: its card URL or base URL                                      |
+| `remote.<name>.headers_env` | `{}`    | Headers to send: env var name, `secret:<KEY>`, or literal                         |
+
 ## `[review]`
 
 Earned done. On by default; each part costs model calls, so tune it to your budget.

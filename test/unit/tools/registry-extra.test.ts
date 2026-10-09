@@ -13,7 +13,11 @@ const fake = (name: string, readOnly = false): Tool => ({
 });
 
 describe('extra tool sources', () => {
-  const config = defaultConfig();
+  // The host's ~/.claude skills and agents must not change the tool list under test.
+  const config = defaultConfig({
+    skills: { import_claude: false },
+    agents: { import_claude: false },
+  });
 
   it('keeps core tools first, then extras sorted by name regardless of source order', async () => {
     const tools = await workerTools(config, undefined, {

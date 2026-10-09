@@ -3,6 +3,7 @@
  *   export { source as browser } from './browser.js';
  * Each export must be a ToolSource (see ./types.ts). Keep lines sorted by export name.
  */
+export { source as agent } from './agent.js';
 export { source as browser } from './browser.js';
 export { source as integrations } from './integrations.js';
 export { source as mcp } from './mcp.js';
