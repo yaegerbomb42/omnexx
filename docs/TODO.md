@@ -37,6 +37,19 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-09 (single agent, no paid live runs):** landed the #76–#79 stack into `next` (#80;
+  they had merged into their parent branches), deleted 69 merged remote branches, and
+  fast-forwarded `main` to `next` (#83). Autonomous mode (#81): `run --for 8h` / `/autonomous`
+  keeps planning improvement rounds until the clock runs out, rotating focus areas, skipping
+  parked work, stopping after `max_idle_rounds` empty rounds. Context scopes and live todos (#82):
+  a `context` tool (general / repo / heat / recent, capped, read on demand, agent-written notes;
+  general and repo notes persist per repo); workers keep a todo list shown live in an attached run;
+  one nudge when a turn ends with open items. Connectors: `omnexx connect` / `/apps`, a catalog of
+  26 free connectors (16 vendor-hosted with browser OAuth via dynamic client registration, checked
+  against each server's metadata; token apps; Google via `workspace-mcp` with the user's own
+  OAuth client). OAuth tokens live in `mcp-oauth.json` (0600) and refresh at run time. A live
+  Bonsai run was cut short when the local LiteLLM proxy went down; nothing was learned from it.
+
 - **2026-10-08 (context efficiency, no live runs):** `feat/context-efficiency` off `next`. Cleared
   tool results now say which call they were and, for bash, the `read_log` id that keeps them whole.
   Clearing waits until ≥ 4k tokens (or clearAt/10) would go: before, every turn past `clear_at`

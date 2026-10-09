@@ -82,6 +82,7 @@ export ANTHROPIC_API_KEY=...  # or: omnexx auth set anthropic
 omnexx run --plan-only "Port src/legacy to strict TypeScript"
 omnexx run --detach --budget 5 --hours 2 "Port src/legacy to strict TypeScript"
 omnexx run --detach --for 8h "improve this repo"   # autonomous: keeps going until the time is up
+omnexx connect notion          # connect apps: Gmail, Slack, Linear, GitHub… (docs/connectors.md)
 omnexx status && omnexx logs -f
 omnexx report                 # in the morning
 ```

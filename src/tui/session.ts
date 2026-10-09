@@ -90,6 +90,10 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'go', help: 'plan mode: approve the plan and carry it out' },
   { name: 'undo', help: 'put the files back as they were before the last message' },
   { name: 'skills', help: 'skills omnexx can use; /skills add <path|git-url>' },
+  {
+    name: 'apps',
+    help: 'connect apps: /apps lists them, /apps notion signs in, /apps github --set Authorization=<token>',
+  },
   { name: 'mcp', help: 'MCP servers: /mcp add <name>, /mcp search <q>, /mcp import' },
   { name: 'cards', help: 'agent cards: local helpers and remote A2A agents; /cards add <url>' },
   { name: 'compact', help: 'summarize the conversation to free up context' },
@@ -1064,6 +1068,9 @@ export class Session {
         return;
       case 'mcp':
         await this.cli(['mcp', ...(args.length ? args : ['list'])]);
+        return;
+      case 'apps':
+        await this.cli(['connect', ...args]);
         return;
       case 'skills':
         await this.cli(['skills', ...(args.length ? args : ['list'])]);

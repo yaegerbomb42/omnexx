@@ -149,6 +149,7 @@ export const source: ToolSource = {
     activeManager ??= new McpClientManager(serverConfigs, {
       env,
       secrets: await readSecrets(resolvePaths(env).configHome),
+      configHome: resolvePaths(env).configHome,
     });
     const mgr = activeManager;
 
