@@ -112,7 +112,10 @@ export async function auditResult(
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
   const prompt = `# What the user asked for\n${goal.slice(0, 4_000)}\n\n${intent.slice(0, 4_000)}\n\n# The code now\n${codebase}`;
   try {
-    return await ask(run, AUDIT_SYSTEM, prompt, 'audit', run.config.review.audit_models);
+    const r = await ask(run, AUDIT_SYSTEM, prompt, 'audit', run.config.review.audit_models);
+    if (!r)
+      run.events.emit('audit.unavailable', { error: 'no usable answer (budget or malformed)' });
+    return r;
   } catch (err) {
     run.events.emit('audit.unavailable', { error: (err as Error).message });
     return undefined;

@@ -306,7 +306,9 @@ export async function stepAct(run: Run): Promise<void> {
   const task = getNode(plan, run.state.taskId ?? '');
   await prepareWorktree(run);
 
-  if (task.checks.length && task.attempts === 0) {
+  // Checks that pass before the run has changed anything passed on the code the user wants
+  // changed, so they prove nothing: until the first accepted commit the agent looks for itself.
+  if (task.checks.length && task.attempts === 0 && run.state.acceptedCommits > 0) {
     const pre = await runChecks(run, task, `${run.state.cycle}-pre`);
     if (pre.every((c) => c.pass)) {
       run.events.emit('task.already_done', { task: task.id });

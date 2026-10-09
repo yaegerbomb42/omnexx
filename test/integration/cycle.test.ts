@@ -275,7 +275,7 @@ describe('M1: one full cycle with the scripted provider', () => {
     );
   });
 
-  it('a cycle with no changes and failing checks is rejected; already-passing checks finish at zero cost', async () => {
+  it('a cycle with no changes and failing checks is rejected; already-passing checks finish at zero cost once the run has a commit', async () => {
     const t = await startTestRun({
       fixture: 'ts-failing-test',
       provider: new ScriptedProvider(() => say('nothing to do')),
@@ -283,16 +283,27 @@ describe('M1: one full cycle with the scripted provider', () => {
     });
     await runBaseline(t.run);
     expect((await runOneCycle(t.run, 'M1.T01')).reasons).toEqual(['no changes']);
+    // Before any accepted commit a passing check proves nothing: the agent looks for itself.
+    const looked = new ScriptedProvider(() => say('nothing to change'));
+    const fresh = await startTestRun({
+      fixture: 'ts-failing-test',
+      provider: looked,
+      plan: onePlan(['true']),
+    });
+    expect(await runOneCycle(fresh.run, 'M1.T01')).toMatchObject({ verdict: 'accept', done: true });
+    expect(looked.requests.length).toBeGreaterThan(0);
+    // After one, a task whose checks already pass finishes at zero cost.
     const provider = new ScriptedProvider(() => say('unused'));
     const done = await startTestRun({
       fixture: 'ts-failing-test',
       provider,
       plan: onePlan(['true']),
     });
+    done.run.state.acceptedCommits = 1;
     const v = await runOneCycle(done.run, 'M1.T01');
     expect(v).toMatchObject({ verdict: 'accept', done: true });
     expect(provider.requests).toHaveLength(0);
-    expect(done.run.state.acceptedCommits).toBe(0);
+    expect(done.run.state.acceptedCommits).toBe(1);
   });
 });
 
