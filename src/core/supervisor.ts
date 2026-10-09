@@ -658,8 +658,7 @@ class Supervisor {
               n.dependsOn = n.dependsOn.filter((d) => d !== m.id);
               return n.id;
             });
-          if (released.length)
-            r.events.emit('milestone.released', { parked: m.id, released });
+          if (released.length) r.events.emit('milestone.released', { parked: m.id, released });
         }
         await r.savePlan();
       }
