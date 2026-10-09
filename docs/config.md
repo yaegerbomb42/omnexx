@@ -248,6 +248,13 @@ In-cycle context control runs before each turn and works on every provider. Past
 | `max_files`   | `4000`  | Files indexed at most. The index lives next to the repo's memory and only re-embeds files that changed.                                                                  |
 | `chunk_lines` | `60`    | Lines per indexed chunk (a quarter overlap).                                                                                                                             |
 
+## `[skills]` (see [instructions.md](instructions.md#skills))
+
+| Key             | Default | Meaning                                                                                 |
+| --------------- | ------- | --------------------------------------------------------------------------------------- |
+| `dirs`          | `[]`    | More folders of skills (`<dir>/<name>/SKILL.md`), read in place; `~` is the home folder |
+| `import_claude` | `true`  | Also use Claude Code's skills: `~/.claude/skills` and the repo's `.claude/skills`       |
+
 ## `[review]`
 
 Earned done. On by default; each part costs model calls, so tune it to your budget.

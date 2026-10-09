@@ -56,6 +56,8 @@ export async function startTestRun(opts: {
     beyond: { enabled: false },
     // Review and audit add model calls; tests for them opt in explicitly.
     review: { enabled: false, audit: false, strict_checks: false },
+    // Tests keep the real HOME; never let the host's ~/.claude/skills into a test run's prompts.
+    skills: { import_claude: false },
     ...opts.config,
   });
   const clock = new FakeClock();

@@ -11,7 +11,7 @@ import { taskTool } from './task.js';
 import { runningContextTool } from './running-context.js';
 import type { OmnexxConfig } from '../config/schema.js';
 import * as extraSources from './extra/index.js';
-import type { ToolSource } from './extra/types.js';
+import type { ToolSource, ToolWhere } from './extra/types.js';
 import type { Tool } from './types.js';
 
 export const WORKER_TOOLS: readonly Tool[] = [
@@ -36,10 +36,11 @@ const EXTRA_SOURCES: Record<string, ToolSource> = extraSources;
 /** Core tools first, in their fixed order, then every extra source's tools sorted by name. */
 export async function workerTools(
   config: OmnexxConfig,
+  where?: ToolWhere,
   sources: Record<string, ToolSource> = EXTRA_SOURCES,
 ): Promise<readonly Tool[]> {
   const extra = (
-    await Promise.all(Object.values(sources).map((s) => Promise.resolve(s.load(config))))
+    await Promise.all(Object.values(sources).map((s) => Promise.resolve(s.load(config, where))))
   ).flat();
   const core = new Set(WORKER_TOOLS.map((t) => t.name));
   const seen = new Set<string>();
@@ -52,9 +53,10 @@ export async function workerTools(
 
 export async function readOnlyTools(
   config: OmnexxConfig,
+  where?: ToolWhere,
   sources?: Record<string, ToolSource>,
 ): Promise<readonly Tool[]> {
-  return (await workerTools(config, sources)).filter((t) => t.readOnly);
+  return (await workerTools(config, where, sources)).filter((t) => t.readOnly);
 }
 
 /** JSON schema for the API, keys sorted so the cached prefix is byte-stable. */

@@ -1,5 +1,6 @@
 import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
 import { resolvePaths } from '../core/paths.js';
 import { CHARS_PER_TOKEN, estimateTokens } from '../core/tokens.js';
 import { parseFrontmatter } from './frontmatter.js';
@@ -28,12 +29,56 @@ export interface SkillRoots {
   repoRoot?: string;
   /** Environment for `OMNEXX_CONFIG_HOME` / `XDG_CONFIG_HOME` resolution. */
   env?: NodeJS.ProcessEnv;
+  /** Extra skill folders from `[skills] dirs`; `~` expands to the home folder. */
+  dirs?: readonly string[];
+  /** Also read Claude Code's skills (`~/.claude/skills`, repo `.claude/skills`). */
+  importClaude?: boolean;
+}
+
+/** One folder skills are read from, in precedence order (later wins), with where it came from. */
+export interface SkillDir {
+  dir: string;
+  source: 'claude-user' | 'config' | 'user' | 'claude-repo' | 'repo';
+}
+
+function expandHome(p: string, env: NodeJS.ProcessEnv): string {
+  const home = env.HOME ?? homedir();
+  if (p === '~') return home;
+  if (p.startsWith('~/')) return join(home, p.slice(2));
+  return p;
+}
+
+/**
+ * Every folder skills come from, lowest precedence first: Claude Code's user skills, extra
+ * `[skills] dirs`, omnexx user skills, then the repo's (Claude's, then omnexx's). A skill in a
+ * later folder shadows one of the same name in an earlier folder.
+ */
+export function skillDirs(roots: SkillRoots): SkillDir[] {
+  const env = roots.env ?? process.env;
+  const out: SkillDir[] = [];
+  if (roots.importClaude)
+    out.push({ dir: expandHome('~/.claude/skills', env), source: 'claude-user' });
+  for (const d of roots.dirs ?? []) {
+    const dir = expandHome(d, env);
+    out.push({
+      dir: isAbsolute(dir) || !roots.repoRoot ? dir : join(roots.repoRoot, dir),
+      source: 'config',
+    });
+  }
+  out.push({ dir: join(resolvePaths(env).configHome, 'skills'), source: 'user' });
+  if (roots.repoRoot !== undefined) {
+    if (roots.importClaude)
+      out.push({ dir: join(roots.repoRoot, '.claude', 'skills'), source: 'claude-repo' });
+    out.push({ dir: join(roots.repoRoot, '.omnexx', 'skills'), source: 'repo' });
+  }
+  return out;
 }
 
 async function readSkillDir(dir: string): Promise<Map<string, Skill>> {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  // Symlinked skill folders count too: people link skills between tools (~/.agents/skills).
   const dirs = entries
-    .filter((e) => e.isDirectory())
+    .filter((e) => e.isDirectory() || e.isSymbolicLink())
     .map((e) => e.name)
     .sort();
   const out = new Map<string, Skill>();
@@ -56,15 +101,23 @@ async function readSkillDir(dir: string): Promise<Map<string, Skill>> {
   return out;
 }
 
-/** User skills first, then repo skills on top: a repo skill shadows a user skill of the same name. */
-async function skillMap(roots: SkillRoots): Promise<Map<string, Skill>> {
-  const configHome = resolvePaths(roots.env ?? process.env).configHome;
-  const out = await readSkillDir(join(configHome, 'skills'));
-  if (roots.repoRoot !== undefined) {
-    const repo = await readSkillDir(join(roots.repoRoot, '.omnexx', 'skills'));
-    for (const [name, skill] of repo) out.set(name, skill);
-  }
+/** Every skill by name; folders later in `skillDirs` shadow earlier ones. */
+async function skillMap(
+  roots: SkillRoots,
+): Promise<Map<string, Skill & { source: SkillDir['source'] }>> {
+  const out = new Map<string, Skill & { source: SkillDir['source'] }>();
+  for (const { dir, source } of skillDirs(roots))
+    for (const [name, skill] of await readSkillDir(dir)) out.set(name, { ...skill, source });
   return out;
+}
+
+/** Every skill with the file it comes from, sorted by name: for `omnexx skills list`. */
+export async function listSkillsWithSource(
+  roots: SkillRoots = {},
+): Promise<(SkillSummary & { path: string; source: SkillDir['source'] })[]> {
+  return [...(await skillMap(roots)).values()]
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map(({ name, description, path, source }) => ({ name, description, path, source }));
 }
 
 /**
