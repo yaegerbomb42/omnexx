@@ -84,6 +84,10 @@ Report only real problems, each with a severity:
 - minor: anything smaller.
 Never report style, naming or formatting. If the change is sound, return no findings. Reply only by calling the answer tool.`;
 
+/** Room for a reasoning model's thinking before it answers: at 3k, glm-5.3 never got to the tool. */
+const REVIEW_MAX_TOKENS = 8_000;
+const AUDIT_MAX_TOKENS = 16_000;
+
 const AUDIT_SYSTEM = `You audit the result of a long autonomous coding run before it is allowed to finish. You get what the user asked for (the goal and its "done when" list) and the code as it is now.
 
 List every gap between what was asked and what exists: a "done when" item not met, a feature missing or only stubbed, behaviour that is clearly shallow or untested, missing documentation the goal asked for. Each gap must be concrete and checkable, phrased as work to do. If everything asked for is genuinely done to a professional standard, return no findings. Reply only by calling the answer tool.`;
@@ -116,6 +120,8 @@ async function ask(
   prompt: string,
   role: string,
   chain: 'cheap' | 'worker' | 'planner',
+  maxTokens = 3_000,
+  why?: (reason: string) => void,
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
   const done = await run.cheapComplete(
     {
@@ -129,18 +135,31 @@ async function ask(
       ],
       toolChoice: { type: 'tool', name: 'answer' },
       messages: [{ role: 'user', content: [{ type: 'text', text: run.redactor.text(prompt) }] }],
-      maxTokens: 3_000,
+      maxTokens,
       messageBreakpoints: [],
     },
     {
       estimatedInputTokens: estimateTokens(prompt) + 800,
-      maxOutputTokens: 3_000,
+      maxOutputTokens: maxTokens,
       role,
       chain,
     },
   );
-  const call = done?.res.content.find((b) => b.type === 'tool_use');
-  return coerceReview(call?.type === 'tool_use' ? call.input : undefined);
+  if (!done) {
+    why?.('the budget preflight refused the call');
+    return undefined;
+  }
+  const call = done.res.content.find((b) => b.type === 'tool_use');
+  if (call?.type !== 'tool_use') {
+    why?.(
+      `${done.model.provider}:${done.model.id} answered without the tool (stop: ${done.res.stopReason})`,
+    );
+    return undefined;
+  }
+  const r = coerceReview(call.input);
+  if (!r)
+    why?.(`unusable findings from ${done.model.id}: ${JSON.stringify(call.input).slice(0, 200)}`);
+  return r;
 }
 
 /**
@@ -155,7 +174,14 @@ export async function reviewChange(
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
   const prompt = `# Goal\n${goal.slice(0, 3_000)}\n\n# Task ${task.id}: ${task.title}\n${task.why}\n${task.acceptance.length ? `Acceptance:\n${task.acceptance.map((a) => `- ${a}`).join('\n')}` : ''}\n\n# The change (unified diff)\n${clipDiff(diff, run.config.review.max_diff_chars)}`;
   try {
-    return await ask(run, REVIEW_SYSTEM, prompt, 'review', run.config.review.review_models);
+    return await ask(
+      run,
+      REVIEW_SYSTEM,
+      prompt,
+      'review',
+      run.config.review.review_models,
+      REVIEW_MAX_TOKENS,
+    );
   } catch (err) {
     run.events.emit('review.unavailable', { task: task.id, error: (err as Error).message });
     return undefined;
@@ -171,9 +197,19 @@ export async function auditResult(
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
   const prompt = `# What the user asked for\n${goal.slice(0, 4_000)}\n\n${intent.slice(0, 4_000)}\n\n# The code now\n${codebase}`;
   try {
-    const r = await ask(run, AUDIT_SYSTEM, prompt, 'audit', run.config.review.audit_models);
-    if (!r)
-      run.events.emit('audit.unavailable', { error: 'no usable answer (budget or malformed)' });
+    // Audits go to the planner chain, often reasoning models: their thinking counts against the
+    // output limit, and 3k tokens ran out before the answer on every bench run.
+    let reason = 'no usable answer';
+    const r = await ask(
+      run,
+      AUDIT_SYSTEM,
+      prompt,
+      'audit',
+      run.config.review.audit_models,
+      AUDIT_MAX_TOKENS,
+      (w) => (reason = w),
+    );
+    if (!r) run.events.emit('audit.unavailable', { error: reason });
     return r;
   } catch (err) {
     run.events.emit('audit.unavailable', { error: (err as Error).message });
