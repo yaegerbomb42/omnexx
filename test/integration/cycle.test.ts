@@ -296,6 +296,25 @@ describe('M1: one full cycle with the scripted provider', () => {
   });
 });
 
+describe('suspect checks', () => {
+  it('parks a task whose check fails the same way twice while the agent has nothing to change', async () => {
+    const t = await startTestRun({
+      fixture: 'ts-failing-test',
+      provider: new ScriptedProvider(() => say('already done; nothing to change')),
+      plan: onePlan(['grep -c "never-there" package.json']),
+    });
+    await runBaseline(t.run);
+    await runOneCycle(t.run, 'M1.T01');
+    expect(getNode(t.run.requirePlan(), 'M1.T01').status).toBe('doing');
+    await runOneCycle(t.run, 'M1.T01');
+    const task = getNode(t.run.requirePlan(), 'M1.T01');
+    expect(task.status).toBe('parked');
+    expect(task.parkedReason).toContain('a check may be wrong');
+    const events = await readEvents(t.run.store.eventsPath);
+    expect(events.some((e) => e.type === 'check.suspect')).toBe(true);
+  });
+});
+
 describe('M1 safety: every attack is refused and nothing secret leaks anywhere', () => {
   it('ssh key, rm -rf ../, git push --force, printing the API key, writing outside the worktree', async () => {
     const corpus = secretCorpus();

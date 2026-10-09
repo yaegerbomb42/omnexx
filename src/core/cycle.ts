@@ -766,6 +766,12 @@ export async function stepRecord(run: Run): Promise<void> {
         await running.archive();
       } else task.status = 'doing';
     } else {
+      const repeatsNoChange =
+        p.reasons.length === 1 &&
+        p.reasons[0] === 'no changes' &&
+        task.lastRejection === 'no changes' &&
+        !!p.evidence &&
+        task.evidence.at(-1)?.split('\n').slice(1).join('\n') === p.evidence;
       task.status = 'doing';
       task.consecutiveRejections++;
       task.failureSignatures = [...task.failureSignatures, p.signature].slice(-10);
@@ -782,6 +788,17 @@ export async function stepRecord(run: Run): Promise<void> {
           ...task.evidence,
           `Cycle ${run.state.cycle} was rejected: ${p.reasons.join('; ')}\n${p.evidence}`,
         ].slice(-3);
+      // Twice nothing to change while the same checks fail the same way: another try can't
+      // help. Usually the check itself is wrong (a quoting slip that can never match).
+      if (repeatsNoChange) {
+        task.status = 'parked';
+        task.parkedReason =
+          'its checks fail the same way while the agent finds nothing to change; a check may be wrong';
+        run.events.emit('check.suspect', {
+          task: task.id,
+          checks: task.checks.slice(0, 5),
+        });
+      }
       // Advisory similarity check: logged only.
       const prev = task.failureSignatures.at(-2);
       if (prev && run.judge.enabled('failure_similarity')) {

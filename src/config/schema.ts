@@ -115,6 +115,14 @@ export const endpointSchema = z.strictObject({
     .string()
     .regex(/^[A-Z_][A-Z0-9_]*$/)
     .optional(),
+  /**
+   * More env vars holding keys for the same endpoint. Calls rotate to the next key on a 429,
+   * so free tiers that rate-limit per key keep going. Unset ones are skipped.
+   */
+  api_key_envs: z
+    .array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/))
+    .max(50)
+    .optional(),
   /** Price every model on this endpoint at $0 unless [pricing] says otherwise (local models). */
   free: z.boolean().default(false),
   request_timeout: durationString.default('10m'),

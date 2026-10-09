@@ -10,6 +10,7 @@ import { UsageError } from '../errors.js';
 import { AnthropicProvider } from '../providers/anthropic.js';
 import { withStickyRandom } from '../providers/sticky.js';
 import { withToolRepair } from '../providers/repair.js';
+import { withKeyRotation } from '../providers/key-rotation.js';
 import { makeEndpointProvider } from '../providers/make.js';
 import { ProviderRouter } from '../providers/router.js';
 import type { Provider } from '../providers/types.js';
@@ -90,7 +91,16 @@ export async function resolveRunDeps(
       timeoutMs: parseDuration(ep.request_timeout),
       ...(io.fetch ? { fetch: io.fetch } : {}),
     };
-    const inner = makeEndpointProvider(ep.kind, opts);
+    const extra = (ep.api_key_envs ?? []).flatMap((n) => {
+      const k = io.env[n]?.trim();
+      return k && k !== apiKey ? [k] : [];
+    });
+    secrets.push(...extra);
+    const keys = [...new Set([...(apiKey ? [apiKey] : []), ...extra])];
+    const inner =
+      keys.length > 1
+        ? withKeyRotation(keys.map((k) => makeEndpointProvider(ep.kind, { ...opts, apiKey: k })))
+        : makeEndpointProvider(ep.kind, opts);
     // Weaker and local models often emit broken tool JSON; repair it before the loop sees it.
     const repaired = withToolRepair(inner);
     providers.set(
