@@ -53,8 +53,9 @@ export abstract class AgentRunner {
       stderr += chunk.toString();
     });
 
+    let timer: NodeJS.Timeout | undefined;
     const timeoutPromise = new Promise<{ timedOut: true }>((resolve) => {
-      setTimeout(() => {
+      timer = setTimeout(() => {
         resolve({ timedOut: true });
       }, timeoutMs);
     });
@@ -65,6 +66,8 @@ export abstract class AgentRunner {
     }));
 
     const result = await Promise.race([timeoutPromise, exitPromise]);
+    // A pending timer keeps node alive for the rest of the cap after the run has finished.
+    clearTimeout(timer);
 
     if (result.timedOut) {
       // Kill the process group
