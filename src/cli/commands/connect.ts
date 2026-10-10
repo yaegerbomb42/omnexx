@@ -61,13 +61,22 @@ async function listCatalog(io: CliIO): Promise<void> {
   const { config } = await loadConfig({ cwd: io.cwd, env: io.env });
   const home = resolvePaths(io.env).configHome;
   const configured = new Set(Object.keys(config.mcp.servers));
+  const signedIn = new Set(
+    (
+      await Promise.all(
+        CONNECTORS.filter((c) => c.auth === 'oauth').map(async (c) =>
+          (await hasTokens(home, c.id)) ? c.id : '',
+        ),
+      )
+    ).filter(Boolean),
+  );
   let category = '';
   for (const c of CONNECTORS) {
     if (c.category !== category) {
       category = c.category;
       println(io.stdout, `\n${category}`);
     }
-    const on = configured.has(c.id) && (c.auth !== 'oauth' || (await hasTokens(home, c.id)));
+    const on = configured.has(c.id) && (c.auth !== 'oauth' || signedIn.has(c.id));
     println(io.stdout, `  ${on ? '✓' : ' '} ${c.id.padEnd(16)} ${c.name}  (${HOW[c.auth]})`);
   }
   println(io.stdout, '\nConnect one: omnexx connect <name>. Anything else: omnexx mcp add <name>.');

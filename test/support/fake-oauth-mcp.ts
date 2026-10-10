@@ -1,4 +1,4 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 /**
@@ -12,6 +12,12 @@ export interface FakeOAuthMcp {
   close: () => Promise<void>;
 }
 
+interface Reply {
+  status: number;
+  json?: unknown;
+  headers?: Record<string, string>;
+}
+
 const body = (req: IncomingMessage): Promise<string> =>
   new Promise((resolve) => {
     let s = '';
@@ -23,97 +29,89 @@ const body = (req: IncomingMessage): Promise<string> =>
     });
   });
 
+const send = (res: ServerResponse, r: Reply): void => {
+  const headers = {
+    ...(r.json === undefined ? {} : { 'content-type': 'application/json' }),
+    ...r.headers,
+  };
+  res.writeHead(r.status, headers).end(r.json === undefined ? undefined : JSON.stringify(r.json));
+};
+
+const RPC_RESULTS: Record<string, unknown> = {
+  initialize: {
+    protocolVersion: '2025-06-18',
+    capabilities: { tools: {} },
+    serverInfo: { name: 'fake', version: '1' },
+  },
+  'tools/list': { tools: [{ name: 'ping', inputSchema: { type: 'object' } }] },
+};
+
 export async function startFakeOAuthMcp(): Promise<FakeOAuthMcp> {
   const state = { registered: 0, tokensIssued: 0 };
   let origin = '';
-  const json = (res: ServerResponse, code: number, v: unknown): void => {
-    res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(v));
+
+  const mcp = async (req: IncomingMessage): Promise<Reply> => {
+    if (req.headers.authorization !== 'Bearer tok')
+      return {
+        status: 401,
+        headers: {
+          'www-authenticate': `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
+        },
+      };
+    if (req.method !== 'POST') return { status: 405 };
+    const msg = JSON.parse(await body(req)) as { id?: number; method: string };
+    if (msg.id === undefined) return { status: 202 };
+    return {
+      status: 200,
+      json: { jsonrpc: '2.0', id: msg.id, result: RPC_RESULTS[msg.method] ?? {} },
+    };
   };
 
-  const server: Server = createServer((req, res) => {
-    void (async (): Promise<void> => {
-      const url = new URL(req.url ?? '/', origin);
-      if (url.pathname.startsWith('/.well-known/oauth-protected-resource')) {
-        json(res, 200, { resource: `${origin}/mcp`, authorization_servers: [origin] });
-        return;
-      }
-      if (url.pathname === '/.well-known/oauth-authorization-server') {
-        json(res, 200, {
-          issuer: origin,
-          authorization_endpoint: `${origin}/authorize`,
-          token_endpoint: `${origin}/token`,
-          registration_endpoint: `${origin}/register`,
-          response_types_supported: ['code'],
-          code_challenge_methods_supported: ['S256'],
-        });
-        return;
-      }
-      if (url.pathname === '/register') {
-        state.registered++;
-        {
-          json(res, 201, { ...JSON.parse(await body(req)), client_id: 'client-1' });
-          return;
-        }
-      }
-      if (url.pathname === '/authorize') {
-        const back = new URL(url.searchParams.get('redirect_uri') ?? '');
-        back.searchParams.set('code', 'the-code');
-        back.searchParams.set('state', url.searchParams.get('state') ?? '');
-        res.writeHead(302, { location: back.href }).end();
-        return;
-      }
-      if (url.pathname === '/token') {
-        const form = new URLSearchParams(await body(req));
-        if (form.get('code') !== 'the-code' && form.get('grant_type') !== 'refresh_token') {
-          json(res, 400, { error: 'invalid_grant' });
-          return;
-        }
-        state.tokensIssued++;
-        {
-          json(res, 200, {
-            access_token: 'tok',
-            token_type: 'Bearer',
-            expires_in: 3600,
-            refresh_token: 'r',
-          });
-          return;
-        }
-      }
-      if (url.pathname === '/mcp') {
-        if (req.headers.authorization !== 'Bearer tok') {
-          res
-            .writeHead(401, {
-              'www-authenticate': `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
-            })
-            .end();
-          return;
-        }
-        if (req.method !== 'POST') {
-          res.writeHead(405).end();
-          return;
-        }
-        const msg = JSON.parse(await body(req)) as { id?: number; method: string };
-        if (msg.id === undefined) {
-          res.writeHead(202).end();
-          return;
-        }
-        const result =
-          msg.method === 'initialize'
-            ? {
-                protocolVersion: '2025-06-18',
-                capabilities: { tools: {} },
-                serverInfo: { name: 'fake', version: '1' },
-              }
-            : msg.method === 'tools/list'
-              ? { tools: [{ name: 'ping', inputSchema: { type: 'object' } }] }
-              : {};
-        {
-          json(res, 200, { jsonrpc: '2.0', id: msg.id, result });
-          return;
-        }
-      }
-      res.writeHead(404).end();
-    })();
+  const routes: Record<string, (req: IncomingMessage, url: URL) => Promise<Reply> | Reply> = {
+    '/.well-known/oauth-authorization-server': () => ({
+      status: 200,
+      json: {
+        issuer: origin,
+        authorization_endpoint: `${origin}/authorize`,
+        token_endpoint: `${origin}/token`,
+        registration_endpoint: `${origin}/register`,
+        response_types_supported: ['code'],
+        code_challenge_methods_supported: ['S256'],
+      },
+    }),
+    '/register': async (req) => {
+      state.registered++;
+      return { status: 201, json: { ...JSON.parse(await body(req)), client_id: 'client-1' } };
+    },
+    '/authorize': (_req, url) => {
+      const back = new URL(url.searchParams.get('redirect_uri') ?? '');
+      back.searchParams.set('code', 'the-code');
+      back.searchParams.set('state', url.searchParams.get('state') ?? '');
+      return { status: 302, headers: { location: back.href } };
+    },
+    '/token': async (req) => {
+      const form = new URLSearchParams(await body(req));
+      if (form.get('code') !== 'the-code' && form.get('grant_type') !== 'refresh_token')
+        return { status: 400, json: { error: 'invalid_grant' } };
+      state.tokensIssued++;
+      return {
+        status: 200,
+        json: { access_token: 'tok', token_type: 'Bearer', expires_in: 3600, refresh_token: 'r' },
+      };
+    },
+    '/mcp': mcp,
+  };
+
+  const route = (req: IncomingMessage, url: URL): Promise<Reply> | Reply => {
+    if (url.pathname.startsWith('/.well-known/oauth-protected-resource'))
+      return { status: 200, json: { resource: `${origin}/mcp`, authorization_servers: [origin] } };
+    return routes[url.pathname]?.(req, url) ?? { status: 404 };
+  };
+
+  const server = createServer((req, res) => {
+    void Promise.resolve(route(req, new URL(req.url ?? '/', origin))).then((r) => {
+      send(res, r);
+    });
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

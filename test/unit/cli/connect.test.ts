@@ -58,7 +58,7 @@ describe('connector catalog', () => {
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.length).toBeGreaterThanOrEqual(20);
     for (const c of CONNECTORS) {
-      expect(Boolean(c.url) !== Boolean(c.command)).toBe(true);
+      expect(Boolean(c.url)).not.toBe(Boolean(c.command));
       if (c.url) expect(c.url).toMatch(/^https:\/\//);
       if (c.auth === 'token') expect(c.needs?.length).toBeGreaterThan(0);
     }

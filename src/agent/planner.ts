@@ -20,7 +20,7 @@ import { PLANNER_SYSTEM } from './prompts.js';
 import { readIntent, writeIntentTool } from './intent.js';
 import { dryRunChecks } from './check-dryrun.js';
 import type { RouteAction } from '../router/actions.js';
-import { totalInput } from '../providers/types.js';
+import { totalInput, type Message } from '../providers/types.js';
 
 /** The planner loop ended (caps, stop, refusal) before a valid plan was written. */
 export class PlannerIncomplete extends StateError {
@@ -28,6 +28,17 @@ export class PlannerIncomplete extends StateError {
     super(`planner ended (${end}) without a valid plan`, 'see `omnexx logs` for what it tried');
   }
 }
+
+/** The planner's model answered in plain text and never called a tool. */
+export const NO_TOOL_CALLS = 'no_tool_calls';
+
+const usedNoTools = (messages: readonly Message[]): boolean =>
+  !messages.some(
+    (m) =>
+      m.role === 'assistant' &&
+      Array.isArray(m.content) &&
+      m.content.some((b) => b.type === 'tool_use'),
+  );
 
 export type PlannerMode =
   | { kind: 'initial' }
@@ -324,7 +335,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     },
   );
   if (!written) {
-    throw new PlannerIncomplete(result.end);
+    throw new PlannerIncomplete(usedNoTools(result.messages) ? NO_TOOL_CALLS : result.end);
   }
   run.plan = written;
   await run.savePlan();

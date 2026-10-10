@@ -34,8 +34,35 @@ const oauth = (
   name: string,
   category: Connector['category'],
   url: string,
-  extra: Partial<Connector> = {},
-): Connector => ({ id, name, category, url, auth: 'oauth', ...extra });
+  note?: string,
+): Connector => ({ id, name, category, url, auth: 'oauth', ...(note ? { note } : {}) });
+
+const envNeed = (key: string, help: string): ConnectorNeed => ({ key, help, target: 'env' });
+const bearerNeed = (help: string): ConnectorNeed => ({
+  key: 'Authorization',
+  help,
+  target: 'header',
+  bearer: true,
+});
+
+/** A local npm server: `npx -y <pkg>`, with the tokens it reads from its environment. */
+const npx = (
+  id: string,
+  name: string,
+  category: Connector['category'],
+  pkg: string,
+  needs: readonly ConnectorNeed[] = [],
+  note?: string,
+): Connector => ({
+  id,
+  name,
+  category,
+  command: 'npx',
+  args: ['-y', pkg],
+  auth: needs.length ? 'token' : 'none',
+  ...(needs.length ? { needs } : {}),
+  ...(note ? { note } : {}),
+});
 
 const GOOGLE_NOTE = [
   'Google needs your own OAuth client (free, about 5 minutes, once):',
@@ -47,15 +74,6 @@ const GOOGLE_NOTE = [
   'Needs uv (https://docs.astral.sh/uv/) for `uvx`.',
 ].join('\n');
 
-const googleNeeds: readonly ConnectorNeed[] = [
-  {
-    key: 'GOOGLE_OAUTH_CLIENT_ID',
-    help: 'the OAuth client ID (…apps.googleusercontent.com)',
-    target: 'env',
-  },
-  { key: 'GOOGLE_OAUTH_CLIENT_SECRET', help: 'the OAuth client secret', target: 'env' },
-];
-
 const google = (id: string, name: string, tools: readonly string[]): Connector => ({
   id,
   name,
@@ -64,7 +82,10 @@ const google = (id: string, name: string, tools: readonly string[]): Connector =
   args: ['workspace-mcp', '--tools', ...tools],
   env: { OAUTHLIB_INSECURE_TRANSPORT: '1' },
   auth: 'token',
-  needs: googleNeeds,
+  needs: [
+    envNeed('GOOGLE_OAUTH_CLIENT_ID', 'the OAuth client ID (…apps.googleusercontent.com)'),
+    envNeed('GOOGLE_OAUTH_CLIENT_SECRET', 'the OAuth client secret'),
+  ],
   note: GOOGLE_NOTE,
 });
 
@@ -79,15 +100,14 @@ export const CONNECTORS: readonly Connector[] = [
   google('gmail', 'Gmail', ['gmail']),
   google('google-calendar', 'Google Calendar', ['calendar']),
   google('google-drive', 'Google Drive, Docs and Sheets', ['drive', 'docs', 'sheets']),
-  {
-    id: 'outlook',
-    name: 'Outlook / Microsoft 365 (mail, calendar, OneDrive)',
-    category: 'mail & calendar',
-    command: 'npx',
-    args: ['-y', '@softeria/ms-365-mcp-server'],
-    auth: 'none',
-    note: 'Signs in with a Microsoft device code the first time it is used (community server).',
-  },
+  npx(
+    'outlook',
+    'Outlook / Microsoft 365 (mail, calendar, OneDrive)',
+    'mail & calendar',
+    '@softeria/ms-365-mcp-server',
+    [],
+    'Signs in with a Microsoft device code the first time it is used (community server).',
+  ),
   {
     id: 'slack',
     name: 'Slack',
@@ -95,73 +115,53 @@ export const CONNECTORS: readonly Connector[] = [
     url: 'https://mcp.slack.com/mcp',
     auth: 'token',
     needs: [
-      {
-        key: 'Authorization',
-        help: 'a Slack user token (xoxp-…): create an app at https://api.slack.com/apps, add user scopes, install it, copy the User OAuth Token',
-        target: 'header',
-        bearer: true,
-      },
+      bearerNeed(
+        'a Slack user token (xoxp-…): create an app at https://api.slack.com/apps, add user scopes, install it, copy the User OAuth Token',
+      ),
     ],
     note: "Slack's MCP server has no self-service sign-in for outside apps, so it takes a user token.",
   },
-  {
-    id: 'discord',
-    name: 'Discord',
-    category: 'chat',
-    command: 'npx',
-    args: ['-y', 'mcp-discord'],
-    auth: 'token',
-    needs: [
-      {
-        key: 'DISCORD_TOKEN',
-        help: 'a bot token: https://discord.com/developers/applications > your app > Bot > Reset Token',
-        target: 'env',
-      },
+  npx(
+    'discord',
+    'Discord',
+    'chat',
+    'mcp-discord',
+    [
+      envNeed(
+        'DISCORD_TOKEN',
+        'a bot token: https://discord.com/developers/applications > your app > Bot > Reset Token',
+      ),
     ],
-    note: 'Community server; the bot must be invited to your server.',
-  },
+    'Community server; the bot must be invited to your server.',
+  ),
   oauth('notion', 'Notion', 'docs & files', 'https://mcp.notion.com/mcp'),
   oauth('dropbox', 'Dropbox', 'docs & files', 'https://mcp.dropbox.com/mcp'),
   oauth('canva', 'Canva', 'docs & files', 'https://mcp.canva.com/mcp'),
-  oauth('figma', 'Figma', 'docs & files', 'https://mcp.figma.com/mcp', {
-    note: "Figma may only accept sign-in from approved apps; if it refuses, use the Figma desktop app's local server instead.",
-  }),
-  {
-    id: 'airtable',
-    name: 'Airtable',
-    category: 'docs & files',
-    command: 'npx',
-    args: ['-y', 'airtable-mcp-server'],
-    auth: 'token',
-    needs: [
-      {
-        key: 'AIRTABLE_API_KEY',
-        help: 'a personal access token: https://airtable.com/create/tokens',
-        target: 'env',
-      },
-    ],
-  },
+  oauth(
+    'figma',
+    'Figma',
+    'docs & files',
+    'https://mcp.figma.com/mcp',
+    "Figma may only accept sign-in from approved apps; if it refuses, use the Figma desktop app's local server instead.",
+  ),
+  npx('airtable', 'Airtable', 'docs & files', 'airtable-mcp-server', [
+    envNeed('AIRTABLE_API_KEY', 'a personal access token: https://airtable.com/create/tokens'),
+  ]),
   oauth('linear', 'Linear', 'work tracking', 'https://mcp.linear.app/mcp'),
   oauth('atlassian', 'Jira and Confluence', 'work tracking', 'https://mcp.atlassian.com/v1/mcp'),
   oauth('monday', 'monday.com', 'work tracking', 'https://mcp.monday.com/mcp'),
   oauth('todoist', 'Todoist', 'work tracking', 'https://ai.todoist.net/mcp'),
-  {
-    id: 'trello',
-    name: 'Trello',
-    category: 'work tracking',
-    command: 'npx',
-    args: ['-y', '@delorenj/mcp-server-trello'],
-    auth: 'token',
-    needs: [
-      {
-        key: 'TRELLO_API_KEY',
-        help: 'your API key: https://trello.com/power-ups/admin',
-        target: 'env',
-      },
-      { key: 'TRELLO_TOKEN', help: 'a token generated from that API key page', target: 'env' },
+  npx(
+    'trello',
+    'Trello',
+    'work tracking',
+    '@delorenj/mcp-server-trello',
+    [
+      envNeed('TRELLO_API_KEY', 'your API key: https://trello.com/power-ups/admin'),
+      envNeed('TRELLO_TOKEN', 'a token generated from that API key page'),
     ],
-    note: 'Community server.',
-  },
+    'Community server.',
+  ),
   {
     id: 'github',
     name: 'GitHub',
@@ -169,49 +169,41 @@ export const CONNECTORS: readonly Connector[] = [
     url: 'https://api.githubcopilot.com/mcp/',
     auth: 'token',
     needs: [
-      {
-        key: 'Authorization',
-        help: 'a personal access token: https://github.com/settings/personal-access-tokens/new',
-        target: 'header',
-        bearer: true,
-      },
+      bearerNeed('a personal access token: https://github.com/settings/personal-access-tokens/new'),
     ],
   },
   oauth('gitlab', 'GitLab', 'dev', 'https://gitlab.com/api/v4/mcp'),
   oauth('sentry', 'Sentry', 'dev', 'https://mcp.sentry.dev/mcp'),
   oauth('supabase', 'Supabase', 'dev', 'https://mcp.supabase.com/mcp'),
-  oauth('vercel', 'Vercel', 'dev', 'https://mcp.vercel.com', {
-    note: 'Vercel may only accept sign-in from approved apps.',
-  }),
+  oauth(
+    'vercel',
+    'Vercel',
+    'dev',
+    'https://mcp.vercel.com',
+    'Vercel may only accept sign-in from approved apps.',
+  ),
   oauth('cloudflare', 'Cloudflare', 'dev', 'https://bindings.mcp.cloudflare.com/mcp'),
   oauth('stripe', 'Stripe', 'business', 'https://mcp.stripe.com'),
   oauth('paypal', 'PayPal', 'business', 'https://mcp.paypal.com/mcp'),
-  oauth('intercom', 'Intercom', 'business', 'https://mcp.intercom.com/mcp', {
-    note: 'US-hosted Intercom workspaces only.',
-  }),
-  {
-    id: 'hubspot',
-    name: 'HubSpot',
-    category: 'business',
-    command: 'npx',
-    args: ['-y', '@hubspot/mcp-server'],
-    auth: 'token',
-    needs: [
-      {
-        key: 'PRIVATE_APP_ACCESS_TOKEN',
-        help: 'a private app token: HubSpot > Settings > Integrations > Private Apps',
-        target: 'env',
-      },
-    ],
-  },
-  {
-    id: 'shopify-dev',
-    name: 'Shopify (developer docs and API schema)',
-    category: 'business',
-    command: 'npx',
-    args: ['-y', '@shopify/dev-mcp@latest'],
-    auth: 'none',
-  },
+  oauth(
+    'intercom',
+    'Intercom',
+    'business',
+    'https://mcp.intercom.com/mcp',
+    'US-hosted Intercom workspaces only.',
+  ),
+  npx('hubspot', 'HubSpot', 'business', '@hubspot/mcp-server', [
+    envNeed(
+      'PRIVATE_APP_ACCESS_TOKEN',
+      'a private app token: HubSpot > Settings > Integrations > Private Apps',
+    ),
+  ]),
+  npx(
+    'shopify-dev',
+    'Shopify (developer docs and API schema)',
+    'business',
+    '@shopify/dev-mcp@latest',
+  ),
 ];
 
 export const findConnector = (id: string): Connector | undefined =>

@@ -6,14 +6,14 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { McpServerConfig } from '../config/sections/mcp.js';
 import { awaitAuthCode, McpOAuthProvider, oauthOptions } from './oauth.js';
 
+const OPENERS: Partial<Record<NodeJS.Platform, (url: string) => [string, string[]]>> = {
+  darwin: (url) => ['open', [url]],
+  win32: (url) => ['cmd', ['/c', 'start', '', url]],
+};
+
 /** Open a URL in the default browser; failures are fine, the URL is printed too. */
 export function openInBrowser(url: string): void {
-  const [cmd, args] =
-    process.platform === 'darwin'
-      ? ['open', [url]]
-      : process.platform === 'win32'
-        ? ['cmd', ['/c', 'start', '', url]]
-        : ['xdg-open', [url]];
+  const [cmd, args] = (OPENERS[process.platform] ?? ((u: string) => ['xdg-open', [u]]))(url);
   try {
     spawn(cmd, args, { stdio: 'ignore', detached: true })
       .on('error', () => undefined)
