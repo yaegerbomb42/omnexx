@@ -32,10 +32,16 @@ the end of every work session. Checkboxes in the workstream sections lag; trust 
 | W14 | 3/5 (landed with W12)                                                      | #13 via #20        |
 | W15 | not started                                                                | –                  |
 
-Next up, in order: merge #27–#30 → W13 bench (unblocks the W8/W11 token claims) → audit W1/W2/W3/W9 boxes → W15 release.
+Next up: see [NEXT.md](NEXT.md) (owner's to-dos, the agent's queue, rules). Older backlog: W13 bench → audit W1/W2/W3/W9 boxes.
 SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
+
+- **2026-10-09, later (single agent):** email connector over IMAP with an app password (#85),
+  `omnexx --ollama` plus Ollama auto-connect on first run (#86), and release prep for 0.5.0 with
+  `scripts/install.sh` (#87). Live checks: `--ollama` answered from a real local Ollama, and
+  `serve-email` lists its tools over stdio. Publishing waits on the npm trusted publisher (see
+  NEXT.md).
 
 - **2026-10-09 (single agent, no paid live runs):** landed the #76–#79 stack into `next` (#80;
   they had merged into their parent branches), deleted 69 merged remote branches, and
