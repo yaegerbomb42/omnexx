@@ -5,6 +5,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { McpServerConfig } from '../config/sections/mcp.js';
 import { matchesAny } from '../security/glob.js';
 import { SECRET_PREFIX, type McpSecrets } from '../integrations/secrets.js';
+import { McpOAuthProvider, oauthOptions } from './oauth.js';
 
 /** What every stdio server gets from the host environment, whatever its config says. */
 const BASE_ENV = [
@@ -42,6 +43,8 @@ export interface McpClientOptions {
   env?: NodeJS.ProcessEnv;
   /** Stored secrets by server, for `secret:<KEY>` values in env and headers. */
   secrets?: McpSecrets;
+  /** Where OAuth logins are stored (servers with `oauth = true`). */
+  configHome?: string;
 }
 
 export interface McpToolInfo {
@@ -75,10 +78,12 @@ export class McpClientManager {
 
   private readonly env: NodeJS.ProcessEnv;
   private readonly secrets: McpSecrets;
+  private readonly configHome: string | undefined;
 
   constructor(serverConfigs: Record<string, McpServerConfig>, opts: McpClientOptions = {}) {
     this.env = opts.env ?? process.env;
     this.secrets = opts.secrets ?? {};
+    this.configHome = opts.configHome;
     for (const [name, cfg] of Object.entries(serverConfigs)) {
       this.servers.set(name, {
         config: cfg,
@@ -145,6 +150,12 @@ export class McpClientManager {
     return { ...base, ...this.resolveEnv(server, config.env) };
   }
 
+  /** The stored OAuth login of a server with `oauth = true`; it can refresh, not sign in. */
+  private authFor(name: string, config: McpServerConfig): McpOAuthProvider | undefined {
+    if (!config.oauth || !this.configHome) return undefined;
+    return new McpOAuthProvider(this.configHome, name, oauthOptions(config, this.secrets[name]));
+  }
+
   private async connectServer(name: string, instance: ServerInstance): Promise<Client> {
     if (instance.client && instance.connected) {
       return instance.client;
@@ -164,9 +175,9 @@ export class McpClientManager {
     } else if (config.url) {
       const headers = this.resolveHeaders(name, config.headers_env);
       const url = new URL(config.url);
-      transport = new StreamableHTTPClientTransport(url, {
-        requestInit: { headers },
-      }) as unknown as Transport;
+      const authProvider = this.authFor(name, config);
+      const opts = { requestInit: { headers }, ...(authProvider ? { authProvider } : {}) };
+      transport = new StreamableHTTPClientTransport(url, opts) as unknown as Transport;
     } else {
       throw new Error(`MCP server "${name}" has neither command nor url specified`);
     }

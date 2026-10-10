@@ -209,6 +209,25 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
 });
 
 describe('M2: stuck handling, budget and judge', () => {
+  it('a planner model that never calls a tool stops with a tool-calling hint, after retries', async () => {
+    // Arrange
+    const textOnly: Script = () => say('Here is my plan: first I will look at the code.');
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider: new ScriptedProvider(scenario(textOnly, textOnly)),
+      config: { gates: [GATE] },
+    });
+
+    // Act
+    const out = await superviseTest(t, []);
+
+    // Assert
+    expect(out).toMatchObject({ status: 'needs-human' });
+    expect(out.reason).toMatch(/never called a tool.*may not support tool calling/);
+    const events = await readEvents(t.run.store.eventsPath);
+    expect(types(events, 'planner.retry').length).toBeGreaterThan(0);
+  });
+
   it('autonomous: a parked task skips its blocked milestone instead of stopping to ask', async () => {
     // Arrange
     const plan = impossiblePlan();

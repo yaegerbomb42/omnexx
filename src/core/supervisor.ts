@@ -1,4 +1,4 @@
-import { BEYOND_RUBRIC, PlannerIncomplete, runPlanner } from '../agent/planner.js';
+import { BEYOND_RUBRIC, NO_TOOL_CALLS, PlannerIncomplete, runPlanner } from '../agent/planner.js';
 import { allOf, WebhookNotifier } from '../notify/webhook.js';
 import { openPullRequest } from '../git/pr.js';
 import { closeSession } from '../tools/extra/browser.js';
@@ -765,7 +765,8 @@ class Supervisor {
           (err.end === 'stuck' ||
             err.end === 'max_turns_per_cycle' ||
             err.end === 'max_tokens_per_cycle' ||
-            err.end === 'done') &&
+            err.end === 'done' ||
+            err.end === NO_TOOL_CALLS) &&
           this.plannerRetries < PLANNER_RETRIES
         ) {
           this.plannerRetries++;
@@ -778,7 +779,10 @@ class Supervisor {
           ? { status: 'budget-stop', reason: 'max_usd reached while planning' }
           : {
               status: 'needs-human',
-              reason: `the planner could not produce a valid plan (${err.end})`,
+              reason:
+                err.end === NO_TOOL_CALLS
+                  ? 'the planner model never called a tool: it (or the server in front of it) may not support tool calling; pick another planner model with `omnexx models`'
+                  : `the planner could not produce a valid plan (${err.end})`,
             };
       }
     }
