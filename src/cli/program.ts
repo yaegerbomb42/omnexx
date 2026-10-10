@@ -62,8 +62,22 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
   program.option('-c, --continue', 'continue the last chat in this folder');
   program.option('-p, --print <prompt>', 'one chat turn without the TUI; "-" reads stdin');
   program.option('-m, --model <model>', 'with -p: the model to use (provider:model)');
+  program.option(
+    '--ollama [model]',
+    'use your local Ollama (connects it; picks a coding model unless you name one)',
+  );
   program.action(
-    async (opts: { tui: boolean; continue?: boolean; print?: string; model?: string }) => {
+    async (opts: {
+      tui: boolean;
+      continue?: boolean;
+      print?: string;
+      model?: string;
+      ollama?: string | boolean;
+    }) => {
+      if (opts.ollama !== undefined) {
+        const { useOllama } = await import('./ollama.js');
+        opts.model = await useOllama(io, typeof opts.ollama === 'string' ? opts.ollama : undefined);
+      }
       if (opts.print !== undefined) {
         const { printCommand } = await import('./print.js');
         setExit(await printCommand(io, opts.print, opts.model ? { model: opts.model } : {}));
@@ -78,6 +92,7 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
         await startTui(io, runCli, {
           version: VERSION,
           ...(opts.continue ? { continueChat: true } : {}),
+          ...(opts.model ? { model: opts.model } : {}),
         }),
       );
     },

@@ -117,6 +117,39 @@ describe('omnexx connect / disconnect', () => {
     expect(secrets).not.toContain('ghp_abc');
   });
 
+  it('email: checks the login first and saves nothing when it fails', async () => {
+    const { env, first } = await cli([
+      'connect',
+      'email',
+      '--set',
+      'EMAIL_ADDRESS=me@acme.dev',
+      '--set',
+      'EMAIL_APP_PASSWORD=abcd efgh ijkl mnop',
+      '--set',
+      'EMAIL_IMAP_HOST=127.0.0.1',
+      '--set',
+      'EMAIL_IMAP_PORT=1',
+    ]);
+    expect(first.code).toBe(EXIT.error);
+    expect(first.err).toMatch(/Not connected: could not reach the mail server \(ECONNREFUSED\)/);
+    await expect(readFile(join(home(env), 'config.toml'), 'utf8')).rejects.toThrow();
+  });
+
+  it('email: config names every setting given, values stay in the secrets file', async () => {
+    const { connectorServer: table } = await import('../../../src/integrations/connectors.js');
+    expect(
+      table(need('email'), ['EMAIL_ADDRESS', 'EMAIL_APP_PASSWORD', 'EMAIL_ALLOW_SEND']),
+    ).toEqual({
+      command: 'omnexx',
+      args: ['serve-email'],
+      env: {
+        EMAIL_ADDRESS: 'secret:EMAIL_ADDRESS',
+        EMAIL_APP_PASSWORD: 'secret:EMAIL_APP_PASSWORD',
+        EMAIL_ALLOW_SEND: 'secret:EMAIL_ALLOW_SEND',
+      },
+    });
+  });
+
   it('points unknown names at the registry', async () => {
     const { first } = await cli(['connect', 'nosuchapp']);
     expect(first.code).toBe(EXIT.error);

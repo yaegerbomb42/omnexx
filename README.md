@@ -70,6 +70,16 @@ Omnexx is the loop around the model:
 
 Optional: an advisory **fast judge** (Nimble on Ollama, usually on your Mac over Tailscale) that suggests the next move and flags drift. It's off by default and can never override the gates. See [docs/judge.md](docs/judge.md).
 
+## Free and local with Ollama
+
+```bash
+ollama pull qwen2.5-coder     # or any model you like
+npx omnexx --ollama           # finds Ollama on localhost:11434, picks a coding model, opens the chat
+npx omnexx --ollama llama3.3  # or name the model
+```
+
+No key and no config: with no provider set up, omnexx also connects a running Ollama by itself.
+
 ## From the plain terminal
 
 ```bash

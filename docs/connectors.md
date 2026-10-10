@@ -13,6 +13,26 @@ omnexx disconnect notion       # removes it and forgets the sign-in
 
 In the app: `/apps`, `/apps notion`, `/apps github --set Authorization=<token>`.
 
+## Email: the easy way (Gmail, Outlook, iCloud, Yahoo, Fastmail, …)
+
+```bash
+omnexx connect email
+```
+
+It asks for your address, shows where to make an **app password** for your provider, asks
+whether omnexx may send mail itself, and logs in once to check before saving anything.
+
+- Gmail: turn on 2-Step Verification, then make an app password at
+  https://myaccount.google.com/apppasswords (some work accounts have this turned off by an admin).
+- The agent gets `email_search`, `email_read`, `email_folders` and `email_draft`. Drafts land
+  in your Drafts folder for you to review. `email_send` exists only if you said yes to sending.
+- Other providers or your own domain: `--set EMAIL_IMAP_HOST=… --set EMAIL_SMTP_HOST=…`
+  (ports with `EMAIL_IMAP_PORT` / `EMAIL_SMTP_PORT`). Custom domains default to Google Workspace.
+- Mail only. For Calendar and Drive too, use `omnexx connect google` (your own Google client, below).
+
+The server is built into omnexx (`omnexx serve-email`); your password never goes to a
+third-party server, only to your mail provider.
+
 ## How each kind signs in
 
 | Kind                   | Apps                                                                                                                                                    | What happens                                                                                                                                                                                                    |

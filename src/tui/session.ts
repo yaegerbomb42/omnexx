@@ -208,13 +208,32 @@ export class Session {
     this.changed();
   }
 
+  /** No provider yet but Ollama is running locally: connect it, so the first chat just works. */
+  private async autoOllama(): Promise<boolean> {
+    const { ollamaModels, pickOllamaModel } = await import('../cli/ollama.js');
+    const model = pickOllamaModel((await ollamaModels(this.io.fetch ?? fetch)) ?? []);
+    if (!model) return false;
+    try {
+      await connect(this.io, 'ollama');
+    } catch {
+      return false;
+    }
+    this.chatModel ??= `ollama:${model}`;
+    this.push(
+      'system',
+      `found Ollama running locally: chatting with ollama:${model} (free). /model to switch`,
+    );
+    return true;
+  }
+
   /** First-run hint: with no provider set up, say how to add one before anything else. */
   async greet(firstRun = false): Promise<void> {
     const { config } = await loadConfig({ cwd: this.io.cwd, env: this.io.env }).catch(() => ({
       config: undefined,
     }));
     if (config?.policy.auto_approve) this.autoApprove = true;
-    const ready = await hasProvider(this.io).catch(() => true);
+    let ready = await hasProvider(this.io).catch(() => true);
+    if (!ready) ready = await this.autoOllama();
     if (ready && !firstRun) return;
     const found = await envKeys(this.io).catch(() => [] as EnvKey[]);
     const model = ready
@@ -740,6 +759,11 @@ export class Session {
       }
     }
     this.changed();
+  }
+
+  /** The chat model to open with (`omnexx --ollama`), before any chat exists. */
+  useModel(ref: string): void {
+    this.chatModel = ref;
   }
 
   /** Switch chat to `ref`, keeping the conversation. */
