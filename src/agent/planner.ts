@@ -335,7 +335,10 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     },
   );
   if (!written) {
-    throw new PlannerIncomplete(usedNoTools(result.messages) ? NO_TOOL_CALLS : result.end);
+    // Only a model that answered normally, never a budget or provider stop, is "no tool calls".
+    throw new PlannerIncomplete(
+      result.end === 'done' && usedNoTools(result.messages) ? NO_TOOL_CALLS : result.end,
+    );
   }
   run.plan = written;
   await run.savePlan();
