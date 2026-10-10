@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.0
+
+- **Autonomous mode.** `omnexx run --for 8h "<goal>"` (or `/autonomous 8h`) keeps improving the
+  repo until the time is up: improvement rounds with no round cap, each on the next focus area,
+  work blocked by a parked task skipped instead of stopping to ask.
+- **Context scopes.** A `context` tool the agent reads only when it helps: `general` (goal,
+  intent, lessons), `repo` (codebase map), `heat` (files changing most) and `recent`, each
+  capped, with notes the agent rewrites itself; repo notes carry over to later runs.
+- **Live todos.** Workers keep a checklist you can watch tick off in an attached run, and get one
+  reminder if they stop with items open.
+- **Connectors.** `omnexx connect` (or `/apps`): 26 free apps. Notion, Linear, Jira and
+  Confluence, GitLab, Sentry, Supabase, Stripe, Todoist and more sign in through the browser
+  (MCP OAuth); GitHub and Slack take a token; Google Workspace runs with your own Google client.
+- **Email over IMAP.** `omnexx connect email`: an address and an app password for Gmail,
+  Outlook, iCloud, Yahoo or Fastmail. Search, read and draft; sending only if you allow it.
+- **Ollama in one command.** `omnexx --ollama` connects a local Ollama and picks a coding
+  model; a first run with no provider connects a running Ollama by itself.
+- A planner model that never calls a tool now says so (it may not support tool calling)
+  instead of "could not produce a valid plan".
+- Installer: `curl -fsSL https://omnexx.org/install.sh | sh`.
+
 ## 0.4.0
 
 - **Any provider, set up in one step.** 24 hosted providers by name (OpenAI, Gemini, xAI,
