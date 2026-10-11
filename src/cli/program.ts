@@ -199,9 +199,10 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .command('plan')
     .argument('[runId]')
     .option('--edit', 'edit goal.md in $EDITOR; picked up next cycle')
+    .option('--json', 'machine-readable output')
     .description('show the plan')
-    .action(async (runId: string | undefined, opts: { edit?: boolean }) => {
-      setExit(await planCommand(io, runId, opts.edit === true));
+    .action(async (runId: string | undefined, opts: { edit?: boolean; json?: boolean }) => {
+      setExit(await planCommand(io, runId, opts.edit === true, opts.json === true));
     });
 
   program
@@ -233,9 +234,10 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
 
   program
     .command('runs')
+    .option('--json', 'machine-readable output')
     .description('list runs')
-    .action(async () => {
-      setExit(await runsCommand(io));
+    .action(async (opts: { json?: boolean }) => {
+      setExit(await runsCommand(io, opts.json === true));
     });
 
   program

@@ -55,7 +55,10 @@ State at handoff: `next` has everything through #87 (version 0.5.0). `main` was 
    - Wrap them as per-platform PyPI wheels (the ruff pattern) so `uvx omnexx` needs no Node.
    - Optional Homebrew formula.
    - macOS signing needs an Apple developer account.
-5. **VS Code extension** (v1): commands for "start run" and "autonomous for N hours", a runs
+5. ~~**VS Code extension** (v1)~~ built in `vscode/` (see the PR from 2026-10-11). Left: the
+   owner looks at it (`cd vscode && npm run package`, then install the `.vsix`), then publish
+   with `npx @vscode/vsce publish` and `npx ovsx publish` once the publisher accounts exist.
+   It needs a CLI with `runs --json`, so publish it after the next omnexx release. Original spec: commands for "start run" and "autonomous for N hours", a runs
    sidebar with the live todo list, and "open chat in terminal". Publish to the Marketplace and
    Open VSX.
 6. Older backlog (see TODO.md): W13 bench, audits of the W1/W2/W3/W9 boxes, and open SonarCloud

@@ -119,9 +119,43 @@ export async function statusCommand(
   return EXIT.ok;
 }
 
-export async function runsCommand(io: CliIO): Promise<number> {
+/** One `omnexx runs --json` row: enough for an editor to list runs and match them to a folder. */
+async function runRow(store: RunStore) {
+  const s = await store.readState();
+  return {
+    runId: s.runId,
+    status: s.status,
+    phase: s.phase,
+    cycle: s.cycle,
+    task: s.taskId,
+    repoName: s.repoName,
+    repoRoot: s.repoRoot,
+    worktree: s.worktree,
+    branch: s.branch,
+    startedAt: s.startedAt,
+    usd: s.spend.usd,
+    commits: s.acceptedCommits,
+    supervisorAlive: await supervisorAlive(store),
+  };
+}
+
+export async function runsCommand(io: CliIO, json = false): Promise<number> {
   const paths = resolvePaths(io.env);
   const ids = await listRunIds(paths);
+  if (json) {
+    const rows = await Promise.all(
+      ids.map((id) => runRow(new RunStore(paths, id)).catch(() => undefined)),
+    );
+    println(
+      io.stdout,
+      JSON.stringify(
+        rows.filter((r) => r !== undefined),
+        null,
+        2,
+      ),
+    );
+    return EXIT.ok;
+  }
   if (!ids.length) println(io.stdout, 'no runs yet');
   for (const id of ids) {
     const s = await new RunStore(paths, id).readState().catch(() => undefined);
@@ -229,6 +263,7 @@ export async function planCommand(
   io: CliIO,
   runId: string | undefined,
   edit: boolean,
+  json = false,
 ): Promise<number> {
   const store = await pickRun(resolvePaths(io.env), runId);
   if (edit) {
@@ -242,9 +277,20 @@ export async function planCommand(
     return EXIT.ok;
   }
   const plan = await store.readPlan();
-  println(
-    io.stdout,
-    plan ? compactPlanView(plan, (await store.readState()).taskId) : 'no plan yet',
-  );
+  const currentTask = (await store.readState()).taskId ?? null;
+  if (json) {
+    const nodes = (plan?.nodes ?? []).map((n) => ({
+      id: n.id,
+      type: n.type,
+      parentId: n.parentId,
+      title: n.title,
+      status: n.status,
+      attempts: n.attempts,
+      parkedReason: n.parkedReason,
+    }));
+    println(io.stdout, JSON.stringify({ goal: plan?.goal ?? '', currentTask, nodes }, null, 2));
+    return EXIT.ok;
+  }
+  println(io.stdout, plan ? compactPlanView(plan, currentTask ?? undefined) : 'no plan yet');
   return EXIT.ok;
 }
