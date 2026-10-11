@@ -69,7 +69,7 @@ function parseJson(text: string, what: string): unknown {
     return JSON.parse(text);
   } catch {
     throw new Error(
-      `omnexx printed something that isn't JSON for ${what}; is it older than 0.5.1?`,
+      `omnexx printed something that isn't JSON for ${what}; is it older than 0.5.0?`,
     );
   }
 }

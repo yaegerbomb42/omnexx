@@ -5,7 +5,7 @@ todo list move in the sidebar.
 
 ## Needs
 
-The omnexx CLI, version 0.5.1 or later: `npm i -g omnexx`. Set `omnexx.path` if it isn't on
+The omnexx CLI, version 0.5.0 or later: `npm i -g omnexx`. Set `omnexx.path` if it isn't on
 your PATH.
 
 ## What it does
