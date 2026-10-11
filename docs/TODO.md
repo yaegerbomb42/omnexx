@@ -32,10 +32,35 @@ the end of every work session. Checkboxes in the workstream sections lag; trust 
 | W14 | 3/5 (landed with W12)                                                      | #13 via #20        |
 | W15 | not started                                                                | –                  |
 
-Next up, in order: merge #27–#30 → W13 bench (unblocks the W8/W11 token claims) → audit W1/W2/W3/W9 boxes → W15 release.
+Next up: see [NEXT.md](NEXT.md) (owner's to-dos, the agent's queue, rules). Older backlog: W13 bench → audit W1/W2/W3/W9 boxes.
 SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
+
+- **2026-10-11 (single agent):** VS Code extension v1 in `vscode/` (NEXT.md item 5): runs
+  sidebar with the live plan, start / autonomous / chat commands, and watch, pause, resume and
+  stop per run. It only calls the CLI, through the new `omnexx runs --json` and `plan --json`.
+  Packaged a `.vsix` and installed it in an isolated VS Code; no screenshot check (cua-driver
+  has no Accessibility permission). Not published: needs a Marketplace publisher and Open VSX.
+
+- **2026-10-09, later (single agent):** email connector over IMAP with an app password (#85),
+  `omnexx --ollama` plus Ollama auto-connect on first run (#86), and release prep for 0.5.0 with
+  `scripts/install.sh` (#87). Live checks: `--ollama` answered from a real local Ollama, and
+  `serve-email` lists its tools over stdio. Publishing waits on the npm trusted publisher (see
+  NEXT.md).
+
+- **2026-10-09 (single agent, no paid live runs):** landed the #76–#79 stack into `next` (#80;
+  they had merged into their parent branches), deleted 69 merged remote branches, and
+  fast-forwarded `main` to `next` (#83). Autonomous mode (#81): `run --for 8h` / `/autonomous`
+  keeps planning improvement rounds until the clock runs out, rotating focus areas, skipping
+  parked work, stopping after `max_idle_rounds` empty rounds. Context scopes and live todos (#82):
+  a `context` tool (general / repo / heat / recent, capped, read on demand, agent-written notes;
+  general and repo notes persist per repo); workers keep a todo list shown live in an attached run;
+  one nudge when a turn ends with open items. Connectors: `omnexx connect` / `/apps`, a catalog of
+  26 free connectors (16 vendor-hosted with browser OAuth via dynamic client registration, checked
+  against each server's metadata; token apps; Google via `workspace-mcp` with the user's own
+  OAuth client). OAuth tokens live in `mcp-oauth.json` (0600) and refresh at run time. A live
+  Bonsai run was cut short when the local LiteLLM proxy went down; nothing was learned from it.
 
 - **2026-10-08 (context efficiency, no live runs):** `feat/context-efficiency` off `next`. Cleared
   tool results now say which call they were and, for bash, the `read_log` id that keeps them whole.

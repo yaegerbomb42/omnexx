@@ -340,7 +340,7 @@ export const register: CommandRegistrar = (
         println(io.stdout, `Testing MCP server "${name}"...`);
         const manager = new McpClientManager(
           { [name]: target },
-          { env: io.env, secrets: await readSecrets(configHome()) },
+          { env: io.env, secrets: await readSecrets(configHome()), configHome: configHome() },
         );
         try {
           const tools = await manager.listTools();

@@ -19,6 +19,8 @@ describe('auto-approve', () => {
       env,
       cwd: await tempDir(),
       isTTY: false,
+      // No local Ollama here, whatever runs on this machine.
+      fetch: () => Promise.reject(new TypeError('fetch failed')),
     } as never;
     const s = new Session(io, () => Promise.resolve(0));
     await s.greet();

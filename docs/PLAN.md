@@ -424,7 +424,7 @@ open_pr = false
 ### 5.5 Stack
 
 - **TypeScript (strict) on Node ≥ 22 LTS**, developed on Node 24. ESM only.
-- **Dependencies are kept small on purpose and each needs a reason:** `@anthropic-ai/sdk`, `commander` (CLI), `zod` (schemas), `smol-toml` (config), `execa` (child processes with timeouts and kill trees), `shell-quote` (command policy parsing), `picocolors`. There's no LangChain-style framework. Git goes through the `git` binary via execa (no git library needed), and search through `rg` (checked by `doctor`, with a JS fallback).
+- **Dependencies are kept small on purpose and each needs a reason:** `@anthropic-ai/sdk`, `commander` (CLI), `zod` (schemas), `smol-toml` (config), `execa` (child processes with timeouts and kill trees), `shell-quote` (command policy parsing), `picocolors`. Added later with a reason: `imapflow`, `nodemailer` and `mailparser` (the built-in email connector: IMAP, SMTP and message parsing, one maintainer, so users' mail passwords never go to a third-party MCP server). There's no LangChain-style framework. Git goes through the `git` binary via execa (no git library needed), and search through `rg` (checked by `doctor`, with a JS fallback).
 - **Tooling:** `tsup` (or `tsdown`) for the build, `vitest` for tests, `eslint` + `typescript-eslint` (strict-type-checked), `prettier`. Package manager: **npm**, to match your infra conventions.
 
 ### 5.6 Release process

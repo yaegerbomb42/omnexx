@@ -69,6 +69,8 @@ describe('provider catalog', () => {
       env,
       cwd: await tempDir(),
       isTTY: false,
+      // No local Ollama here, whatever runs on this machine.
+      fetch: () => Promise.reject(new TypeError('fetch failed')),
     } as CliIO;
     const s = new Session(io, () => Promise.resolve(0));
     await s.greet(true);
@@ -76,5 +78,28 @@ describe('provider catalog', () => {
     expect(text).toMatch(/welcome to omnexx/);
     expect(text).toMatch(/\/connect env .*Mistral/);
     expect(text).toMatch(/2\. ask:/);
+  });
+
+  it('the first run connects a running Ollama by itself', async () => {
+    const io = {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new PassThrough(),
+      env: await isolatedEnv(),
+      cwd: await tempDir(),
+      isTTY: false,
+      fetch: (input: string | URL | Request) =>
+        Promise.resolve(
+          String(input instanceof Request ? input.url : input).endsWith('/api/tags')
+            ? Response.json({ models: [{ name: 'qwen2.5-coder:7b' }] })
+            : Response.json({ data: [{ id: 'qwen2.5-coder:7b' }] }),
+        ),
+    } as CliIO;
+    const s = new Session(io, () => Promise.resolve(0));
+    await s.greet(false);
+    expect(s.entries.map((e) => e.text).join('\n')).toContain(
+      'found Ollama running locally: chatting with ollama:qwen2.5-coder:7b',
+    );
+    expect(s.chatModelName).toBe('ollama:qwen2.5-coder:7b');
   });
 });

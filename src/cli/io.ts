@@ -17,6 +17,8 @@ export interface CliIO {
   makeProvider?: (apiKey: string) => Provider;
   clock?: Clock;
   fetch?: typeof fetch;
+  /** Opens a sign-in page; the default browser when unset (tests substitute a fake). */
+  openUrl?: (url: string) => void;
   /** argv prefix used to start supervisors (`node dist/cli.js`); tests substitute a scripted entry. */
   entry?: string[];
   /** Phase hooks for supervisors started by this CLI (chaos tests kill at a phase). */

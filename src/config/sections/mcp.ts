@@ -23,6 +23,12 @@ export const mcpServerSchema = z
      */
     inherit_env: z.boolean().default(false),
     timeout: durationString.default('30s'),
+    /** Sign in with OAuth (`omnexx connect <name>`); tokens live in mcp-oauth.json, refreshed as needed. */
+    oauth: z.boolean().optional(),
+    /** A client id registered ahead of time, for servers without dynamic client registration. */
+    oauth_client_id: z.string().optional(),
+    /** Space-separated scopes to ask for at sign-in. */
+    oauth_scope: z.string().optional(),
   })
   .refine((data) => Boolean(data.command ?? data.url), {
     message: 'Either "command" or "url" must be configured for an MCP server',

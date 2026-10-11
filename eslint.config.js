@@ -6,6 +6,7 @@ export default tseslint.config(
   {
     ignores: [
       'dist/**',
+      'vscode/out/**',
       'coverage/**',
       'node_modules/**',
       'test/fixtures/**',

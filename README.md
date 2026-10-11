@@ -70,6 +70,16 @@ Omnexx is the loop around the model:
 
 Optional: an advisory **fast judge** (Nimble on Ollama, usually on your Mac over Tailscale) that suggests the next move and flags drift. It's off by default and can never override the gates. See [docs/judge.md](docs/judge.md).
 
+## Free and local with Ollama
+
+```bash
+ollama pull qwen2.5-coder     # or any model you like
+npx omnexx --ollama           # finds Ollama on localhost:11434, picks a coding model, opens the chat
+npx omnexx --ollama llama3.3  # or name the model
+```
+
+No key and no config: with no provider set up, omnexx also connects a running Ollama by itself.
+
 ## From the plain terminal
 
 ```bash
@@ -82,6 +92,7 @@ export ANTHROPIC_API_KEY=...  # or: omnexx auth set anthropic
 omnexx run --plan-only "Port src/legacy to strict TypeScript"
 omnexx run --detach --budget 5 --hours 2 "Port src/legacy to strict TypeScript"
 omnexx run --detach --for 8h "improve this repo"   # autonomous: keeps going until the time is up
+omnexx connect notion          # connect apps: Gmail, Slack, Linear, GitHub… (docs/connectors.md)
 omnexx status && omnexx logs -f
 omnexx report                 # in the morning
 ```

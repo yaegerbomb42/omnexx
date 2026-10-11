@@ -67,6 +67,30 @@ describe('inspection commands on a finished run', () => {
     });
 
     expect((await run(['runs'])).out).toContain(`${id}  finished`);
+    const runsJson = JSON.parse((await run(['runs', '--json'])).out) as Record<string, unknown>[];
+    expect(runsJson).toEqual([
+      expect.objectContaining({
+        runId: id,
+        status: 'finished',
+        repoRoot: t.run.state.repoRoot,
+        worktree: t.run.state.worktree,
+        commits: 2,
+        supervisorAlive: false,
+        startedAt: expect.any(Number) as number,
+      }),
+    ]);
+    const planJson = JSON.parse((await run(['plan', id, '--json'])).out) as {
+      goal: string;
+      currentTask: string | null;
+      nodes: { id: string; status: string; type: string }[];
+    };
+    expect(planJson.goal).toEqual(expect.any(String));
+    expect(planJson.nodes.map((n) => [n.id, n.type, n.status])).toEqual([
+      ['M1', 'milestone', 'done'],
+      ['M1.T01', 'task', 'done'],
+      ['M2', 'milestone', 'done'],
+      ['M2.T01', 'task', 'done'],
+    ]);
     const logs = await run(['logs', id]);
     expect(logs.out).toMatch(/cycle 1\s+task M1\.T01/);
     expect(logs.out).toMatch(/accept\s+M1\.T01 \(done\)/);
@@ -100,6 +124,7 @@ describe('inspection commands on a finished run', () => {
     const empty = { ...t.env, OMNEXX_HOME: `${String(t.env.OMNEXX_HOME)}-empty` };
     expect((await cli(['status'], empty, t.repo)).err).toMatch(/no runs yet/);
     expect((await cli(['runs'], empty, t.repo)).out).toContain('no runs yet');
+    expect(JSON.parse((await cli(['runs', '--json'], empty, t.repo)).out)).toEqual([]);
     const withKey = { ...empty, ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000' };
     expect((await cli(['run', 'do things'], withKey, t.repo)).err).toMatch(/no gates configured/);
   });

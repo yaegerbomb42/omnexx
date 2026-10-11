@@ -37,6 +37,7 @@ export function tomlFor(s: {
   url?: string | undefined;
   env?: Readonly<Record<string, string>> | readonly string[];
   headers_env?: Readonly<Record<string, string>>;
+  oauth?: boolean | undefined;
 }): Record<string, TomlValue | undefined> {
   const env = s.env && (Array.isArray(s.env) ? s.env.length : Object.keys(s.env).length);
   const headers = s.headers_env && Object.keys(s.headers_env).length;
@@ -46,6 +47,7 @@ export function tomlFor(s: {
     url: s.url,
     env: env ? s.env : undefined,
     headers_env: headers ? s.headers_env : undefined,
+    oauth: s.oauth ? true : undefined,
   };
 }
 
