@@ -3,8 +3,9 @@
 Written 2026-10-09 at the end of a session. Start here. When an item is done, tick it, note
 the PR, and append a session entry to the log in [TODO.md](TODO.md).
 
-State at handoff: `next` has everything through #87 (version 0.5.0). `main` was synced to
-`next` at #83 and is behind again. npm still has only `omnexx@0.1.0`.
+State (2026-10-11): `main` is the only branch and has everything (version 0.5.0, including the
+VS Code extension and `runs --json`). `next` was merged into `main` and deleted. npm still has
+only `omnexx@0.1.0`.
 
 ## Waiting on the owner (Jimmy)
 
@@ -30,11 +31,13 @@ State at handoff: `next` has everything through #87 (version 0.5.0). `main` was 
 ## Agent's queue, in order
 
 1. **Release 0.5.0** (after the trusted publisher exists):
-   - PR `next` → `main` (merge commit, not squash; CI green apart from the known SonarCloud
-     whole-diff failure).
+   - Check CI is green on `main` (apart from the known SonarCloud whole-diff failure).
    - `git tag v0.5.0 <main sha> && git push origin v0.5.0`. `release.yml` checks the tag
      matches package.json, runs lint, typecheck and tests, then `npm publish --provenance`.
    - Verify `npm view omnexx version` shows 0.5.0, and `npx omnexx@0.5.0 --version` works.
+   - Homebrew (after the owner approves the public tap): create `yaegerbomb42/homebrew-omnexx`,
+     then `scripts/brew-formula.sh 0.5.0 > Formula/omnexx.rb` there (see packaging/homebrew).
+     The template was tested with a local tap from `npm pack`: it installs and `--version` works.
 2. **Listing PRs** (only after 0.5.0 is on npm and the owner approved):
    - ollama/ollama README "Community Integrations": `[Omnexx](https://github.com/yaegerbomb42/omnexx) - long-running coding agent harness with one-command Ollama support (npx omnexx --ollama)`.
      Title "Add Omnexx to Community Integrations"; short, polite description.
@@ -66,10 +69,10 @@ State at handoff: `next` has everything through #87 (version 0.5.0). `main` was 
 
 ## Rules learned this session
 
-- PRs go into `next`; `main` only gets `next` through a PR. Delete branches on merge
+- PRs go into `main` (the only branch). Delete branches on merge
   (`--delete-branch`).
-- Stacked PRs: merge bottom-up and retarget each to `next`. Otherwise they merge into their
-  parent branch and never reach `next` (#76–#79 did; fixed in #80).
+- Stacked PRs: merge bottom-up and retarget each to `main`. Otherwise they merge into their
+  parent branch and never reach `main` (#76–#79 did; fixed in #80).
 - Never chain `gh pr merge` after `gh pr checks --watch`: the repo doesn't block merges on red
   CI. Check the result, then merge.
 - Never run a bare `git merge`: use `git -c core.attributesFile=/dev/null merge` (a global
