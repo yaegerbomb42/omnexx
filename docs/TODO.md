@@ -37,6 +37,12 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-11 (single agent):** VS Code extension v1 in `vscode/` (NEXT.md item 5): runs
+  sidebar with the live plan, start / autonomous / chat commands, and watch, pause, resume and
+  stop per run. It only calls the CLI, through the new `omnexx runs --json` and `plan --json`.
+  Packaged a `.vsix` and installed it in an isolated VS Code; no screenshot check (cua-driver
+  has no Accessibility permission). Not published: needs a Marketplace publisher and Open VSX.
+
 - **2026-10-09, later (single agent):** email connector over IMAP with an app password (#85),
   `omnexx --ollama` plus Ollama auto-connect on first run (#86), and release prep for 0.5.0 with
   `scripts/install.sh` (#87). Live checks: `--ollama` answered from a real local Ollama, and

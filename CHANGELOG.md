@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `omnexx runs --json` and `omnexx plan --json` for editors and scripts.
+- **VS Code extension** (`vscode/`, not yet published): a runs sidebar with each run's live
+  milestones and tasks, Start Run, Autonomous for N Hours, Open Chat in Terminal, and Watch /
+  Pause / Resume / Stop per run.
+
 ## 0.5.0
 
 - **Autonomous mode.** `omnexx run --for 8h "<goal>"` (or `/autonomous 8h`) keeps improving the

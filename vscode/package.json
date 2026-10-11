@@ -1,0 +1,197 @@
+{
+  "name": "omnexx",
+  "displayName": "omnexx",
+  "description": "Start omnexx coding-agent runs, let them work for hours, and watch their todo list from the sidebar.",
+  "version": "0.1.0",
+  "publisher": "yaegerbomb42",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yaegerbomb42/omnexx.git",
+    "directory": "vscode"
+  },
+  "homepage": "https://omnexx.org",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "agent",
+    "coding agent",
+    "autonomous",
+    "ollama"
+  ],
+  "main": "./out/extension.cjs",
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "omnexx",
+          "title": "omnexx",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "omnexx": [
+        {
+          "id": "omnexx.runs",
+          "name": "Runs"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "omnexx.runs",
+        "contents": "No runs for this folder yet.\n[Start run](command:omnexx.startRun)\n[Autonomous for N hours](command:omnexx.startAutonomous)\n[Open chat in terminal](command:omnexx.openChat)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "omnexx.startRun",
+        "title": "Start Run",
+        "category": "omnexx",
+        "icon": "$(play)"
+      },
+      {
+        "command": "omnexx.startAutonomous",
+        "title": "Autonomous for N Hours",
+        "category": "omnexx",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "omnexx.openChat",
+        "title": "Open Chat in Terminal",
+        "category": "omnexx",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "omnexx.refresh",
+        "title": "Refresh Runs",
+        "category": "omnexx",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "omnexx.attach",
+        "title": "Watch in Terminal",
+        "category": "omnexx",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "omnexx.pause",
+        "title": "Pause Run",
+        "category": "omnexx",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "omnexx.resume",
+        "title": "Resume Run",
+        "category": "omnexx",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "omnexx.stop",
+        "title": "Stop Run",
+        "category": "omnexx",
+        "icon": "$(debug-stop)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "omnexx.startRun",
+          "when": "view == omnexx.runs",
+          "group": "navigation@1"
+        },
+        {
+          "command": "omnexx.startAutonomous",
+          "when": "view == omnexx.runs",
+          "group": "navigation@2"
+        },
+        {
+          "command": "omnexx.openChat",
+          "when": "view == omnexx.runs",
+          "group": "navigation@3"
+        },
+        {
+          "command": "omnexx.refresh",
+          "when": "view == omnexx.runs",
+          "group": "navigation@4"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "omnexx.attach",
+          "when": "view == omnexx.runs && viewItem =~ /^run\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "omnexx.pause",
+          "when": "view == omnexx.runs && viewItem == run.active",
+          "group": "inline@2"
+        },
+        {
+          "command": "omnexx.stop",
+          "when": "view == omnexx.runs && viewItem == run.active",
+          "group": "inline@3"
+        },
+        {
+          "command": "omnexx.resume",
+          "when": "view == omnexx.runs && viewItem == run.ended",
+          "group": "inline@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "omnexx.attach",
+          "when": "false"
+        },
+        {
+          "command": "omnexx.pause",
+          "when": "false"
+        },
+        {
+          "command": "omnexx.resume",
+          "when": "false"
+        },
+        {
+          "command": "omnexx.stop",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "omnexx",
+      "properties": {
+        "omnexx.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the omnexx executable. Empty uses omnexx on PATH (install with: npm i -g omnexx).",
+          "scope": "machine-overridable"
+        },
+        "omnexx.showAllRuns": {
+          "type": "boolean",
+          "default": false,
+          "description": "List runs from every repository, not only the open folders."
+        },
+        "omnexx.refreshSeconds": {
+          "type": "number",
+          "default": 5,
+          "minimum": 2,
+          "description": "How often the sidebar re-reads a live run's todo list. Takes effect after a reload."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=out/extension.cjs --sourcemap",
+    "package": "npm run build && npx @vscode/vsce package --no-dependencies"
+  }
+}
