@@ -37,6 +37,12 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-11/12 (single agent):** released 0.5.0. Fixed the flaky detach/pause process test
+  (#92; it raced the run's end), retired `next` (#91), added the Homebrew formula (#90). npm
+  0.5.0 published via trusted publishing (staged, approved by the owner); Homebrew tap live and
+  install-tested; VS Code extension 0.1.0 on the Marketplace and Open VSX; listing PRs
+  ollama/ollama#18959 and EndoTheDev/Awesome-Ollama#113.
+
 - **2026-10-11 (single agent):** VS Code extension v1 in `vscode/` (NEXT.md item 5): runs
   sidebar with the live plan, start / autonomous / chat commands, and watch, pause, resume and
   stop per run. It only calls the CLI, through the new `omnexx runs --json` and `plan --json`.
