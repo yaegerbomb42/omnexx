@@ -1,9 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
+- **Autonomous runs keep going.** With `run --for`, a stretch with no accepted commit no longer
+  stops the run to ask: the stalled task is parked (listed in the report) and the run moves on.
+  It still stops after `autonomous.max_idle_rounds` such recoveries in a row.
 - `omnexx chat-server`: the interactive session as JSON lines on stdin/stdout, for editor
-  panels. The VS Code extension's new chat panel uses it.
+  panels. It powers the VS Code extension's new chat panel (extension 0.2.0), including adding
+  and removing providers and keys.
 - Chat sessions count their own tokens, turns and tool calls.
 
 ## 0.5.0
