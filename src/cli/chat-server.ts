@@ -85,6 +85,8 @@ export async function serveChat(
   };
 
   let sentUpTo = -1;
+  /** The last entry before the latest new chat; a reloaded panel starts after it. */
+  let clearedAt = -1;
   let timer: NodeJS.Timeout | undefined;
   const emit = (): void => {
     timer = undefined;
@@ -140,9 +142,19 @@ export async function serveChat(
       case 'pause':
       case 'resume':
       case 'undo':
-      case 'clear':
       case 'compact':
-        run(session.submit(`/${c.type}`));
+        run(session.command(c.type));
+        return;
+      case 'clear':
+        run(
+          session.command('clear').then(() => {
+            // A new chat starts the panel over: nothing from before the clear is sent again.
+            clearedAt = session.entries.at(-1)?.id ?? clearedAt;
+            sentUpTo = clearedAt;
+            write({ type: 'ready', version: opts.version });
+            emit();
+          }),
+        );
         return;
       case 'mode': {
         const mode = c.mode as Mode;
@@ -176,8 +188,8 @@ export async function serveChat(
         return;
       }
       case 'sync':
-        // A reloaded panel: start it over with the whole conversation.
-        sentUpTo = -1;
+        // A reloaded panel: start it over with the conversation since the last new chat.
+        sentUpTo = clearedAt;
         write({ type: 'ready', version: opts.version });
         emit();
         return;
@@ -202,7 +214,7 @@ export async function serveChat(
     }
   }
   // The editor closed the pipe: end any turn in progress, then flush the last state.
-  if (session.chatBusy) await session.submit('/stop').catch(() => undefined);
+  if (session.chatBusy) await session.command('stop');
   if (timer) {
     clearTimeout(timer);
     emit();
