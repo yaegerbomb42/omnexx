@@ -7,65 +7,39 @@ State (2026-10-11): `main` is the only branch and has everything (version 0.5.0,
 VS Code extension and `runs --json`). `next` was merged into `main` and deleted. npm still has
 only `omnexx@0.1.0`.
 
-## Waiting on the owner (Jimmy)
+## Released (2026-10-12)
 
-- [ ] **npm trusted publisher.** On https://www.npmjs.com/package/omnexx/access, under Trusted
-      Publisher, add GitHub Actions: owner `yaegerbomb42`, repo `omnexx`, workflow `release.yml`,
-      environment `npm`. Then tell the agent, which does the release steps below.
-- [ ] **Host the installer.** The website manager serves `scripts/install.sh` as plain text at
-      `https://omnexx.org/install.sh`, ideally proxying or redirecting to
-      `https://raw.githubusercontent.com/yaegerbomb42/omnexx/main/scripts/install.sh` so it never
-      goes stale.
-- [ ] **Approve the outside listing PRs** (they post publicly under the owner's account; see below).
-- [ ] **Live-test the new features** and report errors:
-  - `omnexx connect notion` (browser sign-in). Also try `figma` and `vercel`, which may refuse
-    unapproved apps.
-  - `omnexx connect email` with a Gmail app password (https://myaccount.google.com/apppasswords),
-    then ask the chat to summarize recent mail.
-  - `omnexx --ollama`.
-  - A long autonomous run: `cd ~/Desktop/infra && omnexx run --detach --for 8h --gate "npm --prefix infra/apps/mynow run build" "Improve the mynow app in infra/apps/mynow. Only change files in that folder."`.
-    Needs a free model that can call tools (not Bonsai).
-- [ ] Optional, later: a PyPI account (for `pip`/`uvx`), and a VS Code Marketplace publisher
-      plus an Open VSX sign-in.
+- npm: `omnexx@0.5.0` (trusted publishing; the publish lands in npm's staged queue and the owner
+  approves it with 2FA on npmjs.com before it goes live).
+- curl: `curl -fsSL https://omnexx.org/install.sh | sh` redirects to `scripts/install.sh` on `main`.
+- Homebrew: `brew install yaegerbomb42/omnexx/omnexx` (tap repo `yaegerbomb42/homebrew-omnexx`;
+  regenerate `Formula/omnexx.rb` with `scripts/brew-formula.sh <version>` after each release).
+- VS Code Marketplace and Open VSX: `yaegerbomb42.omnexx` 0.1.0 (published by hand with the
+  owner's tokens; moving that to CI with repo secrets is still open).
+- Listing PRs, open: ollama/ollama#18959, EndoTheDev/Awesome-Ollama#113. awesome-llm-agents needs
+  25 stars (its CI checks), so submit later as `data/frameworks/omnexx.yml`.
+
+## Waiting on the owner
+
+- [ ] Review the VS Code sidebar and report problems.
+- [ ] Replace the Azure DevOps and Open VSX tokens (they were pasted into a chat).
+- [ ] Live-test `omnexx connect notion|email`, `omnexx --ollama`, and a long `run --for 8h`.
+- [ ] Optional, later: a PyPI account (for `pip`/`uvx`) and an Apple developer account.
 
 ## Agent's queue, in order
 
-1. **Release 0.5.0** (after the trusted publisher exists):
-   - Check CI is green on `main` (apart from the known SonarCloud whole-diff failure).
-   - `git tag v0.5.0 <main sha> && git push origin v0.5.0`. `release.yml` checks the tag
-     matches package.json, runs lint, typecheck and tests, then `npm publish --provenance`.
-   - Verify `npm view omnexx version` shows 0.5.0, and `npx omnexx@0.5.0 --version` works.
-   - Homebrew (after the owner approves the public tap): create `yaegerbomb42/homebrew-omnexx`,
-     then `scripts/brew-formula.sh 0.5.0 > Formula/omnexx.rb` there (see packaging/homebrew).
-     The template was tested with a local tap from `npm pack`: it installs and `--version` works.
-2. **Listing PRs** (only after 0.5.0 is on npm and the owner approved):
-   - ollama/ollama README "Community Integrations": `[Omnexx](https://github.com/yaegerbomb42/omnexx) - long-running coding agent harness with one-command Ollama support (npx omnexx --ollama)`.
-     Title "Add Omnexx to Community Integrations"; short, polite description.
-   - Awesome-Ollama, Awesome-LLM-Agents: the same line, in each list's format.
-   - Skip the LiteLLM docs (omnexx only consumes LiteLLM as one endpoint).
-   - The README wants a screenshot or terminal GIF first: record one with `vhs` showing
-     `omnexx --ollama`.
-3. **Connector follow-ups** (from live-test reports): fix whatever breaks. Known gaps:
-   - Asana and Square were left out: their dynamic client registration is only on deprecated SSE.
-   - Box, HubSpot remote, Asana v2: no dynamic registration.
-   - Salesforce and Zoom have no free path.
-   - The `google` connectors need the user's own Google client: Gmail's restricted scopes need
-     Google's paid CASA review for a shared one.
-4. **Standalone binary** (when there's demand for `pip`/`uvx`; about 1–2 days):
-   - Build one-file binaries (bun compile or node SEA) for darwin x64/arm64, linux x64/arm64 and
-     win x64/arm64 in CI on tags.
-   - Use them in `install.sh` when Node is missing.
-   - Wrap them as per-platform PyPI wheels (the ruff pattern) so `uvx omnexx` needs no Node.
-   - Optional Homebrew formula.
-   - macOS signing needs an Apple developer account.
-5. ~~**VS Code extension** (v1)~~ built in `vscode/` (see the PR from 2026-10-11). Left: the
-   owner looks at it (`cd vscode && npm run package`, then install the `.vsix`), then publish
-   with `npx @vscode/vsce publish` and `npx ovsx publish` once the publisher accounts exist.
-   It needs a CLI with `runs --json`, so publish it after the next omnexx release. Original spec: commands for "start run" and "autonomous for N hours", a runs
-   sidebar with the live todo list, and "open chat in terminal". Publish to the Marketplace and
-   Open VSX.
-6. Older backlog (see TODO.md): W13 bench, audits of the W1/W2/W3/W9 boxes, and open SonarCloud
-   findings from #20.
+1. Watch the two listing PRs and answer review comments.
+2. Release automation: publish the extension from CI with `VSCE_PAT` / `OVSX_PAT` secrets, and
+   update the Homebrew tap from `release.yml` after npm approval.
+3. **Connector follow-ups** (from live-test reports). Known gaps: Asana and Square (dynamic client
+   registration only on deprecated SSE); Box, HubSpot remote, Asana v2 (no dynamic
+   registration); Salesforce and Zoom (no free path); `google` connectors need the user's own
+   Google client.
+4. **Standalone binary** (for `pip`/`uvx` and Node-less installs; about 1-2 days): bun compile or
+   node SEA for darwin/linux/win x64+arm64 on tags, used by `install.sh` when Node is missing,
+   wrapped as per-platform PyPI wheels.
+5. Older backlog (see TODO.md): W13 bench (`ws/13-bench-docs`), audits of the W1/W2/W3/W9 boxes,
+   open SonarCloud findings from #20.
 
 ## Rules learned this session
 
