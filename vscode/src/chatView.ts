@@ -307,7 +307,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   <summary><span class="chev" aria-hidden="true"></span><span class="h">Trajectory</span><span class="sub-h">Step-by-step flow</span><span id="steps-count" class="count"></span></summary>
   <ol id="steps-body" class="timeline"></ol>
 </details>
-<main id="log" class="conversation" aria-live="polite"></main>
 <section id="welcome" class="welcome">
   <h2>What should omnexx do?</h2>
   <p>It edits this workspace, runs your tests, and asks before anything outside the repo.</p>
@@ -317,6 +316,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     <button data-suggest="Find likely bugs in the code I changed recently and fix them.">Review recent changes</button>
   </div>
 </section>
+<main id="log" class="conversation" aria-live="polite"></main>
 <section id="ask" class="ask" hidden role="alertdialog" aria-labelledby="ask-text">
   <div class="ask-title">Approval needed</div>
   <div id="ask-text"></div>

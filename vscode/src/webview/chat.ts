@@ -121,7 +121,8 @@ function messageHtml(b: Block): string {
   if (b.kind === 'out') return `<div class="msg reply">${renderMarkdown(body)}</div>`;
   if (b.kind === 'user')
     return `<div class="msg user"><div class="who">You</div><div class="text">${escapeHtml(body)}</div></div>`;
-  return `<div class="msg error">${escapeHtml(body.replace(/^\s*✗\s*/gm, ''))}</div>`;
+  const text = b.lines.map((l) => l.trimStart().replace(/^✗ ?/, '')).join('\n');
+  return `<div class="msg error">${escapeHtml(text)}</div>`;
 }
 
 function drawConversation(): void {
@@ -140,8 +141,11 @@ function drawConversation(): void {
 }
 
 function stepDetail(s: string, states: readonly string[], pct: number, recent: string): string {
-  if (s === 'active')
-    return `<div class="progress" role="progressbar" aria-valuenow="${String(pct)}" aria-valuemin="0" aria-valuemax="100"><div class="track"><div class="fill" style="width:${String(pct)}%"></div></div><span>${String(pct)}%</span></div>${recent ? `<ul class="doing">${recent}</ul>` : ''}`;
+  if (s === 'active') {
+    const doing = recent ? `<ul class="doing">${recent}</ul>` : '';
+    const bar = `<div class="track"><div class="fill" style="width:${String(pct)}%"></div></div>`;
+    return `<div class="progress" role="progressbar" aria-valuenow="${String(pct)}" aria-valuemin="0" aria-valuemax="100">${bar}<span>${String(pct)}%</span></div>${doing}`;
+  }
   if (s === 'waiting' && states.includes('active'))
     return `<div class="sub">Waiting for ${stepLabel(states.indexOf('active'))}</div>`;
   return '';
@@ -186,14 +190,15 @@ function stat(id: string, value: string, title: string): void {
   node.parentElement?.setAttribute('title', title);
 }
 
+function turnsTitle(u: Usage | null): string {
+  const failed = u?.toolErrors ? `, ${String(u.toolErrors)} failed` : '';
+  return `Model calls this session; ${String(u?.toolCalls ?? 0)} tool calls${failed}`;
+}
+
 function drawStats(s: State): void {
   const u = s.usage;
   const tokens = u ? u.tokens.input + u.tokens.output : 0;
-  stat(
-    'stat-turns',
-    String(u?.turns ?? 0),
-    `Model calls this session; ${String(u?.toolCalls ?? 0)} tool calls${u?.toolErrors ? `, ${String(u.toolErrors)} failed` : ''}`,
-  );
+  stat('stat-turns', String(u?.turns ?? 0), turnsTitle(u));
   stat(
     'stat-tokens',
     formatTokens(tokens),
@@ -265,7 +270,15 @@ function showBanner(text: string, kind: 'error' | 'info'): void {
   banner.innerHTML = `<span>${escapeHtml(text)}</span>${kind === 'info' ? '<button class="link" data-action="restart">Restart</button>' : ''}`;
 }
 
+/** Messages come from the extension through VS Code's webview host, never from other frames. */
+function trusted(event: MessageEvent): boolean {
+  if (event.origin.startsWith('vscode-webview://')) return true;
+  // A local preview of the panel (file://) posts to itself; browsers report its origin as "null".
+  return window.location.protocol === 'file:' && event.source === window;
+}
+
 window.addEventListener('message', (event: MessageEvent<Incoming>) => {
+  if (!trusted(event)) return;
   const m = event.data;
   if (m.type === 'state') apply(m);
   else if (m.type === 'ready') {

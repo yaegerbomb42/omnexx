@@ -114,9 +114,7 @@ export async function serveChat(
             compactions: t.compactions,
           }
         : null,
-      run: session.runId
-        ? { id: session.runId, alive: session.runAlive, ...(session.info ?? {}) }
-        : null,
+      run: session.runId ? { id: session.runId, alive: session.runAlive, ...session.info } : null,
     };
     write(state);
   };
@@ -141,6 +139,9 @@ export async function serveChat(
       case 'stop':
       case 'pause':
       case 'resume':
+      case 'undo':
+      case 'clear':
+      case 'compact':
         run(session.submit(`/${c.type}`));
         return;
       case 'mode': {
@@ -179,11 +180,6 @@ export async function serveChat(
         sentUpTo = -1;
         write({ type: 'ready', version: opts.version });
         emit();
-        return;
-      case 'undo':
-      case 'clear':
-      case 'compact':
-        run(session.submit(`/${c.type}`));
         return;
       default:
         throw new Error(`unknown command "${c.type}"`);

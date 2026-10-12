@@ -64,84 +64,154 @@ export function looksLikePath(text: string): boolean {
   return PATH.test(text) && !/^\d+(\.\d+)+$/.test(text) && !text.includes('://');
 }
 
+/** `[label](https://…)` links in already-escaped text; anything that isn't http(s) stays text. */
+function linkify(text: string): string {
+  let out = '';
+  let at = 0;
+  for (;;) {
+    const open = text.indexOf('[', at);
+    const mid = open < 0 ? -1 : text.indexOf('](', open + 1);
+    const close = mid < 0 ? -1 : text.indexOf(')', mid + 2);
+    if (close < 0) return out + text.slice(at);
+    const label = text.slice(open + 1, mid);
+    const url = text.slice(mid + 2, close);
+    const ok =
+      label.length > 0 &&
+      !label.includes('[') &&
+      (url.startsWith('https://') || url.startsWith('http://')) &&
+      !/\s/.test(url);
+    out +=
+      text.slice(at, open) + (ok ? `<a href="${url}">${label}</a>` : text.slice(open, close + 1));
+    at = close + 1;
+  }
+}
+
+function codeSpan(code: string): string {
+  const esc = escapeHtml(code);
+  return looksLikePath(code)
+    ? `<code class="path" data-open="${esc}" role="link" tabindex="0">${esc}</code>`
+    : `<code>${esc}</code>`;
+}
+
 function inline(text: string): string {
   // Code spans first, so their contents are left alone by the rules after them.
-  const parts = text.split(/(`[^`]+`)/g);
-  return parts
+  return text
+    .split(/(`[^`]+`)/g)
     .map((part) => {
-      if (part.length > 1 && part.startsWith('`') && part.endsWith('`')) {
-        const code = part.slice(1, -1);
-        const esc = escapeHtml(code);
-        return looksLikePath(code)
-          ? `<code class="path" data-open="${esc}" role="link" tabindex="0">${esc}</code>`
-          : `<code>${esc}</code>`;
-      }
-      return escapeHtml(part)
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
-        .replace(
-          /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-          (_m, label: string, url: string) => `<a href="${url}">${label}</a>`,
-        );
+      if (part.length > 1 && part.startsWith('`') && part.endsWith('`'))
+        return codeSpan(part.slice(1, -1));
+      return linkify(
+        escapeHtml(part)
+          .replaceAll(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+          .replaceAll(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>'),
+      );
     })
     .join('');
 }
 
+interface Parsed {
+  html: string;
+  /** The first line after the block. */
+  next: number;
+}
+
+const MAX_HEADING = 4;
+
+function isFence(line: string): boolean {
+  return line.trimStart().startsWith('```');
+}
+
+function isQuote(line: string): boolean {
+  return line.trimStart().startsWith('>');
+}
+
+function headingOf(line: string): { level: number; text: string } | undefined {
+  const t = line.trimStart();
+  let level = 0;
+  while (t[level] === '#') level++;
+  if (level < 1 || level > MAX_HEADING || t[level] !== ' ') return undefined;
+  return { level, text: t.slice(level).trim() };
+}
+
+function listItemOf(line: string): { ordered: boolean; text: string } | undefined {
+  const t = line.trimStart();
+  if (/^[-*+] /.test(t)) return { ordered: false, text: t.slice(2).trim() };
+  const n = /^\d{1,9}[.)] /.exec(t);
+  return n ? { ordered: true, text: t.slice(n[0].length).trim() } : undefined;
+}
+
+function startsBlock(line: string): boolean {
+  return (
+    isFence(line) ||
+    isQuote(line) ||
+    headingOf(line) !== undefined ||
+    listItemOf(line) !== undefined
+  );
+}
+
+function fenceBlock(lines: readonly string[], start: number): Parsed {
+  const lang = (lines[start] ?? '').trimStart().slice(3).trim();
+  let i = start + 1;
+  const body: string[] = [];
+  while (i < lines.length && !isFence(lines[i] ?? '')) body.push(lines[i++] ?? '');
+  const attr = /^[\w+-]{1,20}$/.test(lang) ? ` data-lang="${lang}"` : '';
+  return { html: `<pre${attr}><code>${escapeHtml(body.join('\n'))}</code></pre>`, next: i + 1 };
+}
+
+function listBlock(lines: readonly string[], start: number, ordered: boolean): Parsed {
+  let i = start;
+  const items: string[] = [];
+  for (let item = listItemOf(lines[i] ?? ''); item; item = listItemOf(lines[i] ?? '')) {
+    items.push(`<li>${inline(item.text)}</li>`);
+    i++;
+  }
+  const tag = ordered ? 'ol' : 'ul';
+  return { html: `<${tag}>${items.join('')}</${tag}>`, next: i };
+}
+
+function quoteBlock(lines: readonly string[], start: number): Parsed {
+  let i = start;
+  const quoted: string[] = [];
+  while (i < lines.length && isQuote(lines[i] ?? ''))
+    quoted.push((lines[i++] ?? '').trimStart().slice(1).trim());
+  return { html: `<blockquote>${inline(quoted.join(' '))}</blockquote>`, next: i };
+}
+
+function paragraph(lines: readonly string[], start: number): Parsed {
+  let i = start;
+  const para: string[] = [];
+  while (i < lines.length && (lines[i] ?? '').trim() && !startsBlock(lines[i] ?? ''))
+    para.push(lines[i++] ?? '');
+  return { html: `<p>${inline(para.join(' '))}</p>`, next: i };
+}
+
+function block(lines: readonly string[], i: number): Parsed {
+  const line = lines[i] ?? '';
+  if (isFence(line)) return fenceBlock(lines, i);
+  const heading = headingOf(line);
+  if (heading) {
+    const level = Math.min(6, heading.level + 2);
+    return { html: `<h${String(level)}>${inline(heading.text)}</h${String(level)}>`, next: i + 1 };
+  }
+  const item = listItemOf(line);
+  if (item) return listBlock(lines, i, item.ordered);
+  if (isQuote(line)) return quoteBlock(lines, i);
+  return paragraph(lines, i);
+}
+
 /** A small, safe Markdown subset: fences, headings, lists, quotes, paragraphs, inline marks. */
 export function renderMarkdown(source: string): string {
-  const lines = source.replace(/\r\n/g, '\n').split('\n');
+  const lines = source.replaceAll('\r\n', '\n').split('\n');
   const html: string[] = [];
   let i = 0;
   while (i < lines.length) {
-    const line = lines[i] ?? '';
-    const fence = /^\s*```\s*([\w+-]*)/.exec(line);
-    if (fence) {
-      const body: string[] = [];
-      i++;
-      while (i < lines.length && !/^\s*```/.test(lines[i] ?? '')) body.push(lines[i++] ?? '');
-      i++;
-      const lang = fence[1] ? ` data-lang="${escapeHtml(fence[1])}"` : '';
-      html.push(`<pre${lang}><code>${escapeHtml(body.join('\n'))}</code></pre>`);
-      continue;
-    }
-    const heading = /^(#{1,4})\s+(.*)$/.exec(line);
-    if (heading) {
-      const level = Math.min(6, (heading[1]?.length ?? 1) + 2);
-      html.push(`<h${level}>${inline(heading[2] ?? '')}</h${level}>`);
+    if (!(lines[i] ?? '').trim()) {
       i++;
       continue;
     }
-    const list = /^\s*([-*+]|\d+[.)])\s+/;
-    if (list.test(line)) {
-      const ordered = /^\s*\d/.test(line);
-      const items: string[] = [];
-      while (i < lines.length && list.test(lines[i] ?? '')) {
-        items.push(`<li>${inline((lines[i] ?? '').replace(list, ''))}</li>`);
-        i++;
-      }
-      const tag = ordered ? 'ol' : 'ul';
-      html.push(`<${tag}>${items.join('')}</${tag}>`);
-      continue;
-    }
-    if (/^\s*>/.test(line)) {
-      const quoted: string[] = [];
-      while (i < lines.length && /^\s*>/.test(lines[i] ?? ''))
-        quoted.push((lines[i++] ?? '').replace(/^\s*>\s?/, ''));
-      html.push(`<blockquote>${inline(quoted.join(' '))}</blockquote>`);
-      continue;
-    }
-    if (!line.trim()) {
-      i++;
-      continue;
-    }
-    const para: string[] = [];
-    while (
-      i < lines.length &&
-      (lines[i] ?? '').trim() &&
-      !/^\s*(```|#{1,4}\s|[-*+]\s|\d+[.)]\s|>)/.test(lines[i] ?? '')
-    )
-      para.push(lines[i++] ?? '');
-    html.push(`<p>${inline(para.join(' '))}</p>`);
+    const parsed = block(lines, i);
+    html.push(parsed.html);
+    i = parsed.next;
   }
   return html.join('');
 }
@@ -177,7 +247,8 @@ export function contextPercent(context: { used: number; limit: number } | null):
 
 /** The question without its terminal-style "[y/N]" suffix. */
 export function cleanQuestion(q: string): string {
-  return q.replace(/\s*\[y\/N\]\s*$/i, '').trim();
+  const t = q.trimEnd();
+  return (t.toLowerCase().endsWith('[y/n]') ? t.slice(0, -5) : t).trim();
 }
 
 /** 3_855_000 ms → "01:04:15". */

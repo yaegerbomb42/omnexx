@@ -72,9 +72,11 @@ export class ChatProcess implements vscode.Disposable {
       this.child = undefined;
       this.crashes.push(Date.now());
       const why = this.stderr.trim().split('\n').at(-1) ?? '';
+      const exit = code === null ? '' : ` (exit ${String(code)})`;
+      const reason = why ? `: ${why}` : '';
       this.emitter.fire({
         type: 'down',
-        message: `omnexx stopped${code === null ? '' : ` (exit ${String(code)})`}${why ? `: ${why}` : ''}. It restarts with your next message.`,
+        message: `omnexx stopped${exit}${reason}. It restarts with your next message.`,
       });
     });
   }
