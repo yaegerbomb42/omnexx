@@ -281,7 +281,8 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
   if (m.type !== 'state' && settings.onMessage(m)) return;
   if (m.type === 'state') apply(m);
   else if (m.type === 'ready') {
-    // A fresh omnexx process (or a resync) replays the conversation from the start.
+    // A new chat, a fresh omnexx process or a resync: back to the conversation, from the start.
+    settings.close();
     blocks = [];
     logLines = [];
     drawConversation();
