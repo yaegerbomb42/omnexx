@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `omnexx chat-server`: the interactive session as JSON lines on stdin/stdout, for editor
+  panels. The VS Code extension's new chat panel uses it.
+- Chat sessions count their own tokens, turns and tool calls.
+
 ## 0.5.0
 
 - `omnexx runs --json` and `omnexx plan --json` for editors and scripts.

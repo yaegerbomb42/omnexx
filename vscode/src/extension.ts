@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ChatViewProvider } from './chatView.js';
 import { control, openTerminal, type Control } from './cli.js';
 import { runArgs, validateDuration, type RunOptions } from './model.js';
 import { primaryFolder, RunsProvider, type Node } from './tree.js';
@@ -24,7 +25,22 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     });
 
+  const chat = new ChatViewProvider(context.extensionUri);
+
   context.subscriptions.push(
+    chat,
+    vscode.window.registerWebviewViewProvider(ChatViewProvider.viewId, chat, {
+      // Keep the conversation drawn while the panel is hidden instead of rebuilding it.
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+    cmd('omnexx.focusChat', () => chat.focus()),
+    cmd('omnexx.newChat', () => {
+      chat.newChat();
+    }),
+    cmd('omnexx.pickModel', () => chat.pickModel()),
+    cmd('omnexx.restartChat', () => {
+      chat.restart();
+    }),
     view,
     cmd('omnexx.startRun', () => startRun(false, refresh)),
     cmd('omnexx.startAutonomous', () => startRun(true, refresh)),

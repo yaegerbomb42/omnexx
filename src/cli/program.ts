@@ -151,6 +151,14 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     });
 
   program
+    .command('chat-server', { hidden: true })
+    .description('the chat session as JSON lines on stdin/stdout (used by the VS Code panel)')
+    .action(async () => {
+      const { serveChat } = await import('./chat-server.js');
+      setExit(await serveChat(io, runCli, { version: VERSION }));
+    });
+
+  program
     .command('supervise', { hidden: true })
     .argument('<runId>')
     .description('run the supervisor for one run in the foreground (used by --detach and services)')
