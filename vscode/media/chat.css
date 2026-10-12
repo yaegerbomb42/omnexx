@@ -121,14 +121,11 @@ body.vscode-high-contrast-light .word {
   color: var(--fg);
 }
 
-.mark {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle, var(--surface) 42%, transparent 44%),
-    conic-gradient(var(--accent), var(--violet), var(--accent));
-  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent);
+.logo {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 45%, transparent));
 }
 
 .chip {

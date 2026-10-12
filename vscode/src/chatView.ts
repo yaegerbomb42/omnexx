@@ -225,6 +225,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     const nonce = randomBytes(16).toString('base64');
     const css = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'chat.css'));
     const js = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'out', 'chat.js'));
+    const logo = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'logo.png'));
     const csp = [
       "default-src 'none'",
       // Inline styles: the context bar's width is set per update.
@@ -243,7 +244,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="mark" aria-hidden="true"></span><span class="word">omnexx</span></div>
+  <div class="brand"><img class="logo" src="${logo.toString()}" alt="" width="26" height="26"><span class="word">omnexx</span></div>
   <button id="model" class="chip model" data-action="pickModel" title="Chat model: click to switch or add a provider">Pick a model</button>
   <button class="icon" data-action="settings" title="Settings" aria-label="Settings"><svg viewBox="0 0 16 16"><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zm6 3.3V7.2l-1.7-.4a4.6 4.6 0 0 0-.5-1.2l.9-1.5-1.1-1.1-1.5.9c-.4-.2-.8-.4-1.2-.5L8.8 1.7H7.2l-.4 1.7c-.4.1-.8.3-1.2.5l-1.5-.9-1.1 1.1.9 1.5c-.2.4-.4.8-.5 1.2L1.7 7.2v1.6l1.7.4c.1.4.3.8.5 1.2l-.9 1.5 1.1 1.1 1.5-.9c.4.2.8.4 1.2.5l.4 1.7h1.6l.4-1.7c.4-.1.8-.3 1.2-.5l1.5.9 1.1-1.1-.9-1.5c.2-.4.4-.8.5-1.2z" fill="none" stroke="currentColor" stroke-width="1.1"/></svg></button>
 </header>
