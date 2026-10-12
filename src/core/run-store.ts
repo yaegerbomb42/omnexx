@@ -129,6 +129,8 @@ export const stateSchema = z.object({
   rejectedCycles: z.number().default(0),
   lastProgressAt: z.number().optional(),
   lastProgressCycle: z.number().default(0),
+  /** Autonomous no-progress recoveries since the last accepted commit (each parks the stuck work). */
+  recoveries: z.number().int().default(0),
   warned: z.array(z.string()).default([]),
   pending: pendingSchema.optional(),
   /** Result of ACT, persisted so VERIFY can resume after a crash. */

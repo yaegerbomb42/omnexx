@@ -58,6 +58,7 @@ export async function createRun(o: CreateRunOptions): Promise<RunStore> {
     rejectedCycles: 0,
     lastProgressAt: o.now,
     lastProgressCycle: 0,
+    recoveries: 0,
     warned: [],
     recordedCycle: 0,
     checkpoints: [],

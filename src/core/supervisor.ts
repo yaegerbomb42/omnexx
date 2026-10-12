@@ -488,6 +488,7 @@ class Supervisor {
       sinceMs >= r.config.stuck.no_progress_hours * 3_600_000
     ) {
       r.events.emit('stuck.signal', { signal: 'no_progress', cycles: sinceCycles, ms: sinceMs });
+      if (await this.recoverNoProgress(sinceCycles)) return undefined;
       return { status: 'needs-human', reason: `no accepted commit for ${sinceCycles} cycles` };
     }
     if (r.state.noChecks && r.state.cycle >= 1)
@@ -640,6 +641,39 @@ class Supervisor {
     const r = this.run;
     r.state.idleRounds = found ? 0 : r.state.idleRounds + 1;
     if (!found) r.events.emit('autonomous.idle', { round, idle: r.state.idleRounds });
+  }
+
+  /**
+   * Autonomous mode has nobody to ask when nothing gets accepted for a while: park the work in
+   * progress (it is listed in the report) and let the run move on to other tasks or the next
+   * improvement round. Only `max_idle_rounds` recoveries in a row; an accepted commit resets it.
+   */
+  private async recoverNoProgress(sinceCycles: number): Promise<boolean> {
+    const r = this.run;
+    if (!r.config.autonomous.enabled) return false;
+    if (r.state.recoveries >= r.config.autonomous.max_idle_rounds) return false;
+    const plan = r.requirePlan();
+    const stuck = plan.nodes.filter(
+      (n) =>
+        n.type === 'task' &&
+        (n.status === 'doing' || n.id === r.state.taskId) &&
+        n.status !== 'done',
+    );
+    for (const n of stuck) {
+      n.status = 'parked';
+      n.parkedReason = `autonomous: no progress for ${sinceCycles} cycles; moved on`;
+    }
+    r.state.recoveries++;
+    r.state.lastProgressCycle = r.state.cycle;
+    r.state.lastProgressAt = r.clock.now();
+    await r.savePlan();
+    await r.save();
+    r.events.emit('autonomous.recover', {
+      parked: stuck.map((n) => n.id),
+      recovery: r.state.recoveries,
+      cycles: sinceCycles,
+    });
+    return true;
   }
 
   /**
