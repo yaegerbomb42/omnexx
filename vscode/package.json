@@ -1,8 +1,8 @@
 {
   "name": "omnexx",
   "displayName": "omnexx",
-  "description": "Start omnexx coding-agent runs, let them work for hours, and watch their todo list from the sidebar.",
-  "version": "0.1.0",
+  "description": "A Cline-style chat for the omnexx coding agent: chat, plan or run autonomously, see token use and cost, and watch long runs' todo lists.",
+  "version": "0.2.0",
   "publisher": "yaegerbomb42",
   "license": "MIT",
   "private": true,
@@ -42,6 +42,11 @@
     "views": {
       "omnexx": [
         {
+          "type": "webview",
+          "id": "omnexx.chat",
+          "name": "Chat"
+        },
+        {
           "id": "omnexx.runs",
           "name": "Runs"
         }
@@ -70,7 +75,7 @@
         "command": "omnexx.openChat",
         "title": "Open Chat in Terminal",
         "category": "omnexx",
-        "icon": "$(comment-discussion)"
+        "icon": "$(terminal)"
       },
       {
         "command": "omnexx.refresh",
@@ -101,6 +106,30 @@
         "title": "Stop Run",
         "category": "omnexx",
         "icon": "$(debug-stop)"
+      },
+      {
+        "command": "omnexx.focusChat",
+        "title": "Open Chat",
+        "category": "omnexx",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "omnexx.newChat",
+        "title": "New Chat",
+        "category": "omnexx",
+        "icon": "$(add)"
+      },
+      {
+        "command": "omnexx.pickModel",
+        "title": "Pick Chat Model",
+        "category": "omnexx",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "omnexx.restartChat",
+        "title": "Restart Chat",
+        "category": "omnexx",
+        "icon": "$(debug-restart)"
       }
     ],
     "menus": {
@@ -124,6 +153,26 @@
           "command": "omnexx.refresh",
           "when": "view == omnexx.runs",
           "group": "navigation@4"
+        },
+        {
+          "command": "omnexx.newChat",
+          "when": "view == omnexx.chat",
+          "group": "navigation@1"
+        },
+        {
+          "command": "omnexx.pickModel",
+          "when": "view == omnexx.chat",
+          "group": "navigation@2"
+        },
+        {
+          "command": "omnexx.restartChat",
+          "when": "view == omnexx.chat",
+          "group": "overflow@1"
+        },
+        {
+          "command": "omnexx.openChat",
+          "when": "view == omnexx.chat",
+          "group": "overflow@2"
         }
       ],
       "view/item/context": [
@@ -186,12 +235,24 @@
           "default": 5,
           "minimum": 2,
           "description": "How often the sidebar re-reads a live run's todo list. Takes effect after a reload."
+        },
+        "omnexx.autoApprove": {
+          "type": "boolean",
+          "default": false,
+          "description": "Start chats in auto-approve mode: omnexx goes ahead without asking before guarded actions (hard-blocked commands stay blocked)."
         }
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "omnexx.focusChat",
+        "key": "ctrl+alt+o",
+        "mac": "cmd+alt+o"
+      }
+    ]
   },
   "scripts": {
-    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=out/extension.cjs --sourcemap",
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=out/extension.cjs --sourcemap && esbuild src/webview/chat.ts --bundle --platform=browser --format=iife --target=es2022 --outfile=out/chat.js",
     "package": "npm run build && npx @vscode/vsce package --no-dependencies"
   }
 }

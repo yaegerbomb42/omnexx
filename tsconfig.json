@@ -23,5 +23,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "test", "vscode/src", "*.ts"]
+  "include": ["src", "test", "vscode/src", "*.ts"],
+  "exclude": ["vscode/src/webview/chat.ts"]
 }

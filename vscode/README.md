@@ -1,37 +1,59 @@
 # omnexx for VS Code
 
-Start [omnexx](https://omnexx.org) runs from the editor, let them work for hours, and watch the
-todo list move in the sidebar.
+A chat panel for the [omnexx](https://omnexx.org) coding agent, in the sidebar like Cline: chat
+with it, have it plan, or let it run on its own for hours, and watch every step.
+
+![The omnexx chat panel mid-task](media/screenshot.png)
 
 ## Needs
 
-The omnexx CLI, version 0.5.0 or later: `npm i -g omnexx`. Set `omnexx.path` if it isn't on
-your PATH.
+The omnexx CLI, version 0.6.0 or later:
 
-## What it does
+```sh
+npm i -g omnexx        # or: brew install yaegerbomb42/omnexx/omnexx
+```
 
-- **Runs sidebar** (the omnexx icon in the activity bar): the runs started from the open folders,
-  newest first. Expand a run for its milestones and tasks: done, in progress, parked, and the
-  task it's working on now. A live run refreshes every few seconds.
-- **Start Run**: asks for a goal and runs `omnexx run --detach <goal>` in a terminal. The run
-  keeps going after you close the terminal or VS Code.
-- **Autonomous for N Hours**: asks for a goal, a duration (`8h`, `2d`, `1h30m`) and an optional
-  gate command, then runs `omnexx run --detach --for <duration> [--gate <cmd>] <goal>`.
-- **Open Chat in Terminal**: the interactive omnexx session in the first open folder.
-- Per run: **Watch in Terminal** (`omnexx watch`), **Pause**, **Resume** and **Stop**.
+Set `omnexx.path` if it isn't on your PATH.
 
-The extension only calls the CLI (`omnexx runs --json`, `omnexx plan --json`); it never reads
-run files directly or calls a model itself.
+## The chat panel
+
+Open it from the omnexx icon in the activity bar, or press `Cmd+Alt+O` (`Ctrl+Alt+O`).
+
+- **Session stats**: uptime, model turns, tokens (hover for input, output and cache hits), cost,
+  and how full the context is.
+- **Modes**: **Act** works turn by turn with you, **Plan** investigates and proposes a plan
+  without editing, **Autonomous** starts a long run in the background.
+- **Approvals**: **Ask first** shows Allow / Deny before omnexx goes outside the repo or runs a
+  guarded command. **Auto-approve** goes ahead (hard-blocked commands stay blocked). Set the
+  default with `omnexx.autoApprove`.
+- **Trajectory**: the agent's step list as a timeline, with the active step's progress and what
+  it is doing right now.
+- **Live log**: every action, thought and note, timestamped.
+- **Composer**: Enter sends, Shift+Enter adds a line. While the agent works, a message steers it
+  at its next step; pause and stop sit next to the input, and Esc stops.
+- **Models and providers**: click the model name to switch, or add an API key or any
+  OpenAI-compatible endpoint (Ollama, LM Studio, OpenRouter…). The gear has the rest: project
+  and user settings, the approval default, and restart.
+- File paths in replies open in the editor.
+
+The panel drives `omnexx chat-server`, the same session as the terminal UI, so the
+conversation carries over: `omnexx -c` in a terminal continues it.
+
+## Runs sidebar
+
+Below the chat, **Runs** lists the runs started from the open folders with their milestones and
+tasks, and lets you watch, pause, resume or stop each one.
 
 ## Settings
 
 | Setting                 | Default | Meaning                                     |
 | ----------------------- | ------- | ------------------------------------------- |
 | `omnexx.path`           | (PATH)  | The omnexx executable                       |
+| `omnexx.autoApprove`    | `false` | Start chats in auto-approve mode            |
 | `omnexx.showAllRuns`    | `false` | List runs from every repository             |
 | `omnexx.refreshSeconds` | `5`     | How often a live run's todo list is re-read |
 
 ## Develop
 
-From this folder: `npm run build`, then press F5 in VS Code with this folder open (or run
-`code --extensionDevelopmentPath=$PWD`). `npm run package` builds a `.vsix`.
+From this folder: `npm run build`, then press F5 in VS Code with this folder open. `npm run
+package` builds a `.vsix`.

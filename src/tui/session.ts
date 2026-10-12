@@ -785,6 +785,21 @@ export class Session {
     return this.code ? { used: this.code.contextUsed, limit: this.code.contextLimit } : undefined;
   }
 
+  /** True while /pause holds the chat at its next step. */
+  get chatPaused(): boolean {
+    return this.code?.paused ?? false;
+  }
+
+  /** True while a chat turn is running (the agent is working on a message). */
+  get chatBusy(): boolean {
+    return this.code?.busy ?? false;
+  }
+
+  /** Token, tool and turn totals for the open chat (runs have their own `telemetry`). */
+  get chatTelemetry(): Telemetry | undefined {
+    return this.code?.telemetry;
+  }
+
   get chatModelName(): string | undefined {
     return this.code?.model ?? this.chatModel;
   }

@@ -34,6 +34,7 @@ import { helperRunner } from '../agent/subagent.js';
 import type { TodoItem } from '../tools/todo.js';
 import type { Tool, ToolContext } from '../tools/types.js';
 import { runGates } from '../verify/gates.js';
+import { emptyTelemetry, fold, type Telemetry } from '../telemetry/aggregate.js';
 
 export const CHAT_SYSTEM = `You are Omnexx in chat mode: a coding agent working turn by turn with a person at the keyboard, directly in their repository (your cwd).
 
@@ -123,6 +124,8 @@ export class CodeChat {
   private view: ChatView | undefined;
   private models: ResolvedModel[];
   usd = 0;
+  /** Token, tool and turn totals for this chat, folded from its events. */
+  readonly telemetry: Telemetry = emptyTelemetry();
   /** Estimated tokens the next request starts with (system + tools + conversation). */
   contextUsed = 0;
 
@@ -141,6 +144,7 @@ export class CodeChat {
     this.contextUsed = this.baseTokens();
     // One listener for the whole chat: every action shows as a line while it happens.
     events.onEvent((e) => {
+      fold(this.telemetry, e);
       this.onEvent(e);
     });
   }
