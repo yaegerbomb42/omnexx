@@ -707,6 +707,7 @@ export async function stepCommit(run: Run): Promise<void> {
   }
   run.state.lastProgressAt = run.clock.now();
   run.state.lastProgressCycle = run.state.cycle;
+  run.state.recoveries = 0;
   await run.setPhase('record');
 }
 
