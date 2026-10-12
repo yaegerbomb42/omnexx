@@ -45,9 +45,10 @@ describe('real processes: detach, heartbeat, pause/resume', () => {
   });
 
   it('run --detach returns at once; the run keeps going with a fresh heartbeat; pause takes effect within a turn; resume continues to the end', async () => {
-    const { repo, env } = await processRepo({ OMNEXX_TEST_TASKS: '4', OMNEXX_TEST_TURN_MS: '150' });
+    // Six tasks so the run can't finish before the pause lands, even on a fast runner.
+    const { repo, env } = await processRepo({ OMNEXX_TEST_TASKS: '6', OMNEXX_TEST_TURN_MS: '150' });
     const started = Date.now();
-    const r = await entry(['run', '--detach', 'Create the four files'], { cwd: repo, env });
+    const r = await entry(['run', '--detach', 'Create the six files'], { cwd: repo, env });
     expect(r.code).toBe(0);
     expect(Date.now() - started).toBeLessThan(15_000);
     const runId = r.stdout.trim();
@@ -63,20 +64,25 @@ describe('real processes: detach, heartbeat, pause/resume', () => {
       'first cycle',
     );
     expect(Date.now() - hb.ts).toBeLessThan(30_000);
-    const status = JSON.parse(
-      (await entry(['status', runId, '--json'], { cwd: repo, env })).stdout,
-    ) as { supervisorAlive: boolean; heartbeat: { ageMs: number } };
-    expect(status.supervisorAlive).toBe(true);
-    expect(status.heartbeat.ageMs).toBeLessThan(30_000);
 
+    // Pause first, then inspect: every extra process spawned here gives the run time to finish.
     expect((await entry(['pause', runId], { cwd: repo, env })).code).toBe(0);
     const paused = await waitFor(
-      async () => ((await store.readHeartbeat())?.phase === 'paused' ? true : undefined),
+      async () => {
+        const h = await store.readHeartbeat();
+        if (h?.phase === 'done') throw new Error('the run finished before the pause landed');
+        return h?.phase === 'paused' ? true : undefined;
+      },
       // Generous: a loaded CI runner can take several seconds to reach the next turn boundary.
       30_000,
       'paused heartbeat',
     );
     expect(paused).toBe(true);
+    const status = JSON.parse(
+      (await entry(['status', runId, '--json'], { cwd: repo, env })).stdout,
+    ) as { supervisorAlive: boolean; heartbeat: { ageMs: number } };
+    expect(status.supervisorAlive).toBe(true);
+    expect(status.heartbeat.ageMs).toBeLessThan(30_000);
     const eventsAtPause = (await readEvents(store.eventsPath)).filter(
       (e) => e.type === 'turn',
     ).length;
@@ -95,7 +101,7 @@ describe('real processes: detach, heartbeat, pause/resume', () => {
       'run to finish',
     );
     expect(final.status).toBe('finished');
-    expect(final.acceptedCommits).toBe(4);
+    expect(final.acceptedCommits).toBe(6);
     // The supervisor writes the report and releases the lock after the final phase.
     await waitFor(
       async () => ((await readLock(store.dir)) ? undefined : true),
