@@ -136,7 +136,7 @@ export async function appendEndpointBlock(
   await appendFile(file, `\n${block}`);
 }
 
-async function removeEndpointBlock(file: string, name: string): Promise<boolean> {
+export async function removeEndpointBlock(file: string, name: string): Promise<boolean> {
   let text: string;
   try {
     text = await readFile(file, 'utf8');

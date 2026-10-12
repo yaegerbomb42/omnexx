@@ -124,8 +124,8 @@ export class CodeChat {
   private view: ChatView | undefined;
   private models: ResolvedModel[];
   usd = 0;
-  /** Token, tool and turn totals for this chat, folded from its events. */
-  readonly telemetry: Telemetry = emptyTelemetry();
+  /** Token, tool and turn totals for this conversation, folded from its events. */
+  telemetry: Telemetry = emptyTelemetry();
   /** Estimated tokens the next request starts with (system + tools + conversation). */
   contextUsed = 0;
 
@@ -582,6 +582,7 @@ export class CodeChat {
   /** Forget the conversation (the codebase map and instructions stay). */
   clear(): void {
     this.history = [];
+    this.telemetry = emptyTelemetry();
     this.contextUsed = this.baseTokens();
     // A fresh conversation starts a fresh running context; the old one is kept with the chat.
     void this.ctx.runningContext?.archive();

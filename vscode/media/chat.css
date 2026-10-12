@@ -9,10 +9,12 @@
   --fg: var(--vscode-foreground);
   --muted: var(--vscode-descriptionForeground);
   --surface: var(--vscode-sideBar-background);
-  --card: color-mix(in srgb, var(--vscode-foreground) 4%, var(--surface));
-  --card-strong: color-mix(in srgb, var(--vscode-foreground) 7%, var(--surface));
-  --line: color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+  --card: color-mix(in srgb, var(--vscode-foreground) 7%, var(--surface));
+  --card-strong: color-mix(in srgb, var(--vscode-foreground) 11%, var(--surface));
+  --line: color-mix(in srgb, var(--vscode-foreground) 22%, transparent);
   --accent: #36c5f0;
+  --violet: #a78bfa;
+  --brand: linear-gradient(90deg, var(--accent), var(--violet));
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
   --glow:
     0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent),
@@ -25,6 +27,7 @@
 
 body.vscode-light {
   --accent: #0b7fb3;
+  --violet: #6d28d9;
   --ok: #1a7f37;
   --warn: #9a6700;
   --glow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
@@ -97,17 +100,35 @@ svg {
 .brand {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  gap: 8px;
+  flex: none;
+}
+
+.word {
+  font-size: 1.45em;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  background: var(--brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+body.vscode-high-contrast .word,
+body.vscode-high-contrast-light .word {
+  background: none;
+  color: var(--fg);
 }
 
 .mark {
-  width: 10px;
-  height: 10px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  border: 2px solid var(--accent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+  background:
+    radial-gradient(circle, var(--surface) 42%, transparent 44%),
+    conic-gradient(var(--accent), var(--violet), var(--accent));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .chip {
@@ -173,8 +194,33 @@ svg {
   background: var(--card);
 }
 
+.stats {
+  position: relative;
+  overflow: hidden;
+}
+
+.stats::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: var(--brand);
+}
+
 .tile {
   min-width: 0;
+}
+
+#stat-turns {
+  color: var(--violet);
+}
+
+#stat-tokens {
+  color: var(--accent);
+}
+
+#stat-cost {
+  color: var(--ok);
 }
 
 .k {
@@ -263,9 +309,14 @@ svg {
 }
 
 .seg button[aria-pressed='true'] {
-  background: var(--accent-soft);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 30%, transparent),
+    color-mix(in srgb, var(--violet) 30%, transparent)
+  );
   color: var(--fg);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent);
 }
 
 /* Banner */
@@ -546,6 +597,7 @@ svg {
 .msg.user {
   background: var(--card-strong);
   border: 1px solid var(--line);
+  border-left: 3px solid var(--violet);
   border-radius: var(--radius);
   padding: 6px 10px;
 }
@@ -554,7 +606,7 @@ svg {
   font-size: 0.72em;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--accent);
+  color: var(--violet);
 }
 
 .msg.user .text {
@@ -776,7 +828,7 @@ body.vscode-light .live-log {
 }
 
 .line.think .role {
-  color: var(--accent);
+  color: var(--violet);
   font-style: normal;
 }
 
@@ -889,4 +941,223 @@ textarea::placeholder {
   .chev {
     transition: none;
   }
+}
+
+/* Settings page (the gear): replaces the chat while open */
+body.settings-open > :not(.top, .settings, script) {
+  display: none !important;
+}
+
+.settings {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 12px 16px;
+  border-top: 1px solid var(--line);
+}
+
+.set-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+  padding: 8px 0 4px;
+}
+
+.set-head h2 {
+  margin: 0;
+  font-size: 1.15em;
+}
+
+.set-section {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  display: grid;
+  gap: 6px;
+}
+
+.set-section h3 {
+  margin: 0 0 2px;
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.set-section label {
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+.field {
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--vscode-input-border, var(--line));
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font: inherit;
+}
+
+.field:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+
+select.field {
+  background: var(--vscode-dropdown-background, var(--vscode-input-background));
+  color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+.providers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.provider {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card-strong);
+}
+
+.p-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.p-name {
+  font-weight: 600;
+}
+
+.p-url {
+  font-family: var(--mono);
+  font-size: 0.8em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.p-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.pill {
+  font-family: var(--mono);
+  font-size: 0.75em;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.pill.ok {
+  border-color: color-mix(in srgb, var(--ok) 60%, transparent);
+  color: var(--ok);
+}
+
+.pill.warn {
+  border-color: color-mix(in srgb, var(--warn) 60%, transparent);
+  color: var(--warn);
+}
+
+.pill.local {
+  border-color: color-mix(in srgb, var(--violet) 60%, transparent);
+  color: var(--violet);
+}
+
+.ghost {
+  border: 1px solid var(--line);
+  background: none;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 0.88em;
+}
+
+.ghost:hover {
+  border-color: var(--accent);
+}
+
+.ghost.small {
+  justify-self: start;
+}
+
+.danger-btn {
+  border: 1px solid var(--bad);
+  background: color-mix(in srgb, var(--bad) 15%, transparent);
+  color: var(--bad);
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 0.88em;
+}
+
+.signup {
+  font-size: 0.85em;
+  color: var(--vscode-textLink-foreground);
+  justify-self: start;
+}
+
+.row-end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap);
+}
+
+.status {
+  font-size: 0.85em;
+  margin-right: auto;
+}
+
+.status.ok {
+  color: var(--ok);
+}
+
+.status.error {
+  color: var(--bad);
+}
+
+.status.busy {
+  color: var(--accent);
+}
+
+.seg.wide {
+  flex: none;
+  width: 100%;
+}
+
+.links {
+  display: grid;
+  gap: 6px;
+}
+
+.links .ghost {
+  text-align: left;
+  padding: 5px 10px;
 }

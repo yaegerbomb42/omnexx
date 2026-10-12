@@ -24,6 +24,7 @@ import {
   type TodoItem,
   type Usage,
 } from './render.js';
+import * as settings from './settings.js';
 
 interface State {
   entries: Entry[];
@@ -41,6 +42,7 @@ interface State {
 
 type Incoming =
   | ({ type: 'state' } & State)
+  | ({ type: 'settings' | 'models' | 'prefs' } & Record<string, unknown>)
   | { type: 'ready'; version: string }
   | { type: 'error'; message: string }
   | { type: 'down'; message: string };
@@ -256,6 +258,7 @@ function drawControls(s: State): void {
 function apply(s: State): void {
   ingest(s.entries);
   state = s;
+  settings.setCurrentModel(s.model);
   banner.hidden = true;
   drawControls(s);
   drawStats(s);
@@ -275,6 +278,7 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
   // origin; anything else (another frame or window) is ignored.
   if (event.origin !== window.location.origin) return;
   const m = event.data;
+  if (m.type !== 'state' && settings.onMessage(m)) return;
   if (m.type === 'state') apply(m);
   else if (m.type === 'ready') {
     // A fresh omnexx process (or a resync) replays the conversation from the start.
@@ -282,8 +286,10 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
     logLines = [];
     drawConversation();
     drawLiveLog();
-  } else if (m.type === 'error') showBanner(m.message, 'error');
-  else showBanner(m.message, 'info');
+  } else if (m.type === 'error' || m.type === 'down') {
+    const text = typeof m.message === 'string' ? m.message : 'Something went wrong';
+    showBanner(text, m.type === 'error' ? 'error' : 'info');
+  }
 });
 
 function submit(): void {
@@ -324,7 +330,10 @@ document.addEventListener('click', (e) => {
   const action = target.closest<HTMLElement>('[data-action]')?.dataset.action;
   if (action === 'allow' || action === 'deny') post({ type: 'answer', yes: action === 'allow' });
   else if (action === 'approval') post({ type: 'yolo', on: !(state?.autoApprove ?? false) });
-  else if (action === 'clear-log') {
+  else if (action === 'settings') {
+    if (settings.isOpen()) settings.close();
+    else settings.open(post);
+  } else if (action === 'clear-log') {
     logLines = [];
     drawLiveLog();
   } else if (action) post({ type: action });
@@ -341,9 +350,10 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   const target = e.target instanceof HTMLElement ? e.target : null;
   if (e.key === 'Enter' && target?.dataset.open) post({ type: 'open', path: target.dataset.open });
-  if (e.key === 'Escape' && state?.busy) post({ type: 'stop' });
+  if (e.key === 'Escape' && !settings.isOpen() && state?.busy) post({ type: 'stop' });
 });
 
+settings.wire(post);
 setInterval(drawUptime, CLOCK_TICK_MS);
 post({ type: 'ready' });
 input.focus();

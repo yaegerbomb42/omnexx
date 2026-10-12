@@ -942,6 +942,15 @@ export class Session {
     if (code === 0 && id) await this.attach(id);
   }
 
+  /** A slash command from an editor button: runs as if typed, without echoing it as a message. */
+  async command(line: string): Promise<void> {
+    try {
+      await this.slash(line);
+    } catch (err) {
+      this.push('err', describeError(err));
+    }
+  }
+
   private async slash(line: string): Promise<void> {
     const words = parse(line).filter((w): w is string => typeof w === 'string');
     const [cmd = '', ...args] = words;

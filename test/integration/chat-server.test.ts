@@ -120,6 +120,41 @@ describe('omnexx chat-server (the VS Code chat panel protocol)', () => {
     }, 'full resend after sync');
     expect(resent.entries[0]?.id).toBe(0);
 
+    // New chat: no "/clear" echo, a fresh panel, and the session totals start over.
+    const readies = t.out.filter((o) => o.type === 'ready').length;
+    t.send({ type: 'clear' });
+    const fresh = await t.until(() => {
+      const at = t.out.findLastIndex((o) => o.type === 'ready');
+      if (t.out.filter((o) => o.type === 'ready').length <= readies) return undefined;
+      return t.out.slice(at).findLast((o) => o.type === 'state') as ChatState | undefined;
+    }, 'fresh state after clear');
+    const afterClear = t.out.slice(t.out.findLastIndex((o) => o.type === 'ready'));
+    const texts = afterClear
+      .filter((o) => o.type === 'state')
+      .flatMap((o) => (o as unknown as ChatState).entries.map((e) => e.text));
+    expect(texts.some((x) => x.includes('/clear'))).toBe(false);
+    expect(texts.some((x) => x.includes('make a.js'))).toBe(false);
+    expect(fresh.usage?.turns ?? 0).toBe(0);
+    expect(fresh.usage?.tokens.output ?? 0).toBe(0);
+    expect(fresh.todos).toEqual([]);
+    // A reloaded panel gets only what came after the clear.
+    t.send({ type: 'sync' });
+    await t.until(
+      () => (t.out.filter((o) => o.type === 'ready').length > readies + 1 ? true : undefined),
+      'sync after clear',
+    );
+    const synced = t.out.slice(t.out.findLastIndex((o) => o.type === 'ready'));
+    const syncedTexts = synced
+      .filter((o) => o.type === 'state')
+      .flatMap((o) => (o as unknown as ChatState).entries.map((e) => e.text));
+    expect(syncedTexts.some((x) => x.includes('make a.js'))).toBe(false);
+
+    // Panel buttons don't echo as messages either.
+    t.send({ type: 'compact' });
+    await new Promise((r) => setTimeout(r, 200));
+    const all2 = t.states().flatMap((x) => x.entries.map((e) => e.text));
+    expect(all2.some((x) => x === '/compact' || x === '/clear')).toBe(false);
+
     t.send({ type: 'nonsense' });
     await t.until(() => t.out.find((o) => o.type === 'error'), 'error for a bad command');
     t.stdin.write('not json\n');
