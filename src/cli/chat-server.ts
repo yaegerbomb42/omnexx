@@ -12,9 +12,10 @@ import { println, type CliIO } from './io.js';
  *
  * In (one JSON object per line): send {text} · answer {yes} · stop · pause · resume · mode {mode} ·
  * yolo {on} ·
- * model {ref} · models · connect {value, name?} · undo · clear · compact · sync (resend all).
+ * model {ref} · models · connect {value, name?} · undo · clear · compact · sync (resend all) ·
+ * settings · addProvider {provider?, key?, url?} · removeProvider {name}.
  * Out: ready {version} · state (below; `entries` holds only lines not sent before) · models
- * {items, unreachable, current} · error {message}.
+ * {items, unreachable, current} · settings {catalog, connected} · error {message}.
  */
 
 export interface ChatUsage {
@@ -125,6 +126,27 @@ export async function serveChat(
   };
   session.onChange(schedule);
 
+  const sendModels = async (): Promise<void> => {
+    const { loadModelChoices } = await import('../tui/model-picker.js');
+    const { items, unreachable } = await loadModelChoices(io);
+    write({
+      type: 'models',
+      items: items.filter((i) => i.kind === 'model'),
+      unreachable,
+      current: session.chatModelName ?? null,
+    });
+  };
+  const sendSettings = async (): Promise<void> => {
+    const { providerSettings } = await import('./chat-settings.js');
+    write({ type: 'settings', ...(await providerSettings(io)) });
+  };
+  /** After a provider change: say what happened, then refresh the settings page and models. */
+  const providersChanged = async (message: string): Promise<void> => {
+    session.push('system', message);
+    await sendSettings();
+    await sendModels();
+  };
+
   const run = (p: Promise<unknown>): void => {
     p.catch(fail).finally(schedule);
   };
@@ -170,15 +192,33 @@ export async function serveChat(
         run(session.switchModel(text(c, 'ref')));
         return;
       case 'models':
+        run(sendModels());
+        return;
+      case 'settings':
+        run(sendSettings());
+        return;
+      case 'addProvider': {
+        const str = (k: string): string | undefined => {
+          const v = c[k];
+          return typeof v === 'string' ? v : undefined;
+        };
         run(
-          import('../tui/model-picker.js').then(async ({ loadModelChoices }) => {
-            const { items, unreachable } = await loadModelChoices(io);
-            write({
-              type: 'models',
-              items: items.filter((i) => i.kind === 'model'),
-              unreachable,
-              current: session.chatModelName ?? null,
-            });
+          import('./chat-settings.js').then(async ({ addProvider }) => {
+            await providersChanged(
+              await addProvider(io, {
+                provider: str('provider'),
+                key: str('key'),
+                url: str('url'),
+              }),
+            );
+          }),
+        );
+        return;
+      }
+      case 'removeProvider':
+        run(
+          import('./chat-settings.js').then(async ({ removeProvider }) => {
+            await providersChanged(await removeProvider(io, text(c, 'name')));
           }),
         );
         return;

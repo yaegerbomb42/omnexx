@@ -17,6 +17,10 @@ const FORWARD = new Set([
   'undo',
   'clear',
   'compact',
+  'models',
+  'settings',
+  'addProvider',
+  'removeProvider',
 ]);
 const MODEL_LIST_TIMEOUT_MS = 15_000;
 
@@ -81,16 +85,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private fromServer(m: ServerMessage): void {
     if (m.type === 'ready') {
       // A new omnexx process: apply the approval default from settings.
-      const auto = vscode.workspace.getConfiguration('omnexx').get<boolean>('autoApprove') ?? false;
-      if (auto) this.server.send({ type: 'yolo', on: true });
+      if (approvalDefault()) this.server.send({ type: 'yolo', on: true });
+      this.post({ type: 'prefs', autoApproveDefault: approvalDefault() });
     }
-    if (m.type === 'models') {
-      this.modelsWaiter?.(
+    if (m.type === 'models' && this.modelsWaiter) {
+      this.modelsWaiter(
         (m.items as ModelItem[] | undefined) ?? [],
         (m.unreachable as string[] | undefined) ?? [],
       );
       this.modelsWaiter = undefined;
-      return;
     }
     this.post(m);
   }
@@ -108,9 +111,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       return;
     }
     if (type === 'pickModel') await this.pickModel();
-    else if (type === 'settings') await this.settings();
     else if (type === 'open' && typeof m.path === 'string') await openPath(m.path);
     else if (type === 'restart') this.server.restart();
+    else if (type === 'setApprovalDefault') await this.setApprovalDefault(m.on === true);
+    else if (type === 'editToml')
+      await openSettingsFile(join(primaryFolder() ?? homedir(), 'omnexx.toml'), PROJECT_STARTER);
+    else if (type === 'editUserConfig') await openSettingsFile(userConfigPath(), USER_STARTER);
+    else if (type === 'openExternal' && typeof m.url === 'string' && m.url.startsWith('https://'))
+      await vscode.env.openExternal(vscode.Uri.parse(m.url));
+  }
+
+  private async setApprovalDefault(on: boolean): Promise<void> {
+    await vscode.workspace
+      .getConfiguration('omnexx')
+      .update('autoApprove', on, vscode.ConfigurationTarget.Global);
+    this.server.send({ type: 'yolo', on });
+    this.post({ type: 'prefs', autoApproveDefault: on });
   }
 
   private listModels(): Promise<{ items: ModelItem[]; unreachable: string[] }> {
@@ -205,62 +221,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     });
   }
 
-  private async settings(): Promise<void> {
-    const config = vscode.workspace.getConfiguration('omnexx');
-    const auto = config.get<boolean>('autoApprove') ?? false;
-    const items: (vscode.QuickPickItem & { id: string })[] = [
-      {
-        id: 'model',
-        label: '$(sparkle) Chat model…',
-        description: 'pick a model or add a provider',
-      },
-      { id: 'key', label: '$(key) Add an API key…' },
-      { id: 'endpoint', label: '$(link) Add an endpoint…' },
-      {
-        id: 'approval',
-        label: auto
-          ? '$(shield) Default: ask before guarded actions'
-          : '$(zap) Default: auto-approve',
-        description: auto ? 'currently auto-approve' : 'currently ask first',
-      },
-      {
-        id: 'toml',
-        label: '$(file-code) Edit project settings (omnexx.toml)…',
-        description: 'gates, budgets, models per role',
-      },
-      { id: 'user', label: '$(gear) Edit user settings (config.toml)…' },
-      { id: 'ext', label: '$(settings) Extension settings…' },
-      { id: 'restart', label: '$(debug-restart) Restart omnexx' },
-    ];
-    const chosen = await vscode.window.showQuickPick(items, { title: 'omnexx: settings' });
-    switch (chosen?.id) {
-      case 'model':
-        return this.pickModel();
-      case 'key':
-        return this.addKey();
-      case 'endpoint':
-        return this.addEndpoint();
-      case 'approval':
-        await config.update('autoApprove', !auto, vscode.ConfigurationTarget.Global);
-        this.server.send({ type: 'yolo', on: !auto });
-        return;
-      case 'toml':
-        return openSettingsFile(
-          join(primaryFolder() ?? homedir(), 'omnexx.toml'),
-          '# omnexx project settings: see `omnexx init`\n',
-        );
-      case 'user':
-        return openSettingsFile(userConfigPath(), '# omnexx user settings\n');
-      case 'ext':
-        await vscode.commands.executeCommand('workbench.action.openSettings', 'omnexx');
-        return;
-      case 'restart':
-        this.server.restart();
-        return;
-      default:
-    }
-  }
-
   private html(webview: vscode.Webview): string {
     const nonce = randomBytes(16).toString('base64');
     const css = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'chat.css'));
@@ -283,7 +243,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 </head>
 <body>
 <header class="top">
-  <div class="brand" aria-hidden="true"><span class="mark"></span>omnexx</div>
+  <div class="brand"><span class="mark" aria-hidden="true"></span><span class="word">omnexx</span></div>
   <button id="model" class="chip model" data-action="pickModel" title="Chat model: click to switch or add a provider">Pick a model</button>
   <button class="icon" data-action="settings" title="Settings" aria-label="Settings"><svg viewBox="0 0 16 16"><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zm6 3.3V7.2l-1.7-.4a4.6 4.6 0 0 0-.5-1.2l.9-1.5-1.1-1.1-1.5.9c-.4-.2-.8-.4-1.2-.5L8.8 1.7H7.2l-.4 1.7c-.4.1-.8.3-1.2.5l-1.5-.9-1.1 1.1.9 1.5c-.2.4-.4.8-.5 1.2L1.7 7.2v1.6l1.7.4c.1.4.3.8.5 1.2l-.9 1.5 1.1 1.1 1.5-.9c.4.2.8.4 1.2.5l.4 1.7h1.6l.4-1.7c.4-.1.8-.3 1.2-.5l1.5.9 1.1-1.1-.9-1.5c.2-.4.4-.8.5-1.2z" fill="none" stroke="currentColor" stroke-width="1.1"/></svg></button>
 </header>
@@ -317,6 +277,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   </div>
 </section>
 <main id="log" class="conversation" aria-live="polite"></main>
+<section id="settings" class="settings" hidden aria-label="Settings"></section>
 <section id="ask" class="ask" hidden role="alertdialog" aria-labelledby="ask-text">
   <div class="ask-title">Approval needed</div>
   <div id="ask-text"></div>
@@ -352,6 +313,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   dispose(): void {
     for (const s of this.subscriptions) s.dispose();
   }
+}
+
+const PROJECT_STARTER = '# omnexx project settings: see `omnexx init`\n';
+const USER_STARTER = '# omnexx user settings\n';
+
+function approvalDefault(): boolean {
+  return vscode.workspace.getConfiguration('omnexx').get<boolean>('autoApprove') ?? false;
 }
 
 function userConfigPath(): string {
