@@ -270,15 +270,12 @@ function showBanner(text: string, kind: 'error' | 'info'): void {
   banner.innerHTML = `<span>${escapeHtml(text)}</span>${kind === 'info' ? '<button class="link" data-action="restart">Restart</button>' : ''}`;
 }
 
-/** Messages come from the extension through VS Code's webview host, never from other frames. */
-function trusted(event: MessageEvent): boolean {
-  if (event.origin.startsWith('vscode-webview://')) return true;
-  // A local preview of the panel (file://) posts to itself; browsers report its origin as "null".
-  return window.location.protocol === 'file:' && event.source === window;
-}
-
 window.addEventListener('message', (event: MessageEvent<Incoming>) => {
-  if (!trusted(event)) return;
+  // Messages come from the extension through VS Code's webview host, never from other frames.
+  // A local preview (file://) posts to itself, and browsers report its origin as "null".
+  const fromHost = event.origin.startsWith('vscode-webview://');
+  const fromPreview = window.location.protocol === 'file:' && event.source === window;
+  if (!fromHost && !fromPreview) return;
   const m = event.data;
   if (m.type === 'state') apply(m);
   else if (m.type === 'ready') {
