@@ -271,11 +271,9 @@ function showBanner(text: string, kind: 'error' | 'info'): void {
 }
 
 window.addEventListener('message', (event: MessageEvent<Incoming>) => {
-  // Messages come from the extension through VS Code's webview host, never from other frames.
-  // A local preview (file://) posts to itself, and browsers report its origin as "null".
-  const fromHost = event.origin.startsWith('vscode-webview://');
-  const fromPreview = window.location.protocol === 'file:' && event.source === window;
-  if (!fromHost && !fromPreview) return;
+  // The extension's messages arrive through VS Code's webview host, which shares this frame's
+  // origin; anything else (another frame or window) is ignored.
+  if (event.origin !== window.location.origin) return;
   const m = event.data;
   if (m.type === 'state') apply(m);
   else if (m.type === 'ready') {
