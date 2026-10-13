@@ -59,7 +59,29 @@ export class Run {
   /** Providers that just failed: skipped until the timestamp. */
   private readonly cooling = new Map<string, number>();
   readonly abort = new AbortController();
+  /** Aborts only the current cycle (the stall watchdog), unlike `abort` which ends the run. */
+  private cycleAbort = new AbortController();
+  /** Set by the watchdog when it aborted the current cycle for silence: what it saw. */
+  hang: string | undefined;
   /** Supervisor start, for elapsed-time accounting together with state.activeMs. */
+  /** What every model call and command of the current cycle listens to. */
+  get signal(): AbortSignal {
+    return AbortSignal.any([this.abort.signal, this.cycleAbort.signal]);
+  }
+
+  /** A fresh cycle: a new abort switch, and no hang recorded. */
+  newCycle(): void {
+    this.cycleAbort = new AbortController();
+    this.hang = undefined;
+  }
+
+  /** The watchdog's way out of a hung cycle: abort it, keep the run. */
+  abortCycle(reason: string): void {
+    if (this.cycleAbort.signal.aborted) return;
+    this.hang = reason;
+    this.cycleAbort.abort(new Error(reason));
+  }
+
   readonly startedAt: number;
   plan: Plan | undefined;
   /** True while the agent loop is blocked on a pause request (shown by the heartbeat). */

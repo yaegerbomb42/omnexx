@@ -5,6 +5,7 @@ import { formatDuration } from '../../config/duration.js';
 import { readTextOr } from '../../core/atomic.js';
 import { readEvents } from '../../core/events.js';
 import { STALE_AFTER_MS } from '../../core/heartbeat.js';
+import { runHealth, type RunHealth } from '../../core/health.js';
 import { compactPlanView, planCounts } from '../../core/plan.js';
 import { resolvePaths } from '../../core/paths.js';
 import { writeReport } from '../../core/report.js';
@@ -28,6 +29,8 @@ export async function statusData(store: RunStore, now: number) {
   const input = t.uncached + t.cacheWrite + t.cacheRead;
   const events = await readEvents(store.eventsPath);
   const judge = events.filter((e) => e.type === 'judge.next_move');
+  const alive = await supervisorAlive(store);
+  const last = events.at(-1);
   const agreed = judge.filter((e) => e.pick === e.rule).length;
   return {
     runId: state.runId,
@@ -40,7 +43,14 @@ export async function statusData(store: RunStore, now: number) {
     task: state.taskId,
     lastGreen: state.lastGreen,
     tasks: counts,
-    supervisorAlive: await supervisorAlive(store),
+    supervisorAlive: alive,
+    health: runHealth({
+      status: state.status,
+      supervisorAlive: alive,
+      heartbeatStale: hb ? now - hb.ts > STALE_AFTER_MS : true,
+      lastEvent: last ? { type: last.type, ts: last.ts } : undefined,
+      now,
+    }),
     heartbeat: hb
       ? { ageMs: now - hb.ts, stale: now - hb.ts > STALE_AFTER_MS, phase: hb.phase }
       : undefined,
@@ -120,8 +130,22 @@ export async function statusCommand(
 }
 
 /** One `omnexx runs --json` row: enough for an editor to list runs and match them to a folder. */
-async function runRow(store: RunStore) {
+async function runRow(store: RunStore, now: number) {
   const s = await store.readState();
+  const alive = await supervisorAlive(store);
+  // Only live runs need their events read for health; ended ones are simply ended.
+  let health: RunHealth = 'ended';
+  if (['planned', 'running', 'paused'].includes(s.status)) {
+    const hb = await store.readHeartbeat();
+    const last = (await readEvents(store.eventsPath)).at(-1);
+    health = runHealth({
+      status: s.status,
+      supervisorAlive: alive,
+      heartbeatStale: hb ? now - hb.ts > STALE_AFTER_MS : true,
+      lastEvent: last ? { type: last.type, ts: last.ts } : undefined,
+      now,
+    });
+  }
   return {
     runId: s.runId,
     status: s.status,
@@ -135,7 +159,8 @@ async function runRow(store: RunStore) {
     startedAt: s.startedAt,
     usd: s.spend.usd,
     commits: s.acceptedCommits,
-    supervisorAlive: await supervisorAlive(store),
+    supervisorAlive: alive,
+    health,
   };
 }
 
@@ -144,7 +169,7 @@ export async function runsCommand(io: CliIO, json = false): Promise<number> {
   const ids = await listRunIds(paths);
   if (json) {
     const rows = await Promise.all(
-      ids.map((id) => runRow(new RunStore(paths, id)).catch(() => undefined)),
+      ids.map((id) => runRow(new RunStore(paths, id), Date.now()).catch(() => undefined)),
     );
     println(
       io.stdout,

@@ -249,6 +249,12 @@ export const stuckSchema = z.strictObject({
   no_edit_turns: z.number().int().positive().default(15),
   /** In-cycle: tokens above this multiple of the median cycle, with no edit yet, end the cycle. */
   burn_factor: z.number().gt(1).default(3),
+  /**
+   * In-cycle: no event at all for this long while the agent works (a model call or command that
+   * hangs) aborts the cycle, rolls back and counts as a stuck attempt. Longer than
+   * budget.max_cmd_timeout, so a slow build is never mistaken for a hang.
+   */
+  max_silence: durationString.default('45m'),
 });
 
 export const contextSchema = z.strictObject({
