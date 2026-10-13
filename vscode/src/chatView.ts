@@ -269,6 +269,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   <summary><span class="chev" aria-hidden="true"></span><span class="h">Trajectory</span><span class="sub-h">Step-by-step flow</span><span id="steps-count" class="count"></span></summary>
   <ol id="steps-body" class="timeline"></ol>
 </details>
+<div id="model-picker" class="model-picker" hidden role="dialog" aria-label="Pick a model"></div>
 <section id="welcome" class="welcome">
   <h2>What should omnexx do?</h2>
   <p>It edits this workspace, runs your tests, and asks before anything outside the repo.</p>

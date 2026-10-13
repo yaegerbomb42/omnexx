@@ -3,6 +3,8 @@
  * to add one, the approval default, and advanced links. Data comes from `omnexx chat-server`
  * (`settings`, `models`) through the extension; keys arrive masked and are sent once, on save.
  */
+import * as modelPicker from './modelPicker.js';
+import { badge } from './modelPicker.js';
 import { escapeHtml } from './render.js';
 
 export interface CatalogProvider {
@@ -24,20 +26,17 @@ export interface ConnectedProvider {
   keySource: string | null;
 }
 
-interface ModelItem {
-  ref: string;
-  provider: string;
-  model: string;
-}
-
 type Post = (msg: Record<string, unknown>) => void;
 
 const CUSTOM = '__custom';
 
+/** The provider picked in the add form (a catalog name or CUSTOM). */
+let chosen = 'anthropic';
+/** Filter text for the provider tiles. */
+let tileQuery = '';
+
 let catalog: CatalogProvider[] = [];
 let connected: ConnectedProvider[] = [];
-let models: ModelItem[] = [];
-let unreachable: string[] = [];
 let current: string | null = null;
 let autoApproveDefault = false;
 let confirmingRemove: string | undefined;
@@ -56,27 +55,11 @@ function q<T extends HTMLElement>(id: string, type: new () => T): T {
   return found;
 }
 
-function modelSelectHtml(): string {
-  if (!models.length)
-    return `<p class="hint">No models yet. Add a provider below${unreachable.length ? `; couldn't reach ${escapeHtml(unreachable.join(', '))}` : ''}.</p>`;
-  const groups = new Map<string, ModelItem[]>();
-  for (const m of models) groups.set(m.provider, [...(groups.get(m.provider) ?? []), m]);
-  const options = [...groups]
-    .map(
-      ([provider, items]) =>
-        `<optgroup label="${escapeHtml(provider)}">${items
-          .map(
-            (m) =>
-              `<option value="${escapeHtml(m.ref)}"${m.ref === current ? ' selected' : ''}>${escapeHtml(m.model)}</option>`,
-          )
-          .join('')}</optgroup>`,
-    )
-    .join('');
-  const missing =
-    current && !models.some((m) => m.ref === current)
-      ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)}</option>`
-      : '';
-  return `<select id="set-model" class="field">${missing}${options}</select>`;
+function modelFieldHtml(): string {
+  if (!current)
+    return '<button id="set-model-btn" class="field picker" data-open-model-picker><span class="muted">Pick a model</span><span class="caret">▾</span></button>';
+  const [provider = '', ...rest] = current.split(':');
+  return `<button id="set-model-btn" class="field picker" data-open-model-picker>${badge(provider)}<span class="pk-name">${escapeHtml(rest.join(':') || current)}</span><span class="pk-sub">${escapeHtml(provider)}</span><span class="caret">▾</span></button>`;
 }
 
 function connectedHtml(): string {
@@ -105,23 +88,27 @@ function connectedHtml(): string {
     .join('')}</ul>`;
 }
 
-function providerOptionsHtml(): string {
-  const hosted = catalog.filter((c) => !c.local);
-  const local = catalog.filter((c) => c.local);
-  const opt = (c: CatalogProvider): string =>
-    `<option value="${escapeHtml(c.name)}">${escapeHtml(c.label)}</option>`;
-  return `<optgroup label="Hosted">${hosted.map(opt).join('')}</optgroup><optgroup label="Local (runs on your machine)">${local.map(opt).join('')}</optgroup><optgroup label="Other"><option value="${CUSTOM}">Custom OpenAI-compatible URL…</option></optgroup>`;
+function tilesHtml(): string {
+  const words = tileQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  const fits = (c: CatalogProvider): boolean =>
+    words.every((w) => `${c.name} ${c.label}`.toLowerCase().includes(w));
+  const tile = (name: string, label: string, sub: string): string =>
+    `<button class="tile${chosen === name ? ' on' : ''}" data-provider="${escapeHtml(name)}" aria-pressed="${String(chosen === name)}" title="${escapeHtml(label)}">${badge(name === CUSTOM ? 'url' : name)}<span class="t-label">${escapeHtml(label.replace(/\s*\(.*\)$/, ''))}</span><span class="t-sub">${escapeHtml(sub)}</span></button>`;
+  const hosted = catalog.filter((c) => !c.local && fits(c));
+  const local = catalog.filter((c) => c.local && fits(c));
+  const custom = words.length === 0 || 'custom url openai compatible'.includes(words.join(' '));
+  return `${hosted.length ? `<div class="t-group">Hosted</div><div class="tiles">${hosted.map((c) => tile(c.name, c.label, c.keyPrefix ? `${c.keyPrefix}…` : 'API key')).join('')}</div>` : ''}${local.length ? `<div class="t-group">On your machine</div><div class="tiles">${local.map((c) => tile(c.name, c.label, 'no key')).join('')}</div>` : ''}${custom ? `<div class="t-group">Other</div><div class="tiles">${tile(CUSTOM, 'Custom URL', 'OpenAI-compatible')}</div>` : ''}${!hosted.length && !local.length && !custom ? '<p class="hint">No provider matches.</p>' : ''}`;
 }
 
 function draw(): void {
   const page = q('settings', HTMLElement);
   page.innerHTML = `
 <div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
-<section class="set-section"><h3>Chat model</h3>${modelSelectHtml()}<button class="ghost small" data-refresh-models>Refresh list</button></section>
+<section class="set-section"><h3>Chat model</h3>${modelFieldHtml()}</section>
 <section class="set-section"><h3>Providers</h3>${connectedHtml()}</section>
 <section class="set-section add"><h3>Add a provider</h3>
-  <label for="add-provider">Provider</label>
-  <select id="add-provider" class="field">${providerOptionsHtml()}</select>
+  <input id="tile-search" class="field" type="search" placeholder="Search 30+ providers…" aria-label="Search providers" value="${escapeHtml(tileQuery)}" spellcheck="false">
+  <div id="tile-box" class="tile-box">${tilesHtml()}</div>
   <div id="add-url-row"><label for="add-url">Base URL</label><input id="add-url" class="field" type="url" placeholder="http://localhost:8000/v1" spellcheck="false"></div>
   <div id="add-name-row"><label for="add-name">Name</label><input id="add-name" class="field" type="text" placeholder="mybox" spellcheck="false"></div>
   <div id="add-key-row"><label for="add-key">API key</label><input id="add-key" class="field" type="password" autocomplete="off" spellcheck="false"><a id="add-signup" class="signup" href="#">Get a key ↗</a></div>
@@ -147,13 +134,13 @@ function draw(): void {
 }
 
 function selectedProvider(): CatalogProvider | undefined {
-  const value = q('add-provider', HTMLSelectElement).value;
+  const value = chosen;
   return catalog.find((c) => c.name === value);
 }
 
 /** Show the fields the chosen provider needs: a key for hosted ones, a URL for local and custom. */
 function syncForm(): void {
-  const custom = q('add-provider', HTMLSelectElement).value === CUSTOM;
+  const custom = chosen === CUSTOM;
   const p = selectedProvider();
   q('add-url-row', HTMLElement).hidden = !custom && !p?.local;
   q('add-name-row', HTMLElement).hidden = !custom;
@@ -181,7 +168,7 @@ function drawStatus(): void {
 }
 
 function save(post: Post): void {
-  const custom = q('add-provider', HTMLSelectElement).value === CUSTOM;
+  const custom = chosen === CUSTOM;
   const p = selectedProvider();
   const key = q('add-key', HTMLInputElement).value.trim();
   const url = q('add-url', HTMLInputElement).value.trim();
@@ -258,8 +245,6 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
       status = { text: 'Connected. Pick a model above.', kind: 'ok' };
     }
   } else if (m.type === 'models') {
-    models = (m.items as ModelItem[] | undefined) ?? [];
-    unreachable = (m.unreachable as string[] | undefined) ?? [];
     current = typeof m.current === 'string' ? m.current : current;
   } else if (m.type === 'prefs') {
     autoApproveDefault = m.autoApproveDefault === true;
@@ -274,7 +259,7 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
   } else return false;
   if (isOpen()) {
     // Keep what the person is typing in the add form across a redraw.
-    const ids = ['add-provider', 'add-url', 'add-name'];
+    const ids = ['add-url', 'add-name'];
     const keep = ids.map((id) => {
       const el = document.getElementById(id);
       return el instanceof HTMLInputElement || el instanceof HTMLSelectElement ? el.value : '';
@@ -288,7 +273,7 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
           el.value = value;
       });
       syncForm();
-      if (keep[1]) q('add-url', HTMLInputElement).value = keep[1];
+      if (keep[0]) q('add-url', HTMLInputElement).value = keep[0];
     }
   }
   return true;
@@ -302,24 +287,29 @@ export function setCurrentModel(model: string | null): void {
 export function wire(post: Post): void {
   postRef = post;
   const page = q('settings', HTMLElement);
-  page.addEventListener('change', (e) => {
-    const t = e.target;
-    if (t instanceof HTMLSelectElement && t.id === 'set-model' && t.value) {
-      current = t.value;
-      post({ type: 'model', ref: t.value });
-    }
-    if (t instanceof HTMLSelectElement && t.id === 'add-provider') {
-      formTouched = true;
-      status = undefined;
-      syncForm();
-      drawStatus();
-    }
-  });
   page.addEventListener('click', (e) => {
     const t = e.target instanceof Element ? e.target : null;
     if (!t) return;
+    const tileName = t.closest<HTMLElement>('[data-provider]')?.dataset.provider;
+    if (tileName) {
+      chosen = tileName;
+      formTouched = true;
+      status = undefined;
+      q('tile-box', HTMLElement).innerHTML = tilesHtml();
+      syncForm();
+      drawStatus();
+      q(
+        selectedProvider()?.local || chosen === CUSTOM ? 'add-url' : 'add-key',
+        HTMLInputElement,
+      ).focus();
+      return;
+    }
+    const pickerBtn = t.closest<HTMLElement>('[data-open-model-picker]');
+    if (pickerBtn) {
+      modelPicker.open(pickerBtn, post);
+      return;
+    }
     if (t.closest('[data-settings-close]')) close();
-    else if (t.closest('[data-refresh-models]')) post({ type: 'models' });
     else if (t.closest('#add-save')) save(post);
     else if (t.closest('#add-signup')) {
       e.preventDefault();
@@ -351,6 +341,11 @@ export function wire(post: Post): void {
     }
   });
   page.addEventListener('input', (e) => {
+    if (e.target instanceof HTMLInputElement && e.target.id === 'tile-search') {
+      tileQuery = e.target.value;
+      q('tile-box', HTMLElement).innerHTML = tilesHtml();
+      return;
+    }
     if (e.target instanceof Element && e.target.closest('.add')) formTouched = true;
   });
   page.addEventListener('keydown', (e) => {

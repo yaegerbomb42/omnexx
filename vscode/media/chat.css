@@ -1338,3 +1338,255 @@ body.vscode-high-contrast-light .send {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
 }
+
+/* Provider badge: a colored monogram, hue from the provider name (--h). */
+.badge {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.68em;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, hsl(var(--h) 75% 55%), hsl(calc(var(--h) + 40) 70% 45%));
+  box-shadow: 0 0 8px hsl(var(--h) 80% 55% / 0.35);
+}
+
+body.vscode-light .badge {
+  background: linear-gradient(135deg, hsl(var(--h) 70% 45%), hsl(calc(var(--h) + 40) 65% 38%));
+}
+
+/* Model picker popover */
+.model-picker {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  z-index: 20;
+  max-height: min(60vh, 460px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: var(--vscode-editorWidget-background, var(--card-strong));
+  border: 1px solid transparent;
+  background:
+    linear-gradient(
+        var(--vscode-editorWidget-background, var(--surface)),
+        var(--vscode-editorWidget-background, var(--surface))
+      )
+      padding-box,
+    linear-gradient(135deg, var(--accent), var(--violet)) border-box;
+  box-shadow:
+    0 12px 32px rgb(0 0 0 / 0.45),
+    0 0 24px color-mix(in srgb, var(--accent) 22%, transparent);
+  overflow: hidden;
+}
+
+.mp-search {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.mp-search input {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font: inherit;
+}
+
+.mp-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.mp-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+}
+
+.mp-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 4px;
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.mp-group .badge {
+  width: 18px;
+  height: 18px;
+  font-size: 0.85em;
+}
+
+.mp-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 34px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+.mp-item.active {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 22%, transparent),
+    color-mix(in srgb, var(--violet) 18%, transparent)
+  );
+}
+
+.mp-item.current .mp-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mp-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-check {
+  color: var(--ok);
+}
+
+.mp-empty {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 14px 12px;
+  color: var(--muted);
+}
+
+.mp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--line);
+  font-size: 0.85em;
+}
+
+.mp-note {
+  color: var(--amber);
+}
+
+/* Model field in settings: a button that opens the picker */
+.field.picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+  padding: 6px 10px;
+}
+
+.field.picker:hover {
+  border-color: var(--accent);
+}
+
+.pk-name {
+  font-family: var(--mono);
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pk-sub {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.caret {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* Provider tiles */
+.tile-box {
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.t-group {
+  margin: 8px 0 4px;
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 6px;
+}
+
+.tile {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  text-align: left;
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card-strong);
+  min-width: 0;
+}
+
+.tile .badge {
+  grid-row: span 2;
+}
+
+.t-label {
+  font-weight: 600;
+  font-size: 0.9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.t-sub {
+  font-family: var(--mono);
+  font-size: 0.72em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile:hover {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+}
+
+.tile.on {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--card-strong), var(--card-strong)) padding-box,
+    linear-gradient(135deg, var(--accent), var(--violet)) border-box;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent);
+}

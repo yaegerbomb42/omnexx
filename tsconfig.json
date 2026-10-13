@@ -24,5 +24,9 @@
     "noEmit": true
   },
   "include": ["src", "test", "vscode/src", "*.ts"],
-  "exclude": ["vscode/src/webview/chat.ts", "vscode/src/webview/settings.ts"]
+  "exclude": [
+    "vscode/src/webview/chat.ts",
+    "vscode/src/webview/settings.ts",
+    "vscode/src/webview/modelPicker.ts"
+  ]
 }
