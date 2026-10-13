@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.0
+
+- **Routing strategies per role**: priority, random, least busy (parallel helpers spread over
+  providers) or smart (most capable first), in `models.routing` or the editor.
+- **Leaner requests**: tool definitions are 22% smaller on every call (short skill and agent
+  lists; `skill` with name "list" shows them in full).
+- **Browser profiles and Camoufox**: `browser.profile` reuses a profile's logins (opt-in),
+  `browser.session_name` keeps the agent's own cookies between runs, and
+  `browser.engine = "camoufox"` drives the anti-detection Firefox through Playwright.
+- **Fewer wasted cycles** (found by the new benchmark): verify-only tasks with nothing to change
+  are done instead of retried until parked; re-reading a file after editing it no longer counts
+  as a loop; one cut-short attempt retries before the ladder climbs.
+- **Benchmark** (`npm run bench`): the jimmy10 suite with hidden checks; `--model` pins one free
+  model, `--context lean|full` compares context modes.
+
 ## 0.8.0
 
 - **Leaner context.** Command output leads with the test outcome and is capped at ~3k tokens

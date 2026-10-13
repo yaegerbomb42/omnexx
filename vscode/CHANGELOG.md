@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- **Drag-and-drop roles**: drag models from your palette onto Chat, Planner, Worker, Quick jobs
+  and Helpers; one model can serve several roles, a role can hold many, each with a routing
+  strategy (Priority, Random, Least busy, Smart).
+- The context bar explains its number: prompt, tools and chat.
+- Fits narrow panels: "Auto" in the mode bar, 2×2 stats, settings that wrap instead of overflowing.
+- Needs omnexx 0.9.0.
+
 ## 0.4.0
 
 - **Context explorer:** see every context file with its token cost, set each section to
