@@ -24,6 +24,8 @@ const FORWARD = new Set([
   'testProvider',
   'roles',
   'setRoles',
+  'contextFiles',
+  'setSectionMode',
 ]);
 const MODEL_LIST_TIMEOUT_MS = 15_000;
 
@@ -39,6 +41,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private view: vscode.WebviewView | undefined;
   private readonly server: ChatProcess;
   private readonly subscriptions: vscode.Disposable[] = [];
+  /** Paths the latest contextFiles listed: the only files the explorer may open. */
+  private contextPaths = new Map<string, boolean>();
   private modelsWaiter: ((items: ModelItem[], unreachable: string[]) => void) | undefined;
 
   constructor(private readonly extensionUri: vscode.Uri) {
@@ -91,6 +95,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       if (approvalDefault()) this.server.send({ type: 'yolo', on: true });
       this.post({ type: 'prefs', autoApproveDefault: approvalDefault() });
     }
+    if (m.type === 'contextFiles' && Array.isArray(m.files)) {
+      this.contextPaths = new Map(
+        (m.files as { path?: unknown; editable?: unknown }[]).flatMap((f) =>
+          typeof f.path === 'string' ? [[f.path, f.editable === true] as [string, boolean]] : [],
+        ),
+      );
+    }
     if (m.type === 'models' && this.modelsWaiter) {
       this.modelsWaiter(
         (m.items as ModelItem[] | undefined) ?? [],
@@ -117,11 +128,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     else if (type === 'open' && typeof m.path === 'string') await openPath(m.path);
     else if (type === 'restart') this.server.restart();
     else if (type === 'setApprovalDefault') await this.setApprovalDefault(m.on === true);
+    else if (type === 'openContextFile' && typeof m.path === 'string')
+      await this.openContext(m.path);
     else if (type === 'editToml')
       await openSettingsFile(join(primaryFolder() ?? homedir(), 'omnexx.toml'), PROJECT_STARTER);
     else if (type === 'editUserConfig') await openSettingsFile(userConfigPath(), USER_STARTER);
     else if (type === 'openExternal' && typeof m.url === 'string' && m.url.startsWith('https://'))
       await vscode.env.openExternal(vscode.Uri.parse(m.url));
+  }
+
+  /** Open a listed context file; an editable one that doesn't exist yet is created first. */
+  private async openContext(path: string): Promise<void> {
+    const editable = this.contextPaths.get(path);
+    if (editable === undefined) return;
+    if (editable) await openSettingsFile(path, '');
+    else {
+      try {
+        await vscode.window.showTextDocument(vscode.Uri.file(path), { preview: true });
+      } catch {
+        void vscode.window.showInformationMessage(
+          'omnexx: this context file appears after the next run cycle.',
+        );
+      }
+    }
   }
 
   private async setApprovalDefault(on: boolean): Promise<void> {
@@ -249,6 +278,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 <header class="top">
   <div class="brand"><img class="logo" src="${logo.toString()}" alt="" width="26" height="26"><span class="word">omnexx</span></div>
   <button id="model" class="chip model" data-action="pickModel" title="Chat model: click to switch or add a provider">Pick a model</button>
+  <button class="icon" data-action="context" title="Context: what the agent sees" aria-label="Context"><svg viewBox="0 0 16 16"><path d="M8 1.8 14 5 8 8.2 2 5zM2 8l6 3.2L14 8M2 11l6 3.2 6-3.2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg></button>
   <button class="icon" data-action="settings" title="Settings" aria-label="Settings"><svg viewBox="0 0 16 16"><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zm6 3.3V7.2l-1.7-.4a4.6 4.6 0 0 0-.5-1.2l.9-1.5-1.1-1.1-1.5.9c-.4-.2-.8-.4-1.2-.5L8.8 1.7H7.2l-.4 1.7c-.4.1-.8.3-1.2.5l-1.5-.9-1.1 1.1.9 1.5c-.2.4-.4.8-.5 1.2L1.7 7.2v1.6l1.7.4c.1.4.3.8.5 1.2l-.9 1.5 1.1 1.1 1.5-.9c.4.2.8.4 1.2.5l.4 1.7h1.6l.4-1.7c.4-.1.8-.3 1.2-.5l1.5.9 1.1-1.1-.9-1.5c.2-.4.4-.8.5-1.2z" fill="none" stroke="currentColor" stroke-width="1.1"/></svg></button>
 </header>
 <section class="stats" aria-label="Session">
@@ -291,6 +321,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 </details>
 <main id="log" class="conversation" aria-live="polite"></main>
 <section id="settings" class="settings" hidden aria-label="Settings"></section>
+<section id="ctxpage" class="settings" hidden aria-label="Context"></section>
 <section id="ask" class="ask" hidden role="alertdialog" aria-labelledby="ask-text">
   <div class="ask-title">Approval needed</div>
   <div id="ask-text"></div>

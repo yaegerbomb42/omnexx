@@ -1,3 +1,4 @@
+import { loadRoleCard } from '../agent/sections.js';
 import { parseDuration } from '../config/duration.js';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -211,8 +212,9 @@ export function contextBreakdown(ctx: {
   system: { text: string }[];
   first: Message;
   tools: unknown[];
+  labels?: string[];
 }): Record<string, number> {
-  const labels = ['system', 'codemap', 'goal', 'notes'];
+  const labels = ctx.labels ?? ['system', 'codemap', 'goal', 'notes'];
   const out: Record<string, number> = { tools: estimateTokens(JSON.stringify(ctx.tools)) };
   ctx.system.forEach((b, i) => {
     out[labels[i] ?? `block${i}`] = estimateTokens(b.text);
@@ -367,6 +369,8 @@ export async function stepAct(run: Run): Promise<void> {
     evidence: task.evidence.slice(-3),
     ...(assembled.text ? { memory: assembled.text } : {}),
     ...(runningText ? { runningContext: runningText } : {}),
+    role: await loadRoleCard(run.store, task, run.state.repoRoot),
+    sections: run.config.context.sections,
     tools: tools.map(toolSpec),
   });
   run.events.emit('cycle.context', {
