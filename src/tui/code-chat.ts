@@ -2,7 +2,12 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildCodemap, renderCodemap } from '../agent/codemap.js';
-import { clearOldToolResults, contextTokens, transcriptFor } from '../agent/compaction.js';
+import {
+  clearOldToolResults,
+  contextTokens,
+  pruneSuperseded,
+  transcriptFor,
+} from '../agent/compaction.js';
 import { runAgentLoop } from '../agent/loop.js';
 import type { CliIO } from '../cli/io.js';
 import { resolveRunDeps } from '../cli/run-deps.js';
@@ -532,7 +537,7 @@ export class CodeChat {
     const limit = this.config.context.compact_at;
     if (!force && contextTokens(this.history) < this.config.context.clear_tool_results_at) return;
     this.history = clearOldToolResults(
-      this.history,
+      pruneSuperseded(this.history).messages,
       this.config.context.keep_tool_results,
     ).messages;
     if (!force && contextTokens(this.history) < limit) return;
