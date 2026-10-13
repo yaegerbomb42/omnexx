@@ -8,7 +8,7 @@ import {
   resolveModel,
   worstCaseUsd,
 } from '../../../src/providers/pricing.js';
-import { StopRequested, withRetry } from '../../../src/providers/retry.js';
+import { ProvidersUnavailable, StopRequested, withRetry } from '../../../src/providers/retry.js';
 import type { CompletionRequest } from '../../../src/providers/types.js';
 import { FakeClock } from '../../support/clock.js';
 import { json, mockServer } from '../../support/mock-http.js';
@@ -51,6 +51,19 @@ describe('pricing', () => {
 
 describe('withRetry', () => {
   const retryable = () => new ProviderError('529 overloaded', { retryable: true, status: 529 });
+
+  it('gives up after giveUpAfterMs with no working provider, naming the last error', async () => {
+    const clock = new FakeClock();
+    const err = await withRetry(() => Promise.reject(retryable()), {
+      clock,
+      giveUpAfterMs: 6 * 3_600_000,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProvidersUnavailable);
+    expect((err as ProvidersUnavailable).waitedMs).toBeGreaterThanOrEqual(6 * 3_600_000);
+    expect((err as ProvidersUnavailable).lastError).toMatch(/529/);
+    // It waited out the whole window before giving up, not one attempt.
+    expect(clock.sleeps.length).toBeGreaterThan(10);
+  });
 
   it('backs off exponentially, capped at 30 min, reports outage once and recovery', async () => {
     const clock = new FakeClock();

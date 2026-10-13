@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { rankingLayer, readPoolMode, readRanking } from './ranking.js';
+import { readRoles, rolesLayer } from './roles.js';
 import { parse as parseToml, TomlError } from 'smol-toml';
 import type { z } from 'zod';
 import { ConfigError } from '../errors.js';
@@ -174,6 +175,9 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<LoadedConfig>
     ? undefined
     : await readTomlLayer(join(opts.cwd, PROJECT_CONFIG));
   if (project) layers.push(project);
+  // Roles chosen in the editor: above the /models pool, below a project's omnexx.toml and flags.
+  const roles = rolesLayer(await readRoles(paths));
+  if (roles) layers.push({ source: 'your model roles (roles.json)', data: roles });
   // /models ranking: above your config.toml, below a project's omnexx.toml and flags.
   const poolMode = await readPoolMode(paths);
   const ranked = rankingLayer(await readRanking(paths), poolMode);

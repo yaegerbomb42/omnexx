@@ -4,6 +4,7 @@
  * (`settings`, `models`) through the extension; keys arrive masked and are sent once, on save.
  */
 import * as modelPicker from './modelPicker.js';
+import * as roles from './roles.js';
 import { badge } from './modelPicker.js';
 import { escapeHtml } from './render.js';
 
@@ -105,6 +106,7 @@ function draw(): void {
   page.innerHTML = `
 <div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
 <section class="set-section"><h3>Chat model</h3>${modelFieldHtml()}</section>
+<section class="set-section"><h3>Who does what</h3><div id="roles-box">${roles.html()}</div></section>
 <section class="set-section"><h3>Providers</h3>${connectedHtml()}</section>
 <section class="set-section add"><h3>Add a provider</h3>
   <input id="tile-search" class="field" type="search" placeholder="Search 30+ providers…" aria-label="Search providers" value="${escapeHtml(tileQuery)}" spellcheck="false">
@@ -217,6 +219,7 @@ export function open(post: Post): void {
   draw();
   post({ type: 'settings' });
   post({ type: 'models' });
+  roles.request(post);
 }
 
 export function close(): void {
@@ -226,6 +229,7 @@ export function close(): void {
 
 /** Messages from the extension that belong to the settings page; true when handled. */
 export function onMessage(m: { type: string } & Record<string, unknown>): boolean {
+  if (roles.onMessage(m)) return true;
   if (m.type === 'providerTest') {
     const name = typeof m.name === 'string' ? m.name : '';
     tests = {
@@ -242,7 +246,9 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
     if (saving) {
       saving = false;
       formTouched = false;
-      status = { text: 'Connected. Pick a model above.', kind: 'ok' };
+      status = { text: 'Connected. Checking it now; then pick a model above.', kind: 'ok' };
+      // Prove the new provider works: test every provider again, the new one included.
+      if (postRef) testAll(postRef);
     }
   } else if (m.type === 'models') {
     current = typeof m.current === 'string' ? m.current : current;
@@ -281,7 +287,11 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
 
 /** Track the model in use while the page is closed, so it opens on the right one. */
 export function setCurrentModel(model: string | null): void {
+  if (model === current) return;
   current = model;
+  // Keep the field in step with the model actually in use while the page is open.
+  const field = document.getElementById('set-model-btn');
+  if (field && isOpen()) field.outerHTML = modelFieldHtml();
 }
 
 export function wire(post: Post): void {
@@ -290,6 +300,7 @@ export function wire(post: Post): void {
   page.addEventListener('click', (e) => {
     const t = e.target instanceof Element ? e.target : null;
     if (!t) return;
+    if (roles.click(t, post)) return;
     const tileName = t.closest<HTMLElement>('[data-provider]')?.dataset.provider;
     if (tileName) {
       chosen = tileName;
@@ -339,6 +350,9 @@ export function wire(post: Post): void {
         draw();
       } else if (ext) post({ type: ext });
     }
+  });
+  page.addEventListener('change', (e) => {
+    if (e.target instanceof Element) roles.change(e.target);
   });
   page.addEventListener('input', (e) => {
     if (e.target instanceof HTMLInputElement && e.target.id === 'tile-search') {

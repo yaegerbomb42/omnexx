@@ -1840,3 +1840,233 @@ body.vscode-light .badge {
 #b-img {
   max-height: 140px;
 }
+
+/* Contrast pass: the live log and the settings page read clearly in every theme. */
+:root {
+  --text-strong: color-mix(in srgb, var(--fg) 92%, #fff);
+  --text-soft: color-mix(in srgb, var(--fg) 78%, var(--surface));
+  --log-bg: color-mix(in srgb, #000 38%, var(--surface));
+  --log-fg: #e4e8f7;
+  --log-ts: #9aa3c7;
+  --log-agent: #4ade80;
+  --log-think: #c4b5fd;
+  --log-system: #fbbf24;
+  --log-error: #f87171;
+}
+
+body.vscode-light {
+  --text-strong: #111827;
+  --text-soft: #374151;
+  --log-bg: #f3f5fb;
+  --log-fg: #111827;
+  --log-ts: #4b5563;
+  --log-agent: #15803d;
+  --log-think: #6d28d9;
+  --log-system: #b45309;
+  --log-error: #b91c1c;
+}
+
+.live-log,
+body.vscode-light .live-log {
+  background: var(--log-bg);
+  color: var(--log-fg);
+}
+
+.line .ts {
+  color: var(--log-ts);
+}
+
+.line.agent .role {
+  color: var(--log-agent);
+  font-weight: 600;
+}
+
+.line.think,
+.line.think .role {
+  color: var(--log-think);
+}
+
+.line.system .role {
+  color: var(--log-system);
+  font-weight: 600;
+}
+
+.line.error,
+.line.error .role {
+  color: var(--log-error);
+}
+
+.line.empty {
+  color: var(--log-ts);
+}
+
+.settings,
+.set-section {
+  color: var(--text-strong);
+}
+
+.set-section label,
+.hint,
+.p-url,
+.t-sub,
+.pk-sub,
+.t-group,
+.mp-group {
+  color: var(--text-soft);
+}
+
+.set-section {
+  background:
+    linear-gradient(var(--card-strong), var(--card-strong)) padding-box,
+    linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--accent) 70%, transparent),
+        color-mix(in srgb, var(--violet) 70%, transparent)
+      )
+      border-box;
+}
+
+.provider,
+.ptile {
+  background: color-mix(in srgb, var(--fg) 9%, var(--surface));
+}
+
+.pill {
+  color: var(--text-soft);
+  border-color: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+
+.pill.ok {
+  color: var(--log-agent);
+  border-color: color-mix(in srgb, var(--log-agent) 70%, transparent);
+}
+
+.pill.warn {
+  color: var(--log-system);
+  border-color: color-mix(in srgb, var(--log-system) 70%, transparent);
+}
+
+.pill.local {
+  color: var(--log-think);
+  border-color: color-mix(in srgb, var(--log-think) 70%, transparent);
+}
+
+.ghost {
+  color: var(--text-strong);
+  border-color: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+
+/* Who does what: model chips per role */
+.roles {
+  display: grid;
+  gap: 10px;
+}
+
+.role-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.role-name {
+  font-weight: 700;
+}
+
+.role-what {
+  font-size: 0.82em;
+  color: var(--text-soft);
+}
+
+.role-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.rchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px 4px 2px 3px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--fg) 30%, transparent);
+  background: color-mix(in srgb, var(--fg) 9%, var(--surface));
+  font-family: var(--mono);
+  font-size: 0.8em;
+}
+
+.rchip .badge {
+  width: 18px;
+  height: 18px;
+  font-size: 0.75em;
+  border-radius: 50%;
+}
+
+.rc-n {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.rc-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.rchip.out {
+  border-color: color-mix(in srgb, var(--log-system) 70%, transparent);
+}
+
+.rc-q {
+  font-size: 0.9em;
+}
+
+.rc-x {
+  border: 0;
+  background: none;
+  padding: 0 3px;
+  color: var(--text-soft);
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+.rc-x:hover {
+  color: var(--log-error);
+}
+
+.rc-empty {
+  font-size: 0.82em;
+  color: var(--text-soft);
+  font-style: italic;
+  align-self: center;
+}
+
+.rc-add {
+  border: 1px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+  background: none;
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 1px 10px;
+  font-size: 0.82em;
+}
+
+.rc-add:hover {
+  background: var(--accent-soft);
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.85em;
+  color: var(--text-strong);
+}
+
+.switch input {
+  accent-color: var(--accent);
+}

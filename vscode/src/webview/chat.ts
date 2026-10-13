@@ -45,7 +45,7 @@ interface State {
 
 type Incoming =
   | ({ type: 'state' } & State)
-  | ({ type: 'settings' | 'models' | 'prefs' | 'providerTest' } & Record<string, unknown>)
+  | ({ type: 'settings' | 'models' | 'prefs' | 'providerTest' | 'roles' } & Record<string, unknown>)
   | ({ type: 'browserFrame' } & crew.BrowserFrameMsg)
   | { type: 'ready'; version: string }
   | { type: 'error'; message: string }
@@ -105,8 +105,13 @@ const ICON = {
   dot: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
 };
 
+/** 12-hour clock for the live log, e.g. "3:04:05 PM". */
 function clock(at: number): string {
-  return new Date(at).toTimeString().slice(0, 8);
+  return new Date(at).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 }
 
 /** Messages stay in the conversation; everything else goes to the live log. */

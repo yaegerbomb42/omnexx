@@ -439,6 +439,17 @@ class Supervisor {
     if (c === 'stop' || c === 'stop-now')
       return { status: 'user-stop', reason: 'stopped by request' };
 
+    if (r.state.providersUnavailable) {
+      const wait = r.config.budget.max_provider_wait;
+      r.events.emit('budget.stop', {
+        kind: 'providers_unavailable',
+        detail: r.state.providersUnavailable,
+      });
+      return {
+        status: 'budget-stop',
+        reason: `no model could take a call for ${wait} (quotas used up, keys rejected or providers down): ${r.state.providersUnavailable.slice(0, 300)}. Add a provider or wait for quotas to reset, then \`omnexx resume\`.`,
+      };
+    }
     if (r.state.budgetExhausted) {
       r.events.emit('budget.stop', {
         kind: 'max_usd',
@@ -891,6 +902,7 @@ export async function supervise(
   run.state.status = 'running';
   run.state.statusReason = undefined;
   run.state.budgetExhausted = false;
+  run.state.providersUnavailable = undefined;
   await run.save();
 
   let sandbox: DockerSandbox | undefined;

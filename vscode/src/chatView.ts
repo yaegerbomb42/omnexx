@@ -22,6 +22,8 @@ const FORWARD = new Set([
   'addProvider',
   'removeProvider',
   'testProvider',
+  'roles',
+  'setRoles',
 ]);
 const MODEL_LIST_TIMEOUT_MS = 15_000;
 

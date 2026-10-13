@@ -49,6 +49,11 @@ export const budgetSchema = z.strictObject({
   max_turns_per_cycle: z.number().int().positive().default(40),
   max_tokens_per_cycle: z.number().int().positive().default(400_000),
   max_cmd_timeout: durationString.default('30m'),
+  /**
+   * How long a run waits when no model in the chain can take a call (every quota used up, keys
+   * rejected, or every provider down) before it stops with budget-stop instead of waiting on.
+   */
+  max_provider_wait: durationString.default('6h'),
   warn_at: z.number().gt(0).lt(1).default(0.8),
   /** In the last fraction of budget or time, start no new task: finish, verify lastGreen, report, stop. */
   wrapup_reserve: z.number().min(0).lt(1).default(0.08),
@@ -81,6 +86,10 @@ export const modelsSchema = z.strictObject({
   cheap: modelChain.default('anthropic:haiku'),
   /** Chat mode's model; the worker chain when unset. `/model` overrides it for a session. */
   chat: modelRef.optional(),
+  /** Models for helpers (subagents); the router's pick when unset. */
+  helpers: modelChain.optional(),
+  /** Helpers running at the same time start on different providers of the helpers chain. */
+  spread_helpers: z.boolean().default(true),
   /** Extra models the router may pick that aren't in any role chain. */
   extra: z.array(modelRef).default([]),
   /** Keyed by model ref, e.g. [models.profiles."groq:llama-4-70b"]. */

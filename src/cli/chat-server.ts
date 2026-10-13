@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { resolvePaths } from '../core/paths.js';
 import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { describeError } from '../errors.js';
@@ -14,7 +16,8 @@ import { println, type CliIO } from './io.js';
  * In (one JSON object per line): send {text} · answer {yes} · stop · pause · resume · mode {mode} ·
  * yolo {on} ·
  * model {ref} · models · connect {value, name?} · undo · clear · compact · sync (resend all) ·
- * settings · addProvider {provider?, key?, url?} · removeProvider {name} · testProvider {name}.
+ * settings · addProvider {provider?, key?, url?} · removeProvider {name} · testProvider {name} ·
+ * roles · setRoles {roles}.
  * Out: ready {version} · state (below; `entries` holds only lines not sent before) · models
  * {items, unreachable, current} · settings {catalog, connected} · providerTest {name, ok, models,
  * detail} · error {message}.
@@ -176,6 +179,17 @@ export async function serveChat(
     const { providerSettings } = await import('./chat-settings.js');
     write({ type: 'settings', ...(await providerSettings(io)) });
   };
+  /** Roles as saved, plus which models are out of quota right now (ref → when it ran out). */
+  const sendRoles = async (): Promise<void> => {
+    const { readRoles } = await import('../config/roles.js');
+    const { QuotaLedger } = await import('../providers/quota-ledger.js');
+    const paths = resolvePaths(io.env);
+    write({
+      type: 'roles',
+      roles: await readRoles(paths),
+      exhausted: new QuotaLedger(join(paths.configHome, 'quota.json')).all(),
+    });
+  };
   /** After a provider change: say what happened, then refresh the settings page and models. */
   const providersChanged = async (message: string): Promise<void> => {
     session.push('system', message);
@@ -227,8 +241,9 @@ export async function serveChat(
         return;
       }
       case 'yolo':
-        // /yolo toggles; only send it when the state differs from what was asked.
-        if ((c.on === true) !== session.autoApprove) run(session.submit('/yolo'));
+        // /yolo toggles; only run it when the state differs from what was asked, and without
+        // echoing it as a message.
+        if ((c.on === true) !== session.autoApprove) run(session.command('yolo'));
         return;
       case 'model':
         run(session.switchModel(text(c, 'ref')));
@@ -261,6 +276,18 @@ export async function serveChat(
         run(
           import('./chat-settings.js').then(async ({ testProvider }) => {
             write({ type: 'providerTest', ...(await testProvider(io, text(c, 'name'))) });
+          }),
+        );
+        return;
+      case 'roles':
+        run(sendRoles());
+        return;
+      case 'setRoles':
+        run(
+          import('../config/roles.js').then(async ({ parseRoles, writeRoles }) => {
+            await writeRoles(resolvePaths(io.env), parseRoles(c.roles));
+            session.push('system', 'model roles saved; new chats and runs use them');
+            await sendRoles();
           }),
         );
         return;

@@ -47,7 +47,7 @@ export async function resolveRunDeps(
   const paths = resolvePaths(io.env);
   // Only the providers some role's chain actually uses need a key.
   const used = new Set(
-    [config.models.planner, config.models.worker, config.models.cheap]
+    [config.models.planner, config.models.worker, config.models.cheap, config.models.helpers ?? []]
       .flatMap((c) => (typeof c === 'string' ? [c] : c))
       .map((ref) => ref.slice(0, ref.indexOf(':'))),
   );
