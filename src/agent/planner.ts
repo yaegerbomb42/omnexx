@@ -65,6 +65,27 @@ export const BEYOND_RUBRIC = [
   'refactors that remove real duplication or risk, with tests green before and after',
 ];
 
+/** The user's planning effort for this run ([plan] helpers and milestones), as instructions. */
+function effortNote(run: Run, mode: PlannerMode): string {
+  if (mode.kind !== 'initial') return '';
+  const { helpers, milestones } = run.config.plan;
+  const notes = [
+    ...(milestones === undefined
+      ? []
+      : [
+          `Use at most ${milestones === 1 ? 'one milestone' : `${String(milestones)} milestones`}.`,
+        ]),
+    ...(helpers === undefined
+      ? []
+      : [
+          helpers === 0
+            ? 'Explore on your own; helpers are off for this run.'
+            : `You may run up to ${String(helpers)} helpers at once (the task tool) to explore parts of the repository in parallel.`,
+        ]),
+  ];
+  return notes.length ? `\n\nPlanning effort set by the user: ${notes.join(' ')}` : '';
+}
+
 function instruction(mode: PlannerMode, plan: Plan | undefined, baseline = ''): string {
   if (mode.kind === 'initial')
     return (
@@ -269,6 +290,11 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     normalize: (input) => normalizePlanUpdate(input, run.plan),
     readOnly: true,
     async run(input) {
+      const cap = run.config.plan.milestones;
+      if (mode.kind === 'initial' && cap !== undefined && input.milestones.length > cap)
+        return fail(
+          `plan rejected: ${String(input.milestones.length)} milestones, but this run allows at most ${String(cap)}. Merge milestones until there are ${String(cap)} or fewer.`,
+        );
       const broken = brokenChecks(input, run.config.review.strict_checks);
       if (broken.length)
         return fail(`plan rejected: checks that cannot pass:\n${broken.join('\n')}`);
@@ -302,9 +328,10 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       }
     },
   };
+  const helpers = run.config.plan.helpers ?? run.config.context.subagent_parallel;
   const tools = [
     ...(await readOnlyTools(run.config, { repoRoot: run.worktree, env: run.deps.env })).filter(
-      (t) => !PLANNER_DENIED.has(t.name),
+      (t) => !PLANNER_DENIED.has(t.name) && (helpers > 0 || t.name !== 'task'),
     ),
     writePlan as Tool,
   ];
@@ -356,7 +383,9 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       ],
       first: {
         role: 'user',
-        content: [{ type: 'text', text: instruction(mode, run.plan, baseline) }],
+        content: [
+          { type: 'text', text: instruction(mode, run.plan, baseline) + effortNote(run, mode) },
+        ],
       },
       tools: tools.map(toolSpec),
     },
@@ -394,7 +423,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       },
       control: () => run.control(),
       signal: run.abort.signal,
-      parallelTasks: run.config.context.subagent_parallel,
+      parallelTasks: Math.max(1, helpers),
       // Planners explore like workers when left alone: on a large repo glm-5.3 read for 46
       // turns and hit the token cap three times without a plan. Ask for the plan on a deadline.
       pendingInput: () => {

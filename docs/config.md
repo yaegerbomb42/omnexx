@@ -191,6 +191,18 @@ Pushes carry only the run id, repo name, status, a task title, counts and dollar
 
 An in-cycle signal ends the cycle as `stuck` (events `stuck.in_cycle`, then `stuck.signal`). Its partial work still goes through VERIFY, so it's committed if the gates pass and rolled back otherwise; the next attempt gets the reason as evidence, and the strategy ladder climbs one rung.
 
+## `[plan]`: how much planning a run gets
+
+| Key                   | Default  | Meaning                                                                                                                                         |
+| --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mode`                | `"auto"` | `auto`: short goals try the fast path first, long ones plan. `fast`: always try one pass first. `full`: always plan milestones and tasks first. |
+| `fast_attempts`       | `2`      | Fast-path cycles on the whole goal before the planner takes over from the code as it is                                                         |
+| `fast_max_goal_chars` | `2500`   | In `auto`, goals longer than this plan first                                                                                                    |
+| `helpers`             | unset    | Helpers the planner runs at once while exploring (0 = none). Unset uses `context.subagent_parallel`                                             |
+| `milestones`          | unset    | At most this many milestones in the first plan (the planner is told, and a bigger plan is rejected). Setting it makes `auto` plan first         |
+
+The fast path is one worker cycle with the whole goal as its task, done when every gate passes, reviewed and audited like any other cycle; it must change code to count. On the jimmy10 bench, planning first cost 3-5x a single pass on small goals. Flags: `omnexx run --plan fast|auto|full --plan-helpers N --plan-milestones N`. Autonomous runs (`--for`) always plan.
+
 ## `[context]`
 
 | Key                     | Default                                                                   |

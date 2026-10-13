@@ -35,3 +35,22 @@ describe('autonomousFocus', () => {
     expect(autonomousFocus(extra, BEYOND_RUBRIC.length + 2)).toBe('docs');
   });
 });
+
+describe('planning flags', () => {
+  it('maps --plan, --plan-helpers and --plan-milestones onto [plan]', () => {
+    expect(flagsToConfig({ plan: 'full', planHelpers: '0', planMilestones: '6' })).toMatchObject({
+      plan: { mode: 'full', helpers: 0, milestones: 6 },
+    });
+    expect(flagsToConfig({})).not.toHaveProperty('plan');
+  });
+
+  it.each([
+    [{ plan: 'deep' }, /--plan is one of auto, fast, full/],
+    [{ planHelpers: '9' }, /--plan-helpers expects a whole number from 0 to 8/],
+    [{ planMilestones: '0' }, /--plan-milestones expects a whole number from 1 to 30/],
+    [{ planMilestones: '2.5' }, /--plan-milestones/],
+  ])('rejects %j', (flags, message) => {
+    expect(() => flagsToConfig(flags)).toThrow(UsageError);
+    expect(() => flagsToConfig(flags)).toThrow(message);
+  });
+});

@@ -11,6 +11,8 @@ import { git } from '../git/git.js';
 import { readTextOr } from './atomic.js';
 import { auditResult, blocking, clipDiff, renderFindings } from '../verify/review.js';
 import { join } from 'node:path';
+import { rm } from 'node:fs/promises';
+import { FAST_TASK, fastPathSpent, fastPlan, tryFastPath } from './fast-path.js';
 import { EXIT } from '../cli/exit-codes.js';
 import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
@@ -578,8 +580,30 @@ class Supervisor {
     await this.setup();
     await initCodemap(r);
     if (!r.state.baseline) await runBaseline(r);
-    await runPlanner(r, { kind: 'initial' });
+    const goal = (await r.store.readGoal()).text;
+    if (r.state.fastPath === undefined && tryFastPath(r.config, goal)) {
+      r.plan = fastPlan(r.config, goal);
+      await r.savePlan();
+      r.state.fastPath = 'tried';
+      await r.save();
+      r.events.emit('plan.written', { mode: 'fast', nodes: r.plan.nodes.length, turns: 0, usd: 0 });
+    } else {
+      await runPlanner(r, { kind: 'initial' });
+    }
     await r.setPhase('select');
+  }
+
+  /** The fast path had its tries: drop its one-task plan so the planner plans from here. */
+  private async fastPathFallback(): Promise<boolean> {
+    const r = this.run;
+    if (r.state.fastPath !== 'tried' || !r.plan) return false;
+    if (!fastPathSpent(r.plan, r.config.plan.fast_attempts)) return false;
+    r.state.fastPath = 'failed';
+    r.events.emit('fast_path.fallback', { attempts: getNode(r.plan, FAST_TASK).attempts });
+    r.plan = undefined;
+    await rm(r.store.file('plan.json'), { force: true });
+    await r.save();
+    return true;
   }
 
   /**
@@ -862,6 +886,7 @@ class Supervisor {
           await this.plan();
           continue;
         }
+        if (await this.fastPathFallback()) continue;
         const picked = await this.select();
         if (typeof picked !== 'string') return picked;
         await this.cycle(picked);

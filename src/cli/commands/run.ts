@@ -32,6 +32,10 @@ export interface RunFlags {
   modelWorker?: string;
   push?: string;
   from?: string;
+  /** auto | fast | full */
+  plan?: string;
+  planHelpers?: string;
+  planMilestones?: string;
 }
 
 export function flagsToConfig(f: RunFlags): ConfigInput {
@@ -64,7 +68,31 @@ export function flagsToConfig(f: RunFlags): ConfigInput {
         }
       : {}),
     ...(f.push ? { git: { push: f.push as 'none' } } : {}),
+    ...planFlags(f),
   };
+}
+
+const PLAN_MODES = ['auto', 'fast', 'full'] as const;
+
+/** `--plan`, `--plan-helpers`, `--plan-milestones` as a [plan] layer. */
+function planFlags(f: RunFlags): ConfigInput {
+  const int = (v: string | undefined, name: string, min: number, max: number) => {
+    if (v === undefined) return undefined;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < min || n > max)
+      throw new UsageError(`--${name} expects a whole number from ${min} to ${max}, got "${v}"`);
+    return n;
+  };
+  if (f.plan !== undefined && !(PLAN_MODES as readonly string[]).includes(f.plan))
+    throw new UsageError(`--plan is one of ${PLAN_MODES.join(', ')}, got "${f.plan}"`);
+  const plan = {
+    ...(f.plan ? { mode: f.plan as (typeof PLAN_MODES)[number] } : {}),
+    ...(f.planHelpers === undefined ? {} : { helpers: int(f.planHelpers, 'plan-helpers', 0, 8) }),
+    ...(f.planMilestones === undefined
+      ? {}
+      : { milestones: int(f.planMilestones, 'plan-milestones', 1, 30) }),
+  };
+  return Object.keys(plan).length ? { plan } : {};
 }
 
 const AUTONOMOUS_MAX_CYCLES = 100_000;

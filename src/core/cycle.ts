@@ -1,3 +1,4 @@
+import { FAST_TASK } from './fast-path.js';
 import { loadRoleCard } from '../agent/sections.js';
 import { parseDuration } from '../config/duration.js';
 import { join } from 'node:path';
@@ -554,9 +555,12 @@ export async function stepVerify(run: Run): Promise<void> {
     !task.checks.length &&
     (verifyOnly(task) || task.lastRejection === 'no changes');
   if (nothingToChange) run.events.emit('task.nothing_to_change', { task: task.id });
+  // The fast path's checks are the gates, which usually pass before any work: it must change code.
+  const mustChange = task.id === FAST_TASK && run.state.fastPath === 'tried';
   if (!changes.length) {
     if (budgetCut) reasons.push(INTERRUPTED_BY_BUDGET);
-    else if (!(task.checks.length && checksPass) && !nothingToChange) reasons.push('no changes');
+    else if ((mustChange || !(task.checks.length && checksPass)) && !nothingToChange)
+      reasons.push('no changes');
   } else if (!reasons.length) {
     const { results, flaky } = await runGatesWithFlakyCheck(
       run.config.gates,

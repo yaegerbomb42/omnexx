@@ -129,6 +129,12 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .option('--budget <usd>', 'run-level spend cap in USD')
     .option('--hours <n>', 'wall-clock cap in hours')
     .option(
+      '--plan <mode>',
+      'auto (short goals try one pass first) | fast (always) | full (plan milestones first)',
+    )
+    .option('--plan-helpers <n>', 'helpers the planner runs at once while exploring (0-8)')
+    .option('--plan-milestones <n>', 'at most this many milestones in the first plan')
+    .option(
       '--for <duration>',
       'autonomous mode: keep improving the repo for this long (e.g. 45m, 8h, 2d)',
     )
