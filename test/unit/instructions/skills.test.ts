@@ -139,8 +139,10 @@ describe('skills from Claude Code and extra folders', () => {
       description: 'd'.repeat(100),
     }));
     const catalog = skillCatalog(many);
-    expect(catalog.length).toBeLessThan(6_200);
-    expect(catalog).toMatch(/more \(call with a name to load one\)$/);
+    // It rides along with every request: a short gist per skill, a small total budget.
+    expect(catalog.length).toBeLessThan(1_700);
+    expect(catalog).toMatch(/more \(call with name "list" to see them all\)$/);
+    expect(catalog.split('\n')[0]?.length).toBeLessThan(90);
     expect(skillCatalog([{ name: 'a', description: 'one\nline' }])).toBe('- a: one line');
   });
 });

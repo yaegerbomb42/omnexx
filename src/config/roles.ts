@@ -1,3 +1,4 @@
+import { STRATEGIES, type Strategy } from './routing.js';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { OmnexxPaths } from '../core/paths.js';
@@ -5,14 +6,16 @@ import type { OmnexxPaths } from '../core/paths.js';
 /**
  * Which models power which role, chosen in the editor's settings and kept next to the /models
  * pool (`roles.json`). A role left empty falls back to the pool and config.toml as before.
- * `helpers` powers subagents; with `spreadHelpers`, helpers running at the same time start on
- * different providers, so several providers' quotas are used at once.
+ * `helpers` powers subagents. Each role also has a routing strategy (see routing.ts): least-busy
+ * helpers spread over providers, so several providers' quotas are used at once.
  */
 export const ROLE_NAMES = ['chat', 'planner', 'worker', 'cheap', 'helpers'] as const;
 export type Role = (typeof ROLE_NAMES)[number];
 
 export interface Roles {
   models: Partial<Record<Role, string[]>>;
+  /** How each role routes between its models; unset roles use the default. */
+  strategies: Partial<Record<Role, Strategy>>;
   spreadHelpers: boolean;
 }
 
@@ -39,14 +42,24 @@ export function parseRoles(raw: unknown): Roles {
     const list = cleanList(modelsIn[role]);
     if (list.length) models[role] = list;
   }
-  return { models, spreadHelpers: obj.spreadHelpers !== false };
+  const strategiesIn =
+    typeof obj.strategies === 'object' && obj.strategies !== null
+      ? (obj.strategies as Record<string, unknown>)
+      : {};
+  const strategies: Partial<Record<Role, Strategy>> = {};
+  for (const role of ROLE_NAMES) {
+    const s = strategiesIn[role];
+    if (typeof s === 'string' && (STRATEGIES as readonly string[]).includes(s))
+      strategies[role] = s as Strategy;
+  }
+  return { models, strategies, spreadHelpers: obj.spreadHelpers !== false };
 }
 
 export async function readRoles(p: OmnexxPaths): Promise<Roles> {
   try {
     return parseRoles(JSON.parse(await readFile(rolesFile(p), 'utf8')));
   } catch {
-    return { models: {}, spreadHelpers: true };
+    return { models: {}, strategies: {}, spreadHelpers: true };
   }
 }
 
@@ -68,20 +81,6 @@ export function rolesLayer(r: Roles): Record<string, unknown> | undefined {
   if (cheap?.length) models.cheap = cheap;
   if (helpers?.length) models.helpers = helpers;
   if (!r.spreadHelpers) models.spread_helpers = false;
+  if (Object.keys(r.strategies).length) models.routing = r.strategies;
   return Object.keys(models).length ? { models } : undefined;
-}
-
-/**
- * The chain for the nth helper started: with several providers in the chain, helper n starts on
- * the (n mod providers)th provider and falls back through the rest in order, so parallel helpers
- * spread over providers instead of all hitting the first.
- */
-export function spreadAcrossProviders<T extends { provider: string }>(
-  chain: readonly T[],
-  n: number,
-): T[] {
-  const providers = [...new Set(chain.map((m) => m.provider))];
-  if (providers.length < 2) return [...chain];
-  const lead = providers[n % providers.length];
-  return [...chain.filter((m) => m.provider === lead), ...chain.filter((m) => m.provider !== lead)];
 }

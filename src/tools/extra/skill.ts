@@ -5,20 +5,38 @@ import { fail, ok, type Tool } from '../types.js';
 import type { ToolSource } from './types.js';
 
 const schema = z.strictObject({
-  name: z.string().min(1).describe('Skill name, as listed in this tool’s description'),
+  name: z
+    .string()
+    .min(1)
+    .describe('Skill name, as listed in this tool’s description; "list" shows every skill in full'),
 });
 
-/** The list of skills in the tool description stays well under this. */
-const LIST_MAX_CHARS = 6_000;
+/**
+ * The skill list rides along with every request, so it stays short: a name and the start of its
+ * description each, within this budget. `name: "list"` returns the full descriptions on demand.
+ */
+const LIST_MAX_CHARS = 1_500;
+const GIST_CHARS = 70;
+
+/** The start of a description, cut at a word boundary. */
+export function gist(text: string, max = GIST_CHARS): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  if (flat.length <= max) return flat;
+  const cut = flat.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[,.;:]$/, '')}…`;
+}
 
 /** One line per skill for the tool description, cut to a budget so the prefix stays small. */
 export function skillCatalog(skills: readonly { name: string; description: string }[]): string {
   const lines: string[] = [];
   let size = 0;
   for (const s of skills) {
-    const line = `- ${s.name}: ${s.description.replace(/\s+/g, ' ').slice(0, 200)}`;
+    const line = `- ${s.name}: ${gist(s.description)}`;
     if (size + line.length > LIST_MAX_CHARS) {
-      lines.push(`- … ${skills.length - lines.length} more (call with a name to load one)`);
+      lines.push(
+        `- … ${skills.length - lines.length} more (call with name "list" to see them all)`,
+      );
       break;
     }
     lines.push(line);
@@ -42,6 +60,14 @@ export function skillTool(config: Pick<OmnexxConfig, 'skills'>, catalog = ''): T
     readOnly: true,
     async run(input, ctx) {
       const roots = rootsFor(ctx.jail.root, ctx.env);
+      if (input.name === 'list') {
+        const all = await listSkills(roots);
+        return ok(
+          all.length
+            ? all.map((s) => `- ${s.name}: ${s.description.replace(/\s+/g, ' ').trim()}`).join('\n')
+            : 'no skills found (see omnexx skills list)',
+        );
+      }
       const skill = await loadSkill(input.name, roots);
       if (skill) return ok(skill.body);
       const available = await listSkills(roots);

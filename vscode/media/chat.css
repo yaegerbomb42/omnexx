@@ -270,7 +270,7 @@ body.vscode-high-contrast-light .word {
   background: var(--warn);
 }
 
-@media (max-width: 260px) {
+@media (max-width: 360px) {
   .stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1956,33 +1956,78 @@ body.vscode-light .live-log {
   border-color: color-mix(in srgb, var(--fg) 35%, transparent);
 }
 
-/* Who does what: model chips per role */
+/* Who does what: drag models from the palette onto roles */
+.palette {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.pal-group {
+  display: grid;
+  gap: 3px;
+}
+
+.pal-name {
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-soft);
+}
+
+.pal-chips,
+.role-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
 .roles {
   display: grid;
-  gap: 10px;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.role {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--fg) 22%, transparent);
+  background: color-mix(in srgb, var(--fg) 7%, var(--surface));
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.role.drop-over {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 14px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .role-head {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  flex-wrap: wrap;
+  margin-bottom: 5px;
 }
 
 .role-name {
   font-weight: 700;
+  color: var(--text-strong);
 }
 
 .role-what {
-  font-size: 0.82em;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8em;
   color: var(--text-soft);
-}
-
-.role-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rchip {
@@ -1990,18 +2035,34 @@ body.vscode-light .live-log {
   align-items: center;
   gap: 5px;
   max-width: 100%;
-  padding: 2px 4px 2px 3px;
+  padding: 2px 6px 2px 3px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--fg) 30%, transparent);
-  background: color-mix(in srgb, var(--fg) 9%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--fg) 28%, transparent);
+  background: color-mix(in srgb, var(--fg) 11%, var(--surface));
   font-family: var(--mono);
   font-size: 0.8em;
+  color: var(--text-strong);
+  cursor: grab;
+  user-select: none;
+}
+
+.rchip:hover {
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.rchip.pal {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.rchip.dragging {
+  opacity: 0.45;
+  cursor: grabbing;
 }
 
 .rchip .badge {
   width: 18px;
   height: 18px;
-  font-size: 0.75em;
+  font-size: 0.72em;
   border-radius: 50%;
 }
 
@@ -2014,24 +2075,21 @@ body.vscode-light .live-log {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 160px;
+  max-width: 150px;
 }
 
 .rchip.out {
-  border-color: color-mix(in srgb, var(--log-system) 70%, transparent);
-}
-
-.rc-q {
-  font-size: 0.9em;
+  border-color: color-mix(in srgb, var(--log-system) 75%, transparent);
 }
 
 .rc-x {
   border: 0;
   background: none;
-  padding: 0 3px;
+  padding: 0 2px;
   color: var(--text-soft);
   font-size: 1.1em;
   line-height: 1;
+  cursor: pointer;
 }
 
 .rc-x:hover {
@@ -2039,36 +2097,95 @@ body.vscode-light .live-log {
 }
 
 .rc-empty {
-  font-size: 0.82em;
+  font-size: 0.8em;
   color: var(--text-soft);
   font-style: italic;
-  align-self: center;
+  padding: 3px 0;
 }
 
 .rc-add {
-  border: 1px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+  margin-left: auto;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px dashed color-mix(in srgb, var(--accent) 75%, transparent);
   background: none;
   color: var(--accent);
-  border-radius: 999px;
-  padding: 1px 10px;
-  font-size: 0.82em;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .rc-add:hover {
   background: var(--accent-soft);
 }
 
-.switch {
+.strat {
   display: flex;
-  align-items: center;
-  gap: 6px;
   margin-top: 6px;
-  font-size: 0.85em;
-  color: var(--text-strong);
+  padding: 2px;
+  gap: 2px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--fg) 6%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
 }
 
-.switch input {
-  accent-color: var(--accent);
+.strat button {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  padding: 2px 4px;
+  font-size: 0.75em;
+  color: var(--text-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.strat button[aria-pressed='true'] {
+  color: var(--text-strong);
+  font-weight: 600;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 28%, transparent),
+    color-mix(in srgb, var(--violet) 28%, transparent)
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* The mode bar fits narrow sidebars: shorter label, tighter spacing. */
+.toolbar {
+  gap: 6px;
+}
+
+.seg {
+  container-type: inline-size;
+}
+
+.seg button {
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seg .long {
+  display: inline;
+}
+
+.seg .short {
+  display: none;
+}
+
+@container (max-width: 270px) {
+  .seg .long {
+    display: none;
+  }
+
+  .seg .short {
+    display: inline;
+  }
 }
 
 /* Context explorer */
@@ -2186,4 +2303,13 @@ body.ctx-open > :not(.top, #ctxpage, script) {
 .seg.mini button[data-ctx-mode='hidden'][aria-pressed='true'] {
   background: color-mix(in srgb, var(--fg) 15%, transparent);
   box-shadow: none;
+}
+
+.ctx-parts {
+  grid-column: 1 / -1;
+  margin-top: -2px;
+  font-family: var(--mono);
+  font-size: 0.75em;
+  color: var(--text-soft);
+  cursor: help;
 }

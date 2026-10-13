@@ -1,3 +1,5 @@
+import { ROLE_NAMES } from './roles.js';
+import { STRATEGIES } from './routing.js';
 import { sectionsSchema } from '../agent/sections.js';
 import { z } from 'zod';
 import { durationString } from './duration.js';
@@ -91,6 +93,8 @@ export const modelsSchema = z.strictObject({
   helpers: modelChain.optional(),
   /** Helpers running at the same time start on different providers of the helpers chain. */
   spread_helpers: z.boolean().default(true),
+  /** How each role orders its models before use: priority, random, least-busy or smart. */
+  routing: z.partialRecord(z.enum(ROLE_NAMES), z.enum(STRATEGIES)).default({}),
   /** Extra models the router may pick that aren't in any role chain. */
   extra: z.array(modelRef).default([]),
   /** Keyed by model ref, e.g. [models.profiles."groq:llama-4-70b"]. */

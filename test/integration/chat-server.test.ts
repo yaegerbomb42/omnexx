@@ -158,7 +158,11 @@ describe('omnexx chat-server (the VS Code chat panel protocol)', () => {
     // Model roles: saved to roles.json and read back.
     t.send({
       type: 'setRoles',
-      roles: { models: { helpers: ['groq:a', 'cerebras:b', 'bad ref'] }, spreadHelpers: false },
+      roles: {
+        models: { helpers: ['groq:a', 'cerebras:b', 'bad ref'] },
+        strategies: { helpers: 'random', worker: 'loud' },
+        spreadHelpers: false,
+      },
     });
     const saved = await t.until(
       () =>
@@ -171,6 +175,7 @@ describe('omnexx chat-server (the VS Code chat panel protocol)', () => {
     );
     expect(saved.roles).toEqual({
       models: { helpers: ['groq:a', 'cerebras:b'] },
+      strategies: { helpers: 'random' },
       spreadHelpers: false,
     });
     expect(saved.exhausted).toEqual({});

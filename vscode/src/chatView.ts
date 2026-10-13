@@ -287,12 +287,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   <div class="tile"><div class="k">Tokens</div><div class="v" id="stat-tokens">0</div></div>
   <div class="tile"><div class="k">Cost</div><div class="v" id="stat-cost">$0.00</div></div>
   <div class="ctx" title="Context in use; omnexx compacts the conversation when it fills"><span class="k">Context</span><div class="track"><div class="fill" id="ctx-fill"></div></div><span id="ctx-text">—</span></div>
+  <div id="ctx-parts" class="ctx-parts"></div>
 </section>
 <div class="toolbar">
   <div class="seg" role="group" aria-label="Mode">
     <button data-mode="chat" aria-pressed="true" title="Work turn by turn with you">Act</button>
     <button data-mode="plan" aria-pressed="false" title="Investigate and propose a plan; no edits">Plan</button>
-    <button data-mode="run" aria-pressed="false" title="Start a long autonomous run in the background">Autonomous</button>
+    <button data-mode="run" aria-pressed="false" title="Autonomous: start a long run in the background"><span class="long">Autonomous</span><span class="short">Auto</span></button>
   </div>
   <button id="approval" class="chip" data-action="approval">Ask first</button>
 </div>

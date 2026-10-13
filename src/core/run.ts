@@ -1,3 +1,4 @@
+import { orderForStrategy, strategyFor } from '../config/routing.js';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseDuration } from '../config/duration.js';
@@ -109,11 +110,11 @@ export class Run {
       set: { TMPDIR: this.tmpDir },
     });
     const c = deps.config;
-    this.chains = {
-      planner: resolveChain(c.models.planner, c),
-      worker: resolveChain(c.models.worker, c),
-      cheap: resolveChain(c.models.cheap, c),
-    };
+    // Each role's routing strategy orders its chain once per run (random, smart); least-busy
+    // only matters for parallel helpers, which order their chain per start.
+    const routed = (role: 'planner' | 'worker' | 'cheap') =>
+      orderForStrategy(resolveChain(c.models[role], c), strategyFor(c.models, role));
+    this.chains = { planner: routed('planner'), worker: routed('worker'), cheap: routed('cheap') };
     const first = (chain: ResolvedModel[]): ResolvedModel => {
       const m = chain[0];
       if (!m) throw new StateError('empty model chain');

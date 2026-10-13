@@ -39,7 +39,11 @@ interface State {
   paused: boolean;
   autoApprove: boolean;
   model: string | null;
-  context: { used: number; limit: number } | null;
+  context: {
+    used: number;
+    limit: number;
+    parts?: { system: number; tools: number; conversation: number };
+  } | null;
   usage: (Usage & { startedAt: number | null }) | null;
   helpers?: crew.Helper[];
 }
@@ -231,6 +235,14 @@ function drawStats(s: State): void {
   el('ctx-text', HTMLElement).textContent = s.context
     ? `${formatTokens(s.context.used)} / ${formatTokens(s.context.limit)}`
     : '—';
+  const parts = s.context?.parts;
+  const why = el('ctx-parts', HTMLElement);
+  why.textContent = parts
+    ? `prompt ${formatTokens(parts.system)} · tools ${formatTokens(parts.tools)} · chat ${formatTokens(parts.conversation)}`
+    : '';
+  why.title = parts
+    ? 'Sent with every request, even an empty chat: the system prompt (instructions and project notes) and the definitions of every tool the agent can use. The chat part grows as you talk and is trimmed or summarized as it fills.'
+    : '';
 }
 
 function drawUptime(): void {

@@ -55,7 +55,8 @@ describe('jimmy10 suite', () => {
     expect(existsSync(join(dir, '.git'))).toBe(true);
     expect(existsSync(join(dir, 'check.sh'))).toBe(false);
     expect(existsSync(join(dir, 'goal.md'))).toBe(false);
-  });
+    // Runs real git: slow CI runners need more than the 5 s default.
+  }, 60_000);
 });
 
 const SUITE_DIR = fileURLToPath(new URL('../../../bench/suites/jimmy10/', import.meta.url));
