@@ -1,18 +1,11 @@
 import { execFile } from 'node:child_process';
 import * as vscode from 'vscode';
+import { engine } from './engine.js';
 import { parsePlan, parseRuns, type PlanView, type RunRow } from './model.js';
 
 const CALL_TIMEOUT_MS = 15_000;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 const RUN_ID = /^r_[A-Za-z0-9_-]+$/;
-const isWindows = process.platform === 'win32';
-
-/** The omnexx executable: the `omnexx.path` setting, else `omnexx` on PATH. */
-export function omnexxBin(): string {
-  const configured = vscode.workspace.getConfiguration('omnexx').get<string>('path')?.trim();
-  if (configured) return configured;
-  return isWindows ? 'omnexx.cmd' : 'omnexx';
-}
 
 export function checkRunId(runId: string): string {
   if (!RUN_ID.test(runId)) throw new Error(`not a run id: ${runId}`);
@@ -20,14 +13,15 @@ export function checkRunId(runId: string): string {
 }
 
 /** Run one short omnexx command and return its stdout. Rejects with omnexx's own message. */
-function call(args: readonly string[], cwd: string | undefined): Promise<string> {
+async function call(args: readonly string[], cwd: string | undefined): Promise<string> {
+  const e = await engine();
   return new Promise((resolve, reject) => {
     execFile(
-      omnexxBin(),
-      args,
-      // npm installs omnexx as a .cmd shim on Windows, which only runs through a shell.
+      e.command,
+      [...e.prefix, ...args],
+      // A global npm install on Windows is a .cmd shim, which only runs through a shell.
       // Every argument here is a fixed word or a checked run id.
-      { cwd, timeout: CALL_TIMEOUT_MS, maxBuffer: MAX_OUTPUT_BYTES, shell: isWindows },
+      { cwd, env: e.env, timeout: CALL_TIMEOUT_MS, maxBuffer: MAX_OUTPUT_BYTES, shell: e.shell },
       (err, stdout, stderr) => {
         if (!err) {
           resolve(stdout);
@@ -65,11 +59,17 @@ export async function control(
 }
 
 /** Open a terminal that runs omnexx directly (no shell, so the goal needs no quoting). */
-export function openTerminal(name: string, args: string[], cwd: string | undefined): void {
+export async function openTerminal(
+  name: string,
+  args: string[],
+  cwd: string | undefined,
+): Promise<void> {
+  const e = await engine();
   const terminal = vscode.window.createTerminal({
     name,
-    shellPath: omnexxBin(),
-    shellArgs: args,
+    shellPath: e.command,
+    shellArgs: [...e.prefix, ...args],
+    env: e.source === 'bundled' ? { ELECTRON_RUN_AS_NODE: '1' } : {},
     ...(cwd ? { cwd } : {}),
   });
   terminal.show();

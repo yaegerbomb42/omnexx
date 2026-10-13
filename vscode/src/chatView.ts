@@ -1,8 +1,10 @@
+import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import * as vscode from 'vscode';
 import { ChatProcess, type ServerMessage } from './chatProcess.js';
+import { BUNDLED_VERSION, engine, refreshEngine } from './engine.js';
 import { primaryFolder } from './tree.js';
 
 /** Commands the webview may forward to omnexx unchanged. */
@@ -130,11 +132,53 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     else if (type === 'setApprovalDefault') await this.setApprovalDefault(m.on === true);
     else if (type === 'openContextFile' && typeof m.path === 'string')
       await this.openContext(m.path);
+    else if (type === 'engineInfo') await this.postEngine();
+    else if (type === 'installCli') await this.installCli();
     else if (type === 'editToml')
       await openSettingsFile(join(primaryFolder() ?? homedir(), 'omnexx.toml'), PROJECT_STARTER);
     else if (type === 'editUserConfig') await openSettingsFile(userConfigPath(), USER_STARTER);
     else if (type === 'openExternal' && typeof m.url === 'string' && m.url.startsWith('https://'))
       await vscode.env.openExternal(vscode.Uri.parse(m.url));
+  }
+
+  /** Which omnexx the panel runs, for Settings. */
+  private async postEngine(): Promise<void> {
+    try {
+      const e = await engine();
+      this.post({
+        type: 'engine',
+        source: e.source,
+        version: e.version ?? null,
+        bundled: BUNDLED_VERSION,
+      });
+    } catch (err) {
+      this.post({
+        type: 'engine',
+        source: 'missing',
+        version: null,
+        bundled: BUNDLED_VERSION,
+        error: String(err),
+      });
+    }
+  }
+
+  /** Install omnexx for the terminal: Homebrew when it's there, else npm (needs Node 22+). */
+  private async installCli(): Promise<void> {
+    const brew = await new Promise<boolean>((resolve) => {
+      execFile('brew', ['--version'], { timeout: 5_000 }, (err) => {
+        resolve(!err);
+      });
+    });
+    const cmd = brew
+      ? 'brew install yaegerbomb42/omnexx/omnexx'
+      : `npm install -g omnexx@${BUNDLED_VERSION}`;
+    const terminal = vscode.window.createTerminal({ name: 'Install omnexx' });
+    terminal.show();
+    terminal.sendText(cmd);
+    void vscode.window.showInformationMessage(
+      'omnexx: installing for your terminal. The panel switches to it on its next start (or Restart omnexx in Settings).',
+    );
+    refreshEngine();
   }
 
   /** Open a listed context file; an editable one that doesn't exist yet is created first. */

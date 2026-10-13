@@ -46,6 +46,24 @@ let tests: Record<string, 'running' | { ok: boolean; detail: string }> = {};
 /** Whether this opening of the page has checked every provider yet. */
 let testedOnOpen = false;
 let saving = false;
+let engineInfo: { source: string; version: string | null; bundled: string } | undefined;
+
+const ENGINE_LABEL: Record<string, string> = {
+  bundled: 'the copy built into this extension',
+  global: 'your installed omnexx',
+  setting: 'the omnexx.path setting',
+};
+
+function engineHtml(): string {
+  if (!engineInfo) return '<p class="hint">Checking which omnexx runs this panel…</p>';
+  const label = ENGINE_LABEL[engineInfo.source];
+  const what = label ? `${label} (${escapeHtml(engineInfo.version ?? '?')})` : 'nothing yet';
+  const install =
+    engineInfo.source === 'bundled' || engineInfo.source === 'missing'
+      ? '<button class="ghost" data-action-ext="installCli">Install omnexx for your terminal</button>'
+      : '';
+  return `<p class="hint">Engine: ${what}.</p>${install}`;
+}
 /** The person has typed or picked something in the add form, so a redraw keeps it. */
 let formTouched = false;
 let status: { text: string; kind: 'ok' | 'error' | 'busy' } | undefined;
@@ -125,6 +143,7 @@ function draw(): void {
   <p class="hint">How new chats start. Auto-approve lets omnexx go outside the repo and run guarded commands without asking; hard-blocked commands stay blocked.</p>
 </section>
 <section class="set-section"><h3>Advanced</h3>
+  <div id="engine-box" class="engine">${engineHtml()}</div>
   <div class="links">
     <button class="ghost" data-action-ext="editToml">Edit project settings (omnexx.toml)</button>
     <button class="ghost" data-action-ext="editUserConfig">Edit user settings (config.toml)</button>
@@ -219,6 +238,7 @@ export function open(post: Post): void {
   draw();
   post({ type: 'settings' });
   post({ type: 'models' });
+  post({ type: 'engineInfo' });
   roles.request(post);
 }
 
@@ -252,6 +272,15 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
     }
   } else if (m.type === 'models') {
     current = typeof m.current === 'string' ? m.current : current;
+  } else if (m.type === 'engine') {
+    engineInfo = {
+      source: typeof m.source === 'string' ? m.source : 'missing',
+      version: typeof m.version === 'string' ? m.version : null,
+      bundled: typeof m.bundled === 'string' ? m.bundled : '',
+    };
+    const box = document.getElementById('engine-box');
+    if (box) box.innerHTML = engineHtml();
+    return true;
   } else if (m.type === 'prefs') {
     autoApproveDefault = m.autoApproveDefault === true;
   } else if (m.type === 'error' && saving) {

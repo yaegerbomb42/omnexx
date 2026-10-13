@@ -7,13 +7,9 @@ with it, have it plan, or let it run on its own for hours, and watch every step.
 
 ## Needs
 
-The omnexx CLI, version 0.9.0 or later:
-
-```sh
-npm i -g omnexx        # or: brew install yaegerbomb42/omnexx/omnexx
-```
-
-Set `omnexx.path` if it isn't on your PATH.
+Nothing else: omnexx is built into the extension. If you also install the CLI (`npm i -g omnexx`
+or `brew install yaegerbomb42/omnexx/omnexx`) and it's the same version or newer, the panel uses
+that one, so the terminal and the panel share one install. `omnexx.path` overrides both.
 
 ## The chat panel
 

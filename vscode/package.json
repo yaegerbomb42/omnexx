@@ -1,8 +1,8 @@
 {
   "name": "omnexx",
   "displayName": "omnexx",
-  "description": "A Cline-style chat for the omnexx coding agent: chat, plan or run autonomously, see token use and cost, and watch long runs' todo lists.",
-  "version": "0.5.0",
+  "description": "A Cline-style chat for the omnexx coding agent, with omnexx built in: chat, plan or run autonomously, see token use and cost, and watch long runs' todo lists.",
+  "version": "0.6.0",
   "publisher": "yaegerbomb42",
   "license": "MIT",
   "private": true,
@@ -252,7 +252,7 @@
     ]
   },
   "scripts": {
-    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node20 --external:vscode --outfile=out/extension.cjs --sourcemap && esbuild src/webview/chat.ts --bundle --platform=browser --format=iife --target=es2022 --outfile=out/chat.js",
-    "package": "npm run build && npx @vscode/vsce package --no-dependencies"
+    "build": "node build.mjs",
+    "package": "node build.mjs && npx @vscode/vsce package --no-dependencies"
   }
 }
