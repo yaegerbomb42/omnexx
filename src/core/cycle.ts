@@ -56,6 +56,13 @@ const CHECK_TIMEOUT_MS = 10 * 60_000;
 /** Rejection reason for a cycle a budget cap cut short before it changed anything: not an attempt. */
 export const INTERRUPTED_BY_BUDGET = 'interrupted by a budget cap before any change';
 
+const VERIFY_ONLY = /^(run|re-run|verify|confirm|check|ensure|validate|make sure|double-check)\b/i;
+
+/** A task that only asks to verify or run something, with nothing of its own to build. */
+export function verifyOnly(task: { title: string; kind: string }): boolean {
+  return task.kind === 'investigate' || VERIFY_ONLY.test(task.title.trim());
+}
+
 export interface CheckResult {
   command: string;
   pass: boolean;
@@ -525,9 +532,18 @@ export async function stepVerify(run: Run): Promise<void> {
     evidence.push(`Check failed: \`${c.command}\`\n${c.output}`);
 
   const budgetCut = act.end === 'max_usd' || act.end === 'max_usd_per_day';
+  // A task with no checks of its own that only verifies ("Run the full test suite…"), or that came
+  // back with nothing to change twice in a row, is done: the tree is lastGreen, which passed every
+  // gate. Rejecting it again only burns cycles; the final audit still checks the goal.
+  const nothingToChange =
+    !changes.length &&
+    !budgetCut &&
+    !task.checks.length &&
+    (verifyOnly(task) || task.lastRejection === 'no changes');
+  if (nothingToChange) run.events.emit('task.nothing_to_change', { task: task.id });
   if (!changes.length) {
     if (budgetCut) reasons.push(INTERRUPTED_BY_BUDGET);
-    else if (!(task.checks.length && checksPass)) reasons.push('no changes');
+    else if (!(task.checks.length && checksPass) && !nothingToChange) reasons.push('no changes');
   } else if (!reasons.length) {
     const { results, flaky } = await runGatesWithFlakyCheck(
       run.config.gates,

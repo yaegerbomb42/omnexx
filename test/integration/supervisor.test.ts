@@ -209,6 +209,44 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
 });
 
 describe('M2: stuck handling, budget and judge', () => {
+  it('a verify-only task with nothing to change is done in one cycle, not retried until parked', async () => {
+    // Arrange: M1.T01 builds something; M1.T02 only "runs the full test suite" (no checks).
+    const plan = planner([
+      {
+        id: 'M1',
+        title: 'Ship',
+        tasks: [
+          fileTask('M1.T01'),
+          {
+            id: 'M1.T02',
+            title: 'Run the full test suite to confirm everything passes',
+            checks: [],
+          },
+        ],
+      },
+    ]);
+    const worker: Script = (m) =>
+      m.taskId === 'M1.T02'
+        ? say('Ran the suite; everything passes. Nothing to change.')
+        : fileWorker(m);
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider: new ScriptedProvider(scenario(plan, worker)),
+      config: { gates: [GATE] },
+    });
+
+    // Act
+    const out = await superviseTest(t);
+
+    // Assert
+    expect(out.status).toBe('finished');
+    const nodes = (await t.run.store.readPlan())?.nodes ?? [];
+    expect(nodes.find((n) => n.id === 'M1.T02')).toMatchObject({ status: 'done', attempts: 1 });
+    const events = await readEvents(t.run.store.eventsPath);
+    expect(types(events, 'task.nothing_to_change')).toHaveLength(1);
+    expect((await t.run.store.readState()).rejectedCycles).toBe(0);
+  });
+
   it('a hung model call: the watchdog aborts the cycle, rolls back, and the next attempt lands', async () => {
     // Arrange: the first worker call never returns on its own; later calls work.
     const plan = planner([{ id: 'M1', title: 'First', tasks: [fileTask('M1.T01')] }]);
