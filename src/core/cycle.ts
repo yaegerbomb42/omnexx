@@ -71,7 +71,7 @@ export async function runChecks(run: Run, task: PlanNode, label: string): Promis
       timeoutMs: Math.min(CHECK_TIMEOUT_MS, run.maxCmdTimeoutMs),
       logPath: join(run.store.logsDir, `check-${label}-${i}.log`),
       redact: (s) => run.redactor.text(s),
-      signal: run.abort.signal,
+      signal: run.signal,
     });
     out.push({
       command,
@@ -91,7 +91,7 @@ function gateRunCtx(run: Run, label: string) {
     label,
     maxCmdTimeoutMs: run.maxCmdTimeoutMs,
     redact: (s: string) => run.redactor.text(s),
-    signal: run.abort.signal,
+    signal: run.signal,
   };
 }
 
@@ -236,7 +236,7 @@ function toolContext(run: Run, edited: Set<string>): ToolContext {
     maxCmdTimeoutMs: run.maxCmdTimeoutMs,
     notesMaxTokens: run.config.context.notes_max_tokens,
     today: new Date(run.clock.now()).toISOString().slice(0, 10),
-    signal: run.abort.signal,
+    signal: run.signal,
     nextCommandId: () => `cmd-${run.state.cycle}-${++n}`,
     edited,
     reads: new Map(),
@@ -303,6 +303,7 @@ async function summarizeCycle(
 
 /** ACT: zero-cost preflight on the task's checks, then the agent loop with a fresh context. */
 export async function stepAct(run: Run): Promise<void> {
+  run.newCycle();
   const plan = run.requirePlan();
   const task = getNode(plan, run.state.taskId ?? '');
   await prepareWorktree(run);
@@ -401,7 +402,7 @@ export async function stepAct(run: Run): Promise<void> {
     onPauseChange: (p) => {
       run.paused = p;
     },
-    signal: run.abort.signal,
+    signal: run.signal,
     parallelTasks: run.config.context.subagent_parallel,
     watch: new InCycleWatch(
       {
@@ -492,7 +493,15 @@ export async function stepVerify(run: Run): Promise<void> {
   let testsPassed: number | undefined;
   const label = `c${run.state.cycle}`;
 
-  if (act.end === 'stop-now') reasons.push('stopped by user (--now)');
+  if (act.end === 'stop-now' && run.hang) {
+    // The stall watchdog cut a hung cycle: a stuck attempt, so the ladder takes it from here.
+    reasons.push(`hung: ${run.hang}`);
+    stuck.push('hung');
+    evidence.push(
+      `The last attempt hung (${run.hang}) and was aborted. Avoid whatever blocked: a command that waits for input or never exits, a server started in the foreground, or a request that never returns.`,
+    );
+    run.events.emit('stuck.signal', { signal: 'hung', task: task.id, detail: run.hang });
+  } else if (act.end === 'stop-now') reasons.push('stopped by user (--now)');
   if (act.stuck) {
     // Ended early by an in-cycle signal: partial work is still verified, and the ladder climbs.
     stuck.push(act.stuck.signal);

@@ -188,12 +188,12 @@
         },
         {
           "command": "omnexx.stop",
-          "when": "view == omnexx.runs && viewItem == run.active",
+          "when": "view == omnexx.runs && viewItem =~ /^run\\.(active|fix)$/",
           "group": "inline@3"
         },
         {
           "command": "omnexx.resume",
-          "when": "view == omnexx.runs && viewItem == run.ended",
+          "when": "view == omnexx.runs && viewItem =~ /^run\\.(ended|fix)$/",
           "group": "inline@2"
         }
       ],

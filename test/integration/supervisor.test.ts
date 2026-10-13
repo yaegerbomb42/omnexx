@@ -209,6 +209,48 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
 });
 
 describe('M2: stuck handling, budget and judge', () => {
+  it('a hung model call: the watchdog aborts the cycle, rolls back, and the next attempt lands', async () => {
+    // Arrange: the first worker call never returns on its own; later calls work.
+    const plan = planner([{ id: 'M1', title: 'First', tasks: [fileTask('M1.T01')] }]);
+    const inner = new ScriptedProvider(scenario(plan, fileWorker));
+    let hungOnce = false;
+    const box: { clock?: { advance: (ms: number) => void } } = {};
+    const provider = {
+      name: 'hangs-once',
+      complete: (req: Parameters<typeof inner.complete>[0]) => {
+        const isWorker = !req.system.some((b) => b.text.includes('planner'));
+        if (isWorker && !hungOnce) {
+          hungOnce = true;
+          // Only an abort ends it. Time passes while it hangs.
+          setTimeout(() => box.clock?.advance(60 * 60_000), 30);
+          return new Promise<never>((_resolve, reject) => {
+            req.signal?.addEventListener('abort', () => {
+              reject(new Error('aborted'));
+            });
+          });
+        }
+        return inner.complete(req);
+      },
+    };
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider,
+      config: { gates: [GATE], stuck: { max_silence: '45m' } },
+    });
+    box.clock = t.clock;
+
+    // Act
+    const out = await superviseTest(t);
+
+    // Assert
+    expect(out.status).toBe('finished');
+    const events = await readEvents(t.run.store.eventsPath);
+    const hung = events.filter((e) => e.type === 'stuck.signal' && e.signal === 'hung');
+    expect(hung).toHaveLength(1);
+    expect(String(hung[0]?.detail)).toMatch(/no activity for 1h/);
+    expect((await t.run.store.readState()).acceptedCommits).toBe(1);
+  });
+
   it('every model out of quota: stops with budget-stop after max_provider_wait instead of waiting for ever', async () => {
     // Arrange: the planner works; then every worker call fails as if quotas were gone.
     const plan = planner([{ id: 'M1', title: 'First', tasks: [fileTask('M1.T01')] }]);

@@ -4,6 +4,7 @@ import {
   childrenOf,
   describeRun,
   isActive,
+  needsFix,
   progressOf,
   runsForFolders,
   type PlanNodeRow,
@@ -93,10 +94,24 @@ function runItem(run: RunRow): vscode.TreeItem {
   item.id = run.runId;
   item.description = describeRun(run);
   item.tooltip = `${run.branch}\n${run.worktree}`;
-  item.iconPath = new vscode.ThemeIcon(active ? 'rocket' : 'history');
-  // Menus in package.json key off this: pause/stop for live runs, resume for the rest.
-  item.contextValue = active ? 'run.active' : 'run.ended';
+  item.iconPath = healthIcon(run, active);
+  // Menus in package.json key off this: pause/stop for live runs, resume for the rest, and
+  // resume + stop for a run whose supervisor died or stalled.
+  item.contextValue = needsFix(run) ? 'run.fix' : active ? 'run.active' : 'run.ended';
   return item;
+}
+
+function healthIcon(run: RunRow, active: boolean): vscode.ThemeIcon {
+  switch (run.health) {
+    case 'dead':
+    case 'stalled':
+      return new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'));
+    case 'waiting':
+    case 'quiet':
+      return new vscode.ThemeIcon('warning', new vscode.ThemeColor('list.warningForeground'));
+    default:
+      return new vscode.ThemeIcon(active ? 'rocket' : 'history');
+  }
 }
 
 function planItem(plan: PlanView, node: PlanNodeRow): vscode.TreeItem {

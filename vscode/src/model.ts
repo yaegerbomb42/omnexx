@@ -17,6 +17,8 @@ export interface RunRow {
   usd: number;
   commits: number;
   supervisorAlive: boolean;
+  /** From omnexx 0.8: working, quiet, waiting, stalled, dead or ended. */
+  health?: string | undefined;
 }
 
 export interface PlanNodeRow {
@@ -94,6 +96,7 @@ export function parseRuns(text: string): RunRow[] {
       usd: num(x, 'usd'),
       commits: num(x, 'commits'),
       supervisorAlive: x.supervisorAlive === true,
+      health: optStr(x, 'health'),
     };
   });
 }
@@ -155,7 +158,21 @@ export function isActive(run: RunRow): boolean {
 }
 
 /** One line under the run's name in the sidebar. */
+const HEALTH_NOTE: Record<string, string> = {
+  quiet: 'quiet for 15m+',
+  waiting: 'waiting on providers',
+  stalled: 'stalled: no heartbeat',
+  dead: 'supervisor not running',
+};
+
+/** Runs that need a hand: resume (restarts the supervisor) or stop. */
+export function needsFix(run: RunRow): boolean {
+  return run.health === 'dead' || run.health === 'stalled';
+}
+
 export function describeRun(run: RunRow): string {
+  const note = run.health ? HEALTH_NOTE[run.health] : undefined;
+  if (note) return `${note} · cycle ${String(run.cycle)} · ${String(run.commits)} commits`;
   const where = run.task ? `${run.phase} ${run.task}` : run.phase;
   const state = isActive(run) ? where : run.status;
   return `${state} · cycle ${run.cycle} · ${run.commits} commits · $${run.usd.toFixed(2)}`;

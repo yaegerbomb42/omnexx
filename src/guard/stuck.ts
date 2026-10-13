@@ -12,6 +12,8 @@ export const IN_CYCLE_SIGNALS = [
   'no_edits',
   'token_burn',
   'poisoned_request',
+  /** Nothing happened for stuck.max_silence: a hung model call or command. */
+  'hung',
 ] as const;
 export type InCycleSignal = (typeof IN_CYCLE_SIGNALS)[number];
 

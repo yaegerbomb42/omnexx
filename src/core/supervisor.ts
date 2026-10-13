@@ -1,3 +1,4 @@
+import { formatDuration, parseDuration } from '../config/duration.js';
 import { BEYOND_RUBRIC, NO_TOOL_CALLS, PlannerIncomplete, runPlanner } from '../agent/planner.js';
 import { allOf, WebhookNotifier } from '../notify/webhook.js';
 import { openPullRequest } from '../git/pr.js';
@@ -935,10 +936,19 @@ export async function supervise(
   }
 
   const stopHeartbeat = startHeartbeat(run, opts.heartbeatMs);
+  // Stall watchdog: any event is activity; a working cycle that goes silent too long is hung.
+  let lastActivity = run.clock.now();
+  run.events.onEvent(() => {
+    lastActivity = run.clock.now();
+  });
+  const maxSilence = parseDuration(run.config.stuck.max_silence);
   const watcher = setInterval(() => {
     void run.control().then((c) => {
       if (c === 'stop-now' && !run.abort.signal.aborted) run.abort.abort(new Error('stop --now'));
     });
+    const silent = run.clock.now() - lastActivity;
+    if (run.state.phase === 'act' && !run.paused && silent >= maxSilence)
+      run.abortCycle(`no activity for ${formatDuration(silent)} while working`);
   }, opts.controlPollMs ?? 1_000);
   watcher.unref();
 
