@@ -48,6 +48,8 @@ export const planNodeSchema = nodeInputSchema.extend({
   /** The in-cycle stuck signal that cut the previous attempt short, if one did. */
   lastCutShort: z.string().optional(),
   parkedReason: z.string().optional(),
+  /** Parked because the goal was met without it: doesn't stop the run from finishing. */
+  skipped: z.literal(true).optional(),
   /** Index into the strategy ladder for this task. */
   rung: z.number().int().nonnegative().default(0),
   /** Cycles on this task use the planner (strong) model instead of the worker model. */

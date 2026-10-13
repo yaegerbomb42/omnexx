@@ -117,6 +117,10 @@ const PLANNER_RETRIES = 2;
 
 class Supervisor {
   private plannerRetries = 0;
+  /** Milestones done when the goal was last checked, so the early audit runs once per milestone. */
+  private milestonesChecked = 0;
+  /** HEAD when the early audit found the goal met; the end-of-run audit then has nothing new to see. */
+  private goalMetAt: string | undefined;
 
   /** Mark the current lead planner model as failed and move to the next candidate, if any. */
   private fallBackPlanner(end: string): boolean {
@@ -592,21 +596,8 @@ class Supervisor {
     const r = this.run;
     const cfg = r.config.review;
     if (!cfg.audit || r.state.auditRounds >= cfg.max_audits) return false;
-    const goal = (await r.store.readGoal()).text;
-    const intent = await readIntent(r.store);
-    const codemapText = await readTextOr(r.store.file('codemap.json'), '');
-    const map = codemapText
-      ? renderCodemap(JSON.parse(codemapText) as Codemap, r.config.context.repo_map_max_tokens)
-      : '';
-    const diff = (
-      await git(r.worktree, ['diff', `${r.state.startRef}..HEAD`], { allowFailure: true })
-    ).stdout;
-    const result = await auditResult(
-      r,
-      goal,
-      intent,
-      `${map}\n\n# Everything this run changed (diff from the start)\n${clipDiff(diff, cfg.max_diff_chars * 2)}`,
-    );
+    if (this.goalMetAt && this.goalMetAt === (await this.head())) return false;
+    const result = await this.audit();
     const round = r.state.auditRounds + 1;
     r.state.auditRounds = round;
     await r.save();
@@ -622,6 +613,63 @@ class Supervisor {
       return false;
     }
     return r.requirePlan().nodes.length > before && runnableTasks(r.requirePlan()).length > 0;
+  }
+
+  private async head(): Promise<string> {
+    return (await git(this.run.worktree, ['rev-parse', 'HEAD'])).stdout.trim();
+  }
+
+  /** The auditor's view of everything this run changed, against the goal and intent. */
+  private async audit(): Promise<Awaited<ReturnType<typeof auditResult>>> {
+    const r = this.run;
+    const cfg = r.config.review;
+    const goal = (await r.store.readGoal()).text;
+    const intent = await readIntent(r.store);
+    const codemapText = await readTextOr(r.store.file('codemap.json'), '');
+    const map = codemapText
+      ? renderCodemap(JSON.parse(codemapText) as Codemap, r.config.context.repo_map_max_tokens)
+      : '';
+    const diff = (
+      await git(r.worktree, ['diff', `${r.state.startRef}..HEAD`], { allowFailure: true })
+    ).stdout;
+    return auditResult(
+      r,
+      goal,
+      intent,
+      `${map}\n\n# Everything this run changed (diff from the start)\n${clipDiff(diff, cfg.max_diff_chars * 2)}`,
+    );
+  }
+
+  /**
+   * Planners pad small goals with extra milestones (hardening, polish) that cost more than the goal.
+   * Each time a milestone finishes with more still open, the auditor checks the goal; when nothing
+   * the user asked for is missing, the open work is skipped and the run moves on to finish. Off in
+   * improvement rounds and autonomous runs, which exist to do more than the goal.
+   */
+  private async goalMetEarly(): Promise<boolean> {
+    const r = this.run;
+    const plan = r.requirePlan();
+    const done = planCounts(plan).milestonesDone;
+    if (done <= this.milestonesChecked) return false;
+    this.milestonesChecked = done;
+    if (!r.config.review.audit || r.state.beyondRounds > 0 || r.config.autonomous.enabled)
+      return false;
+    const open = plan.nodes.filter((n) => n.status === 'todo' || n.status === 'doing');
+    if (!open.some((n) => n.type === 'milestone')) return false;
+    const result = await this.audit();
+    if (!result) return false;
+    const gaps = blocking(result.findings, 'major');
+    r.events.emit('audit.early', { milestonesDone: done, gaps: gaps.length });
+    if (gaps.length) return false;
+    for (const n of open) {
+      n.status = 'parked';
+      n.skipped = true;
+      n.parkedReason = 'not needed: the goal is already met';
+    }
+    r.events.emit('plan.skipped', { nodes: open.map((n) => n.id) });
+    this.goalMetAt = await this.head();
+    await r.savePlan();
+    return true;
   }
 
   private async planBeyond(): Promise<boolean> {
@@ -742,6 +790,7 @@ class Supervisor {
         reason: `milestone ${m.id}'s tasks are done but its checks fail; add tasks under ${m.id} to make them pass`,
       });
     }
+    await this.goalMetEarly();
     const plan = r.requirePlan();
     const next = runnableTasks(plan)[0];
     if (next) return next.id;
@@ -782,7 +831,7 @@ class Supervisor {
     if (
       counts.todo === 0 &&
       openMilestones.length === 0 &&
-      (auto || plan.nodes.every((n) => n.status !== 'parked'))
+      (auto || plan.nodes.every((n) => n.status !== 'parked' || n.skipped))
     ) {
       if (await this.planAudit()) return this.select();
       if (await this.planBeyond()) return this.select();
