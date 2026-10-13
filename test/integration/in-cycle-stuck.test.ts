@@ -22,13 +22,17 @@ describe('in-cycle stuck signals', () => {
     const verdict = await runOneCycle(t.run, 'M1.T01');
     expect(provider.requests).toHaveLength(3);
     expect(verdict).toMatchObject({ verdict: 'reject' });
-    expect(verdict.stuck).toContain('repeated_tool_call');
+    // The first cut-short attempt is a retry with the evidence, not a ladder climb.
+    expect(verdict.stuck).not.toContain('repeated_tool_call');
     expect(verdict.evidence).toMatch(/cut short/);
     const events = await readEvents(t.run.store.eventsPath);
     expect(events.find((e) => e.type === 'act.end')).toMatchObject({ end: 'stuck' });
     expect(events.filter((e) => e.type === 'stuck.signal')).toMatchObject([
       { signal: 'repeated_tool_call', task: 'M1.T01' },
     ]);
+    // The same signal on the next attempt is a pattern: now the ladder climbs.
+    const again = await runOneCycle(t.run, 'M1.T01');
+    expect(again.stuck).toContain('repeated_tool_call');
   });
 
   it('partial work that passes the gates is still accepted when the cycle is cut short', async () => {

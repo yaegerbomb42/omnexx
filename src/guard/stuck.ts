@@ -50,6 +50,8 @@ export class InCycleWatch {
     if (edits > this.lastEdits) {
       this.lastEdits = edits;
       this.lastEditTurn = turn;
+      // Files changed: reading or running the same thing again is checking the change, not a loop.
+      this.calls.clear();
     }
     for (const c of calls) {
       const key = `${c.name} ${JSON.stringify(c.input)}`;

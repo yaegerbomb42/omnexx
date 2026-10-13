@@ -36,7 +36,8 @@ function autoPlanner(prompts: string[]): Script {
   return (m) => {
     const text = firstText(m);
     if (m.turn > 0) return say('Done.');
-    if (!text.includes('improvement round')) return base(m);
+    // The round prompt names its number; the first plan's prompt only mentions rounds in passing.
+    if (!/improvement round \d+\./.test(text)) return base(m);
     prompts.push(text);
     if (text.includes('improvement round 1.')) {
       return addMilestone(m, { id: 'M2', title: 'Harden', tasks: [fileTask('M2.T01')] });

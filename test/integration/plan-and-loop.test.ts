@@ -77,7 +77,7 @@ async function cliRun(
 }
 
 describe('run --plan-only', () => {
-  it('runs the planner with read-only tools, retries a rejected plan, writes plan.json, never edits the repo', async () => {
+  it('runs the planner with read-only tools, retries a rejected plan, stops once it is accepted, writes plan.json, never edits the repo', async () => {
     const repo = await fixtureRepo('ts-failing-test');
     const env = await isolatedEnv({
       ANTHROPIC_API_KEY: secretCorpus().anthropic,
@@ -110,6 +110,8 @@ describe('run --plan-only', () => {
     expect(JSON.stringify(provider.requests.at(-1)?.messages)).toMatch(
       /plan rejected: .*unknown node M9/,
     );
+    // An accepted write_plan ends planning: the scripted "Plan written." turn is never requested.
+    expect(provider.requests).toHaveLength(3);
     expect(await isClean(repo)).toBe(true);
     const events = await readEvents(store.eventsPath);
     expect(events.map((e) => e.type)).toContain('plan.written');

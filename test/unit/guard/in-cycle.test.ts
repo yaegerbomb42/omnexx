@@ -12,6 +12,21 @@ describe('InCycleWatch', () => {
     expect(w.afterTurn(3, 0, [read('a')])).toMatchObject({ signal: 'repeated_tool_call' });
   });
 
+  it('an edit between repeats resets the count: read, edit, read again is normal work', () => {
+    let edits = 0;
+    const w = new InCycleWatch(limits, () => edits);
+    expect(w.afterTurn(1, 0, [read('src/paginate.js')])).toBeUndefined();
+    edits = 1;
+    expect(w.afterTurn(2, 0, [read('src/paginate.js')])).toBeUndefined();
+    edits = 2;
+    expect(w.afterTurn(3, 0, [read('src/paginate.js')])).toBeUndefined();
+    expect(w.afterTurn(4, 0, [read('src/paginate.js')])).toBeUndefined();
+    // Three in a row with nothing changing in between is the loop.
+    expect(w.afterTurn(5, 0, [read('src/paginate.js')])).toMatchObject({
+      signal: 'repeated_tool_call',
+    });
+  });
+
   it('flags K turns without an edit, and an edit resets the count', () => {
     let edits = 0;
     const w = new InCycleWatch({ ...limits, repeatedToolCall: 99 }, () => edits);

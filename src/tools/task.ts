@@ -17,7 +17,7 @@ const schema = z.strictObject({
 export const taskTool: Tool<typeof schema> = {
   name: 'task',
   description:
-    'Hand a read-only question to a helper agent with its own fresh context. It reads, searches and runs read-only tools, then returns a short summary, so your context only pays for the answer. Several task calls in one turn run in parallel. Helpers never edit files.',
+    'Hand a read-only question to a helper agent with its own fresh context. It reads, searches and runs read-only tools, then returns a short summary, so your context only pays for the answer. Several task calls in one turn run in parallel. Helpers never edit files or run commands (no bash, tests or builds), so never ask one to fix, write or run something.',
   schema,
   readOnly: true,
   async run(input, ctx) {

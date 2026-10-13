@@ -1,0 +1,210 @@
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { AgentRunner } from './base.ts';
+import type { AgentRunOutput, BenchmarkResult, TaskDef } from '../types.ts';
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const CLI = join(REPO_ROOT, 'dist/cli.js');
+
+interface RunState {
+  runId: string;
+  worktree: string;
+  status: string;
+  spend: {
+    usd: number;
+    tokens: { uncached: number; cacheWrite: number; cacheRead: number; output: number };
+  };
+}
+
+export interface OmnexxRunnerOptions {
+  /** Run-level cap, passed as `--budget`. */
+  budgetUsd?: number;
+  /** Wall-clock cap, passed as `--hours`. */
+  hours?: number;
+  /** `OMNEXX_HOME` for bench runs, so they never mix with the user's own runs. */
+  home?: string;
+  /** Keep improving after the goal is met (off: the bench measures the cost of meeting the goal). */
+  beyond?: boolean;
+  /** One model for every role; the user's pool and roles are then left out entirely. */
+  model?: string | undefined;
+  /** lean: 0.8 defaults (codemap optional). full: every context section pinned (pre-0.8). */
+  context?: 'lean' | 'full';
+}
+
+/**
+ * Runs `omnexx run` in the foreground on the task repo with the repo's own `npm test` as the gate
+ * (what a user would configure; the hidden check stays hidden). Metrics come from the run's
+ * state.json; the work is judged in the run's worktree, where omnexx commits.
+ */
+export class OmnexxRunner extends AgentRunner {
+  private readonly opts: OmnexxRunnerOptions;
+
+  constructor(opts: OmnexxRunnerOptions = {}) {
+    super('omnexx');
+    this.opts = opts;
+  }
+
+  override async isAvailable(): Promise<boolean> {
+    if (!existsSync(CLI)) return false;
+    const { stdout } = await this.spawnWithTimeout('node', [CLI, '--version'], {
+      timeoutMs: 10_000,
+    });
+    return stdout.trim().length > 0;
+  }
+
+  override async run(_task: TaskDef, workDir: string, goal: string): Promise<AgentRunOutput> {
+    const home = this.opts.home ?? (await mkdtemp(join(tmpdir(), 'omnexx-bench-')));
+    await mkdir(home, { recursive: true });
+    const goalFile = join(home, `goal-${Date.now()}.md`);
+    await writeFile(goalFile, goal, 'utf-8');
+    const hours = this.opts.hours ?? 0.5;
+    const args = [
+      CLI,
+      'run',
+      '--goal-file',
+      goalFile,
+      '--budget',
+      String(this.opts.budgetUsd ?? 2),
+    ];
+    args.push('--hours', String(hours), '--push', 'none', '--quiet');
+    if (await hasScript(workDir, 'test')) args.push('--gate', 'npm test');
+
+    const start = Date.now();
+    const { timedOut } = await this.spawnWithTimeout('node', args, {
+      cwd: workDir,
+      env: {
+        ...process.env,
+        OMNEXX_HOME: home,
+        OMNEXX_CONFIG_HOME: await benchConfigHome(home, {
+          beyond: this.opts.beyond ?? false,
+          model: this.opts.model,
+          context: this.opts.context ?? 'lean',
+        }),
+        CI: '1',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // The run stops itself at --hours; the margin covers planning and teardown.
+      timeoutMs: hours * 3_600_000 + 10 * 60_000,
+    });
+    const wall_ms = Date.now() - start;
+
+    const state = await latestState(home);
+    if (!state) throw new Error(`omnexx left no run state in ${home}`);
+    return {
+      ...metricsFromState(state, wall_ms),
+      interventions: timedOut ? 1 : 0,
+      resultDir: state.worktree,
+    };
+  }
+}
+
+/** Token and cost metrics from a run's state.json. `tokens_in` is uncached input incl. cache writes. */
+export function metricsFromState(state: RunState, wall_ms: number): BenchmarkResult {
+  const t = state.spend.tokens;
+  return {
+    resolved: false,
+    usd: state.spend.usd,
+    tokens_in: t.uncached + t.cacheWrite,
+    tokens_out: t.output,
+    cached: t.cacheRead,
+    wall_ms,
+    interventions: 0,
+  };
+}
+
+/**
+ * A copy of the user's config (their providers, models and quota state) with beyond mode set,
+ * so a bench run never edits the real config.
+ */
+/** Editor-set files that would outrank config.toml; a pinned model leaves them all out. */
+const POOL_FILES = ['models.json', 'roles.json', 'context-sections.json'];
+const ALL_PINNED = ['role', 'codemap', 'intent', 'lessons', 'progress'];
+
+/** The copy's own [models] tables (and their sub-tables) out, so the pinned model is the only one. */
+export function withoutModelsTables(toml: string): string {
+  let skipping = false;
+  return toml
+    .split('\n')
+    .filter((line) => {
+      const header = /^\s*\[+([^\]]+)\]+\s*$/.exec(line)?.[1]?.trim();
+      if (header !== undefined) skipping = header === 'models' || header.startsWith('models.');
+      return !skipping;
+    })
+    .join('\n');
+}
+
+async function benchConfigHome(
+  home: string,
+  o: { beyond: boolean; model?: string | undefined; context: 'lean' | 'full' },
+): Promise<string> {
+  const src =
+    process.env.OMNEXX_CONFIG_HOME ??
+    join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'omnexx');
+  const dest = join(home, 'config');
+  if (existsSync(src)) await cp(src, dest, { recursive: true });
+  else await mkdir(dest, { recursive: true });
+  const file = join(dest, 'config.toml');
+  let text = await readFile(file, 'utf-8').catch(() => '');
+  if (o.model) {
+    // Only this model may be called: no pool, no roles, nothing that could reach a paid one.
+    await Promise.all(POOL_FILES.map((f) => rm(join(dest, f), { force: true })));
+    text = withoutModelsTables(text);
+    const m = JSON.stringify(o.model);
+    text += `\n[models]\nplanner = ${m}\nworker = ${m}\ncheap = ${m}\nhelpers = ${m}\nchat = ${m}\n`;
+  }
+  if (o.context === 'full')
+    text += `\n[context.sections]\n${ALL_PINNED.map((s) => `${s} = "pinned"`).join('\n')}\n`;
+  if (!/^\[beyond\]/m.test(text)) text += `\n[beyond]\nenabled = ${String(o.beyond)}\n`;
+  await writeFile(file, text);
+  return dest;
+}
+
+async function hasScript(dir: string, name: string): Promise<boolean> {
+  try {
+    const pkg = JSON.parse(await readFile(join(dir, 'package.json'), 'utf-8')) as {
+      scripts?: Record<string, string>;
+    };
+    return Boolean(pkg.scripts?.[name]);
+  } catch {
+    return false;
+  }
+}
+
+async function latestState(home: string): Promise<RunState | undefined> {
+  const runs = (await readdir(join(home, 'runs')).catch(() => [])).sort();
+  const last = runs.at(-1);
+  if (!last) return undefined;
+  return JSON.parse(await readFile(join(home, 'runs', last, 'state.json'), 'utf-8')) as RunState;
+}
+
+/** Create a fake omnexx runner for testing. */
+export function createFakeOmnexxRunner(overrideMetrics?: Partial<BenchmarkResult>): AgentRunner {
+  const baseMetrics: BenchmarkResult = {
+    resolved: true,
+    usd: 0.05,
+    tokens_in: 10_000,
+    tokens_out: 2_000,
+    cached: 8_000,
+    wall_ms: 100,
+    interventions: 0,
+  };
+
+  class FakeOmnexxRunner extends AgentRunner {
+    constructor() {
+      super('omnexx');
+    }
+
+    override isAvailable(): Promise<boolean> {
+      return Promise.resolve(true);
+    }
+
+    override run(): Promise<AgentRunOutput> {
+      return Promise.resolve({ ...baseMetrics, ...overrideMetrics });
+    }
+  }
+
+  return new FakeOmnexxRunner();
+}

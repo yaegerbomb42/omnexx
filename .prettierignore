@@ -8,3 +8,4 @@ test/fixtures
 test/.build
 .claude/
 vscode/out
+bench/suites/*/*/solution/

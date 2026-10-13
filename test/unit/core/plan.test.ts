@@ -231,3 +231,45 @@ describe('normalizePlanUpdate: what the free-model run sent', () => {
     ]);
   });
 });
+
+describe('normalizePlanUpdate: length and id slips (bench, free model)', () => {
+  it('clips over-long prose, never checks, and accepts loose milestone ids', async () => {
+    const { normalizePlanUpdate, planUpdateSchema } = await import('../../../src/core/plan.js');
+    const long = 'x'.repeat(400);
+    const raw = {
+      milestones: [
+        { id: 'm1', title: 'First', steps: [long], acceptance: ['y'.repeat(600)] },
+        { id: 'M02', title: 't'.repeat(250), why: 'w'.repeat(1_200) },
+        { id: 'Milestone 3', title: 'Third' },
+        { id: 4, title: 'Fourth' },
+      ],
+    };
+    const fixed = planUpdateSchema.parse(normalizePlanUpdate(raw));
+    expect(fixed.milestones.map((m) => m.id)).toEqual(['M1', 'M2', 'M3', 'M4']);
+    expect(fixed.milestones[0]?.steps[0]).toHaveLength(300);
+    expect(fixed.milestones[0]?.steps[0]?.endsWith('…')).toBe(true);
+    expect(fixed.milestones[0]?.acceptance[0]).toHaveLength(500);
+    expect(fixed.milestones[1]?.title).toHaveLength(200);
+    expect(fixed.milestones[1]?.why).toHaveLength(1_000);
+
+    const longCheck = {
+      milestones: [{ id: 'M1', title: 'Checks', checks: [`echo ${long}${long}`] }],
+    };
+    expect(planUpdateSchema.safeParse(normalizePlanUpdate(longCheck)).success).toBe(false);
+  });
+
+  it('write_intent clips its lists instead of failing', async () => {
+    const { intentSchema, normalizeIntent } = await import('../../../src/agent/intent.js');
+    const parsed = intentSchema.parse(
+      normalizeIntent({
+        product: 'p'.repeat(2_000),
+        done: ['d'.repeat(400)],
+        assumptions: ['a'.repeat(301)],
+      }),
+    );
+    expect(parsed.product).toHaveLength(1_200);
+    expect(parsed.done[0]).toHaveLength(300);
+    expect(parsed.assumptions[0]).toHaveLength(300);
+    expect(normalizeIntent('x')).toBe('x');
+  });
+});

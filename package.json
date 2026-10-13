@@ -33,7 +33,8 @@
     "test:chaos": "vitest run --project chaos",
     "test:e2e": "vitest run --project e2e",
     "coverage": "vitest run --coverage",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build"
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build",
+    "bench": "node bench/run.ts"
   },
   "keywords": [
     "agent",
