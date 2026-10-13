@@ -2,7 +2,7 @@
   "name": "omnexx",
   "displayName": "omnexx",
   "description": "A Cline-style chat for the omnexx coding agent: chat, plan or run autonomously, see token use and cost, and watch long runs' todo lists.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "yaegerbomb42",
   "license": "MIT",
   "private": true,

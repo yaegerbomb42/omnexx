@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+- **Crew view:** helpers (subagents) appear as cards wired to the head agent: working, then
+  reported back with turns, time and cost.
+- **Browser view:** a mini browser window with the agent's latest page after each action.
+- **Model picker:** a searchable popover grouped by provider, from the header or Settings.
+- **Settings:** provider tiles with search, a Test button per provider (run when Settings opens),
+  colored state edges.
+- More color throughout, a brighter logo and a new activity-bar icon. Needs omnexx 0.7.0.
+
 ## 0.2.0
 
 - **Chat panel** in the sidebar: session stats (uptime, turns, tokens, cost, context), Act /

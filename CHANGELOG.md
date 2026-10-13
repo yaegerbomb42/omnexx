@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+- **Live browser view.** `browser.live_view` (on by default): after each page-changing browser
+  action omnexx saves a screenshot under the run's logs (never the repo) and emits
+  `browser.frame`, so the VS Code panel can show what the agent sees.
+- **Helpers in the panel.** `chat-server` reports each helper (subagent) starting and
+  finishing, with turns and cost, for the panel's Crew view.
+- `chat-server`: `testProvider`, and clearing a chat now waits for its notes to be archived.
+
 ## 0.6.0
 
 - **Autonomous runs keep going.** With `run --for`, a stretch with no accepted commit no longer
