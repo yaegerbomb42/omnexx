@@ -182,7 +182,7 @@ Pushes carry only the run id, repo name, status, a task title, counts and dollar
 | `max_consecutive_rejections` | `3`     | Same task rejected N times in a row                                                                                   |
 | `max_same_signature`         | `3`     | Same normalized failure N times for a task                                                                            |
 | `max_task_cycles`            | `8`     | Cycles spent on one task without finishing it                                                                         |
-| `no_progress_cycles`         | `8`     | Run-level: no accepted commit in N cycles → `needs-human`                                                             |
+| `no_progress_cycles`         | `12`    | Run-level: no accepted commit in N cycles → `needs-human`                                                             |
 | `no_progress_hours`          | `3`     | Same, by time                                                                                                         |
 | `oscillation_window`         | `5`     | How many earlier green commits the A→B→A check looks back                                                             |
 | `repeated_tool_call`         | `3`     | In-cycle: the same tool call with identical arguments this many times ends the cycle                                  |

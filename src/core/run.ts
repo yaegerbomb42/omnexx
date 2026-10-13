@@ -57,6 +57,8 @@ export class Run {
   readonly models: { planner: ResolvedModel; worker: ResolvedModel; cheap: ResolvedModel };
   /** Each role's failover chain, in order. */
   readonly chains: { planner: ResolvedModel[]; worker: ResolvedModel[]; cheap: ResolvedModel[] };
+  /** Models that failed at planning this run ("provider:id"); the planner falls back past them. */
+  readonly plannerFailed = new Set<string>();
   /** Providers that just failed: skipped until the timestamp. */
   private readonly cooling = new Map<string, number>();
   readonly abort = new AbortController();

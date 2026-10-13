@@ -1,3 +1,4 @@
+import type { ResolvedModel } from '../providers/pricing.js';
 import { join } from 'node:path';
 import { readTextOr } from '../core/atomic.js';
 import { renderNotes } from '../core/notes.js';
@@ -228,6 +229,27 @@ const PLAN_NUDGES = [
   },
 ] as const;
 
+const modelKey = (m: ResolvedModel): string => `${m.provider}:${m.id}`;
+
+/**
+ * The planner's models: its own chain, then the worker models as fallbacks, minus any that
+ * already failed at planning this run. Never empty: with every candidate failed, the chain as is.
+ */
+export function plannerCandidates(
+  run: { plannerFailed: ReadonlySet<string>; chains: { worker: readonly ResolvedModel[] } },
+  chain: readonly ResolvedModel[],
+): ResolvedModel[] {
+  const seen = new Set<string>();
+  const all = [...chain, ...run.chains.worker].filter((m) => {
+    const k = modelKey(m);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const left = all.filter((m) => !run.plannerFailed.has(modelKey(m)));
+  return left.length ? left : [...chain];
+}
+
 export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   const goal = await run.store.readGoal();
   const intent = await readIntent(run.store);
@@ -340,13 +362,16 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     },
     {
       provider: run.deps.provider,
-      models: (
-        await run.router.pick({
-          action: plannerAction(mode),
-          needs: { tools: true },
-          facts: { mode: mode.kind },
-        })
-      ).chain,
+      models: plannerCandidates(
+        run,
+        (
+          await run.router.pick({
+            action: plannerAction(mode),
+            needs: { tools: true },
+            facts: { mode: mode.kind },
+          })
+        ).chain,
+      ),
       providerBlocked: (p) => run.providerBlocked(p),
       modelExhausted: (r) => run.modelExhausted(r),
       markExhausted: (r) => {

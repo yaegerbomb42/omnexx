@@ -1,3 +1,4 @@
+import { plannerCandidates } from '../agent/planner.js';
 import { formatDuration, parseDuration } from '../config/duration.js';
 import { BEYOND_RUBRIC, NO_TOOL_CALLS, PlannerIncomplete, runPlanner } from '../agent/planner.js';
 import { allOf, WebhookNotifier } from '../notify/webhook.js';
@@ -116,6 +117,22 @@ const PLANNER_RETRIES = 2;
 
 class Supervisor {
   private plannerRetries = 0;
+
+  /** Mark the current lead planner model as failed and move to the next candidate, if any. */
+  private fallBackPlanner(end: string): boolean {
+    const r = this.run;
+    const candidates = plannerCandidates(r, r.chains.planner);
+    const [lead, next] = candidates;
+    if (!lead || !next) return false;
+    r.plannerFailed.add(`${lead.provider}:${lead.id}`);
+    this.plannerRetries = 0;
+    r.events.emit('planner.fallback', {
+      from: `${lead.provider}:${lead.id}`,
+      to: `${next.provider}:${next.id}`,
+      end,
+    });
+    return true;
+  }
 
   constructor(
     private readonly run: Run,
@@ -821,6 +838,8 @@ class Supervisor {
         }
         if (err.end === 'stop' || err.end === 'stop-now')
           return { status: 'user-stop', reason: 'stopped during planning' };
+        // Retries used up on this model: plan with the next one before asking anyone.
+        if (err.end !== 'max_usd' && this.fallBackPlanner(err.end)) continue;
         return err.end === 'max_usd'
           ? { status: 'budget-stop', reason: 'max_usd reached while planning' }
           : {

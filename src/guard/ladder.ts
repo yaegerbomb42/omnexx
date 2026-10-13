@@ -3,11 +3,11 @@ import type { StuckFinding } from './stuck.js';
 
 /**
  * The strategy ladder (plan §3.10) as an ordered list of rung objects. A task starts on rung 0;
- * every stuck finding moves it one rung up. A rung that isn't implemented yet ("try a different
- * approach" via the planner) is simply not in the list.
+ * every stuck finding moves it one rung up: retry with the evidence, then a fundamentally
+ * different approach, then a stronger model, then a split, then park.
  */
 export interface Rung {
-  id: 'retry_with_evidence' | 'escalate_model' | 'replan_task' | 'park';
+  id: 'retry_with_evidence' | 'different_approach' | 'escalate_model' | 'replan_task' | 'park';
   /** Mutates the task; returns a short description for the event log. */
   apply(task: PlanNode, findings: readonly StuckFinding[]): string;
 }
@@ -24,7 +24,26 @@ export const retryWithEvidence: Rung = {
 };
 
 /**
- * Rung 2: move the task to the planner (strong) model. The stuck counters restart so the strong
+ * Rung 2: same model, new strategy. The approaches already tried are spelled out and ruled out,
+ * and the stuck counters restart so the new approach gets its own attempts before escalation.
+ */
+export const differentApproach: Rung = {
+  id: 'different_approach',
+  apply(task) {
+    const tried = task.approachesTried.slice(-5);
+    task.rungStartedAt = task.attempts;
+    task.consecutiveRejections = 0;
+    task.failureSignatures = [];
+    task.evidence = [
+      ...task.evidence,
+      `Repeated attempts failed the same way.${tried.length ? ` Already tried, so rule these out: ${tried.map((a) => `"${a}"`).join('; ')}.` : ''} Take a fundamentally different approach: re-read the failing output from scratch, question the assumption the earlier attempts shared, and change the level you work at (a different file, algorithm, or a smaller first step).`,
+    ].slice(-3);
+    return 'different approach requested';
+  },
+};
+
+/**
+ * Rung 3: move the task to the planner (strong) model. The stuck counters restart so the strong
  * model gets its own budget of attempts before the next rung; approaches tried and evidence stay.
  */
 export const escalateModel: Rung = {
@@ -63,7 +82,13 @@ export const park: Rung = {
   },
 };
 
-export const LADDER: readonly Rung[] = [retryWithEvidence, escalateModel, replanTask, park];
+export const LADDER: readonly Rung[] = [
+  retryWithEvidence,
+  differentApproach,
+  escalateModel,
+  replanTask,
+  park,
+];
 
 /** Apply the next rung when stuck signals fired; returns the rung applied, if any. */
 export function climb(
