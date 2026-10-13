@@ -40,7 +40,7 @@ interface State {
   model: string | null;
   context: { used: number; limit: number } | null;
   usage: (Usage & { startedAt: number | null }) | null;
-  helpers: crew.Helper[];
+  helpers?: crew.Helper[];
 }
 
 type Incoming =
@@ -270,7 +270,8 @@ function apply(s: State): void {
   drawControls(s);
   drawStats(s);
   drawSteps(s.todos);
-  crew.drawCrew(s.helpers, logoSrc);
+  // An older omnexx sends no helpers; treat that as none.
+  crew.drawCrew(s.helpers ?? [], logoSrc);
   drawLiveLog();
   drawConversation();
 }
