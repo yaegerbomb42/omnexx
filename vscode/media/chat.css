@@ -2313,3 +2313,56 @@ body.ctx-open > :not(.top, #ctxpage, script) {
   color: var(--text-soft);
   cursor: help;
 }
+
+/* Settings fit narrow sidebars: section content may shrink, cards wrap instead of overflowing. */
+.set-section {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.set-section > *,
+.roles > *,
+.palette > *,
+.providers > * {
+  min-width: 0;
+}
+
+.provider {
+  flex-wrap: wrap;
+}
+
+.p-main {
+  flex: 1 1 160px;
+}
+
+.p-actions {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 360px) {
+  .settings {
+    padding: 4px 8px 14px;
+  }
+
+  .set-section {
+    padding: 8px;
+  }
+
+  .role,
+  .provider {
+    padding: 7px 8px;
+  }
+
+  .p-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+
+  .role-what {
+    display: none;
+  }
+
+  .ptiles,
+  .tiles {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  }
+}

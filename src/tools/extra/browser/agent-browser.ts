@@ -7,6 +7,7 @@ import type {
   BrowserTab,
   ScreenshotResult,
   WaitTarget,
+  BrowserLaunch,
 } from './types.js';
 import { describeWaitTarget, pollUntil } from './wait.js';
 
@@ -44,13 +45,24 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 export class AgentBrowserBackend implements BrowserBackend {
   readonly name = 'agent-browser';
 
+  private readonly headless: boolean;
+  /** --profile / --session-name, added to every call so state carries across commands. */
+  private readonly stateArgs: string[];
+
   constructor(
     private readonly session: string,
-    private readonly headless = true,
-  ) {}
+    launch: boolean | Partial<BrowserLaunch> = true,
+  ) {
+    const opts = typeof launch === 'boolean' ? { headless: launch } : launch;
+    this.headless = opts.headless ?? true;
+    this.stateArgs = [
+      ...(opts.profile ? ['--profile', opts.profile] : []),
+      ...(opts.sessionName ? ['--session-name', opts.sessionName] : []),
+    ];
+  }
 
   private async runCli(args: string[], timeout = DEFAULT_TIMEOUT_MS): Promise<string> {
-    const fullArgs = ['--session', this.session];
+    const fullArgs = ['--session', this.session, ...this.stateArgs];
     if (!this.headless) {
       fullArgs.push('--headed');
     }
@@ -70,7 +82,7 @@ export class AgentBrowserBackend implements BrowserBackend {
 
   /** Runs a command with `--json` and returns its `data`, throwing the CLI's own error message. */
   private async json<T>(args: string[], timeout = DEFAULT_TIMEOUT_MS): Promise<T> {
-    const fullArgs = ['--session', this.session, '--json'];
+    const fullArgs = ['--session', this.session, ...this.stateArgs, '--json'];
     if (!this.headless) fullArgs.push('--headed');
     fullArgs.push(...args);
     const result = await execa('agent-browser', fullArgs, { timeout, reject: false });

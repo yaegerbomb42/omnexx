@@ -16,6 +16,22 @@ export const browser = z
      * `browser.frame`, so an editor panel can show the agent's browser live. Never in the repo.
      */
     live_view: z.boolean().default(true),
+    /**
+     * Which browser: chromium (agent-browser or Playwright) or camoufox, an anti-detection Firefox
+     * (Playwright + the optional camoufox-js package: `npm i -g camoufox-js && npx camoufox-js fetch`).
+     */
+    engine: z.enum(['chromium', 'camoufox']).default('chromium'),
+    /**
+     * Opt-in: a browser profile to reuse, with its logins and cookies. agent-browser takes a
+     * Chrome profile name ("Default") or folder; Playwright and Camoufox take a folder they keep
+     * their state in. The agent then acts as that profile on the sites browser.allow permits.
+     */
+    profile: z.string().min(1).optional(),
+    /** Keep the agent's own cookies and storage under this name between runs (agent-browser). */
+    session_name: z
+      .string()
+      .regex(/^[\w.-]{1,64}$/)
+      .optional(),
   })
   .prefault({});
 

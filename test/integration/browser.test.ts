@@ -122,6 +122,7 @@ describe('browser integration', () => {
       serve_timeout: '60s',
       allow_eval: false,
       live_view: false,
+      engine: 'chromium' as const,
     });
 
     const res = await tool.run({ action: 'open', url: 'https://evil.com/phishing' }, ctx);
