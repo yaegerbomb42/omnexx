@@ -24,6 +24,7 @@ import {
   type TodoItem,
   type Usage,
 } from './render.js';
+import * as modelPicker from './modelPicker.js';
 import * as settings from './settings.js';
 
 interface State {
@@ -42,7 +43,7 @@ interface State {
 
 type Incoming =
   | ({ type: 'state' } & State)
-  | ({ type: 'settings' | 'models' | 'prefs' } & Record<string, unknown>)
+  | ({ type: 'settings' | 'models' | 'prefs' | 'providerTest' } & Record<string, unknown>)
   | { type: 'ready'; version: string }
   | { type: 'error'; message: string }
   | { type: 'down'; message: string };
@@ -259,6 +260,7 @@ function apply(s: State): void {
   ingest(s.entries);
   state = s;
   settings.setCurrentModel(s.model);
+  modelPicker.setCurrent(s.model);
   banner.hidden = true;
   drawControls(s);
   drawStats(s);
@@ -278,6 +280,12 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
   // origin; anything else (another frame or window) is ignored.
   if (event.origin !== window.location.origin) return;
   const m = event.data;
+  if (m.type === 'models')
+    modelPicker.setModels(
+      (m.items as modelPicker.ModelItem[] | undefined) ?? [],
+      (m.unreachable as string[] | undefined) ?? [],
+      typeof m.current === 'string' ? m.current : null,
+    );
   if (m.type !== 'state' && settings.onMessage(m)) return;
   if (m.type === 'state') apply(m);
   else if (m.type === 'ready') {
@@ -331,7 +339,11 @@ document.addEventListener('click', (e) => {
   const action = target.closest<HTMLElement>('[data-action]')?.dataset.action;
   if (action === 'allow' || action === 'deny') post({ type: 'answer', yes: action === 'allow' });
   else if (action === 'approval') post({ type: 'yolo', on: !(state?.autoApprove ?? false) });
-  else if (action === 'settings') {
+  else if (action === 'pickModel') {
+    const chip = target.closest<HTMLElement>('[data-action]');
+    if (modelPicker.isOpen()) modelPicker.close();
+    else if (chip) modelPicker.open(chip, post);
+  } else if (action === 'settings') {
     if (settings.isOpen()) settings.close();
     else settings.open(post);
   } else if (action === 'clear-log') {
@@ -351,10 +363,14 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   const target = e.target instanceof HTMLElement ? e.target : null;
   if (e.key === 'Enter' && target?.dataset.open) post({ type: 'open', path: target.dataset.open });
-  if (e.key === 'Escape' && !settings.isOpen() && state?.busy) post({ type: 'stop' });
+  if (e.key === 'Escape' && !settings.isOpen() && !modelPicker.isOpen() && state?.busy)
+    post({ type: 'stop' });
 });
 
 settings.wire(post);
+modelPicker.wire(() => {
+  settings.open(post);
+});
 setInterval(drawUptime, CLOCK_TICK_MS);
 post({ type: 'ready' });
 input.focus();

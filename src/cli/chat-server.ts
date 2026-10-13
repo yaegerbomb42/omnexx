@@ -13,9 +13,10 @@ import { println, type CliIO } from './io.js';
  * In (one JSON object per line): send {text} · answer {yes} · stop · pause · resume · mode {mode} ·
  * yolo {on} ·
  * model {ref} · models · connect {value, name?} · undo · clear · compact · sync (resend all) ·
- * settings · addProvider {provider?, key?, url?} · removeProvider {name}.
+ * settings · addProvider {provider?, key?, url?} · removeProvider {name} · testProvider {name}.
  * Out: ready {version} · state (below; `entries` holds only lines not sent before) · models
- * {items, unreachable, current} · settings {catalog, connected} · error {message}.
+ * {items, unreachable, current} · settings {catalog, connected} · providerTest {name, ok, models,
+ * detail} · error {message}.
  */
 
 export interface ChatUsage {
@@ -215,6 +216,13 @@ export async function serveChat(
         );
         return;
       }
+      case 'testProvider':
+        run(
+          import('./chat-settings.js').then(async ({ testProvider }) => {
+            write({ type: 'providerTest', ...(await testProvider(io, text(c, 'name'))) });
+          }),
+        );
+        return;
       case 'removeProvider':
         run(
           import('./chat-settings.js').then(async ({ removeProvider }) => {

@@ -5,6 +5,7 @@ import {
   providerCatalog,
   providerSettings,
   removeProvider,
+  testProvider,
 } from '../../src/cli/chat-settings.js';
 import type { CliIO } from '../../src/cli/io.js';
 import { makeRepo } from '../support/harness.js';
@@ -69,5 +70,24 @@ describe('chat settings: providers for the panel', () => {
     await expect(addProvider(x, { url: 'ftp://x' })).rejects.toThrow(/http/);
     await expect(addProvider(x, { provider: 'Bad Name!' })).rejects.toThrow(/not a usable name/);
     await expect(removeProvider(x, '../etc')).rejects.toThrow(/not a provider name/);
+  });
+
+  it('tests a provider by listing its models with the stored key', async () => {
+    const x = await io();
+    await addProvider(x, { provider: 'groq', key: 'gsk_abcdefghijklmnopqrstuvwxyz0123456789' });
+    const seen: string[] = [];
+    const ok: CliIO = {
+      ...x,
+      fetch: (url, init) => {
+        const href = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
+        seen.push(`${href} ${new Headers(init?.headers).get('authorization') ?? ''}`);
+        return Promise.resolve(Response.json({ data: [{ id: 'llama-4' }, { id: 'qwen-3' }] }));
+      },
+    };
+    expect(await testProvider(ok, 'groq')).toMatchObject({ ok: true, models: 2 });
+    expect(seen[0]).toMatch(/api\.groq\.com.*\/models Bearer gsk_/);
+    expect(await testProvider(x, 'groq')).toMatchObject({ ok: false, models: 0 });
+    expect(await testProvider(x, 'nope')).toMatchObject({ ok: false, detail: 'not set up' });
+    expect(await testProvider(x, 'anthropic')).toMatchObject({ ok: false, detail: 'no key set' });
   });
 });
