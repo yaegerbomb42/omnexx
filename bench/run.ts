@@ -1,10 +1,10 @@
 import { program } from 'commander';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { getJimmy10Suite } from './suites/index.ts';
 import { OmnexxRunner } from './runners/omnexx.ts';
 import { ClaudeCodeRunner } from './runners/claude-code.ts';
 import { CodexRunner } from './runners/codex.ts';
-import { createResultsWriter } from './results.ts';
+import { createResultsWriter, resultsDir } from './results.ts';
 import type { BenchConfig, Suite, TaskRunResult } from './types.ts';
 import type { AgentRunner } from './runners/base.ts';
 
@@ -37,6 +37,9 @@ interface Opts {
   model?: string;
   context: string;
 }
+
+/** 61_234 → "61k". */
+const fmtK = (n: number): string => (n >= 1_000 ? `${String(Math.round(n / 1_000))}k` : String(n));
 
 const ZERO = { usd: 0, tokens_in: 0, tokens_out: 0, cached: 0, wall_ms: 0, interventions: 0 };
 
@@ -96,7 +99,8 @@ async function main(): Promise<void> {
   for (const task of tasks) {
     console.log(`\n=== ${task.id} ===`);
     for (const runner of runners) {
-      const workDir = resolve(config.out, 'work', config.suite, task.id, runner.agentName);
+      // Next to the results (bench/results/<name>/work), never in the repo's own tree.
+      const workDir = join(resultsDir(config.out), 'work', config.suite, task.id, runner.agentName);
       const startedAt = new Date().toISOString();
       let result: TaskRunResult;
       try {
@@ -113,9 +117,11 @@ async function main(): Promise<void> {
           startedAt,
           finishedAt: new Date().toISOString(),
         };
-        const tok = metrics.tokens_in + metrics.cached + metrics.tokens_out;
+        // Fresh tokens are what a run really costs; cache reads are re-sent context billed at about
+        // a tenth of the price, so they are shown apart instead of inflating one total.
+        const fresh = metrics.tokens_in + metrics.tokens_out;
         console.log(
-          `  ${resolved ? 'PASS' : 'FAIL'} ${runner.agentName}: $${metrics.usd.toFixed(4)}, ${tok} tokens, ${(metrics.wall_ms / 1000).toFixed(0)}s`,
+          `  ${resolved ? 'PASS' : 'FAIL'} ${runner.agentName}: $${metrics.usd.toFixed(4)}, ${fmtK(fresh)} fresh + ${fmtK(metrics.cached)} cached tokens, ${(metrics.wall_ms / 1000).toFixed(0)}s`,
         );
       } catch (error) {
         console.error(`  ERROR ${runner.agentName}: ${String(error)}`);
