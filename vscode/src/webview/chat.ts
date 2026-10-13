@@ -24,6 +24,7 @@ import {
   type TodoItem,
   type Usage,
 } from './render.js';
+import * as contextPage from './contextPage.js';
 import * as crew from './crew.js';
 import * as modelPicker from './modelPicker.js';
 import * as settings from './settings.js';
@@ -45,7 +46,9 @@ interface State {
 
 type Incoming =
   | ({ type: 'state' } & State)
-  | ({ type: 'settings' | 'models' | 'prefs' | 'providerTest' | 'roles' } & Record<string, unknown>)
+  | ({
+      type: 'settings' | 'models' | 'prefs' | 'providerTest' | 'roles' | 'contextFiles';
+    } & Record<string, unknown>)
   | ({ type: 'browserFrame' } & crew.BrowserFrameMsg)
   | { type: 'ready'; version: string }
   | { type: 'error'; message: string }
@@ -302,11 +305,13 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
       (m.unreachable as string[] | undefined) ?? [],
       typeof m.current === 'string' ? m.current : null,
     );
+  if (m.type !== 'state' && contextPage.onMessage(m)) return;
   if (m.type !== 'state' && settings.onMessage(m)) return;
   if (m.type === 'state') apply(m);
   else if (m.type === 'ready') {
     // A new chat, a fresh omnexx process or a resync: back to the conversation, from the start.
     settings.close();
+    contextPage.close();
     crew.resetViews();
     blocks = [];
     logLines = [];
@@ -360,7 +365,12 @@ document.addEventListener('click', (e) => {
     const chip = target.closest<HTMLElement>('[data-action]');
     if (modelPicker.isOpen()) modelPicker.close();
     else if (chip) modelPicker.open(chip, post);
+  } else if (action === 'context') {
+    settings.close();
+    if (contextPage.isOpen()) contextPage.close();
+    else contextPage.open(post);
   } else if (action === 'settings') {
+    contextPage.close();
     if (settings.isOpen()) settings.close();
     else settings.open(post);
   } else if (action === 'clear-log') {
@@ -385,6 +395,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 settings.wire(post);
+contextPage.wire(post);
 crew.wire();
 modelPicker.wire(() => {
   settings.open(post);

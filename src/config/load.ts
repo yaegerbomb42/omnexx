@@ -1,3 +1,4 @@
+import { readSectionModes, sectionsLayer } from './sections-file.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { rankingLayer, readPoolMode, readRanking } from './ranking.js';
@@ -175,6 +176,10 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<LoadedConfig>
     ? undefined
     : await readTomlLayer(join(opts.cwd, PROJECT_CONFIG));
   if (project) layers.push(project);
+  // Context sections set in the editor's Context explorer: same place as roles.
+  const sections = sectionsLayer(await readSectionModes(paths));
+  if (sections)
+    layers.push({ source: 'your context sections (context-sections.json)', data: sections });
   // Roles chosen in the editor: above the /models pool, below a project's omnexx.toml and flags.
   const roles = rolesLayer(await readRoles(paths));
   if (roles) layers.push({ source: 'your model roles (roles.json)', data: roles });

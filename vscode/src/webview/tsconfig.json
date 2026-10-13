@@ -4,6 +4,14 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": []
   },
-  "include": ["chat.ts", "render.ts", "settings.ts", "modelPicker.ts", "crew.ts", "roles.ts"],
+  "include": [
+    "chat.ts",
+    "render.ts",
+    "settings.ts",
+    "modelPicker.ts",
+    "crew.ts",
+    "roles.ts",
+    "contextPage.ts"
+  ],
   "exclude": []
 }

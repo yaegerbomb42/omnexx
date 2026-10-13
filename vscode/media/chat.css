@@ -2070,3 +2070,120 @@ body.vscode-light .live-log {
 .switch input {
   accent-color: var(--accent);
 }
+
+/* Context explorer */
+body.ctx-open > :not(.top, #ctxpage, script) {
+  display: none !important;
+}
+
+.ctx-sum {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.ctx-sum div {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 8%, var(--surface));
+  display: grid;
+}
+
+.ctx-sum b {
+  font-family: var(--mono);
+  font-size: 1.1em;
+}
+
+.ctx-sum div:nth-child(1) b {
+  color: var(--accent);
+}
+
+.ctx-sum div:nth-child(2) b {
+  color: var(--violet);
+}
+
+.ctx-sum div:nth-child(3) b {
+  color: var(--text-soft);
+}
+
+.ctx-sum span {
+  font-size: 0.78em;
+  color: var(--text-soft);
+}
+
+.cfiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.cfile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  background: color-mix(in srgb, var(--fg) 9%, var(--surface));
+}
+
+.cfile.m-pinned {
+  border-left-color: var(--accent);
+}
+
+.cfile.m-optional {
+  border-left-color: var(--violet);
+}
+
+.cfile.m-hidden {
+  opacity: 0.7;
+}
+
+.cf-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.cf-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cf-name {
+  font-weight: 600;
+}
+
+.cf-size {
+  font-family: var(--mono);
+  font-size: 0.8em;
+  color: var(--text-soft);
+}
+
+.cf-about {
+  font-size: 0.82em;
+  color: var(--text-soft);
+}
+
+.seg.mini {
+  margin-top: 5px;
+  width: 100%;
+}
+
+.seg.mini button {
+  font-size: 0.78em;
+  padding: 0 4px;
+}
+
+.seg.mini button[data-ctx-mode='optional'][aria-pressed='true'] {
+  background: color-mix(in srgb, var(--violet) 30%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet) 70%, transparent);
+}
+
+.seg.mini button[data-ctx-mode='hidden'][aria-pressed='true'] {
+  background: color-mix(in srgb, var(--fg) 15%, transparent);
+  box-shadow: none;
+}

@@ -1,4 +1,5 @@
 import { compactPlanView, type Plan, type PlanNode } from '../core/plan.js';
+import { contentsBlock, type SectionId, type SectionModes } from './sections.js';
 import type { CompletionRequest, Message, SystemBlock, ToolSpec } from '../providers/types.js';
 
 /** Everything a cycle starts from. Built from disk each cycle; nothing carries over. */
@@ -22,8 +23,20 @@ export interface CycleInputs {
   memory?: string;
   /** The task's running context: the agent's own living memory from earlier cycles. */
   runningContext?: string;
+  /** The task's role card (who the agent is for it, what done means). */
+  role?: string;
+  /** How each section reaches the model; all pinned when unset (the old behaviour). */
+  sections?: SectionModes;
   tools: ToolSpec[];
 }
+
+const ALL_PINNED: SectionModes = {
+  role: 'pinned',
+  codemap: 'pinned',
+  intent: 'pinned',
+  lessons: 'pinned',
+  progress: 'pinned',
+};
 
 /**
  * Stable prefix, in fixed order (plan §4.1): tools → system prompt → codemap → goal → notes,
@@ -34,16 +47,31 @@ export function buildCycleContext(i: CycleInputs): {
   system: SystemBlock[];
   first: Message;
   tools: ToolSpec[];
+  /** One name per system block, for the context breakdown. */
+  labels: string[];
 } {
-  const system: SystemBlock[] = [
-    { text: i.systemPrompt },
-    { text: i.codemap },
-    { text: i.intent ? `# Goal\n\n${i.goal.trim()}\n\n${i.intent}` : `# Goal\n\n${i.goal.trim()}` },
-    { text: `# Lessons (notes.md)\n\n${i.notes.trim()}`, cacheBreakpoint: true },
-  ];
+  const modes = i.sections ?? ALL_PINNED;
+  const optional: { id: SectionId; text: string }[] = [];
+  /** Pinned: send it. Optional: list it in the table of contents. Hidden: neither. */
+  const keep = (id: SectionId, text: string | undefined): boolean => {
+    if (!text?.trim()) return false;
+    if (modes[id] === 'optional') optional.push({ id, text });
+    return modes[id] === 'pinned';
+  };
+
+  const blocks: { label: string; text: string }[] = [{ label: 'system', text: i.systemPrompt }];
+  if (keep('codemap', i.codemap)) blocks.push({ label: 'codemap', text: i.codemap });
+  const intent = keep('intent', i.intent) ? `\n\n${i.intent ?? ''}` : '';
+  blocks.push({ label: 'goal', text: `# Goal\n\n${i.goal.trim()}${intent}` });
+  if (keep('lessons', i.notes))
+    blocks.push({ label: 'notes', text: `# Lessons (notes.md)\n\n${i.notes.trim()}` });
+  const system: SystemBlock[] = blocks.map((b, n) =>
+    n === blocks.length - 1 ? { text: b.text, cacheBreakpoint: true } : { text: b.text },
+  );
+
   const parts = [`# Plan\n\n${compactPlanView(i.plan, i.task.id)}`];
-  if (i.memory) parts.push(i.memory);
-  else if (i.progressTail) parts.push(`# Recent progress\n\n${i.progressTail}`);
+  const progress = i.memory ?? (i.progressTail ? `# Recent progress\n\n${i.progressTail}` : '');
+  if (keep('progress', progress)) parts.push(progress);
   if (i.task.approachesTried.length) {
     parts.push(
       `# Approaches already tried for ${i.task.id} (do not repeat these)\n\n${i.task.approachesTried.map((a) => `- ${a}`).join('\n')}`,
@@ -55,6 +83,9 @@ export function buildCycleContext(i: CycleInputs): {
     parts.push(
       `# Your running context for ${i.task.id} (where the work stands; keep adding with running_context)\n\n${i.runningContext}`,
     );
+  if (keep('role', i.role)) parts.push((i.role ?? '').trim());
+  const contents = contentsBlock(optional);
+  if (contents) parts.push(contents);
   parts.push(
     `# Your task now\n\nWork on ${i.task.id}: ${i.task.title}. Stop calling tools and summarize when it is done or you are blocked.`,
   );
@@ -62,6 +93,7 @@ export function buildCycleContext(i: CycleInputs): {
     system,
     first: { role: 'user', content: [{ type: 'text', text: parts.join('\n\n') }] },
     tools: i.tools,
+    labels: blocks.map((b) => b.label),
   };
 }
 

@@ -119,8 +119,15 @@ async function builtIn(env: ScopeEnv, scope: Scope): Promise<string> {
       return repoView(env);
     case 'heat':
       return `## Hot files (recent changes)\n${await heatmap(env.repoRoot, env.edited)}`;
-    case 'recent':
-      return (await env.runningContext?.forPrompt()) ?? '';
+    case 'recent': {
+      // The task's role card (when it isn't pinned) leads, then where the work stands.
+      const key = env.runningContext?.key;
+      const role = key
+        ? (await readTextOr(env.store.file(join('roles', `${key}.md`)), '')).trim()
+        : '';
+      const running = (await env.runningContext?.forPrompt()) ?? '';
+      return [role, running].filter(Boolean).join('\n\n');
+    }
   }
 }
 

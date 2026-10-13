@@ -1,3 +1,4 @@
+import { sectionsSchema } from '../agent/sections.js';
 import { z } from 'zod';
 import { durationString } from './duration.js';
 import * as extraSections from './sections/index.js';
@@ -258,6 +259,8 @@ export const stuckSchema = z.strictObject({
 });
 
 export const contextSchema = z.strictObject({
+  /** How each context section reaches the model: pinned, optional (on request) or hidden. */
+  sections: sectionsSchema,
   progress_tail: z.number().int().nonnegative().default(5),
   notes_max_tokens: z.number().int().positive().default(1_500),
   repo_map_max_tokens: z.number().int().positive().default(3_000),
