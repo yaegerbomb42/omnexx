@@ -45,6 +45,8 @@ export const planNodeSchema = nodeInputSchema.extend({
   approachesTried: z.array(z.string()).default([]),
   failureSignatures: z.array(z.string()).default([]),
   lastRejection: z.string().optional(),
+  /** The in-cycle stuck signal that cut the previous attempt short, if one did. */
+  lastCutShort: z.string().optional(),
   parkedReason: z.string().optional(),
   /** Index into the strategy ladder for this task. */
   rung: z.number().int().nonnegative().default(0),

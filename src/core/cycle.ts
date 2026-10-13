@@ -56,6 +56,16 @@ const CHECK_TIMEOUT_MS = 10 * 60_000;
 /** Rejection reason for a cycle a budget cap cut short before it changed anything: not an attempt. */
 export const INTERRUPTED_BY_BUDGET = 'interrupted by a budget cap before any change';
 
+/**
+ * An in-cycle signal (cut short, hung) climbs the ladder only when it also cut the previous
+ * attempt short: once is a retry with the evidence, twice in a row is a pattern. Remembers it.
+ */
+function climbsNow(task: PlanNode, signal: string): boolean {
+  const again = task.lastCutShort === signal;
+  task.lastCutShort = signal;
+  return again;
+}
+
 const VERIFY_ONLY = /^(run|re-run|verify|confirm|check|ensure|validate|make sure|double-check)\b/i;
 
 /** A task that only asks to verify or run something, with nothing of its own to build. */
@@ -507,15 +517,18 @@ export async function stepVerify(run: Run): Promise<void> {
   if (act.end === 'stop-now' && run.hang) {
     // The stall watchdog cut a hung cycle: a stuck attempt, so the ladder takes it from here.
     reasons.push(`hung: ${run.hang}`);
-    stuck.push('hung');
+    if (climbsNow(task, 'hung')) stuck.push('hung');
     evidence.push(
       `The last attempt hung (${run.hang}) and was aborted. Avoid whatever blocked: a command that waits for input or never exits, a server started in the foreground, or a request that never returns.`,
     );
     run.events.emit('stuck.signal', { signal: 'hung', task: task.id, detail: run.hang });
   } else if (act.end === 'stop-now') reasons.push('stopped by user (--now)');
+  // An attempt that wasn't cut short breaks any pattern of cut-short attempts.
+  if (!act.stuck && !(act.end === 'stop-now' && run.hang)) task.lastCutShort = undefined;
   if (act.stuck) {
-    // Ended early by an in-cycle signal: partial work is still verified, and the ladder climbs.
-    stuck.push(act.stuck.signal);
+    // Ended early by an in-cycle signal: partial work is still verified. The first time is a
+    // retry with this evidence; the same signal again climbs the ladder.
+    if (climbsNow(task, act.stuck.signal)) stuck.push(act.stuck.signal);
     evidence.push(
       `The last attempt was cut short: ${act.stuck.detail}. Change approach instead of repeating it.`,
     );
