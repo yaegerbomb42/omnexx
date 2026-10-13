@@ -21,6 +21,8 @@ let cursor = 0;
 let loading = false;
 let anchor: HTMLElement | undefined;
 let post: Post | undefined;
+/** When set, picking a model hands it here (e.g. to add it to a role) instead of switching chat. */
+let onPick: ((ref: string) => void) | undefined;
 
 /** A stable hue per provider name, so each provider keeps its color everywhere. */
 export function providerHue(name: string): number {
@@ -88,9 +90,10 @@ export function isOpen(): boolean {
   return !root().hidden;
 }
 
-export function open(from: HTMLElement, p: Post): void {
+export function open(from: HTMLElement, p: Post, pick?: (ref: string) => void): void {
   anchor = from;
   post = p;
+  onPick = pick;
   query = '';
   cursor = Math.max(
     0,
@@ -113,8 +116,11 @@ export function close(): void {
 }
 
 function choose(ref: string): void {
-  current = ref;
-  post?.({ type: 'model', ref });
+  if (onPick) onPick(ref);
+  else {
+    current = ref;
+    post?.({ type: 'model', ref });
+  }
   close();
 }
 

@@ -45,7 +45,7 @@ interface State {
 
 type Incoming =
   | ({ type: 'state' } & State)
-  | ({ type: 'settings' | 'models' | 'prefs' | 'providerTest' } & Record<string, unknown>)
+  | ({ type: 'settings' | 'models' | 'prefs' | 'providerTest' | 'roles' } & Record<string, unknown>)
   | ({ type: 'browserFrame' } & crew.BrowserFrameMsg)
   | { type: 'ready'; version: string }
   | { type: 'error'; message: string }
