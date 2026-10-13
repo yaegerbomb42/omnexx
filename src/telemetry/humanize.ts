@@ -262,6 +262,13 @@ const cycleContextLine: Formatter = (e) => {
   ];
 };
 
+const contextPrunedLine: Formatter = (e) => [
+  'verbose',
+  'info',
+  'ctx',
+  `pruned ${num(e.pruned)} superseded results  ${fmtTokens(num(e.tokensBefore))} → ${fmtTokens(num(e.tokensAfter))}`,
+];
+
 const contextClearedLine: Formatter = (e) => {
   return [
     'verbose',
@@ -457,6 +464,7 @@ const FORMATTERS: Partial<Record<string, Formatter>> = {
   'stuck.signal': stuckSignalLine,
   'stuck.in_cycle': stuckSignalLine,
   'cycle.context': cycleContextLine,
+  'context.pruned': contextPrunedLine,
   'context.cleared': contextClearedLine,
   'context.compacted': contextCompactedLine,
   'context.compact_failed': contextCompactFailedLine,
