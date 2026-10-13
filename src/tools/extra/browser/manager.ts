@@ -2,7 +2,7 @@ import net from 'node:net';
 import { type ChildProcess, spawn } from 'node:child_process';
 import type { BrowserConfig } from '../../../config/sections/browser.js';
 import { parseDuration } from '../../../config/duration.js';
-import type { BrowserBackend } from './types.js';
+import type { BrowserBackend, BrowserLaunch } from './types.js';
 import { createBrowserBackend } from './detector.js';
 
 export interface BrowserManagerOptions {
@@ -10,7 +10,11 @@ export interface BrowserManagerOptions {
   config: BrowserConfig;
   worktreeRoot: string;
   /** Tests inject a fake; default: detect agent-browser or playwright-core. */
-  createBackend?: (session: string, headless: boolean) => Promise<BrowserBackend | null>;
+  createBackend?: (
+    session: string,
+    headless: boolean,
+    launch: Partial<BrowserLaunch>,
+  ) => Promise<BrowserBackend | null>;
 }
 
 export class BrowserSessionManager {
@@ -24,7 +28,12 @@ export class BrowserSessionManager {
     if (!this.backend) {
       const sessionName = `omnexx-${this.options.runId}`;
       const create = this.options.createBackend ?? createBrowserBackend;
-      const backend = await create(sessionName, this.options.config.headless);
+      const { headless, engine, profile, session_name } = this.options.config;
+      const backend = await create(sessionName, headless, {
+        engine,
+        ...(profile ? { profile } : {}),
+        ...(session_name ? { sessionName: session_name } : {}),
+      });
       if (!backend) {
         throw new Error('No browser backend available (agent-browser or playwright-core).');
       }

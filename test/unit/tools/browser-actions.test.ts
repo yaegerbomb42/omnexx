@@ -16,6 +16,7 @@ const config = {
   serve_timeout: '60s',
   allow_eval: false,
   live_view: false,
+  engine: 'chromium' as const,
 };
 
 /** 1x1 PNG. */

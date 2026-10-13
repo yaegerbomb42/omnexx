@@ -39,7 +39,7 @@ const STRATEGIES: { id: Strategy; label: string; title: string }[] = [
     label: 'Least busy',
     title: 'Start on the provider with the fewest helpers running',
   },
-  { id: 'smart', label: 'Smartest', title: 'Most capable model first' },
+  { id: 'smart', label: 'Smart', title: 'Most capable model first' },
 ];
 
 const ROLE_IDS = new Set<string>(ROLES.map((r) => r.id));

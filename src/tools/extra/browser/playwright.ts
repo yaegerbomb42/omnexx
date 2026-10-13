@@ -5,6 +5,7 @@ import type {
   BrowserTab,
   ScreenshotResult,
   WaitTarget,
+  BrowserLaunch,
 } from './types.js';
 
 interface PlaywrightLocator {
@@ -65,11 +66,27 @@ interface PlaywrightBrowser {
   close(): Promise<void>;
 }
 
-interface PlaywrightCoreModule {
-  chromium: {
-    launch(options?: { headless?: boolean }): Promise<PlaywrightBrowser>;
-  };
+interface BrowserType {
+  launch(options?: Record<string, unknown>): Promise<PlaywrightBrowser>;
+  /** A browser whose state (logins, cookies) lives in `userDataDir` across runs. */
+  launchPersistentContext(
+    userDataDir: string,
+    options?: Record<string, unknown>,
+  ): Promise<PlaywrightBrowserContext & { close(): Promise<void> }>;
 }
+
+interface PlaywrightCoreModule {
+  chromium: BrowserType;
+  firefox: BrowserType;
+}
+
+/** camoufox-js: launch options for its patched, anti-detection Firefox. Optional. */
+interface CamoufoxModule {
+  launchOptions(options: Record<string, unknown>): Promise<Record<string, unknown>>;
+}
+
+const CAMOUFOX_HELP =
+  'Camoufox needs playwright-core, camoufox-js and its browser: `npm i -g playwright-core camoufox-js && npx camoufox-js fetch` (or set browser.engine = "chromium").';
 
 /** Recent requests kept for `network`; older ones are dropped. */
 const MAX_REQUESTS = 200;
@@ -77,6 +94,8 @@ const MAX_REQUESTS = 200;
 export class PlaywrightBackend implements BrowserBackend {
   readonly name = 'playwright';
   private browser: PlaywrightBrowser | null = null;
+  /** Set instead of `browser` when a profile folder is used. */
+  private persistent: { close(): Promise<void> } | null = null;
   private context: PlaywrightBrowserContext | null = null;
   private page: PlaywrightPage | null = null;
   /** Open pages in opening order; index + 1 is the tab id. */
@@ -84,7 +103,33 @@ export class PlaywrightBackend implements BrowserBackend {
   private readonly consoleLogs: BrowserConsoleMessage[] = [];
   private readonly requests: BrowserRequest[] = [];
 
-  constructor(private readonly headless = true) {}
+  private readonly launch: BrowserLaunch;
+
+  constructor(launch: boolean | Partial<BrowserLaunch> = true) {
+    const opts = typeof launch === 'boolean' ? { headless: launch } : launch;
+    this.launch = {
+      headless: opts.headless ?? true,
+      engine: opts.engine ?? 'chromium',
+      profile: opts.profile,
+    };
+  }
+
+  /** The browser type and options for the configured engine. */
+  private async engine(pw: PlaywrightCoreModule): Promise<{
+    type: BrowserType;
+    options: Record<string, unknown>;
+  }> {
+    const { headless } = this.launch;
+    if (this.launch.engine !== 'camoufox') return { type: pw.chromium, options: { headless } };
+    let cf: CamoufoxModule;
+    try {
+      // @ts-expect-error optional dependency, installed only by people who want Camoufox
+      cf = (await import('camoufox-js')) as CamoufoxModule;
+    } catch (err) {
+      throw new Error(CAMOUFOX_HELP, { cause: err });
+    }
+    return { type: pw.firefox, options: await cf.launchOptions({ headless }) };
+  }
 
   private async ensurePage(): Promise<PlaywrightPage> {
     if (this.page) return this.page;
@@ -96,14 +141,25 @@ export class PlaywrightBackend implements BrowserBackend {
       pw = (await import('playwright-core')) as PlaywrightCoreModule;
     } catch (importErr) {
       throw new Error(
-        'playwright-core is not installed. Run `npm install -D playwright-core` or install agent-browser to enable the browser tool.',
+        this.launch.engine === 'camoufox'
+          ? CAMOUFOX_HELP
+          : 'playwright-core is not installed. Run `npm install -D playwright-core` or install agent-browser to enable the browser tool.',
         { cause: importErr },
       );
     }
 
     try {
-      this.browser = await pw.chromium.launch({ headless: this.headless });
-      const context = await this.browser.newContext();
+      const { type, options } = await this.engine(pw);
+      let context: PlaywrightBrowserContext;
+      if (this.launch.profile) {
+        // The profile folder keeps logins and cookies between runs; closing the context closes it.
+        const persistent = await type.launchPersistentContext(this.launch.profile, options);
+        this.persistent = persistent;
+        context = persistent;
+      } else {
+        this.browser = await type.launch(options);
+        context = await this.browser.newContext();
+      }
       this.context = context;
       // Pages opened by the app (target=_blank, window.open) become the active tab, as in
       // agent-browser.
@@ -348,12 +404,13 @@ export class PlaywrightBackend implements BrowserBackend {
   }
 
   async close(): Promise<void> {
-    if (this.browser) {
-      await this.browser.close().catch(() => undefined);
-      this.browser = null;
-      this.context = null;
-      this.page = null;
-      this.pages.length = 0;
-    }
+    const owner = this.browser ?? this.persistent;
+    if (!owner) return;
+    await owner.close().catch(() => undefined);
+    this.browser = null;
+    this.persistent = null;
+    this.context = null;
+    this.page = null;
+    this.pages.length = 0;
   }
 }

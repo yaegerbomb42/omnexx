@@ -74,3 +74,13 @@ export interface BackendDetectResult {
   backend: 'agent-browser' | 'playwright' | null;
   detail: string;
 }
+
+/** How the browser starts: window, engine, and what state it carries between runs. */
+export interface BrowserLaunch {
+  headless: boolean;
+  engine: 'chromium' | 'camoufox';
+  /** A profile to reuse (logins, cookies); see browser.profile. */
+  profile?: string | undefined;
+  /** agent-browser: save and restore cookies and storage under this name. */
+  sessionName?: string | undefined;
+}

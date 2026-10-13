@@ -2,6 +2,7 @@ import { execa } from 'execa';
 import type { BrowserBackend, BackendDetectResult } from './types.js';
 import { AgentBrowserBackend } from './agent-browser.js';
 import { PlaywrightBackend } from './playwright.js';
+import type { BrowserLaunch } from './types.js';
 
 let cachedDetection: BackendDetectResult | null = null;
 
@@ -58,13 +59,17 @@ export function resetDetectionCache(): void {
 export async function createBrowserBackend(
   session: string,
   headless = true,
+  launch: Partial<BrowserLaunch> = {},
 ): Promise<BrowserBackend | null> {
+  const opts = { ...launch, headless };
+  // Camoufox is a Firefox build: only Playwright drives it, even when agent-browser is installed.
+  if (launch.engine === 'camoufox') return new PlaywrightBackend(opts);
   const detected = await detectBrowserBackend();
   if (detected.backend === 'agent-browser') {
-    return new AgentBrowserBackend(session, headless);
+    return new AgentBrowserBackend(session, opts);
   }
   if (detected.backend === 'playwright') {
-    return new PlaywrightBackend(headless);
+    return new PlaywrightBackend(opts);
   }
   return null;
 }
