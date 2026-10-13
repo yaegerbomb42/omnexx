@@ -13,7 +13,7 @@ import { call, ScriptedProvider, say, type Script } from '../support/scripted-pr
 const chapter = (id: string, file: string, words: number) => ({
   id,
   title: `Write ${file}`,
-  kind: 'writing',
+  kind: 'writing' as const,
   checks: [
     `test -f ${file} && test "$(wc -w < ${file})" -ge ${String(words)} && ! grep -qiE 'TODO|TBD' ${file}`,
   ],

@@ -3,6 +3,7 @@ import type { ToolSpec } from '../providers/types.js';
 import { bashTool, readLogTool } from './bash.js';
 import { multiEditTool, strReplaceTool, writeFileTool } from './edit.js';
 import { outlineTool } from './outline.js';
+import { listTool } from './list.js';
 import { readTool } from './read.js';
 import { contextTool } from './context.js';
 import { recallTool } from './recall.js';
@@ -18,6 +19,7 @@ import type { Tool } from './types.js';
 
 export const WORKER_TOOLS: readonly Tool[] = [
   readTool,
+  listTool,
   outlineTool,
   searchTool,
   strReplaceTool,

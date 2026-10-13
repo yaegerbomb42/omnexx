@@ -41,6 +41,48 @@ class BudgetStopSignal extends Error {
   }
 }
 
+/**
+ * Tool names models invent for tools that exist under another name (DeepSeek called
+ * print_tree and list_files in its first real run). They run the real tool instead of failing.
+ */
+const TOOL_ALIASES: Record<string, string> = {
+  print_tree: 'list',
+  tree: 'list',
+  ls: 'list',
+  list_files: 'list',
+  list_dir: 'list',
+  list_directory: 'list',
+  file_tree: 'list',
+  find_files: 'list',
+  glob: 'list',
+  grep: 'search',
+  ripgrep: 'search',
+  search_files: 'search',
+  search_code: 'search',
+  code_search: 'search',
+  cat: 'read',
+  read_file: 'read',
+  open_file: 'read',
+  view_file: 'read',
+  view: 'read',
+  create_file: 'write_file',
+  write: 'write_file',
+  edit: 'str_replace',
+  edit_file: 'str_replace',
+  replace: 'str_replace',
+  shell: 'bash',
+  run: 'bash',
+  run_command: 'bash',
+  execute: 'bash',
+  exec: 'bash',
+  terminal: 'bash',
+};
+
+/** What the model is told when it seems stuck in an interactive turn. */
+export function stuckNudge(detail: string): string {
+  return `[harness] You seem to be going in circles (${detail}). If the request is done, stop calling tools and give your summary now. If not, say in one line what is blocking you, then take a different approach; don't repeat the same searches or commands.`;
+}
+
 export type ControlSignal = 'continue' | 'pause' | 'stop' | 'stop-now';
 
 export type LoopEnd = 'done' | 'stop' | 'stop-now' | BudgetStop | 'refusal' | 'stuck';
@@ -99,6 +141,11 @@ export interface LoopDeps {
   compaction?: { settings: CompactionSettings; summarize?: Summarize };
   /** In-cycle stuck detection; off when unset. */
   watch?: InCycleWatch;
+  /**
+   * What a stuck signal does: "stop" ends the turn (unattended cycles start fresh anyway); "nudge"
+   * (interactive chat) tells the model first and stops only if the same signal fires again.
+   */
+  watchMode?: 'stop' | 'nudge';
   /** How many `task` calls from one turn run at once (default 1). */
   parallelTasks?: number;
   /** Interactive chat: stream text and reasoning as the model writes them. */
@@ -205,6 +252,7 @@ export async function runAgentLoop(
     tools: estimateTokens(JSON.stringify(ctx.tools)),
   };
 
+  const nudged = new Set<string>();
   for (;;) {
     let signal = await deps.control();
     if (signal === 'pause') {
@@ -487,7 +535,7 @@ export async function runAgentLoop(
 
     const finished = { now: false };
     const runCall = async (call: (typeof calls)[number]): Promise<ContentBlock> => {
-      const tool = byName.get(call.name);
+      const tool = byName.get(call.name) ?? byName.get(TOOL_ALIASES[call.name.toLowerCase()] ?? '');
       let content: string;
       let isError: boolean;
       const toolStart = deps.clock.now();
@@ -563,6 +611,14 @@ export async function runAgentLoop(
         detail: finding.detail,
         turn: turns,
       });
+      if (deps.watchMode === 'nudge' && !nudged.has(finding.signal)) {
+        nudged.add(finding.signal);
+        messages.push({
+          role: 'user',
+          content: [{ type: 'text', text: stuckNudge(finding.detail) }],
+        });
+        continue;
+      }
       return { ...end('stuck'), stuck: finding };
     }
   }
