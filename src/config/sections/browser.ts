@@ -11,6 +11,11 @@ export const browser = z
     headless: z.boolean().default(true),
     /** Lets the `eval` action run page JavaScript, which can change app state. */
     allow_eval: z.boolean().default(false),
+    /**
+     * After each action that can change the page, save a screenshot to the run's logs and emit
+     * `browser.frame`, so an editor panel can show the agent's browser live. Never in the repo.
+     */
+    live_view: z.boolean().default(true),
   })
   .prefault({});
 

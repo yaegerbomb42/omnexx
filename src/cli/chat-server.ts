@@ -1,8 +1,9 @@
+import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { describeError } from '../errors.js';
 import type { Telemetry } from '../telemetry/aggregate.js';
 import type { TodoItem } from '../tools/todo.js';
-import type { Entry, Mode, RunCli } from '../tui/session.js';
+import type { Entry, Helper, Mode, RunCli } from '../tui/session.js';
 import { println, type CliIO } from './io.js';
 
 /**
@@ -46,7 +47,14 @@ export interface ChatState {
   context: { used: number; limit: number } | null;
   usage: ChatUsage | null;
   run: { id: string; alive: boolean; phase?: string; done?: number; tasks?: number } | null;
+  /** Helpers (subagents) for the current message. */
+  helpers: Helper[];
+  /** The latest browser frame's number and page; the image comes as a `browserFrame` message. */
+  browser: { seq: number; url: string; action: string; at: number } | null;
 }
+
+/** Frames larger than this are skipped rather than pushed through the pipe. */
+const MAX_FRAME_BYTES = 4 * 1024 * 1024;
 
 const MODES = new Set<Mode>(['chat', 'plan', 'run']);
 /** Coalesce bursts of changes (a streaming reply fires one per token) into one state line. */
@@ -87,6 +95,23 @@ export async function serveChat(
   };
 
   let sentUpTo = -1;
+  let sentFrame = 0;
+  /** Send the browser's latest screenshot once per new frame. */
+  const sendFrame = async (): Promise<void> => {
+    const f = session.browserFrame;
+    if (!f || f.seq === sentFrame) return;
+    sentFrame = f.seq;
+    const data = await readFile(f.path).catch(() => undefined);
+    if (!data || data.length > MAX_FRAME_BYTES) return;
+    write({
+      type: 'browserFrame',
+      seq: f.seq,
+      mime: f.mime,
+      url: f.url,
+      action: f.action,
+      data: data.toString('base64'),
+    });
+  };
   /** The last entry before the latest new chat; a reloaded panel starts after it. */
   let clearedAt = -1;
   let timer: NodeJS.Timeout | undefined;
@@ -119,8 +144,18 @@ export async function serveChat(
           }
         : null,
       run: session.runId ? { id: session.runId, alive: session.runAlive, ...session.info } : null,
+      helpers: session.helpers,
+      browser: session.browserFrame
+        ? {
+            seq: session.browserFrame.seq,
+            url: session.browserFrame.url,
+            action: session.browserFrame.action,
+            at: session.browserFrame.at,
+          }
+        : null,
     };
     write(state);
+    void sendFrame();
   };
   const schedule = (): void => {
     timer ??= setTimeout(emit, EMIT_EVERY_MS);
@@ -238,6 +273,7 @@ export async function serveChat(
       case 'sync':
         // A reloaded panel: start it over with the conversation since the last new chat.
         sentUpTo = clearedAt;
+        sentFrame = 0;
         write({ type: 'ready', version: opts.version });
         emit();
         return;

@@ -194,6 +194,49 @@ export interface BrowserToolOptions {
   createBackend?: BrowserManagerOptions['createBackend'];
 }
 
+/** Actions after which the page may look different, so the live view takes a new frame. */
+const PAGE_CHANGING = new Set([
+  'open',
+  'click',
+  'type',
+  'fill',
+  'select',
+  'check',
+  'uncheck',
+  'press',
+  'scroll',
+  'wait_for',
+  'switch_tab',
+  'new_tab',
+  'close_tab',
+  'upload',
+  'hover',
+]);
+
+/**
+ * The live view: one screenshot after a page-changing action, overwritten each time, under the
+ * run's logs. Best effort: a failed capture never fails the action the agent asked for.
+ */
+async function liveFrame(
+  ctx: ToolContext,
+  session: BrowserSessionManager,
+  action: string,
+): Promise<void> {
+  try {
+    const backend = await session.getBackend();
+    const shot = await backend.screenshot();
+    const dir = join(ctx.store.logsDir, 'browser');
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    const ext = shot.mimeType === 'image/jpeg' ? 'jpg' : 'png';
+    const file = join(dir, `live.${ext}`);
+    await writeFile(file, Buffer.from(shot.base64, 'base64'), { mode: 0o600 });
+    const url = backend.getUrl ? await backend.getUrl().catch(() => '') : '';
+    ctx.events.emit('browser.frame', { path: file, mime: shot.mimeType, url, action });
+  } catch {
+    // The page may be closing or mid-navigation; the next action takes another frame.
+  }
+}
+
 export function createBrowserTool(
   config: OmnexxConfig['browser'],
   opts: BrowserToolOptions = {},
@@ -506,7 +549,10 @@ export function createBrowserTool(
         opts.createBackend,
       );
       try {
-        return await run(input, ctx, session);
+        const out = await run(input, ctx, session);
+        if (config.live_view && PAGE_CHANGING.has(input.action) && !out.isError)
+          await liveFrame(ctx, session, input.action);
+        return out;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (err instanceof UsageError || err instanceof StaleRefError) return fail(msg);

@@ -121,6 +121,7 @@ describe('browser integration', () => {
       headless: true,
       serve_timeout: '60s',
       allow_eval: false,
+      live_view: false,
     });
 
     const res = await tool.run({ action: 'open', url: 'https://evil.com/phishing' }, ctx);

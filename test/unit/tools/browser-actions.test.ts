@@ -1,3 +1,4 @@
+import { readEvents } from '../../../src/core/events.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -14,6 +15,7 @@ const config = {
   headless: true,
   serve_timeout: '60s',
   allow_eval: false,
+  live_view: false,
 };
 
 /** 1x1 PNG. */
@@ -323,5 +325,26 @@ describe('pollUntil', () => {
     await expect(pollUntil(() => Promise.reject(new Error('no')), 5, 'thing', 1)).rejects.toThrow(
       'timed out after 5ms waiting for thing',
     );
+  });
+
+  it('live view: a frame after each page-changing action, under the run logs, never failing it', async () => {
+    const { backend } = fullBackend();
+    const { run, root } = await setup(backend, { live_view: true });
+    await run({ action: 'open', url: 'http://localhost:3000' });
+    await run({ action: 'snapshot' });
+    await run({ action: 'click', ref: 'e1' });
+    const frames = (await readEvents(ctx.store.eventsPath)).filter(
+      (e) => e.type === 'browser.frame',
+    );
+    expect(frames.map((e) => e.action)).toEqual(['open', 'click']);
+    const path = String(frames[0]?.path);
+    expect(path.startsWith(ctx.store.logsDir)).toBe(true);
+    expect(path.startsWith(root)).toBe(false);
+    expect((await readFile(path)).length).toBeGreaterThan(0);
+
+    const broken = fullBackend({ screenshot: () => Promise.reject(new Error('page is closing')) });
+    const second = await setup(broken.backend, { live_view: true });
+    const r = await second.run({ action: 'open', url: 'http://localhost:3000' });
+    expect(r.isError).toBeFalsy();
   });
 });

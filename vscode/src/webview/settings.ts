@@ -93,7 +93,7 @@ function tilesHtml(): string {
   const fits = (c: CatalogProvider): boolean =>
     words.every((w) => `${c.name} ${c.label}`.toLowerCase().includes(w));
   const tile = (name: string, label: string, sub: string): string =>
-    `<button class="tile${chosen === name ? ' on' : ''}" data-provider="${escapeHtml(name)}" aria-pressed="${String(chosen === name)}" title="${escapeHtml(label)}">${badge(name === CUSTOM ? 'url' : name)}<span class="t-label">${escapeHtml(label.replace(/\s*\(.*\)$/, ''))}</span><span class="t-sub">${escapeHtml(sub)}</span></button>`;
+    `<button class="ptile${chosen === name ? ' on' : ''}" data-provider="${escapeHtml(name)}" aria-pressed="${String(chosen === name)}" title="${escapeHtml(label)}">${badge(name === CUSTOM ? 'url' : name)}<span class="t-label">${escapeHtml(label.replace(/\s*\(.*\)$/, ''))}</span><span class="t-sub">${escapeHtml(sub)}</span></button>`;
   const hosted = catalog.filter((c) => !c.local && fits(c));
   const local = catalog.filter((c) => c.local && fits(c));
   const custom = words.length === 0 || 'custom url openai compatible'.includes(words.join(' '));
