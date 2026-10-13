@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
@@ -29,6 +29,7 @@ const FORWARD = new Set([
   'contextFiles',
   'setSectionMode',
 ]);
+const BREW_PATHS = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'];
 const MODEL_LIST_TIMEOUT_MS = 15_000;
 
 interface ModelItem {
@@ -164,11 +165,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
   /** Install omnexx for the terminal: Homebrew when it's there, else npm (needs Node 22+). */
   private async installCli(): Promise<void> {
-    const brew = await new Promise<boolean>((resolve) => {
-      execFile('brew', ['--version'], { timeout: 5_000 }, (err) => {
-        resolve(!err);
-      });
-    });
+    // Homebrew's own install locations (Apple silicon, Intel), not whatever PATH finds first.
+    const brew = BREW_PATHS.some((p) => existsSync(p));
     const cmd = brew
       ? 'brew install yaegerbomb42/omnexx/omnexx'
       : `npm install -g omnexx@${BUNDLED_VERSION}`;
