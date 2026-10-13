@@ -8,7 +8,7 @@ import { git } from '../../src/git/git.js';
 import { isClean } from '../../src/git/repo.js';
 import type { NotifyPayload } from '../../src/notify/ntfy.js';
 import { fileTask, fileWorker, planner, scenario } from '../support/scenarios.js';
-import { call, say, ScriptedProvider, type Script } from '../support/scripted-provider.js';
+import { call, outage, say, ScriptedProvider, type Script } from '../support/scripted-provider.js';
 import { makeRepo, startTestRun, type TestRun } from '../support/harness.js';
 import { json, mockServer } from '../support/mock-http.js';
 
@@ -209,6 +209,26 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
 });
 
 describe('M2: stuck handling, budget and judge', () => {
+  it('every model out of quota: stops with budget-stop after max_provider_wait instead of waiting for ever', async () => {
+    // Arrange: the planner works; then every worker call fails as if quotas were gone.
+    const plan = planner([{ id: 'M1', title: 'First', tasks: [fileTask('M1.T01')] }]);
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider: new ScriptedProvider(scenario(plan, () => outage())),
+      config: { gates: [GATE], budget: { max_provider_wait: '2h' } },
+    });
+
+    // Act
+    const out = await superviseTest(t);
+
+    // Assert
+    expect(out.status).toBe('budget-stop');
+    expect(out.reason).toMatch(/no model could take a call for 2h.*omnexx resume/);
+    const events = await readEvents(t.run.store.eventsPath);
+    expect(types(events, 'provider.give_up')).toHaveLength(1);
+    expect((await t.run.store.readState()).providersUnavailable).toMatch(/529/);
+  });
+
   it('a planner model that never calls a tool stops with a tool-calling hint, after retries', async () => {
     // Arrange
     const textOnly: Script = () => say('Here is my plan: first I will look at the code.');

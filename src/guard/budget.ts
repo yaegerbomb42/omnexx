@@ -2,7 +2,12 @@ import type { OmnexxConfig, PriceConfig } from '../config/schema.js';
 import { worstCaseUsd } from '../providers/pricing.js';
 
 export type BudgetStop =
-  'max_usd' | 'max_usd_per_day' | 'max_turns_per_cycle' | 'max_tokens_per_cycle';
+  | 'max_usd'
+  | 'max_usd_per_day'
+  | 'max_turns_per_cycle'
+  | 'max_tokens_per_cycle'
+  /** Every model was out of quota or unreachable for `budget.max_provider_wait`. */
+  | 'providers_unavailable';
 
 export interface CycleUsage {
   turns: number;

@@ -243,7 +243,9 @@ export class CodeChat {
     return helperRunner(
       {
         tools: () => readOnlyTools(this.config, where),
-        models: () => Promise.resolve(this.models),
+        // models.helpers when set (so helpers can draw on other providers' quotas), else chat's.
+        models: () => Promise.resolve(this.helperModels()),
+        spread: this.config.models.spread_helpers,
         maxTokens: Math.min(this.config.providers.anthropic.max_tokens, 4_096),
         limits: { tokens: cfg.subagent_max_tokens, turns: cfg.subagent_max_turns },
         loop: {
@@ -262,6 +264,12 @@ export class CodeChat {
       },
       this.ctx,
     );
+  }
+
+  private helperModels(): ResolvedModel[] {
+    const h = this.config.models.helpers;
+    if (!h) return this.models;
+    return (typeof h === 'string' ? [h] : h).map((ref) => chatModel(ref, this.config));
   }
 
   /** "provider:model" of the model chat talks to. */

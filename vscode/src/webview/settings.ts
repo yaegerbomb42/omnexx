@@ -242,7 +242,9 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
     if (saving) {
       saving = false;
       formTouched = false;
-      status = { text: 'Connected. Pick a model above.', kind: 'ok' };
+      status = { text: 'Connected. Checking it now; then pick a model above.', kind: 'ok' };
+      // Prove the new provider works: test every provider again, the new one included.
+      if (postRef) testAll(postRef);
     }
   } else if (m.type === 'models') {
     current = typeof m.current === 'string' ? m.current : current;
@@ -281,7 +283,11 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
 
 /** Track the model in use while the page is closed, so it opens on the right one. */
 export function setCurrentModel(model: string | null): void {
+  if (model === current) return;
   current = model;
+  // Keep the field in step with the model actually in use while the page is open.
+  const field = document.getElementById('set-model-btn');
+  if (field && isOpen()) field.outerHTML = modelFieldHtml();
 }
 
 export function wire(post: Post): void {

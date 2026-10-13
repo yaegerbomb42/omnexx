@@ -1840,3 +1840,118 @@ body.vscode-light .badge {
 #b-img {
   max-height: 140px;
 }
+
+/* Contrast pass: the live log and the settings page read clearly in every theme. */
+:root {
+  --text-strong: color-mix(in srgb, var(--fg) 92%, #fff);
+  --text-soft: color-mix(in srgb, var(--fg) 78%, var(--surface));
+  --log-bg: color-mix(in srgb, #000 38%, var(--surface));
+  --log-fg: #e4e8f7;
+  --log-ts: #9aa3c7;
+  --log-agent: #4ade80;
+  --log-think: #c4b5fd;
+  --log-system: #fbbf24;
+  --log-error: #f87171;
+}
+
+body.vscode-light {
+  --text-strong: #111827;
+  --text-soft: #374151;
+  --log-bg: #f3f5fb;
+  --log-fg: #111827;
+  --log-ts: #4b5563;
+  --log-agent: #15803d;
+  --log-think: #6d28d9;
+  --log-system: #b45309;
+  --log-error: #b91c1c;
+}
+
+.live-log,
+body.vscode-light .live-log {
+  background: var(--log-bg);
+  color: var(--log-fg);
+}
+
+.line .ts {
+  color: var(--log-ts);
+}
+
+.line.agent .role {
+  color: var(--log-agent);
+  font-weight: 600;
+}
+
+.line.think,
+.line.think .role {
+  color: var(--log-think);
+}
+
+.line.system .role {
+  color: var(--log-system);
+  font-weight: 600;
+}
+
+.line.error,
+.line.error .role {
+  color: var(--log-error);
+}
+
+.line.empty {
+  color: var(--log-ts);
+}
+
+.settings,
+.set-section {
+  color: var(--text-strong);
+}
+
+.set-section label,
+.hint,
+.p-url,
+.t-sub,
+.pk-sub,
+.t-group,
+.mp-group {
+  color: var(--text-soft);
+}
+
+.set-section {
+  background:
+    linear-gradient(var(--card-strong), var(--card-strong)) padding-box,
+    linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--accent) 70%, transparent),
+        color-mix(in srgb, var(--violet) 70%, transparent)
+      )
+      border-box;
+}
+
+.provider,
+.ptile {
+  background: color-mix(in srgb, var(--fg) 9%, var(--surface));
+}
+
+.pill {
+  color: var(--text-soft);
+  border-color: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+
+.pill.ok {
+  color: var(--log-agent);
+  border-color: color-mix(in srgb, var(--log-agent) 70%, transparent);
+}
+
+.pill.warn {
+  color: var(--log-system);
+  border-color: color-mix(in srgb, var(--log-system) 70%, transparent);
+}
+
+.pill.local {
+  color: var(--log-think);
+  border-color: color-mix(in srgb, var(--log-think) 70%, transparent);
+}
+
+.ghost {
+  color: var(--text-strong);
+  border-color: color-mix(in srgb, var(--fg) 35%, transparent);
+}

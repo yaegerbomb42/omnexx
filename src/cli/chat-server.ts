@@ -227,8 +227,9 @@ export async function serveChat(
         return;
       }
       case 'yolo':
-        // /yolo toggles; only send it when the state differs from what was asked.
-        if ((c.on === true) !== session.autoApprove) run(session.submit('/yolo'));
+        // /yolo toggles; only run it when the state differs from what was asked, and without
+        // echoing it as a message.
+        if ((c.on === true) !== session.autoApprove) run(session.command('yolo'));
         return;
       case 'model':
         run(session.switchModel(text(c, 'ref')));

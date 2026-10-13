@@ -163,6 +163,8 @@ export const stateSchema = z.object({
   noChecks: z.boolean().default(false),
   /** Set when a pre-flight check refused a call for max_usd; cleared when a supervisor starts. */
   budgetExhausted: z.boolean().default(false),
+  /** Set when every model stayed unavailable past budget.max_provider_wait: why. */
+  providersUnavailable: z.string().optional(),
   /** Recent spend with timestamps, for the rolling daily cap (pruned to the last 25 h). */
   /** A call was refused for max_usd_per_day: pause at the next boundary. */
   dailyCapHit: z.boolean().default(false),

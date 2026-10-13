@@ -153,7 +153,7 @@ describe('omnexx chat-server (the VS Code chat panel protocol)', () => {
     t.send({ type: 'compact' });
     await new Promise((r) => setTimeout(r, 200));
     const all2 = t.states().flatMap((x) => x.entries.map((e) => e.text));
-    expect(all2.some((x) => x === '/compact' || x === '/clear')).toBe(false);
+    expect(all2.some((x) => ['/compact', '/clear', '/yolo'].includes(x))).toBe(false);
 
     t.send({ type: 'nonsense' });
     await t.until(() => t.out.find((o) => o.type === 'error'), 'error for a bad command');

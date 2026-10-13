@@ -4,7 +4,7 @@ import type { EventLog } from '../core/events.js';
 import { estimateTokens } from '../core/tokens.js';
 import { preflight, type BudgetStop } from '../guard/budget.js';
 import { costUsd, type ResolvedModel } from '../providers/pricing.js';
-import { StopRequested, withRetry } from '../providers/retry.js';
+import { ProvidersUnavailable, StopRequested, withRetry } from '../providers/retry.js';
 import { narrateTool } from '../telemetry/narrate.js';
 import { shouldFailover } from '../providers/router.js';
 import { isQuotaError } from '../providers/sticky.js';
@@ -54,6 +54,8 @@ export interface LoopResult {
   messages: Message[];
   /** Set when the loop ended as `stuck`. */
   stuck?: StuckFinding;
+  /** Why it ended, for ends that need explaining (`providers_unavailable`). */
+  detail?: string;
 }
 
 export interface LoopDeps {
@@ -85,7 +87,13 @@ export interface LoopDeps {
   pausePollMs?: number;
   /** Notifies the supervisor's heartbeat that we're paused or running. */
   onPauseChange?: (paused: boolean) => void;
-  retry?: { baseDelayMs?: number; maxDelayMs?: number; onOutage?: (ms: number) => void };
+  retry?: {
+    baseDelayMs?: number;
+    maxDelayMs?: number;
+    /** Give up after this long with no provider able to take the call. */
+    giveUpAfterMs?: number;
+    onOutage?: (ms: number) => void;
+  };
   signal?: AbortSignal;
   /** In-cycle context control; off when unset. */
   compaction?: { settings: CompactionSettings; summarize?: Summarize };
@@ -383,11 +391,18 @@ export async function runAgentLoop(
             deps.events.emit('provider.recovered', { outageMs: ms, attempts }),
           ...(deps.retry?.baseDelayMs !== undefined ? { baseDelayMs: deps.retry.baseDelayMs } : {}),
           ...(deps.retry?.maxDelayMs !== undefined ? { maxDelayMs: deps.retry.maxDelayMs } : {}),
+          ...(deps.retry?.giveUpAfterMs !== undefined
+            ? { giveUpAfterMs: deps.retry.giveUpAfterMs }
+            : {}),
           ...(deps.signal ? { signal: deps.signal } : {}),
         },
       );
     } catch (err) {
       if (err instanceof StopRequested) return end('stop');
+      if (err instanceof ProvidersUnavailable) {
+        deps.events.emit('provider.give_up', { waitedMs: err.waitedMs, error: err.lastError });
+        return { ...end('providers_unavailable'), detail: err.lastError };
+      }
       // Esc in chat: end the turn cleanly, keeping every completed step.
       if (deps.signal?.aborted) return end('stop-now');
       if (err instanceof PoisonedRequest) {

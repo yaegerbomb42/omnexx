@@ -12,7 +12,19 @@ export interface RetryHooks {
   baseDelayMs?: number;
   maxDelayMs?: number;
   outageNotifyMs?: number;
+  /** Stop waiting after this long without a working provider (unset: wait for ever). */
+  giveUpAfterMs?: number;
   signal?: AbortSignal;
+}
+
+/** Every provider kept failing for longer than `giveUpAfterMs`: quotas gone, keys bad, or down. */
+export class ProvidersUnavailable extends Error {
+  constructor(
+    readonly lastError: string,
+    readonly waitedMs: number,
+  ) {
+    super(lastError);
+  }
 }
 
 export class StopRequested extends Error {
@@ -22,8 +34,9 @@ export class StopRequested extends Error {
 }
 
 /**
- * Retry retryable provider errors forever with exponential backoff capped at 30 minutes: an API
- * outage pauses the run instead of failing it (plan §3.9). Non-retryable errors throw at once.
+ * Retry retryable provider errors with exponential backoff capped at 30 minutes: an API outage
+ * pauses the run instead of failing it (plan §3.9), until `giveUpAfterMs` if set. Non-retryable
+ * errors throw at once.
  */
 export async function withRetry<T>(fn: () => Promise<T>, hooks: RetryHooks): Promise<T> {
   const base = hooks.baseDelayMs ?? 2_000;
@@ -47,6 +60,8 @@ export async function withRetry<T>(fn: () => Promise<T>, hooks: RetryHooks): Pro
         notified = true;
         hooks.onOutage?.(outageMs);
       }
+      if (hooks.giveUpAfterMs !== undefined && outageMs >= hooks.giveUpAfterMs)
+        throw new ProvidersUnavailable(err.message, outageMs);
       const delayMs = Math.min(max, base * 2 ** Math.min(attempt - 1, 20));
       hooks.onRetry?.({ attempt, delayMs, error: err.message, outageMs });
       if (await hooks.shouldStop?.()) throw new StopRequested();

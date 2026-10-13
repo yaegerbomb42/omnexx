@@ -1,3 +1,4 @@
+import { parseDuration } from '../config/duration.js';
 import { join } from 'node:path';
 import { z } from 'zod';
 import {
@@ -391,6 +392,8 @@ export async function stepAct(run: Run): Promise<void> {
     maxTokens: run.config.providers.anthropic.max_tokens,
     clock: run.clock,
     events: run.events,
+    // Quotas gone or every provider down: stop after a while instead of waiting for ever.
+    retry: { giveUpAfterMs: parseDuration(run.config.budget.max_provider_wait) },
     spentUsd: () => run.state.spend.usd,
     spentTodayUsd: () => run.spentToday(),
     onUsage: (u, usd, model, provider) => run.addSpend(u, usd, model, 'worker', provider),
@@ -425,6 +428,8 @@ export async function stepAct(run: Run): Promise<void> {
   // The browser (and the page it holds) lives for one cycle; the next starts fresh.
   await closeSession(run.state.runId).catch(() => undefined);
   if (result.end === 'max_usd') run.state.budgetExhausted = true;
+  if (result.end === 'providers_unavailable')
+    run.state.providersUnavailable = result.detail ?? 'no model could take a call';
   if (result.end === 'max_usd_per_day') run.state.dailyCapHit = true;
   run.events.emit('act.end', {
     end: result.end,

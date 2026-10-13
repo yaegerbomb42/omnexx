@@ -1,3 +1,5 @@
+import { resolveModel } from '../providers/pricing.js';
+import { spreadAcrossProviders } from '../config/roles.js';
 import type { Run } from '../core/run.js';
 import type { ResolvedModel } from '../providers/pricing.js';
 import { readOnlyTools, toolSpec } from '../tools/registry.js';
@@ -60,6 +62,8 @@ export function cardTools(tools: readonly Tool[], card: HelperCard | undefined):
 export interface HelperEnv {
   tools: () => Promise<readonly Tool[]>;
   models: (kind: SubagentKind) => Promise<readonly ResolvedModel[]>;
+  /** Start each helper on a different provider of its chain (models.spread_helpers). */
+  spread?: boolean;
   maxTokens: number;
   limits: { tokens: number; turns: number };
   loop: Omit<LoopDeps, 'models' | 'tools' | 'toolCtx' | 'budget' | 'maxTokens'> & {
@@ -112,7 +116,9 @@ export function helperRunner(
       },
       {
         ...env.loop,
-        models: [...(await env.models(kind))],
+        models: env.spread
+          ? spreadAcrossProviders(await env.models(kind), id - 1)
+          : [...(await env.models(kind))],
         tools,
         toolCtx: ctx,
         budget: {
@@ -137,7 +143,10 @@ export function helperRunner(
   };
 }
 
-/** Helpers for a long run: its router, budget and spend. */
+const chainOf = (c: string | readonly string[]): readonly string[] =>
+  typeof c === 'string' ? [c] : c;
+
+/** Helpers for a long run: its router (or models.helpers), budget and spend. */
 export function subagentRunner(
   run: Run,
   parent: ToolContext,
@@ -147,13 +156,16 @@ export function subagentRunner(
     {
       tools: () => readOnlyTools(run.config, { repoRoot: run.worktree, env: run.deps.env }),
       models: async (kind) =>
-        (
-          await run.router.pick({
-            action: 'read-explore',
-            needs: { tools: true },
-            facts: { subagent: kind },
-          })
-        ).chain,
+        run.config.models.helpers
+          ? chainOf(run.config.models.helpers).map((ref) => resolveModel(ref, run.config))
+          : (
+              await run.router.pick({
+                action: 'read-explore',
+                needs: { tools: true },
+                facts: { subagent: kind },
+              })
+            ).chain,
+      spread: run.config.models.spread_helpers,
       maxTokens: Math.min(run.config.providers.anthropic.max_tokens, 4_096),
       limits: { tokens: cfg.subagent_max_tokens, turns: cfg.subagent_max_turns },
       loop: {
