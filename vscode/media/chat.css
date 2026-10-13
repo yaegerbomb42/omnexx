@@ -1158,3 +1158,183 @@ select.field {
   text-align: left;
   padding: 5px 10px;
 }
+
+/* Color pass: each mode, action and state gets its own hue on top of the cyan-violet brand. */
+:root {
+  --amber: #f5a524;
+  --pink: #f472b6;
+}
+
+body.vscode-light {
+  --amber: #b45309;
+  --pink: #be185d;
+}
+
+.seg button[data-mode='plan'][aria-pressed='true'] {
+  background: color-mix(in srgb, var(--violet) 30%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet) 70%, transparent);
+}
+
+.seg button[data-mode='run'][aria-pressed='true'] {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--amber) 32%, transparent),
+    color-mix(in srgb, var(--pink) 32%, transparent)
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 70%, transparent);
+}
+
+.primary {
+  background: linear-gradient(135deg, var(--accent), var(--violet));
+  color: #fff;
+  font-weight: 600;
+  border: 0;
+}
+
+.primary:hover {
+  background: linear-gradient(135deg, var(--violet), var(--accent));
+}
+
+.send {
+  background: linear-gradient(135deg, var(--accent), var(--violet));
+  color: #fff;
+  border-radius: 50%;
+  padding: 5px;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.send:hover {
+  background: linear-gradient(135deg, var(--violet), var(--accent));
+}
+
+.send svg {
+  width: 14px;
+  height: 14px;
+}
+
+textarea:focus {
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 3px color-mix(in srgb, var(--violet) 25%, transparent);
+}
+
+.step.active .card {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 75%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent) 28%, transparent),
+    0 0 32px color-mix(in srgb, var(--violet) 18%, transparent);
+}
+
+.step.active .fill,
+.progress .fill {
+  background: linear-gradient(90deg, var(--accent), var(--violet));
+}
+
+.welcome h2,
+.set-section h3 {
+  background: var(--brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.set-section {
+  border-top: 2px solid transparent;
+  background:
+    linear-gradient(var(--card), var(--card)) padding-box,
+    linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--accent) 60%, transparent),
+        color-mix(in srgb, var(--violet) 60%, transparent)
+      )
+      border-box;
+  border: 1px solid transparent;
+}
+
+.provider {
+  border-left: 3px solid var(--line);
+}
+
+.provider:has(.pill.ok) {
+  border-left-color: var(--ok);
+}
+
+.provider:has(.pill.local) {
+  border-left-color: var(--violet);
+}
+
+.provider:has(.pill.warn) {
+  border-left-color: var(--amber);
+}
+
+.pill.busy {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  color: var(--accent);
+}
+
+.pill.warn {
+  border-color: color-mix(in srgb, var(--amber) 60%, transparent);
+  color: var(--amber);
+}
+
+.suggestions button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.suggestions button::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.suggestions button:nth-child(2)::before {
+  background: var(--violet);
+  box-shadow: 0 0 8px var(--violet);
+}
+
+.suggestions button:nth-child(3)::before {
+  background: var(--amber);
+  box-shadow: 0 0 8px var(--amber);
+}
+
+.live-log {
+  background: color-mix(in srgb, #0a1030 30%, var(--surface));
+}
+
+body.vscode-light .live-log {
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.line.system .role {
+  color: var(--amber);
+}
+
+.chip.danger {
+  border-color: var(--amber);
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+}
+
+.ask {
+  border-color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 9%, var(--surface));
+}
+
+.ask-title {
+  color: var(--amber);
+}
+
+body.vscode-high-contrast .primary,
+body.vscode-high-contrast .send,
+body.vscode-high-contrast-light .primary,
+body.vscode-high-contrast-light .send {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}

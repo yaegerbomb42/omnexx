@@ -41,6 +41,10 @@ let unreachable: string[] = [];
 let current: string | null = null;
 let autoApproveDefault = false;
 let confirmingRemove: string | undefined;
+/** Provider checks: running, or what the last one found. */
+let tests: Record<string, 'running' | { ok: boolean; detail: string }> = {};
+/** Whether this opening of the page has checked every provider yet. */
+let testedOnOpen = false;
 let saving = false;
 /** The person has typed or picked something in the add form, so a redraw keeps it. */
 let formTouched = false;
@@ -85,11 +89,18 @@ function connectedHtml(): string {
         : p.key
           ? `<span class="pill ok">key ${escapeHtml(p.key)}</span>${p.keySource && p.keySource !== 'credentials file' ? `<span class="pill">from ${escapeHtml(p.keySource)}</span>` : ''}`
           : '<span class="pill warn">no key</span>';
+      const result = tests[p.name];
+      const check =
+        result === 'running'
+          ? '<span class="pill busy">checking…</span>'
+          : result
+            ? `<span class="pill ${result.ok ? 'ok' : 'warn'}">${result.ok ? '✓' : '✗'} ${escapeHtml(result.detail)}</span>`
+            : '';
       const remove =
         confirmingRemove === p.name
           ? `<button class="danger-btn" data-remove-confirm="${escapeHtml(p.name)}">Remove</button><button class="ghost" data-remove-cancel>Cancel</button>`
           : `<button class="ghost" data-remove="${escapeHtml(p.name)}" title="Remove ${escapeHtml(p.label)} and its stored key">Remove</button>`;
-      return `<li class="provider"><div class="p-main"><div class="p-name">${escapeHtml(p.label)}</div><div class="p-url">${escapeHtml(p.baseUrl)}</div><div class="p-tags">${key}</div></div><div class="p-actions">${remove}</div></li>`;
+      return `<li class="provider"><div class="p-main"><div class="p-name">${escapeHtml(p.label)}</div><div class="p-url">${escapeHtml(p.baseUrl)}</div><div class="p-tags">${key}${check}</div></div><div class="p-actions"><button class="ghost" data-test="${escapeHtml(p.name)}" title="Check that omnexx can reach it">Test</button>${remove}</div></li>`;
     })
     .join('')}</ul>`;
 }
@@ -201,7 +212,19 @@ export function isOpen(): boolean {
   return !q('settings', HTMLElement).hidden;
 }
 
+function testAll(post: Post): void {
+  for (const p of connected) runTest(post, p.name);
+}
+
+function runTest(post: Post, name: string): void {
+  tests = { ...tests, [name]: 'running' };
+  post({ type: 'testProvider', name });
+}
+
+let postRef: Post | undefined;
+
 export function open(post: Post): void {
+  testedOnOpen = false;
   document.body.classList.add('settings-open');
   q('settings', HTMLElement).hidden = false;
   draw();
@@ -216,9 +239,19 @@ export function close(): void {
 
 /** Messages from the extension that belong to the settings page; true when handled. */
 export function onMessage(m: { type: string } & Record<string, unknown>): boolean {
-  if (m.type === 'settings') {
+  if (m.type === 'providerTest') {
+    const name = typeof m.name === 'string' ? m.name : '';
+    tests = {
+      ...tests,
+      [name]: { ok: m.ok === true, detail: typeof m.detail === 'string' ? m.detail : '' },
+    };
+  } else if (m.type === 'settings') {
     catalog = (m.catalog as CatalogProvider[] | undefined) ?? catalog;
     connected = (m.connected as ConnectedProvider[] | undefined) ?? [];
+    if (!testedOnOpen && postRef) {
+      testedOnOpen = true;
+      testAll(postRef);
+    }
     if (saving) {
       saving = false;
       formTouched = false;
@@ -267,6 +300,7 @@ export function setCurrentModel(model: string | null): void {
 }
 
 export function wire(post: Post): void {
+  postRef = post;
   const page = q('settings', HTMLElement);
   page.addEventListener('change', (e) => {
     const t = e.target;
@@ -295,11 +329,15 @@ export function wire(post: Post): void {
       confirmingRemove = undefined;
       draw();
     } else {
+      const test = t.closest<HTMLElement>('[data-test]')?.dataset.test;
       const ask = t.closest<HTMLElement>('[data-remove]')?.dataset.remove;
       const confirm = t.closest<HTMLElement>('[data-remove-confirm]')?.dataset.removeConfirm;
       const approval = t.closest<HTMLElement>('[data-approval-default]')?.dataset.approvalDefault;
       const ext = t.closest<HTMLElement>('[data-action-ext]')?.dataset.actionExt;
-      if (ask) {
+      if (test) {
+        runTest(post, test);
+        draw();
+      } else if (ask) {
         confirmingRemove = ask;
         draw();
       } else if (confirm) {

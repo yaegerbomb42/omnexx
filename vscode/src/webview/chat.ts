@@ -42,7 +42,7 @@ interface State {
 
 type Incoming =
   | ({ type: 'state' } & State)
-  | ({ type: 'settings' | 'models' | 'prefs' } & Record<string, unknown>)
+  | ({ type: 'settings' | 'models' | 'prefs' | 'providerTest' } & Record<string, unknown>)
   | { type: 'ready'; version: string }
   | { type: 'error'; message: string }
   | { type: 'down'; message: string };

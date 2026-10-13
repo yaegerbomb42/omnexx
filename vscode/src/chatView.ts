@@ -21,6 +21,7 @@ const FORWARD = new Set([
   'settings',
   'addProvider',
   'removeProvider',
+  'testProvider',
 ]);
 const MODEL_LIST_TIMEOUT_MS = 15_000;
 

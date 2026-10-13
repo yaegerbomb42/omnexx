@@ -140,3 +140,49 @@ export async function removeProvider(io: CliIO, name: string): Promise<string> {
     return `${lower} had nothing to remove (a key from an environment variable stays set)`;
   return `removed ${lower}${removedKey ? ' and its stored key' : ''}`;
 }
+
+export interface ProviderTest {
+  name: string;
+  ok: boolean;
+  /** How many models the provider listed, when it answered. */
+  models: number;
+  detail: string;
+}
+
+const TEST_TIMEOUT_MS = 8_000;
+
+/**
+ * Check a provider from the settings page: list its models with the stored key. Anthropic is
+ * built in and has no list endpoint here, so it only reports whether a key is set.
+ */
+export async function testProvider(io: CliIO, name: string): Promise<ProviderTest> {
+  const lower = name.trim().toLowerCase();
+  if (!NAME.test(lower)) throw new UsageError(`"${name}" is not a provider name`);
+  const paths = resolvePaths(io.env);
+  if (lower === 'anthropic') {
+    const found = await findProviderKey(paths, io.env, 'anthropic');
+    return {
+      name: lower,
+      ok: found !== undefined,
+      models: found ? 3 : 0,
+      detail: found ? 'key set (opus, sonnet, haiku)' : 'no key set',
+    };
+  }
+  const { config } = await loadConfig({ cwd: io.cwd, env: io.env });
+  const ep = config.providers.endpoints[lower];
+  if (!ep) return { name: lower, ok: false, models: 0, detail: 'not set up' };
+  const key = (await findProviderKey(paths, io.env, lower, ep.api_key_env))?.key;
+  const { discoverModels } = await import('../providers/discovery.js');
+  const models = await discoverModels(
+    { baseUrl: ep.base_url, ...(key ? { apiKey: key } : {}) },
+    { timeoutMs: TEST_TIMEOUT_MS, ...(io.fetch ? { fetch: io.fetch } : {}) },
+  );
+  if (models.length)
+    return { name: lower, ok: true, models: models.length, detail: `${models.length} models` };
+  return {
+    name: lower,
+    ok: false,
+    models: 0,
+    detail: key || ep.free ? "couldn't reach it or it listed no models" : 'no key set',
+  };
+}
