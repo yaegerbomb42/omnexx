@@ -1,8 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { rmSync, existsSync } from 'node:fs';
-import { createResultsWriter } from '../../../bench/results.ts';
+import { createResultsWriter, resultsDir } from '../../../bench/results.ts';
 import type { TaskRunResult, BenchConfig } from '../../../bench/types.ts';
 
 describe('ResultsWriter', () => {
@@ -10,11 +9,12 @@ describe('ResultsWriter', () => {
   let config: BenchConfig;
 
   beforeEach(() => {
-    testDir = join(tmpdir(), `omnexx-bench-test-${Date.now()}`);
+    // The writer files results under bench/results/<name>; this is where they land.
+    testDir = resultsDir(`omnexx-bench-test-${String(Date.now())}`);
     config = {
       suite: 'jimmy10',
       agents: ['omnexx', 'claude-code'],
-      out: testDir,
+      out: testDir.split('/').at(-1) ?? 'x',
     };
   });
 

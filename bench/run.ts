@@ -46,7 +46,7 @@ async function main(): Promise<void> {
     .description('Omnexx benchmark runner')
     .requiredOption('--suite <name>', `suite: ${Object.keys(SUITES).join(' | ')}`)
     .requiredOption('--agents <list>', `comma-separated: ${Object.keys(RUNNERS).join(',')}`)
-    .requiredOption('--out <dir>', 'output directory for results')
+    .requiredOption('--out <dir>', 'name for this result set: written to bench/results/<name>')
     .option('--task <id>', 'run only this task')
     .option('--hours <n>', 'omnexx wall-clock cap per task', '0.5')
     .option('--budget <usd>', 'omnexx spend cap per task', '2')
