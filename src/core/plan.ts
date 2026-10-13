@@ -48,6 +48,8 @@ export const planNodeSchema = nodeInputSchema.extend({
   /** The in-cycle stuck signal that cut the previous attempt short, if one did. */
   lastCutShort: z.string().optional(),
   parkedReason: z.string().optional(),
+  /** A rejected attempt the reviewer only asked to amend: re-applied at the start of the next one. */
+  amendPatch: z.string().optional(),
   /** Parked because the goal was met without it: doesn't stop the run from finishing. */
   skipped: z.literal(true).optional(),
   /** Index into the strategy ladder for this task. */

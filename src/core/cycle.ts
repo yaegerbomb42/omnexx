@@ -322,6 +322,22 @@ async function summarizeCycle(
 }
 
 /** ACT: zero-cost preflight on the task's checks, then the agent loop with a fresh context. */
+/** The reviewed attempt goes back on the tree so this one only fixes the findings. */
+async function applyAmend(run: Run, task: PlanNode): Promise<void> {
+  const patch = task.amendPatch;
+  if (!patch) return;
+  delete task.amendPatch;
+  const res = await git(run.worktree, ['apply', '--whitespace=nowarn', patch], {
+    allowFailure: true,
+  });
+  run.events.emit('amend.applied', { task: task.id, ok: res.exitCode === 0 });
+  if (res.exitCode !== 0) return;
+  task.evidence = [
+    ...task.evidence,
+    'Your previous attempt is already applied to the working tree (uncommitted): its tests passed. Keep it, and change only what the review findings above ask for.',
+  ];
+}
+
 export async function stepAct(run: Run): Promise<void> {
   run.newCycle();
   const plan = run.requirePlan();
@@ -351,6 +367,7 @@ export async function stepAct(run: Run): Promise<void> {
     }
   }
 
+  await applyAmend(run, task);
   const edited = new Set<string>();
   const toolCtx = toolContext(run, edited);
   const running = new RunningContext(run.store, task.id, () => run.clock.now());
@@ -770,10 +787,20 @@ export async function stepRollback(run: Run): Promise<void> {
     'rejected',
     `${run.state.cycle}${p?.worker ? `-${p.worker}` : ''}.patch`,
   );
-  const { savedPatch } = await rollbackTo(run.worktree, run.state.lastGreen, {
+  const { savedPatch, exact } = await rollbackTo(run.worktree, run.state.lastGreen, {
     path: patch,
     redact: (x) => run.redactor.text(x),
   });
+  // Tests passed and only the reviewer objected: keep the work for the next attempt to amend
+  // instead of redoing it (on the bench, redoing cost a full cycle per review finding).
+  const reviewOnly = Boolean(p?.reasons.length) && p?.reasons.every((r) => r.startsWith('review:'));
+  if (p && run.plan) {
+    const task = run.plan.nodes.find((n) => n.id === p.taskId);
+    if (task) {
+      if (savedPatch && exact && reviewOnly) task.amendPatch = patch;
+      else delete task.amendPatch;
+    }
+  }
   run.state.rejectedCycles++;
   run.events.emit('rollback', {
     to: run.state.lastGreen,

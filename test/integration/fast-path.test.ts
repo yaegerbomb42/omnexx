@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { readEvents } from '../../src/core/events.js';
 import { supervise } from '../../src/core/supervisor.js';
 import type { ConfigInput } from '../../src/config/schema.js';
+import type { CompletionRequest, CompletionResponse, Provider } from '../../src/providers/types.js';
+import { emptyUsage } from '../../src/providers/types.js';
 import { makeRepo, startTestRun } from '../support/harness.js';
 import { fileTask, fileWorker, planner, scenario } from '../support/scenarios.js';
 import { call, ScriptedProvider, say, type Script } from '../support/scripted-provider.js';
@@ -112,5 +114,55 @@ describe('fast path: one pass on the whole goal before planning', () => {
     expect(JSON.stringify(first?.messages)).toContain('Use at most one milestone.');
     expect(JSON.stringify(first?.messages)).toContain('helpers are off for this run');
     expect(first?.tools.some((x) => x.name === 'task')).toBe(false);
+  });
+
+  it('keeps work the reviewer only asked to amend: the next attempt starts from it', async () => {
+    let reviews = 0;
+    const scripted = new ScriptedProvider(
+      scenario(
+        planner([]),
+        // First attempt writes the file; the amend attempt changes nothing more.
+        (m) => (m.attempt === 1 ? fileWorker(m) : say('amended')),
+      ),
+    );
+    const provider: Provider = {
+      name: 'anthropic',
+      complete(req: CompletionRequest): Promise<CompletionResponse> {
+        if (!req.system.some((b) => b.text.includes('reviewing a change')))
+          return scripted.complete(req);
+        reviews++;
+        const findings =
+          reviews === 1
+            ? [{ severity: 'blocker', problem: 'name the edge case in a comment' }]
+            : [];
+        return Promise.resolve({
+          content: [{ type: 'tool_use', id: `r${reviews}`, name: 'answer', input: { findings } }],
+          stopReason: 'tool_use',
+          usage: emptyUsage(),
+          model: req.model,
+        });
+      },
+    };
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider,
+      config: {
+        gates: [GATE],
+        plan: { mode: 'fast' },
+        review: { enabled: true, audit: false, strict_checks: false },
+      },
+    });
+    const out = await supervise(t.run.deps, t.run.state.runId, {
+      bootId: 'b',
+      heartbeatMs: 50,
+      controlPollMs: 20,
+      pausePollMs: 10,
+    });
+    expect(out.status).toBe('finished');
+    const events = await readEvents(t.run.store.eventsPath);
+    expect(events.filter((e) => e.type === 'amend.applied')).toMatchObject([{ ok: true }]);
+    expect(events.some((e) => e.type === 'fast_path.fallback')).toBe(false);
+    expect((await t.run.store.readState()).acceptedCommits).toBe(1);
+    expect(reviews).toBe(2);
   });
 });
