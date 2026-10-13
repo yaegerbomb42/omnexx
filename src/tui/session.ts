@@ -1162,7 +1162,7 @@ export class Session {
         this.todos = [];
         this.helpers = [];
         this.browserFrame = undefined;
-        this.code?.clear();
+        await this.code?.clear();
         this.push('system', 'chat conversation cleared');
         return;
       case 'cards':

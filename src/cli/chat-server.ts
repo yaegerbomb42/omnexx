@@ -183,8 +183,14 @@ export async function serveChat(
     await sendModels();
   };
 
+  /** Commands still running, so a closed pipe lets them finish before the process exits. */
+  const inflight = new Set<Promise<unknown>>();
   const run = (p: Promise<unknown>): void => {
-    p.catch(fail).finally(schedule);
+    const tracked = p.catch(fail).finally(() => {
+      inflight.delete(tracked);
+      schedule();
+    });
+    inflight.add(tracked);
   };
 
   const handle = (c: Command): void => {
@@ -297,8 +303,10 @@ export async function serveChat(
       fail(err);
     }
   }
-  // The editor closed the pipe: end any turn in progress, then flush the last state.
+  // The editor closed the pipe: end any turn in progress, let running commands finish, then
+  // flush the last state.
   if (session.chatBusy) await session.command('stop');
+  await Promise.allSettled([...inflight]);
   if (timer) {
     clearTimeout(timer);
     emit();

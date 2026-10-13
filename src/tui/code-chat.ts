@@ -622,11 +622,11 @@ export class CodeChat {
   }
 
   /** Forget the conversation (the codebase map and instructions stay). */
-  clear(): void {
+  async clear(): Promise<void> {
     this.history = [];
     this.telemetry = emptyTelemetry();
     this.contextUsed = this.baseTokens();
     // A fresh conversation starts a fresh running context; the old one is kept with the chat.
-    void this.ctx.runningContext?.archive();
+    await this.ctx.runningContext?.archive();
   }
 }
