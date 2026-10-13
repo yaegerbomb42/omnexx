@@ -12,8 +12,16 @@ const SUITES: Record<string, () => Suite> = {
   jimmy10: getJimmy10Suite,
 };
 
-const RUNNERS: Record<string, (o: { hours: number; budget: number }) => AgentRunner> = {
-  omnexx: (o) => new OmnexxRunner({ hours: o.hours, budgetUsd: o.budget }),
+interface RunnerOpts {
+  hours: number;
+  budget: number;
+  model?: string | undefined;
+  context: 'lean' | 'full';
+}
+
+const RUNNERS: Record<string, (o: RunnerOpts) => AgentRunner> = {
+  omnexx: (o) =>
+    new OmnexxRunner({ hours: o.hours, budgetUsd: o.budget, model: o.model, context: o.context }),
   'claude-code': () => new ClaudeCodeRunner(),
   codex: () => new CodexRunner(),
 };
@@ -26,6 +34,8 @@ interface Opts {
   dryRun?: boolean;
   hours: string;
   budget: string;
+  model?: string;
+  context: string;
 }
 
 const ZERO = { usd: 0, tokens_in: 0, tokens_out: 0, cached: 0, wall_ms: 0, interventions: 0 };
@@ -40,6 +50,12 @@ async function main(): Promise<void> {
     .option('--task <id>', 'run only this task')
     .option('--hours <n>', 'omnexx wall-clock cap per task', '0.5')
     .option('--budget <usd>', 'omnexx spend cap per task', '2')
+    .option('--model <ref>', 'omnexx: one model for every role, e.g. ollama:gpt-oss:120b-cloud')
+    .option(
+      '--context <mode>',
+      'omnexx: lean (0.8 defaults) or full (every section pinned)',
+      'lean',
+    )
     .option('--dry-run', 'show what would run without running it')
     .parse();
   const opts = program.opts<Opts>();
@@ -57,7 +73,14 @@ async function main(): Promise<void> {
   for (const name of config.agents) {
     const make = RUNNERS[name];
     if (!make) fail(`Unknown agent: ${name}`);
-    const runner = make({ hours: Number(opts.hours), budget: Number(opts.budget) });
+    if (opts.context !== 'lean' && opts.context !== 'full')
+      throw new Error('--context is lean or full');
+    const runner = make({
+      hours: Number(opts.hours),
+      budget: Number(opts.budget),
+      model: opts.model,
+      context: opts.context,
+    });
     if (!(await runner.isAvailable())) console.warn(`Warning: agent '${name}' is not available`);
     runners.push(runner);
   }

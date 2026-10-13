@@ -1,4 +1,4 @@
-import { appendFile, cp, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -28,6 +28,10 @@ export interface OmnexxRunnerOptions {
   home?: string;
   /** Keep improving after the goal is met (off: the bench measures the cost of meeting the goal). */
   beyond?: boolean;
+  /** One model for every role; the user's pool and roles are then left out entirely. */
+  model?: string | undefined;
+  /** lean: 0.8 defaults (codemap optional). full: every context section pinned (pre-0.8). */
+  context?: 'lean' | 'full';
 }
 
 /**
@@ -74,7 +78,11 @@ export class OmnexxRunner extends AgentRunner {
       env: {
         ...process.env,
         OMNEXX_HOME: home,
-        OMNEXX_CONFIG_HOME: await benchConfigHome(home, this.opts.beyond ?? false),
+        OMNEXX_CONFIG_HOME: await benchConfigHome(home, {
+          beyond: this.opts.beyond ?? false,
+          model: this.opts.model,
+          context: this.opts.context ?? 'lean',
+        }),
         CI: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -111,7 +119,27 @@ export function metricsFromState(state: RunState, wall_ms: number): BenchmarkRes
  * A copy of the user's config (their providers, models and quota state) with beyond mode set,
  * so a bench run never edits the real config.
  */
-async function benchConfigHome(home: string, beyond: boolean): Promise<string> {
+/** Editor-set files that would outrank config.toml; a pinned model leaves them all out. */
+const POOL_FILES = ['models.json', 'roles.json', 'context-sections.json'];
+const ALL_PINNED = ['role', 'codemap', 'intent', 'lessons', 'progress'];
+
+/** The copy's own [models] tables (and their sub-tables) out, so the pinned model is the only one. */
+export function withoutModelsTables(toml: string): string {
+  let skipping = false;
+  return toml
+    .split('\n')
+    .filter((line) => {
+      const header = /^\s*\[+([^\]]+)\]+\s*$/.exec(line)?.[1]?.trim();
+      if (header !== undefined) skipping = header === 'models' || header.startsWith('models.');
+      return !skipping;
+    })
+    .join('\n');
+}
+
+async function benchConfigHome(
+  home: string,
+  o: { beyond: boolean; model?: string | undefined; context: 'lean' | 'full' },
+): Promise<string> {
   const src =
     process.env.OMNEXX_CONFIG_HOME ??
     join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'omnexx');
@@ -119,8 +147,18 @@ async function benchConfigHome(home: string, beyond: boolean): Promise<string> {
   if (existsSync(src)) await cp(src, dest, { recursive: true });
   else await mkdir(dest, { recursive: true });
   const file = join(dest, 'config.toml');
-  const text = await readFile(file, 'utf-8').catch(() => '');
-  if (!/^\[beyond\]/m.test(text)) await appendFile(file, `\n[beyond]\nenabled = ${beyond}\n`);
+  let text = await readFile(file, 'utf-8').catch(() => '');
+  if (o.model) {
+    // Only this model may be called: no pool, no roles, nothing that could reach a paid one.
+    await Promise.all(POOL_FILES.map((f) => rm(join(dest, f), { force: true })));
+    text = withoutModelsTables(text);
+    const m = JSON.stringify(o.model);
+    text += `\n[models]\nplanner = ${m}\nworker = ${m}\ncheap = ${m}\nhelpers = ${m}\nchat = ${m}\n`;
+  }
+  if (o.context === 'full')
+    text += `\n[context.sections]\n${ALL_PINNED.map((s) => `${s} = "pinned"`).join('\n')}\n`;
+  if (!/^\[beyond\]/m.test(text)) text += `\n[beyond]\nenabled = ${String(o.beyond)}\n`;
+  await writeFile(file, text);
   return dest;
 }
 
