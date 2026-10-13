@@ -68,7 +68,13 @@ async function runBash(
   inline?: string,
 ): Promise<number | null> {
   const args = script ? [script] : ['-c', inline ?? 'true'];
-  const env = { ...process.env, npm_config_cache: NPM_CACHE };
+  // A fixed PATH (node's own folder and the system ones), so a check never runs a binary from a
+  // writable folder the environment happened to list first.
+  const env = {
+    ...process.env,
+    PATH: [dirname(process.execPath), '/usr/local/bin', '/usr/bin', '/bin'].join(':'),
+    npm_config_cache: NPM_CACHE,
+  };
   // Own process group, so a timeout kills the test runner the script started too: a task
   // whose bug is a hang (task-06) otherwise keeps the hidden check alive forever.
   const child = spawn('bash', args, { cwd, env, stdio: 'ignore', detached: true });

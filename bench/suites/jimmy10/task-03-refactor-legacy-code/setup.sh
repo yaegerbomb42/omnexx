@@ -106,4 +106,4 @@ describe('legacy', () => {
 });
 EOF
 
-npm install
+npm install --ignore-scripts --no-audit --no-fund

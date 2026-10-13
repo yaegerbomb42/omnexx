@@ -54,7 +54,7 @@ class Inventory {
     return Object.values(this.s.products)
       .filter((p) => p.stock <= p.reorderLevel)
       .map((p) => p.sku)
-      .sort();
+      .sort((a, b) => a.localeCompare(b));
   }
   valuation() {
     return (

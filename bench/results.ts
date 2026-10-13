@@ -1,9 +1,28 @@
-import { join } from 'node:path';
-import { existsSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve, sep } from 'node:path';
+import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { writeFile, appendFile } from 'node:fs/promises';
 import type { TaskRunResult, BenchConfig } from './types.ts';
 
 /** Results writer: outputs markdown table + raw JSONL. */
+/** Results go under the current folder or a temp folder (/tmp included), nowhere else. */
+export function safeOutDir(out: string): string {
+  const dir = resolve(out);
+  const allowed = [resolve(process.cwd()), resolve(tmpdir()), realTmp(), '/tmp', '/private/tmp'];
+  if (!allowed.some((root) => dir === root || dir.startsWith(`${root}${sep}`)))
+    throw new Error(`--out must be inside ${process.cwd()} or ${tmpdir()}: ${out}`);
+  return dir;
+}
+
+/** macOS's temp folder is a symlink (/var → /private/var); accept both spellings. */
+function realTmp(): string {
+  try {
+    return realpathSync(tmpdir());
+  } catch {
+    return resolve(tmpdir());
+  }
+}
+
 export class ResultsWriter {
   private readonly outDir: string;
   private readonly jsonlPath: string;
@@ -11,7 +30,7 @@ export class ResultsWriter {
   private readonly runId: string;
 
   constructor(config: BenchConfig) {
-    this.outDir = config.out;
+    this.outDir = safeOutDir(config.out);
     const runId = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0]; // YYYY-MM-DD
     this.runId = runId ?? '';
     this.jsonlPath = join(this.outDir, `${this.runId}.jsonl`);
