@@ -144,14 +144,17 @@ export async function consolidateNotes(run: Run): Promise<boolean> {
 }
 
 /** Build the codemap once (cycle 0) with purposes for source files. */
-export async function initCodemap(run: Run): Promise<void> {
-  if (await readTextOr(run.store.file('codemap.json'), '')) return;
-  const map = await buildCodemap(run.worktree);
-  const purposes = await describeFiles(
-    run,
-    map,
-    map.entries.map((e) => e.path),
-  );
+/**
+ * The codebase map. `describe: false` (the fast path, which never reads it) skips the model-written
+ * purposes; a later call with describe fills in whichever entries still lack one.
+ */
+export async function initCodemap(run: Run, opts: { describe?: boolean } = {}): Promise<void> {
+  const describe = opts.describe ?? true;
+  const text = await readTextOr(run.store.file('codemap.json'), '');
+  const map = text ? (JSON.parse(text) as Codemap) : await buildCodemap(run.worktree);
+  const missing = describe ? map.entries.filter((e) => !e.purpose).map((e) => e.path) : [];
+  if (text && !missing.length) return;
+  const purposes = missing.length ? await describeFiles(run, map, missing) : {};
   await saveCodemap(run, setPurposes(map, purposes));
 }
 

@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -17,6 +17,18 @@ import { WORKER_TOOLS, toolSpec } from '../../src/tools/registry.js';
 import { tempRepo } from '../support/tmp.js';
 
 describe('codemap', () => {
+  it('leaves out committed dependency and build folders', async () => {
+    const repo = await tempRepo();
+    await mkdir(join(repo, 'node_modules/typescript/lib'), { recursive: true });
+    await mkdir(join(repo, 'src/dist'), { recursive: true });
+    await writeFile(join(repo, 'node_modules/typescript/lib/tsc.js'), 'export const t = 1;\n');
+    await writeFile(join(repo, 'src/dist/out.js'), 'export const o = 1;\n');
+    await writeFile(join(repo, 'src/main.ts'), 'export const m = 1;\n');
+    await git(repo, ['add', '-A']);
+    await git(repo, ['commit', '-qm', 'c']);
+    expect((await buildCodemap(repo)).entries.map((e) => e.path)).toEqual(['src/main.ts']);
+  });
+
   it('builds, updates only touched files (others byte-identical), keeps purposes, and drops deleted files', async () => {
     const repo = await tempRepo();
     await writeFile(join(repo, 'a.ts'), 'export function alpha() {}\n');

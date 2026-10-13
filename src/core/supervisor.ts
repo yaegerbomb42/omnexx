@@ -578,10 +578,11 @@ class Supervisor {
     const r = this.run;
     await r.setPhase('planning');
     await this.setup();
-    await initCodemap(r);
-    if (!r.state.baseline) await runBaseline(r);
     const goal = (await r.store.readGoal()).text;
-    if (r.state.fastPath === undefined && tryFastPath(r.config, goal)) {
+    const fast = r.state.fastPath === undefined && tryFastPath(r.config, goal);
+    await initCodemap(r, { describe: !fast });
+    if (!r.state.baseline) await runBaseline(r);
+    if (fast) {
       r.plan = fastPlan(r.config, goal);
       await r.savePlan();
       r.state.fastPath = 'tried';

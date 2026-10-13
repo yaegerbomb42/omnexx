@@ -7,7 +7,8 @@ import type { Codemap } from './codemap.js';
 const answerSchema = z.object({
   purposes: z.array(z.object({ path: z.string(), purpose: z.string().max(200) })),
 });
-const BATCH = 60;
+// 60 files per call ran into the 2k output cap and lost the whole batch.
+const BATCH = 25;
 
 /**
  * Cheap-model one-line purposes for codemap entries (plan §14.2): only for the given paths,

@@ -117,10 +117,14 @@ async function walkFiles(root: string): Promise<string[]> {
   return out;
 }
 
+/** Dependency and build folders: not the project's code even when a repo commits them. */
+const VENDORED =
+  /(^|\/)(node_modules|bower_components|vendor|dist|build|\.venv|venv|__pycache__|target|\.next|coverage)\//;
+
 export async function trackedFiles(root: string): Promise<string[]> {
   const out = await git(root, ['ls-files', '-z'], { allowFailure: true });
   const files = out.exitCode === 0 ? out.stdout.split('\0').filter(Boolean) : await walkFiles(root);
-  return files.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return files.filter((f) => !VENDORED.test(f)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 export async function buildCodemap(root: string): Promise<Codemap> {
