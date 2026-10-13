@@ -1369,7 +1369,6 @@ body.vscode-light .badge {
   display: flex;
   flex-direction: column;
   border-radius: 10px;
-  background: var(--vscode-editorWidget-background, var(--card-strong));
   border: 1px solid transparent;
   background:
     linear-gradient(

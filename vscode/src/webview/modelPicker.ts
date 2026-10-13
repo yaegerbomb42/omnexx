@@ -25,7 +25,7 @@ let post: Post | undefined;
 /** A stable hue per provider name, so each provider keeps its color everywhere. */
 export function providerHue(name: string): number {
   let h = 0;
-  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
+  for (const c of name) h = (h * 31 + (c.codePointAt(0) ?? 0)) % 360;
   return h;
 }
 
