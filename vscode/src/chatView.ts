@@ -134,7 +134,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     else if (type === 'openContextFile' && typeof m.path === 'string')
       await this.openContext(m.path);
     else if (type === 'engineInfo') await this.postEngine();
-    else if (type === 'installCli') await this.installCli();
+    else if (type === 'installCli') this.installCli();
     else if (type === 'editToml')
       await openSettingsFile(join(primaryFolder() ?? homedir(), 'omnexx.toml'), PROJECT_STARTER);
     else if (type === 'editUserConfig') await openSettingsFile(userConfigPath(), USER_STARTER);
@@ -164,7 +164,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   }
 
   /** Install omnexx for the terminal: Homebrew when it's there, else npm (needs Node 22+). */
-  private async installCli(): Promise<void> {
+  private installCli(): void {
     // Homebrew's own install locations (Apple silicon, Intel), not whatever PATH finds first.
     const brew = BREW_PATHS.some((p) => existsSync(p));
     const cmd = brew
