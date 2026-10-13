@@ -13,6 +13,7 @@ export default tseslint.config(
       'bench/suites/*/*/solution/**',
       'test/.build/**',
       'eslint.config.js',
+      'vscode/build.mjs',
     ],
   },
   eslint.configs.recommended,

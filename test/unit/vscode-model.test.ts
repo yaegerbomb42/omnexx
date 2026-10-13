@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   childrenOf,
+  compareVersions,
+  parseVersion,
   describeRun,
   isActive,
   parsePlan,
@@ -158,5 +160,21 @@ describe('runArgs and validateDuration', () => {
     for (const ok of ['45m', '8h', '2d', '1h30m', '1.5h'])
       expect(validateDuration(ok)).toBeUndefined();
     for (const bad of ['', '8', 'h', '8 hours', '30s']) expect(validateDuration(bad)).toBeDefined();
+  });
+});
+
+describe('compareVersions and parseVersion (picking the global or the bundled omnexx)', () => {
+  it('compares numerically, not as text, and ignores pre-release tags and a leading v', () => {
+    expect(compareVersions('0.10.0', '0.9.3')).toBe(1);
+    expect(compareVersions('0.9.0', '0.9.0')).toBe(0);
+    expect(compareVersions('v0.8.9', '0.9.0')).toBe(-1);
+    expect(compareVersions('1.0.0-rc.1', '1.0.0')).toBe(0);
+    expect(compareVersions('1.2', '1.2.0')).toBe(0);
+  });
+
+  it('reads the version omnexx --version prints', () => {
+    expect(parseVersion('0.9.0\n')).toBe('0.9.0');
+    expect(parseVersion('omnexx 1.2.3 (darwin)')).toBe('1.2.3');
+    expect(parseVersion('command not found')).toBeUndefined();
   });
 });

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0
+
+- **omnexx is built in.** The extension ships its own copy of omnexx and runs it on the editor's
+  Node, so it works right after install. A global `omnexx` of the same version or newer is used
+  instead, and the `omnexx.path` setting overrides both.
+- Settings shows which omnexx runs the panel, with **Install omnexx for your terminal** (Homebrew
+  when present, else npm).
+
 ## 0.5.0
 
 - **Drag-and-drop roles**: drag models from your palette onto Chat, Planner, Worker, Quick jobs

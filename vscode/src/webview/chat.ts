@@ -51,7 +51,7 @@ interface State {
 type Incoming =
   | ({ type: 'state' } & State)
   | ({
-      type: 'settings' | 'models' | 'prefs' | 'providerTest' | 'roles' | 'contextFiles';
+      type: 'settings' | 'models' | 'prefs' | 'providerTest' | 'roles' | 'contextFiles' | 'engine';
     } & Record<string, unknown>)
   | ({ type: 'browserFrame' } & crew.BrowserFrameMsg)
   | { type: 'ready'; version: string }

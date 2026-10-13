@@ -213,3 +213,26 @@ export function runArgs(o: RunOptions): string[] {
   args.push(goal);
   return args;
 }
+
+/** Compare dotted versions ("0.10.0" > "0.9.3"); a pre-release suffix is ignored. -1, 0 or 1. */
+export function compareVersions(a: string, b: string): number {
+  const parts = (v: string) =>
+    v
+      .trim()
+      .replace(/^v/, '')
+      .split(/[-+]/)[0]
+      ?.split('.')
+      .map((n) => Number.parseInt(n, 10) || 0) ?? [];
+  const x = parts(a);
+  const y = parts(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] ?? 0) - (y[i] ?? 0);
+    if (d) return Math.sign(d);
+  }
+  return 0;
+}
+
+/** A version printed by `omnexx --version`, or undefined when the output isn't one. */
+export function parseVersion(out: string): string | undefined {
+  return /\b(\d+\.\d+\.\d+)\b/.exec(out)?.[1];
+}

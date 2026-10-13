@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as vscode from 'vscode';
-import { omnexxBin } from './cli.js';
+import { engine } from './engine.js';
 
 /** What `omnexx chat-server` prints, one JSON object per line. */
 export type ServerMessage = { type: string } & Record<string, unknown>;
@@ -8,7 +8,6 @@ export type ServerMessage = { type: string } & Record<string, unknown>;
 const MAX_RESTARTS = 3;
 const RESTART_WINDOW_MS = 60_000;
 const STDERR_TAIL_CHARS = 2_000;
-const isWindows = process.platform === 'win32';
 
 /**
  * One `omnexx chat-server` per workspace. Lines it prints become `onMessage` events; it restarts
@@ -28,7 +27,17 @@ export class ChatProcess implements vscode.Disposable {
     return this.child !== undefined;
   }
 
+  /** Starting resolves which omnexx to run first; commands sent meanwhile wait for it. */
+  private starting: Promise<void> | undefined;
+
   start(): void {
+    if (this.child || this.starting) return;
+    this.starting = this.launch().finally(() => {
+      this.starting = undefined;
+    });
+  }
+
+  private async launch(): Promise<void> {
     if (this.child) return;
     const now = Date.now();
     this.crashes = this.crashes.filter((t) => now - t < RESTART_WINDOW_MS);
@@ -41,12 +50,21 @@ export class ChatProcess implements vscode.Disposable {
     }
     this.buffer = '';
     this.stderr = '';
-    // npm installs omnexx as a .cmd shim on Windows, which only runs through a shell; the only
-    // argument is a fixed word.
-    const child = spawn(omnexxBin(), ['chat-server'], {
+    let e: Awaited<ReturnType<typeof engine>>;
+    try {
+      e = await engine();
+    } catch (err) {
+      this.emitter.fire({
+        type: 'down',
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    // A Windows .cmd shim only runs through a shell; the only argument is a fixed word.
+    const child = spawn(e.command, [...e.prefix, 'chat-server'], {
       cwd: this.cwd,
-      env: process.env,
-      shell: isWindows,
+      env: e.env,
+      shell: e.shell,
     });
     this.child = child;
     child.stdout.setEncoding('utf8');
@@ -82,8 +100,13 @@ export class ChatProcess implements vscode.Disposable {
   }
 
   send(cmd: Record<string, unknown>): void {
-    if (!this.child) this.start();
-    this.child?.stdin.write(`${JSON.stringify(cmd)}\n`);
+    const line = `${JSON.stringify(cmd)}\n`;
+    if (this.child) {
+      this.child.stdin.write(line);
+      return;
+    }
+    this.start();
+    void this.starting?.then(() => this.child?.stdin.write(line));
   }
 
   restart(): void {

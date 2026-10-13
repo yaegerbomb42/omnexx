@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { ChatViewProvider } from './chatView.js';
+import { initEngine } from './engine.js';
 import { control, openTerminal, type Control } from './cli.js';
 import { runArgs, validateDuration, type RunOptions } from './model.js';
 import { primaryFolder, RunsProvider, type Node } from './tree.js';
@@ -8,6 +9,7 @@ const DEFAULT_REFRESH_SECONDS = 5;
 const MIN_REFRESH_SECONDS = 2;
 
 export function activate(context: vscode.ExtensionContext): void {
+  initEngine(context);
   const provider = new RunsProvider();
   const view = vscode.window.createTreeView('omnexx.runs', { treeDataProvider: provider });
   const refresh = (): void => {
@@ -45,11 +47,11 @@ export function activate(context: vscode.ExtensionContext): void {
     cmd('omnexx.startRun', () => startRun(false, refresh)),
     cmd('omnexx.startAutonomous', () => startRun(true, refresh)),
     cmd('omnexx.openChat', () => {
-      openTerminal('omnexx', [], primaryFolder());
+      return openTerminal('omnexx', [], primaryFolder());
     }),
     cmd('omnexx.attach', (node) => {
       const runId = runIdOf(node);
-      openTerminal(`omnexx ${runId}`, ['watch', runId], primaryFolder());
+      return openTerminal(`omnexx ${runId}`, ['watch', runId], primaryFolder());
     }),
     cmd('omnexx.pause', (node) => controlRun('pause', node, refresh)),
     cmd('omnexx.resume', (node) => controlRun('resume', node, refresh)),
@@ -120,7 +122,7 @@ async function startRun(autonomous: boolean, done: () => void): Promise<void> {
   if (goal === undefined) return;
   const opts = autonomous ? await askAutonomous(goal) : { goal };
   if (!opts) return;
-  openTerminal('omnexx run', runArgs(opts), cwd);
+  await openTerminal('omnexx run', runArgs(opts), cwd);
   // The detached run takes a moment to write its state; show it once it has.
   setTimeout(done, 3_000);
 }
