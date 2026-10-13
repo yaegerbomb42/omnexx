@@ -184,8 +184,22 @@ export function brokenChecks(update: PlanUpdate, strict = true): string[] {
             `${t.id}: its checks only look for files or text (${checks.map((c) => `\`${c}\``).join(', ')}); add a check that runs the code, e.g. a test command for this behaviour`,
           );
       }
+  // Every accepted commit must pass every test, so a task whose whole point is a test that fails
+  // can never land: the test and the fix that makes it pass have to be one task.
+  for (const m of update.milestones)
+    for (const t of m.tasks ?? []) {
+      const text = `${t.title} ${(t.acceptance ?? []).join(' ')} ${(t.steps ?? []).join(' ')}`;
+      if (EXPECTS_FAILURE.test(text))
+        out.push(
+          `${t.id}: "${t.title}" adds a test that is meant to fail, but a commit is only kept when every test passes, so this task can never land. Merge it with the task that fixes the code: one task that adds the test and makes it pass.`,
+        );
+    }
   return out;
 }
+
+/** A task written as "add a failing test first": impossible under all-tests-pass commits. */
+const EXPECTS_FAILURE =
+  /\b(expected to fail|should fail (?:at first|initially|before)|failing test first|red phase|(?:currently|initially) fails?|(?:test|tests) that fails?(?: first| now| initially)?)\b/i;
 
 /** A check that proves a file or string exists, not that anything works. */
 export function isWeakCheck(cmd: string): boolean {
