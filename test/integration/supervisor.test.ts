@@ -683,17 +683,23 @@ describe('M2: stuck handling, budget and judge', () => {
         return;
       }
       const q = (
-        JSON.parse(req.body) as { questions: { name: string; type: string; options?: string[] }[] }
+        JSON.parse(req.body) as {
+          questions: Record<string, { type: string; criteria?: Record<string, null> | string[] }>;
+        }
       ).questions;
       const out: Record<string, unknown> = {};
-      for (const x of q) {
-        const pick = x.options
-          ? x.options.includes(answers[n % answers.length] ?? '')
+      for (const [name, x] of Object.entries(q)) {
+        const options =
+          x.type === 'choice' && x.criteria && !Array.isArray(x.criteria)
+            ? Object.keys(x.criteria)
+            : undefined;
+        const pick = options
+          ? options.includes(answers[n % answers.length] ?? '')
             ? answers[n % answers.length]
-            : x.options[0]
+            : options[0]
           : undefined;
         n++;
-        out[x.name] =
+        out[name] =
           x.type === 'choice'
             ? { choice: pick, probabilities: { [pick ?? '']: 0.99 }, confidence: 0.99 }
             : { probability: n % 2 ? 0.05 : 0.95 };

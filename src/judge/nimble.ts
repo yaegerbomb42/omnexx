@@ -49,7 +49,7 @@ export function parseAnswer(q: JudgeQuestion, raw: RawAnswer): JudgeAnswer | und
     return { id: q.id, type: 'choice', choice, probabilities: p, confidence };
   }
   if (q.type === 'noul') {
-    const probability = num(raw.probability) ?? num(raw.p_true);
+    const probability = num(raw.noul) ?? num(raw.probability) ?? num(raw.p_true);
     return probability === undefined ? undefined : { id: q.id, type: 'noul', probability };
   }
   const score = num(raw.score);
@@ -59,10 +59,19 @@ export function parseAnswer(q: JudgeQuestion, raw: RawAnswer): JudgeAnswer | und
   return { id: q.id, type: 'score', score, probabilities: p, confidence };
 }
 
+/** One question in Ollama's systemone shape: `{type, instructions, criteria}`. */
+function toWire(q: JudgeQuestion): Record<string, unknown> {
+  const base = { type: q.type, instructions: q.prompt };
+  if (q.type === 'choice')
+    return { ...base, criteria: Object.fromEntries(q.options.map((o) => [o, null])) };
+  if (q.type === 'score') return { ...base, criteria: q.levels };
+  return base;
+}
+
 /**
  * Nimble on Ollama: `POST {url}/v1/systemone` with `{model, state, questions, keep_alive}`.
- * Questions go out as `{name, type, question, options|levels}`; answers come back keyed by
- * name (an object, or an array of objects with `name`). Every failure becomes an abstain.
+ * Questions go out keyed by name as `{type, instructions, criteria}`; answers come back keyed
+ * by name (an object, or an array of objects with `name`). Every failure becomes an abstain.
  */
 export class NimbleJudge implements Judge {
   readonly kind = 'nimble';
@@ -99,16 +108,7 @@ export class NimbleJudge implements Judge {
     const body = JSON.stringify({
       model: this.opts.model,
       state,
-      questions: questions.map((q) => ({
-        name: q.id,
-        type: q.type,
-        question: q.prompt,
-        ...(q.type === 'choice'
-          ? { options: q.options }
-          : q.type === 'score'
-            ? { levels: q.levels }
-            : {}),
-      })),
+      questions: Object.fromEntries(questions.map((q) => [q.id, toWire(q)])),
       keep_alive: this.opts.keepAlive,
     });
     const bytes = Buffer.byteLength(body);
