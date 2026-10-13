@@ -1,3 +1,4 @@
+import { orderForStrategy, strategyFor } from '../config/routing.js';
 import { randomBytes } from 'node:crypto';
 import { mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -160,7 +161,10 @@ export class CodeChat {
     model: string | undefined,
   ) {
     const refs = model ? [model] : config.models.worker;
-    this.models = (typeof refs === 'string' ? [refs] : refs).map((r) => chatModel(r, config));
+    this.models = orderForStrategy(
+      (typeof refs === 'string' ? [refs] : refs).map((r) => chatModel(r, config)),
+      strategyFor(config.models, 'chat'),
+    );
     this.contextUsed = this.baseTokens();
     // One listener for the whole chat: every action shows as a line while it happens.
     events.onEvent((e) => {
@@ -250,7 +254,7 @@ export class CodeChat {
         tools: () => readOnlyTools(this.config, where),
         // models.helpers when set (so helpers can draw on other providers' quotas), else chat's.
         models: () => Promise.resolve(this.helperModels()),
-        spread: this.config.models.spread_helpers,
+        strategy: strategyFor(this.config.models, 'helpers'),
         maxTokens: Math.min(this.config.providers.anthropic.max_tokens, 4_096),
         limits: { tokens: cfg.subagent_max_tokens, turns: cfg.subagent_max_turns },
         loop: {
@@ -322,6 +326,17 @@ export class CodeChat {
 
   private baseTokens(): number {
     return estimateTokens(JSON.stringify([this.system, this.tools.map(toolSpec)]));
+  }
+
+  /**
+   * What the context is made of, for the editor: the system prompt (instructions, project notes),
+   * every tool's definition, and the conversation. The first two are sent with every request,
+   * even before anything is said.
+   */
+  get contextParts(): { system: number; tools: number; conversation: number } {
+    const system = estimateTokens(JSON.stringify(this.system));
+    const tools = estimateTokens(JSON.stringify(this.tools.map(toolSpec)));
+    return { system, tools, conversation: Math.max(0, this.contextUsed - system - tools) };
   }
 
   private onEvent(e: OmnexxEvent): void {

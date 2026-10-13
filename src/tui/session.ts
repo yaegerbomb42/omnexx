@@ -798,8 +798,20 @@ export class Session {
   }
 
   /** Context in use / the limit chat compacts at, once a chat is open. */
-  get context(): { used: number; limit: number } | undefined {
-    return this.code ? { used: this.code.contextUsed, limit: this.code.contextLimit } : undefined;
+  get context():
+    | {
+        used: number;
+        limit: number;
+        parts: { system: number; tools: number; conversation: number };
+      }
+    | undefined {
+    return this.code
+      ? {
+          used: this.code.contextUsed,
+          limit: this.code.contextLimit,
+          parts: this.code.contextParts,
+        }
+      : undefined;
   }
 
   /** True while /pause holds the chat at its next step. */

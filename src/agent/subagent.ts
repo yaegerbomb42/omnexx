@@ -1,5 +1,5 @@
 import { resolveModel } from '../providers/pricing.js';
-import { spreadAcrossProviders } from '../config/roles.js';
+import { orderForStrategy, strategyFor, type Strategy } from '../config/routing.js';
 import type { Run } from '../core/run.js';
 import type { ResolvedModel } from '../providers/pricing.js';
 import { readOnlyTools, toolSpec } from '../tools/registry.js';
@@ -62,8 +62,8 @@ export function cardTools(tools: readonly Tool[], card: HelperCard | undefined):
 export interface HelperEnv {
   tools: () => Promise<readonly Tool[]>;
   models: (kind: SubagentKind) => Promise<readonly ResolvedModel[]>;
-  /** Start each helper on a different provider of its chain (models.spread_helpers). */
-  spread?: boolean;
+  /** How each helper orders its models (models.routing.helpers); priority when unset. */
+  strategy?: Strategy;
   maxTokens: number;
   limits: { tokens: number; turns: number };
   loop: Omit<LoopDeps, 'models' | 'tools' | 'toolCtx' | 'budget' | 'maxTokens'> & {
@@ -80,6 +80,8 @@ export function helperRunner(
   parent: ToolContext,
 ): (description: string, kind: SubagentKind, card?: HelperCard) => Promise<string> {
   let n = 0;
+  /** Helpers running per provider, for least-busy routing. */
+  const busy = new Map<string, number>();
   return async (description, kind, card) => {
     const id = ++n;
     const tools = cardTools(
@@ -103,32 +105,39 @@ export function helperRunner(
     const system = card
       ? `${SYSTEM}\n\n# You are the "${card.name}" agent\n\n${card.prompt}`
       : SYSTEM;
-    const result = await runAgentLoop(
-      {
-        system: [{ text: system }],
-        first: {
-          role: 'user',
-          content: [
-            { type: 'text', text: card ? description : `${BRIEF[kind]}\n\n${description}` },
-          ],
+    const chain = orderForStrategy(await env.models(kind), env.strategy ?? 'priority', { busy });
+    const lead = chain[0]?.provider;
+    if (lead) busy.set(lead, (busy.get(lead) ?? 0) + 1);
+    let result: Awaited<ReturnType<typeof runAgentLoop>>;
+    try {
+      result = await runAgentLoop(
+        {
+          system: [{ text: system }],
+          first: {
+            role: 'user',
+            content: [
+              { type: 'text', text: card ? description : `${BRIEF[kind]}\n\n${description}` },
+            ],
+          },
+          tools: tools.map(toolSpec),
         },
-        tools: tools.map(toolSpec),
-      },
-      {
-        ...env.loop,
-        models: env.spread
-          ? spreadAcrossProviders(await env.models(kind), id - 1)
-          : [...(await env.models(kind))],
-        tools,
-        toolCtx: ctx,
-        budget: {
-          ...env.loop.budget,
-          max_tokens_per_cycle: env.limits.tokens,
-          max_turns_per_cycle: env.limits.turns,
+        {
+          ...env.loop,
+          models: chain,
+          tools,
+          toolCtx: ctx,
+          budget: {
+            ...env.loop.budget,
+            max_tokens_per_cycle: env.limits.tokens,
+            max_turns_per_cycle: env.limits.turns,
+          },
+          maxTokens: env.maxTokens,
         },
-        maxTokens: env.maxTokens,
-      },
-    );
+      );
+    } finally {
+      // Free the provider's slot even when the helper fails, or it would look busy for ever.
+      if (lead) busy.set(lead, Math.max(0, (busy.get(lead) ?? 1) - 1));
+    }
     env.loop.events.emit('subagent.finish', {
       id,
       end: result.end,
@@ -165,7 +174,7 @@ export function subagentRunner(
                 facts: { subagent: kind },
               })
             ).chain,
-      spread: run.config.models.spread_helpers,
+      strategy: strategyFor(run.config.models, 'helpers'),
       maxTokens: Math.min(run.config.providers.anthropic.max_tokens, 4_096),
       limits: { tokens: cfg.subagent_max_tokens, turns: cfg.subagent_max_turns },
       loop: {

@@ -1,3 +1,4 @@
+import { gist } from './skill.js';
 import { z } from 'zod';
 import type { OmnexxConfig } from '../../config/schema.js';
 import { resolvePaths } from '../../core/paths.js';
@@ -40,7 +41,7 @@ function headersFor(
 /** The tool's description: every agent it can reach, so the model knows whom to ask. */
 export function agentCatalog(local: readonly AgentCard[], remote: readonly string[]): string {
   const lines = [
-    ...local.map((c) => `- ${c.name}: ${c.description.replace(/\s+/g, ' ').slice(0, 200)}`),
+    ...local.map((c) => `- ${c.name}: ${gist(c.description)}`),
     ...remote.map((r) => `- ${r} (remote A2A agent)`),
   ];
   return lines.join('\n');

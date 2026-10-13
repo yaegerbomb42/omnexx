@@ -47,7 +47,12 @@ export interface ChatState {
   paused: boolean;
   autoApprove: boolean;
   model: string | null;
-  context: { used: number; limit: number } | null;
+  /** Tokens in use, the compaction limit, and what they are made of. */
+  context: {
+    used: number;
+    limit: number;
+    parts?: { system: number; tools: number; conversation: number };
+  } | null;
   usage: ChatUsage | null;
   run: { id: string; alive: boolean; phase?: string; done?: number; tasks?: number } | null;
   /** Helpers (subagents) for the current message. */

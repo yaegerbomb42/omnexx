@@ -296,6 +296,7 @@ export function setCurrentModel(model: string | null): void {
 
 export function wire(post: Post): void {
   postRef = post;
+  roles.wireDrag(q('settings', HTMLElement));
   const page = q('settings', HTMLElement);
   page.addEventListener('click', (e) => {
     const t = e.target instanceof Element ? e.target : null;
@@ -350,9 +351,6 @@ export function wire(post: Post): void {
         draw();
       } else if (ext) post({ type: ext });
     }
-  });
-  page.addEventListener('change', (e) => {
-    if (e.target instanceof Element) roles.change(e.target);
   });
   page.addEventListener('input', (e) => {
     if (e.target instanceof HTMLInputElement && e.target.id === 'tile-search') {
