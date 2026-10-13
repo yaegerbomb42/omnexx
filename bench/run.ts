@@ -4,6 +4,10 @@ import { getJimmy10Suite } from './suites/index.ts';
 import { OmnexxRunner } from './runners/omnexx.ts';
 import { ClaudeCodeRunner } from './runners/claude-code.ts';
 import { CodexRunner } from './runners/codex.ts';
+import { ClineRunner } from './runners/cline.ts';
+import { OpenHandsRunner } from './runners/openhands.ts';
+import { endpointFromEnv, startMeter, type Meter } from './meter.ts';
+import { readFile } from 'node:fs/promises';
 import { createResultsWriter, resultsDir } from './results.ts';
 import type { BenchConfig, Suite, TaskRunResult } from './types.ts';
 import type { AgentRunner } from './runners/base.ts';
@@ -17,11 +21,27 @@ interface RunnerOpts {
   budget: number;
   model?: string | undefined;
   context: 'lean' | 'full';
+  meter?: Meter | undefined;
+  judge: boolean;
+}
+
+function needMeter(o: RunnerOpts): { meter: Meter; model: string; hours: number } {
+  if (!o.meter || !o.model) throw new Error('this agent needs --endpoint (an env file)');
+  return { meter: o.meter, model: o.model, hours: o.hours };
 }
 
 const RUNNERS: Record<string, (o: RunnerOpts) => AgentRunner> = {
   omnexx: (o) =>
-    new OmnexxRunner({ hours: o.hours, budgetUsd: o.budget, model: o.model, context: o.context }),
+    new OmnexxRunner({
+      hours: o.hours,
+      budgetUsd: o.budget,
+      model: o.model,
+      context: o.context,
+      meter: o.meter,
+      judge: o.judge,
+    }),
+  cline: (o) => new ClineRunner(needMeter(o)),
+  openhands: (o) => new OpenHandsRunner(needMeter(o)),
   'claude-code': () => new ClaudeCodeRunner(),
   codex: () => new CodexRunner(),
 };
@@ -36,6 +56,9 @@ interface Opts {
   budget: string;
   model?: string;
   context: string;
+  endpoint?: string;
+  endpointPrefix: string;
+  judge?: boolean;
 }
 
 /** 61_234 → "61k". */
@@ -59,6 +82,12 @@ async function main(): Promise<void> {
       'omnexx: lean (0.8 defaults) or full (every section pinned)',
       'lean',
     )
+    .option(
+      '--endpoint <envfile>',
+      'one OpenAI-compatible endpoint for every agent, metered the same way (PREFIX_BASE_URL, _MODEL, _API_KEY)',
+    )
+    .option('--endpoint-prefix <prefix>', 'variable prefix in the endpoint env file', 'DEEPSEEK')
+    .option('--judge', "omnexx: keep the user's judge (e.g. Nimble) on")
     .option('--dry-run', 'show what would run without running it')
     .parse();
   const opts = program.opts<Opts>();
@@ -72,6 +101,11 @@ async function main(): Promise<void> {
   if (!makeSuite) fail(`Unknown suite: ${config.suite}`);
   const suite = makeSuite();
 
+  const endpoint = opts.endpoint
+    ? endpointFromEnv(await readFile(opts.endpoint, 'utf-8'), opts.endpointPrefix)
+    : undefined;
+  const meter = endpoint ? await startMeter(endpoint) : undefined;
+  const model = endpoint?.model ?? opts.model;
   const runners: AgentRunner[] = [];
   for (const name of config.agents) {
     const make = RUNNERS[name];
@@ -81,8 +115,10 @@ async function main(): Promise<void> {
     const runner = make({
       hours: Number(opts.hours),
       budget: Number(opts.budget),
-      model: opts.model,
+      model,
       context: opts.context,
+      meter,
+      judge: opts.judge ?? false,
     });
     if (!(await runner.isAvailable())) console.warn(`Warning: agent '${name}' is not available`);
     runners.push(runner);
@@ -93,7 +129,10 @@ async function main(): Promise<void> {
 
   console.log(`Suite ${config.suite}; agents ${config.agents.join(', ')}; out ${config.out}`);
   console.log(`Tasks: ${tasks.map((t) => t.id).join(', ')}`);
-  if (opts.dryRun) return;
+  if (opts.dryRun) {
+    await meter?.close();
+    return;
+  }
 
   const writer = createResultsWriter(config);
   for (const task of tasks) {
@@ -120,8 +159,9 @@ async function main(): Promise<void> {
         // Fresh tokens are what a run really costs; cache reads are re-sent context billed at about
         // a tenth of the price, so they are shown apart instead of inflating one total.
         const fresh = metrics.tokens_in + metrics.tokens_out;
+        const calls = metrics.requests === undefined ? '' : `, ${String(metrics.requests)} calls`;
         console.log(
-          `  ${resolved ? 'PASS' : 'FAIL'} ${runner.agentName}: $${metrics.usd.toFixed(4)}, ${fmtK(fresh)} fresh + ${fmtK(metrics.cached)} cached tokens, ${(metrics.wall_ms / 1000).toFixed(0)}s`,
+          `  ${resolved ? 'PASS' : 'FAIL'} ${runner.agentName}: $${metrics.usd.toFixed(4)}, ${fmtK(fresh)} fresh + ${fmtK(metrics.cached)} cached tokens${calls}, ${(metrics.wall_ms / 1000).toFixed(0)}s`,
         );
       } catch (error) {
         console.error(`  ERROR ${runner.agentName}: ${String(error)}`);
@@ -138,6 +178,7 @@ async function main(): Promise<void> {
       await writer.writeResult(result);
     }
   }
+  await meter?.close();
   console.log(`\nResults: ${writer.getOutDir()}/${writer.getRunId()}.md`);
 }
 

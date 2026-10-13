@@ -15,6 +15,8 @@ export interface BenchmarkResult {
   wall_ms: number;
   /** Number of human interventions required. */
   interventions: number;
+  /** Model calls made, when a metering proxy counted them. */
+  requests?: number;
 }
 
 /** What a runner returns: metrics (resolved is overwritten by the hidden check) and where the work is. */
