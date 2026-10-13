@@ -5,7 +5,7 @@ import { allOf, WebhookNotifier } from '../notify/webhook.js';
 import { openPullRequest } from '../git/pr.js';
 import { closeSession } from '../tools/extra/browser.js';
 import { saveToRepoMemory } from './repo-memory.js';
-import { renderCodemap, type Codemap } from '../agent/codemap.js';
+import { renderCodemap, withoutVendored, type Codemap } from '../agent/codemap.js';
 import { readIntent } from '../agent/intent.js';
 import { git } from '../git/git.js';
 import { readTextOr } from './atomic.js';
@@ -654,9 +654,9 @@ class Supervisor {
     const map = codemapText
       ? renderCodemap(JSON.parse(codemapText) as Codemap, r.config.context.repo_map_max_tokens)
       : '';
-    const diff = (
-      await git(r.worktree, ['diff', `${r.state.startRef}..HEAD`], { allowFailure: true })
-    ).stdout;
+    const diff = withoutVendored(
+      (await git(r.worktree, ['diff', `${r.state.startRef}..HEAD`], { allowFailure: true })).stdout,
+    );
     return auditResult(
       r,
       goal,

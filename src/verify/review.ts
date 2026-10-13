@@ -91,7 +91,7 @@ const AUDIT_MAX_TOKENS = 16_000;
 
 const AUDIT_SYSTEM = `You audit the result of a long autonomous coding run before it is allowed to finish. You get what the user asked for (the goal and its "done when" list) and the code as it is now.
 
-List every gap between what was asked and what exists: a "done when" item not met, a feature missing or only stubbed, behaviour that is clearly shallow or untested, missing documentation the goal asked for. Each gap must be concrete and checkable, phrased as work to do. If everything asked for is genuinely done to a professional standard, return no findings. Reply only by calling the answer tool.`;
+List every gap between what was asked and what exists: a "done when" item or success criterion not met, a feature the goal asks for missing or only stubbed, documentation the goal asks for missing. Every change already passed the test gates and a per-change review. Judge only against what the goal and its "done when" list ask for: improvements, extra tests, hardening, cleanup of files the goal doesn't mention and stricter readings of the wording are not gaps (they belong to later improvement rounds). Each gap must be concrete and checkable, phrased as work to do, and severity major only when an explicit requirement is unmet. If what was asked for is done, return no findings. Reply only by calling the answer tool.`;
 
 /** Keep the head and tail of a long diff: the start shows structure, the end the latest edits. */
 export function clipDiff(diff: string, max: number): string {

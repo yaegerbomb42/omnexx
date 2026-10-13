@@ -1,4 +1,5 @@
 import { FAST_TASK } from './fast-path.js';
+import { withoutVendored } from '../agent/codemap.js';
 import { loadRoleCard } from '../agent/sections.js';
 import { parseDuration } from '../config/duration.js';
 import { join } from 'node:path';
@@ -624,7 +625,7 @@ export async function stepVerify(run: Run): Promise<void> {
     // outputs, unmet requirements). It fails open, so a reviewer outage never blocks work.
     if (!reasons.length && run.config.review.enabled) {
       const goal = (await run.store.readGoal()).text;
-      const r = await reviewChange(run, task, goal, patch);
+      const r = await reviewChange(run, task, goal, withoutVendored(patch));
       if (r) {
         const block = blocking(r.findings, run.config.review.block_on);
         run.events.emit('review.result', {

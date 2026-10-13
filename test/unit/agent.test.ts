@@ -6,6 +6,7 @@ import {
   renderCodemap,
   setPurposes,
   updateCodemap,
+  withoutVendored,
 } from '../../src/agent/codemap.js';
 import { buildCycleContext, turnRequest } from '../../src/agent/context.js';
 import { WORKER_SYSTEM } from '../../src/agent/prompts.js';
@@ -17,6 +18,16 @@ import { WORKER_TOOLS, toolSpec } from '../../src/tools/registry.js';
 import { tempRepo } from '../support/tmp.js';
 
 describe('codemap', () => {
+  it('drops vendored files from a diff shown to the reviewer and auditor', () => {
+    const section = (path: string) =>
+      `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-a\n+b\n`;
+    const patch =
+      section('src/utils.ts') +
+      section('node_modules/.vite/vitest/results.json') +
+      section('README.md');
+    expect(withoutVendored(patch)).toBe(section('src/utils.ts') + section('README.md'));
+  });
+
   it('leaves out committed dependency and build folders', async () => {
     const repo = await tempRepo();
     await mkdir(join(repo, 'node_modules/typescript/lib'), { recursive: true });
