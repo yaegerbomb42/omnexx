@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { appendFile } from 'node:fs/promises';
 
 /**
  * A metering proxy for head-to-head runs: every harness talks to the same OpenAI-compatible
@@ -100,7 +101,20 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-export async function startMeter(ep: Endpoint): Promise<Meter> {
+/** The first words of a request's system prompt: enough to tell worker, reviewer and auditor apart. */
+export function callLabel(raw: string): string {
+  try {
+    const body = JSON.parse(raw) as { messages?: { role?: string; content?: unknown }[] };
+    const sys = body.messages?.find((m) => m.role === 'system')?.content;
+    const text = typeof sys === 'string' ? sys : JSON.stringify(sys ?? '');
+    return text.replace(/\s+/g, ' ').slice(0, 60);
+  } catch {
+    return '';
+  }
+}
+
+/** With `log`, one JSON line per call (label and usage) is appended there. */
+export async function startMeter(ep: Endpoint, log?: string): Promise<Meter> {
   let totals = EMPTY;
   const upstream = ep.baseUrl.replace(/\/+$/, '');
   const server: Server = createServer((req, res) => {
@@ -108,6 +122,8 @@ export async function startMeter(ep: Endpoint): Promise<Meter> {
       const path = (req.url ?? '/').replace(/^\/v1/, '');
       const raw = req.method === 'POST' ? await readBody(req) : undefined;
       const body = raw === undefined ? undefined : rewriteBody(raw, ep.model);
+      const dump = process.env.BENCH_METER_DUMP;
+      if (dump && body !== undefined) await appendFile(dump, `${body}\n`);
       totals = { ...totals, requests: totals.requests + 1 };
       try {
         const up = await fetch(`${upstream}${path}`, {
@@ -131,8 +147,14 @@ export async function startMeter(ep: Endpoint): Promise<Meter> {
           }
         }
         res.end();
-        if (up.ok) totals = addUsage(totals, usageFrom(seen));
+        const usage = usageFrom(seen);
+        if (up.ok) totals = addUsage(totals, usage);
         else totals = { ...totals, errors: totals.errors + 1 };
+        if (log && raw !== undefined)
+          await appendFile(
+            log,
+            `${JSON.stringify({ at: Date.now(), label: callLabel(raw), status: up.status, usage })}\n`,
+          );
       } catch (err) {
         totals = { ...totals, errors: totals.errors + 1 };
         if (!res.headersSent) res.writeHead(502, { 'content-type': 'application/json' });

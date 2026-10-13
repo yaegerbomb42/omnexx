@@ -7,7 +7,7 @@ import { CodexRunner } from './runners/codex.ts';
 import { ClineRunner } from './runners/cline.ts';
 import { OpenHandsRunner } from './runners/openhands.ts';
 import { endpointFromEnv, startMeter, type Meter } from './meter.ts';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { createResultsWriter, resultsDir } from './results.ts';
 import type { BenchConfig, Suite, TaskRunResult } from './types.ts';
 import type { AgentRunner } from './runners/base.ts';
@@ -104,7 +104,10 @@ async function main(): Promise<void> {
   const endpoint = opts.endpoint
     ? endpointFromEnv(await readFile(opts.endpoint, 'utf-8'), opts.endpointPrefix)
     : undefined;
-  const meter = endpoint ? await startMeter(endpoint) : undefined;
+  if (endpoint) await mkdir(resultsDir(config.out), { recursive: true });
+  const meter = endpoint
+    ? await startMeter(endpoint, join(resultsDir(config.out), 'calls.jsonl'))
+    : undefined;
   const model = endpoint?.model ?? opts.model;
   const runners: AgentRunner[] = [];
   for (const name of config.agents) {
