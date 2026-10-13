@@ -163,6 +163,8 @@ export const stateSchema = z.object({
     .default([]),
   disabledWorkers: z.array(z.string()).default([]),
   noChecks: z.boolean().default(false),
+  /** A writing run (prose, no tests): see core/writing.ts. */
+  writing: z.boolean().default(false),
   /** Set when a pre-flight check refused a call for max_usd; cleared when a supervisor starts. */
   budgetExhausted: z.boolean().default(false),
   /** Set when every model stayed unavailable past budget.max_provider_wait: why. */

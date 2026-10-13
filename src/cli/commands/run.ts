@@ -1,3 +1,4 @@
+import { isWritingGoal, resolveWriting } from '../../core/writing.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import pc from 'picocolors';
@@ -34,6 +35,8 @@ export interface RunFlags {
   from?: string;
   /** auto | fast | full */
   plan?: string;
+  /** auto | code | writing */
+  kind?: string;
   planHelpers?: string;
   planMilestones?: string;
 }
@@ -73,6 +76,7 @@ export function flagsToConfig(f: RunFlags): ConfigInput {
 }
 
 const PLAN_MODES = ['auto', 'fast', 'full'] as const;
+const RUN_KINDS = ['auto', 'code', 'writing'] as const;
 
 /** `--plan`, `--plan-helpers`, `--plan-milestones` as a [plan] layer. */
 function planFlags(f: RunFlags): ConfigInput {
@@ -85,8 +89,11 @@ function planFlags(f: RunFlags): ConfigInput {
   };
   if (f.plan !== undefined && !(PLAN_MODES as readonly string[]).includes(f.plan))
     throw new UsageError(`--plan is one of ${PLAN_MODES.join(', ')}, got "${f.plan}"`);
+  if (f.kind !== undefined && !(RUN_KINDS as readonly string[]).includes(f.kind))
+    throw new UsageError(`--kind is one of ${RUN_KINDS.join(', ')}, got "${f.kind}"`);
   const plan = {
     ...(f.plan ? { mode: f.plan as (typeof PLAN_MODES)[number] } : {}),
+    ...(f.kind ? { kind: f.kind as (typeof RUN_KINDS)[number] } : {}),
     ...(f.planHelpers === undefined ? {} : { helpers: int(f.planHelpers, 'plan-helpers', 0, 8) }),
     ...(f.planMilestones === undefined
       ? {}
@@ -161,13 +168,23 @@ export interface FullRunFlags extends RunFlags {
 
 /** `omnexx run`: create the run, then supervise it here or in a detached process. */
 export async function runCommand(io: CliIO, goal: string, flags: FullRunFlags): Promise<number> {
-  if (await isEmptyProject(io.cwd)) {
-    const files = await bootstrapEmptyProject(io.cwd);
-    println(io.stderr, `empty folder: started a project (git init, ${files.join(', ')})`);
-  }
   const overrides = flagsToConfig(flags);
+  const writingAsked = flags.kind === 'writing' || (flags.kind !== 'code' && isWritingGoal(goal));
+  if (await isEmptyProject(io.cwd)) {
+    const files = await bootstrapEmptyProject(io.cwd, { writing: writingAsked });
+    println(
+      io.stderr,
+      `empty folder: started a ${writingAsked ? 'writing ' : ''}project (git init, ${files.join(', ')})`,
+    );
+  }
   const { config, paths, clock } = await resolveRunDeps(io, io.cwd, overrides);
-  if (!config.gates.length && !flags.iKnowThereAreNoChecks) {
+  const writing = resolveWriting(config, goal);
+  if (writing && !config.gates.length)
+    println(
+      io.stderr,
+      'writing run: no tests needed; each piece is checked by its plan and reviewed before it is kept',
+    );
+  if (!config.gates.length && !writing && !flags.iKnowThereAreNoChecks) {
     throw new UsageError(
       "no gates configured: nothing would check the agent's work",
       'run `omnexx init`, pass --gate "npm test", or --i-know-there-are-no-checks for a single cycle',
@@ -179,6 +196,7 @@ export async function runCommand(io: CliIO, goal: string, flags: FullRunFlags): 
     goal,
     now: clock.now(),
     noChecks: !config.gates.length,
+    writing,
     ...(flags.from ? { from: flags.from } : {}),
   });
   await writeJsonAtomic(store.file(RUN_FLAGS_FILE), overrides);

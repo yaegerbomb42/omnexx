@@ -13,6 +13,7 @@ import { auditResult, blocking, clipDiff, renderFindings } from '../verify/revie
 import { join } from 'node:path';
 import { rm } from 'node:fs/promises';
 import { FAST_TASK, fastPathSpent, fastPlan, tryFastPath } from './fast-path.js';
+import { resolveWriting } from './writing.js';
 import { EXIT } from '../cli/exit-codes.js';
 import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
@@ -526,7 +527,8 @@ class Supervisor {
       if (await this.recoverNoProgress(sinceCycles)) return undefined;
       return { status: 'needs-human', reason: `no accepted commit for ${sinceCycles} cycles` };
     }
-    if (r.state.noChecks && r.state.cycle >= 1)
+    // Without tests a code run gets one cycle; a writing run is checked by its reviewer instead.
+    if (r.state.noChecks && !r.state.writing && r.state.cycle >= 1)
       return { status: 'finished', reason: 'single cycle (no checks configured)' };
     return undefined;
   }
@@ -579,7 +581,12 @@ class Supervisor {
     await r.setPhase('planning');
     await this.setup();
     const goal = (await r.store.readGoal()).text;
-    const fast = r.state.fastPath === undefined && tryFastPath(r.config, goal);
+    if (!r.state.writing && resolveWriting(r.config, goal)) {
+      r.state.writing = true;
+      r.events.emit('run.kind', { kind: 'writing' });
+    }
+    // Writing runs always plan: a manuscript needs its outline and bible before the first page.
+    const fast = !r.state.writing && r.state.fastPath === undefined && tryFastPath(r.config, goal);
     await initCodemap(r, { describe: !fast });
     if (!r.state.baseline) await runBaseline(r);
     if (fast) {

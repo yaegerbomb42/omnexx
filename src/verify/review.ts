@@ -1,3 +1,5 @@
+import { WRITING_REVIEW_SYSTEM } from '../core/writing.js';
+import { readScopeNotes } from '../agent/scopes.js';
 import { z } from 'zod';
 import type { PlanNode } from '../core/plan.js';
 import type { Run } from '../core/run.js';
@@ -195,11 +197,17 @@ export async function reviewChange(
   goal: string,
   diff: string,
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
-  const prompt = `# Goal\n${goal.slice(0, 3_000)}\n\n# Task ${task.id}: ${task.title}\n${task.why}\n${task.acceptance.length ? `Acceptance:\n${task.acceptance.map((a) => `- ${a}`).join('\n')}` : ''}\n\n# The change (unified diff)\n${clipDiff(diff, run.config.review.max_diff_chars)}`;
+  // A writing review checks the piece against the bible the author keeps in its general notes.
+  const bible = run.state.writing
+    ? await readScopeNotes({ store: run.store, repoRoot: run.state.repoRoot }, 'general').catch(
+        () => '',
+      )
+    : '';
+  const prompt = `# Goal\n${goal.slice(0, 3_000)}\n\n${bible ? `# The author's bible (names, facts, style)\n${bible.slice(0, 6_000)}\n\n` : ''}# Task ${task.id}: ${task.title}\n${task.why}\n${task.acceptance.length ? `Acceptance:\n${task.acceptance.map((a) => `- ${a}`).join('\n')}` : ''}\n\n# The change (unified diff)\n${clipDiff(diff, run.config.review.max_diff_chars)}`;
   try {
     return await ask(
       run,
-      REVIEW_SYSTEM,
+      run.state.writing ? WRITING_REVIEW_SYSTEM : REVIEW_SYSTEM,
       prompt,
       'review',
       run.config.review.review_models,
@@ -218,7 +226,7 @@ export async function auditResult(
   intent: string,
   codebase: string,
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
-  const prompt = `# What the user asked for\n${goal.slice(0, 4_000)}\n\n${intent.slice(0, 4_000)}\n\n# The code now\n${codebase}`;
+  const prompt = `# What the user asked for\n${goal.slice(0, 4_000)}\n\n${intent.slice(0, 4_000)}\n\n# The work now\n${codebase}`;
   try {
     // Audits go to the planner chain, often reasoning models: their thinking counts against the
     // output limit, and 3k tokens ran out before the answer on every bench run.

@@ -86,6 +86,16 @@ const ROLE_BY_KIND: Record<string, { title: string; focus: string }> = {
     title: 'Investigator',
     focus: 'Find the cause with evidence before changing anything; write down what you learn.',
   },
+  writing: {
+    title: 'Author',
+    focus:
+      'Write this piece in full, in the voice and facts of the bible. First pull in context: general (goal and your bible notes), repo (the outline and a one-line summary of every chapter so far), and read the end of the previous chapter. When you are done, add what you decided (names, facts, threads opened or closed) to your general notes with context update, so later chapters stay consistent. Never leave placeholders or summaries in place of prose.',
+  },
+  research: {
+    title: 'Researcher',
+    focus:
+      'Find and read sources (search and fetch the web when the tools are there), write the findings into the document with a citation for every claim, and list open questions. Record the key facts in your general notes with context update.',
+  },
 };
 
 const IMPLEMENTER = {

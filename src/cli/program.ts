@@ -132,6 +132,10 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
       '--plan <mode>',
       'auto (short goals try one pass first) | fast (always) | full (plan milestones first)',
     )
+    .option(
+      '--kind <kind>',
+      'auto | code | writing (prose such as a book or report; no tests needed)',
+    )
     .option('--plan-helpers <n>', 'helpers the planner runs at once while exploring (0-8)')
     .option('--plan-milestones <n>', 'at most this many milestones in the first plan')
     .option(

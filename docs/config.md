@@ -196,12 +196,15 @@ An in-cycle signal ends the cycle as `stuck` (events `stuck.in_cycle`, then `stu
 | Key                   | Default  | Meaning                                                                                                                                         |
 | --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mode`                | `"auto"` | `auto`: short goals try the fast path first, long ones plan. `fast`: always try one pass first. `full`: always plan milestones and tasks first. |
+| `kind`                | `"auto"` | `writing`: prose (a book, a report, a research document) with no tests; `code`; `auto` detects writing goals ("write me a book about…")         |
 | `fast_attempts`       | `2`      | Fast-path cycles on the whole goal before the planner takes over from the code as it is                                                         |
 | `fast_max_goal_chars` | `2500`   | In `auto`, goals longer than this plan first                                                                                                    |
 | `helpers`             | unset    | Helpers the planner runs at once while exploring (0 = none). Unset uses `context.subagent_parallel`                                             |
 | `milestones`          | unset    | At most this many milestones in the first plan (the planner is told, and a bigger plan is rejected). Setting it makes `auto` plan first         |
 
 The fast path is one worker cycle with the whole goal as its task, done when every gate passes, reviewed and audited like any other cycle; it must change code to count. On the jimmy10 bench, planning first cost 3-5x a single pass on small goals. Flags: `omnexx run --plan fast|auto|full --plan-helpers N --plan-milestones N`. Autonomous runs (`--for`) always plan.
+
+**Writing runs** (`--kind writing`, or detected from goals like "write me a book about…"): no tests are needed. The planner writes an outline and a bible (names, facts, style rules) first, then one milestone per part and one task per chapter or section (kinds `writing` and `research`), each checked mechanically (the file exists, a minimum word count, no placeholders). An editor-style reviewer reads every piece against the bible before it is kept. The agent works as an Author through the four context scopes: general (goal and its bible notes), repo (the manuscript map, with a one-line summary of every chapter, refreshed after each commit), heat (the chapters changing most) and recent (this chapter's running notes). The run keeps adding chapters until the plan is done; an empty folder starts as a writing project (no `package.json`, `[plan] kind = "writing"`).
 
 ## `[context]`
 

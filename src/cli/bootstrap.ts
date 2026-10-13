@@ -107,10 +107,23 @@ function packageJson(name: string): string {
  * Turn an empty folder into a repo omnexx can run on: git init, a starter package.json,
  * omnexx.toml with starter gates, AGENTS.md, and one commit. Returns the files written.
  */
+const WRITING_TOML = `# omnexx project config. Every key: docs/config.md in the omnexx repo.
+# A writing project: no tests; each piece is checked by its plan's checks and a reviewer.
+[plan]
+kind = "writing"
+`;
+
+const WRITING_AGENTS_MD = `# Writing project
+
+Prose lives in Markdown files. Keep the outline and the bible (names, facts, style rules)
+current; every chapter follows them.
+`;
+
 export async function bootstrapEmptyProject(
   dir: string,
-  opts: { browser?: boolean } = {},
+  opts: { browser?: boolean; writing?: boolean } = {},
 ): Promise<string[]> {
+  if (opts.writing) return bootstrapWritingProject(dir);
   const browser = opts.browser ?? (await detectBrowserBackend()).backend !== null;
   const detection = browser
     ? { ...STARTER_DETECTION, gates: [...STARTER_DETECTION.gates, PAGE_GATE] }
@@ -141,6 +154,36 @@ export async function bootstrapEmptyProject(
     '-q',
     '-m',
     'chore: start project with omnexx',
+  ]);
+  return Object.keys(files);
+}
+
+/** A folder for prose: config and notes only, no package.json and no test gates. */
+async function bootstrapWritingProject(dir: string): Promise<string[]> {
+  const head = await git(dir, ['rev-parse', '--git-dir'], { allowFailure: true });
+  if (head.exitCode !== 0) await git(dir, ['init', '-q']);
+  const files: Record<string, string> = {
+    [PROJECT_CONFIG]: WRITING_TOML,
+    'AGENTS.md': WRITING_AGENTS_MD,
+  };
+  if (!(await readdir(dir)).includes('.gitignore')) files['.gitignore'] = '.DS_Store\n';
+  for (const [f, c] of Object.entries(files)) await writeFile(join(dir, f), c);
+  await git(dir, ['add', '-A']);
+  const email = await git(dir, ['config', 'user.email'], { allowFailure: true });
+  const who = email.stdout.trim()
+    ? []
+    : ['-c', 'user.name=omnexx', '-c', 'user.email=omnexx@users.noreply.invalid'];
+  await git(dir, [
+    '-c',
+    'commit.gpgsign=false',
+    '-c',
+    'core.hooksPath=/dev/null',
+    ...who,
+    'commit',
+    '--no-verify',
+    '-q',
+    '-m',
+    'chore: start writing project with omnexx',
   ]);
   return Object.keys(files);
 }

@@ -14,6 +14,7 @@ export interface CreateRunOptions {
   runId?: string;
   now: number;
   noChecks?: boolean;
+  writing?: boolean;
 }
 
 /** Create the run directory, the worktree on `omnexx/<runId>` and the initial state. */
@@ -64,6 +65,7 @@ export async function createRun(o: CreateRunOptions): Promise<RunStore> {
     checkpoints: [],
     disabledWorkers: [],
     noChecks: o.noChecks ?? false,
+    writing: o.writing ?? false,
     budgetExhausted: false,
     spendLedger: [],
     dailyCapHit: false,

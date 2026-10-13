@@ -1,3 +1,4 @@
+import { WRITING_PLANNER_NOTE } from '../core/writing.js';
 import type { ResolvedModel } from '../providers/pricing.js';
 import { join } from 'node:path';
 import { readTextOr } from '../core/atomic.js';
@@ -67,6 +68,14 @@ export const BEYOND_RUBRIC = [
 
 /** The user's planning effort for this run ([plan] helpers and milestones), as instructions. */
 function effortNote(run: Run, mode: PlannerMode): string {
+  const writing =
+    run.state.writing && (mode.kind === 'initial' || mode.kind === 'expand')
+      ? `\n\n${WRITING_PLANNER_NOTE}`
+      : '';
+  return writing + effortOnly(run, mode);
+}
+
+function effortOnly(run: Run, mode: PlannerMode): string {
   if (mode.kind !== 'initial') return '';
   const { helpers, milestones } = run.config.plan;
   const notes = [
@@ -200,7 +209,8 @@ export function brokenChecks(update: PlanUpdate, strict = true): string[] {
     for (const m of update.milestones)
       for (const t of m.tasks ?? []) {
         const checks = t.checks ?? [];
-        if (!checks.length || t.kind === 'docs' || t.kind === 'investigate') continue;
+        if (!checks.length || ['docs', 'investigate', 'writing', 'research'].includes(t.kind ?? ''))
+          continue;
         if (checks.every(isWeakCheck))
           out.push(
             `${t.id}: its checks only look for files or text (${checks.map((c) => `\`${c}\``).join(', ')}); add a check that runs the code, e.g. a test command for this behaviour`,

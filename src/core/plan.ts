@@ -14,6 +14,8 @@ export const TASK_KINDS = [
   'migration',
   'docs',
   'investigate',
+  'writing',
+  'research',
 ] as const;
 export const NODE_STATUS = ['todo', 'doing', 'done', 'parked'] as const;
 export type NodeStatus = (typeof NODE_STATUS)[number];

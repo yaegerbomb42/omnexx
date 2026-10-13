@@ -11,6 +11,8 @@ import { z } from 'zod';
 export const plan = z
   .strictObject({
     mode: z.enum(['auto', 'fast', 'full']).default('auto'),
+    /** writing: prose (a book, a report), no tests; auto detects it from the goal. */
+    kind: z.enum(['auto', 'code', 'writing']).default('auto'),
     fast_attempts: z.number().int().min(1).max(5).default(2),
     /** In auto mode, goals longer than this many characters plan first. */
     fast_max_goal_chars: z.number().int().positive().default(2_500),
