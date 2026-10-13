@@ -24,6 +24,7 @@ import {
   type TodoItem,
   type Usage,
 } from './render.js';
+import * as crew from './crew.js';
 import * as modelPicker from './modelPicker.js';
 import * as settings from './settings.js';
 
@@ -39,11 +40,13 @@ interface State {
   model: string | null;
   context: { used: number; limit: number } | null;
   usage: (Usage & { startedAt: number | null }) | null;
+  helpers: crew.Helper[];
 }
 
 type Incoming =
   | ({ type: 'state' } & State)
   | ({ type: 'settings' | 'models' | 'prefs' | 'providerTest' } & Record<string, unknown>)
+  | ({ type: 'browserFrame' } & crew.BrowserFrameMsg)
   | { type: 'ready'; version: string }
   | { type: 'error'; message: string }
   | { type: 'down'; message: string };
@@ -85,6 +88,8 @@ const stepsBody = el('steps-body', HTMLElement);
 const liveLog = el('live-log', HTMLElement);
 const banner = el('banner', HTMLElement);
 const welcome = el('welcome', HTMLElement);
+/** The head agent's avatar in the crew view: the logo the header already shows. */
+const logoSrc = document.querySelector<HTMLImageElement>('.brand .logo')?.src ?? '';
 
 let blocks: Block[] = [];
 let logLines: LogLine[] = [];
@@ -265,6 +270,7 @@ function apply(s: State): void {
   drawControls(s);
   drawStats(s);
   drawSteps(s.todos);
+  crew.drawCrew(s.helpers, logoSrc);
   drawLiveLog();
   drawConversation();
 }
@@ -280,6 +286,10 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
   // origin; anything else (another frame or window) is ignored.
   if (event.origin !== window.location.origin) return;
   const m = event.data;
+  if (m.type === 'browserFrame') {
+    crew.drawBrowser(m);
+    return;
+  }
   if (m.type === 'models')
     modelPicker.setModels(
       (m.items as modelPicker.ModelItem[] | undefined) ?? [],
@@ -291,6 +301,7 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
   else if (m.type === 'ready') {
     // A new chat, a fresh omnexx process or a resync: back to the conversation, from the start.
     settings.close();
+    crew.resetViews();
     blocks = [];
     logLines = [];
     drawConversation();
@@ -368,6 +379,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 settings.wire(post);
+crew.wire();
 modelPicker.wire(() => {
   settings.open(post);
 });

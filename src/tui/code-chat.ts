@@ -65,8 +65,23 @@ export type ChatLine =
   | { kind: 'feed'; text: string }
   | { kind: 'err'; text: string };
 
+/** The agent's browser after an action, for a live view (the image is a file under the logs). */
+export interface BrowserFrame {
+  path: string;
+  mime: string;
+  url: string;
+  action: string;
+}
+
+/** A helper (subagent) starting or finishing, for a live view of who is doing what. */
+export type HelperEvent =
+  | { phase: 'start'; id: number; kind: string; agent?: string; description: string }
+  | { phase: 'finish'; id: number; end: string; turns: number; usd: number };
+
 export interface ChatView {
   line: (l: ChatLine) => void;
+  browser?: (f: BrowserFrame) => void;
+  helper?: (h: HelperEvent) => void;
   /** Reply text as it streams in (cleared when the reply lands as an `out` line). */
   stream: (delta: string) => void;
   todo: (items: TodoItem[]) => void;
@@ -300,7 +315,34 @@ export class CodeChat {
     const v = this.view;
     if (!v) return;
     const str = (x: unknown): string => (typeof x === 'string' ? x : '');
+    const num = (x: unknown): number => (typeof x === 'number' ? x : 0);
     switch (e.type) {
+      case 'browser.frame':
+        v.browser?.({
+          path: str(e.path),
+          mime: str(e.mime),
+          url: str(e.url),
+          action: str(e.action),
+        });
+        return;
+      case 'subagent.start':
+        v.helper?.({
+          phase: 'start',
+          id: num(e.id),
+          kind: str(e.kind),
+          ...(typeof e.agent === 'string' ? { agent: e.agent } : {}),
+          description: str(e.description),
+        });
+        return;
+      case 'subagent.finish':
+        v.helper?.({
+          phase: 'finish',
+          id: num(e.id),
+          end: str(e.end),
+          turns: num(e.turns),
+          usd: num(e.usd),
+        });
+        return;
       case 'tool.start':
         v.line({ kind: 'act', text: str(e.doing) });
         return;
@@ -580,11 +622,11 @@ export class CodeChat {
   }
 
   /** Forget the conversation (the codebase map and instructions stay). */
-  clear(): void {
+  async clear(): Promise<void> {
     this.history = [];
     this.telemetry = emptyTelemetry();
     this.contextUsed = this.baseTokens();
     // A fresh conversation starts a fresh running context; the old one is kept with the chat.
-    void this.ctx.runningContext?.archive();
+    await this.ctx.runningContext?.archive();
   }
 }

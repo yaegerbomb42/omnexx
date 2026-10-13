@@ -279,6 +279,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     <button data-suggest="Find likely bugs in the code I changed recently and fix them.">Review recent changes</button>
   </div>
 </section>
+<details id="crew" class="section crew" open hidden>
+  <summary><span class="chev" aria-hidden="true"></span><span class="h">Crew</span><span class="sub-h">helpers report to omnexx</span><span id="crew-count" class="count"></span></summary>
+  <div id="crew-body" class="crew-body"></div>
+</details>
+<details id="browser" class="section browser" open hidden>
+  <summary><span class="chev" aria-hidden="true"></span><span class="h">Browser</span><span class="sub-h">what the agent sees</span></summary>
+  <div class="bframe"><div class="bbar"><span class="bdots" aria-hidden="true"><i></i><i></i><i></i></span><span id="b-url" class="burl"></span><span id="b-action" class="baction"></span></div><img id="b-img" alt="The agent's browser" title="Click to enlarge"></div>
+</details>
 <main id="log" class="conversation" aria-live="polite"></main>
 <section id="settings" class="settings" hidden aria-label="Settings"></section>
 <section id="ask" class="ask" hidden role="alertdialog" aria-labelledby="ask-text">

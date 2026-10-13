@@ -18,7 +18,7 @@ import {
 } from '../cli/connect.js';
 import { maskKey } from '../auth/keys.js';
 import { Chat, defaultChatRef, hasProvider } from './chat.js';
-import { CodeChat, type ChatLine } from './code-chat.js';
+import { CodeChat, type BrowserFrame, type ChatLine, type HelperEvent } from './code-chat.js';
 import { todoItemsOf, type TodoItem } from '../tools/todo.js';
 import { classifyMarkdown, type MdKind } from './markdown.js';
 import { parseDiff, type DiffViewState } from './diff.js';
@@ -55,6 +55,19 @@ export interface Entry {
   text: string;
   /** Model replies render as markdown, line by line. */
   md?: MdKind;
+}
+
+export interface Helper {
+  id: number;
+  kind: string;
+  /** The agent card's name, when a named agent took the work. */
+  agent?: string;
+  description: string;
+  status: 'working' | 'done' | 'stopped';
+  turns: number;
+  usd: number;
+  startedAt: number;
+  finishedAt?: number;
 }
 
 export type RunCli = (argv: readonly string[], io: CliIO) => Promise<number>;
@@ -166,6 +179,10 @@ export class Session {
   live = '';
   /** The agent's checklist for the current request (the todo tool). */
   todos: TodoItem[] = [];
+  /** The agent's browser after its latest page-changing action; `seq` grows with each frame. */
+  browserFrame: (BrowserFrame & { seq: number; at: number }) | undefined;
+  /** Helpers (subagents) started for the current message, in start order. */
+  helpers: Helper[] = [];
   /** OMNEXX_NO_MASCOT=1 hides the animated character. */
   readonly mascot: boolean;
   readonly history: string[] = [];
@@ -861,6 +878,40 @@ export class Session {
       this.todos = items;
       this.changed();
     },
+    browser: (f: BrowserFrame) => {
+      this.browserFrame = { ...f, seq: (this.browserFrame?.seq ?? 0) + 1, at: this.now() };
+      this.changed();
+    },
+    helper: (h: HelperEvent) => {
+      if (h.phase === 'start') {
+        this.helpers = [
+          ...this.helpers,
+          {
+            id: h.id,
+            kind: h.kind,
+            ...(h.agent ? { agent: h.agent } : {}),
+            description: h.description,
+            status: 'working',
+            turns: 0,
+            usd: 0,
+            startedAt: this.now(),
+          },
+        ];
+      } else {
+        this.helpers = this.helpers.map((x) =>
+          x.id === h.id
+            ? {
+                ...x,
+                status: h.end === 'done' ? 'done' : 'stopped',
+                turns: h.turns,
+                usd: h.usd,
+                finishedAt: this.now(),
+              }
+            : x,
+        );
+      }
+      this.changed();
+    },
   };
 
   private async code_(text: string): Promise<void> {
@@ -871,6 +922,7 @@ export class Session {
       return;
     }
     this.busy = 'working';
+    this.helpers = [];
     this.changed();
     try {
       let code: CodeChat;
@@ -1108,7 +1160,9 @@ export class Session {
         return;
       case 'clear':
         this.todos = [];
-        this.code?.clear();
+        this.helpers = [];
+        this.browserFrame = undefined;
+        await this.code?.clear();
         this.push('system', 'chat conversation cleared');
         return;
       case 'cards':

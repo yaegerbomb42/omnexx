@@ -40,6 +40,7 @@ describe('browser multi-step flow (real browser)', () => {
       headless: true,
       serve_timeout: '60s',
       allow_eval: false,
+      live_view: false,
     });
     const run = async (input: Parameters<typeof tool.run>[0]) => {
       const r = await tool.run(input, ctx);

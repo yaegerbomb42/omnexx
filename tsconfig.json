@@ -27,6 +27,7 @@
   "exclude": [
     "vscode/src/webview/chat.ts",
     "vscode/src/webview/settings.ts",
-    "vscode/src/webview/modelPicker.ts"
+    "vscode/src/webview/modelPicker.ts",
+    "vscode/src/webview/crew.ts"
   ]
 }
