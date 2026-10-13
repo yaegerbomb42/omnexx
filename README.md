@@ -1,10 +1,59 @@
-# omnexx
+<p align="center">
+  <img src="https://raw.githubusercontent.com/yaegerbomb42/omnexx/main/docs/assets/logo.png" alt="" width="120">
+</p>
 
-**Set a goal, walk away, come back to commits.**
+<h1 align="center">omnexx</h1>
 
-Omnexx is a personal coding agent harness: one agent works on one huge task in one repo for about 24 hours with no one steering it. Your tests, typecheck and lint decide what's kept; every kept step is a small git commit on its own branch, and you get a report in the morning.
+<p align="center"><b>Set a goal, walk away, come back to commits.</b><br>
+A coding agent that works on your repo for hours on its own, keeps only what passes your tests,
+and runs on any model, including free local ones.</p>
 
-> **Alpha.** A personal tool, not a product yet. It spends your own API credits.
+<p align="center">
+  <a href="https://www.npmjs.com/package/omnexx"><img src="https://img.shields.io/npm/v/omnexx?color=36c5f0&label=npm" alt="npm"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=yaegerbomb42.omnexx"><img src="https://img.shields.io/visual-studio-marketplace/v/yaegerbomb42.omnexx?color=a78bfa&label=VS%20Code" alt="VS Code"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3fb950" alt="MIT"></a>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/yaegerbomb42/omnexx/main/docs/assets/demo.gif" alt="omnexx demo: install, the VS Code panel, and a real unattended run" width="820">
+</p>
+
+## Install
+
+```bash
+brew install yaegerbomb42/omnexx/omnexx        # macOS / Linux
+npm i -g omnexx                                # anywhere with Node 22+
+curl -fsSL https://omnexx.org/install.sh | sh  # one-liner
+```
+
+Then `omnexx --ollama` to start free on a local model, or just `omnexx` and paste an API key.
+In VS Code or Cursor, install the [omnexx extension](https://marketplace.visualstudio.com/items?itemName=yaegerbomb42.omnexx)
+for the chat panel.
+
+## Real numbers
+
+From an unattended run that built a Markdown notes app from a single goal, on free models:
+
+| Tasks done without help |   Spent   | Prompt-cache hits | Autonomous work |
+| :---------------------: | :-------: | :---------------: | :-------------: |
+|       **12 / 14**       | **$0.00** |      **86%**      |    **2.6 h**    |
+
+Every kept step is a small commit that passed your tests, typecheck and lint; everything else is
+rolled back. A public benchmark against other harnesses is in progress.
+
+## The VS Code panel
+
+<p>
+  <img src="https://raw.githubusercontent.com/yaegerbomb42/omnexx/main/docs/assets/panel.png" alt="omnexx chat panel mid-task: stats, step timeline, conversation and live log" width="380">
+  <img src="https://raw.githubusercontent.com/yaegerbomb42/omnexx/main/docs/assets/model-picker.png" alt="omnexx model picker" width="380">
+</p>
+
+Chat, plan, or run for hours from the sidebar. Watch the step timeline, tokens, cost and a live
+log; approve or auto-approve guarded actions; switch models or add any of 30+ providers in one
+click.
+
+> **Alpha.** Built in the open; expect rough edges. It spends your own API credits unless you
+> use a free or local model.
 
 ## Quickstart
 
