@@ -7,7 +7,7 @@ with it, have it plan, or let it run on its own for hours, and watch every step.
 
 ## Needs
 
-The omnexx CLI, version 0.7.0 or later:
+The omnexx CLI, version 0.8.0 or later:
 
 ```sh
 npm i -g omnexx        # or: brew install yaegerbomb42/omnexx/omnexx

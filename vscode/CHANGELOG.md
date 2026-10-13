@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0
+
+- **Context explorer:** see every context file with its token cost, set each section to
+  Pinned, Optional or Hidden, and edit notes and the role card.
+- **Who does what:** choose models per role; spread helpers across providers.
+- Runs view shows health (working, quiet, waiting, stalled, dead) with Resume and Stop.
+- Fixes: the model shown follows the model in use; auto-approve doesn't post `/yolo`; higher
+  contrast in the live log (12-hour clock) and settings; new providers are tested on add.
+- Needs omnexx 0.8.0.
+
 ## 0.3.0
 
 - **Crew view:** helpers (subagents) appear as cards wired to the head agent: working, then

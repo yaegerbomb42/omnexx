@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.0
+
+- **Leaner context.** Command output leads with the test outcome and is capped at ~3k tokens
+  (full log via `read_log`); results that later steps superseded (a file read again, a failure
+  that later passed) are pruned without a model call.
+- **Optional context sections** (`context.sections`): role, codemap, intent, lessons and progress
+  are each pinned, optional (listed with sizes, opened on demand) or hidden. The codemap is now
+  optional by default.
+- **Role card** per task, generated from the task and editable; `.omnexx/role.md` adds repo-wide
+  guidance.
+- **Model roles**: pick models per role (chat, planner, worker, quick jobs, helpers); parallel
+  helpers spread across providers (`models.helpers`, `models.spread_helpers`).
+- **Stalls handled.** A hung step is aborted after `stuck.max_silence` (45m) and retried; a run
+  where no model can take a call stops after `budget.max_provider_wait` (6h). `runs` and
+  `status` report health: working, quiet, waiting, stalled, dead.
+
 ## 0.7.0
 
 - **Live browser view.** `browser.live_view` (on by default): after each page-changing browser
