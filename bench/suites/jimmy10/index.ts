@@ -68,11 +68,11 @@ async function runBash(
   inline?: string,
 ): Promise<number | null> {
   const args = script ? [script] : ['-c', inline ?? 'true'];
-  // A fixed PATH (Homebrew's and the system folders), so a check never runs a binary from a
+  // A fixed PATH (system folders only), so a check never runs a binary from a
   // folder the environment happened to list first.
   const env = {
     ...process.env,
-    PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin',
+    PATH: '/usr/local/bin:/usr/bin:/bin',
     npm_config_cache: NPM_CACHE,
   };
   // Own process group, so a timeout kills the test runner the script started too: a task
