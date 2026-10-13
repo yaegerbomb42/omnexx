@@ -114,7 +114,29 @@ export function renderFindings(findings: readonly Finding[]): string {
     .join('\n');
 }
 
+/** Added on the one retry after an empty or malformed answer (a model once sent `{}`). */
+const ANSWER_SHAPE =
+  '\n\nCall the answer tool with {"findings": [{"severity", "file", "problem", "fix"}, ...], "summary": "..."}. Use "findings": [] when nothing is wrong.';
+
 async function ask(
+  run: Run,
+  system: string,
+  prompt: string,
+  role: string,
+  chain: 'cheap' | 'worker' | 'planner',
+  maxTokens = 3_000,
+  why?: (reason: string) => void,
+): Promise<z.infer<typeof reviewSchema> | undefined> {
+  const last = { reason: '' };
+  const first = await askOnce(run, system, prompt, role, chain, maxTokens, (w) => {
+    last.reason = w;
+    why?.(w);
+  });
+  if (first || !last.reason.startsWith('unusable findings')) return first;
+  return askOnce(run, system, prompt + ANSWER_SHAPE, role, chain, maxTokens, why);
+}
+
+async function askOnce(
   run: Run,
   system: string,
   prompt: string,
