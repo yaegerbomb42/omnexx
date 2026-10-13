@@ -1,7 +1,11 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { parse } from 'smol-toml';
 import { clearKey, findProviderKey, maskKey } from '../auth/keys.js';
 import { loadConfig } from '../config/load.js';
 import { resolvePaths, userConfigFile } from '../core/paths.js';
 import { UsageError } from '../errors.js';
+import { setTable, type TomlValue } from '../integrations/toml-edit.js';
 import { PROVIDER_TEMPLATES, removeEndpointBlock } from './commands/providers.js';
 import { connect, describeConnect } from './connect.js';
 import type { CliIO } from './io.js';
@@ -185,4 +189,99 @@ export async function testProvider(io: CliIO, name: string): Promise<ProviderTes
     models: 0,
     detail: key || ep.free ? "couldn't reach it or it listed no models" : 'no key set',
   };
+}
+
+/** The browser tool's engine, profile and session, as the settings page shows and saves them. */
+export interface BrowserSettings {
+  engine: 'chromium' | 'camoufox';
+  /** A folder (or Chrome profile name) whose logins the agent reuses; null when unset. */
+  profile: string | null;
+  sessionName: string | null;
+  headless: boolean;
+}
+
+const ENGINES = ['chromium', 'camoufox'] as const;
+// Same rule as browser.session_name in src/config/sections/browser.ts.
+const SESSION_NAME = /^[\w.-]{1,64}$/;
+/** C0 and C1 control characters, newlines included. */
+const hasControl = (text: string): boolean =>
+  Array.from(text).some((ch) => {
+    const code = ch.codePointAt(0) ?? 0;
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+  });
+
+export async function browserSettings(io: CliIO): Promise<BrowserSettings> {
+  const { config } = await loadConfig({ cwd: io.cwd, env: io.env });
+  const b = config.browser;
+  return {
+    engine: b.engine,
+    profile: b.profile ?? null,
+    sessionName: b.session_name ?? null,
+    headless: b.headless,
+  };
+}
+
+/** A trimmed optional text field: empty is unset; newlines and control characters are refused. */
+function optionalText(raw: unknown, label: string): string | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'string') throw new UsageError(`${label} must be text`);
+  const trimmed = raw.trim();
+  if (hasControl(trimmed))
+    throw new UsageError(`${label} can't contain newlines or control characters`);
+  return trimmed || undefined;
+}
+
+/** Check what the settings form sent; throws a UsageError naming the bad field. */
+export function parseBrowserSettings(raw: unknown): BrowserSettings {
+  const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  const engine = obj.engine ?? 'chromium';
+  if (typeof engine !== 'string' || !(ENGINES as readonly string[]).includes(engine))
+    throw new UsageError('the browser engine must be chromium or camoufox');
+  const profile = optionalText(obj.profile, 'the browser profile');
+  const sessionName = optionalText(obj.sessionName, 'the session name');
+  if (sessionName && !SESSION_NAME.test(sessionName))
+    throw new UsageError(
+      `"${sessionName}" is not a usable session name`,
+      'up to 64 letters, digits, _ . and -',
+    );
+  if (obj.headless !== undefined && typeof obj.headless !== 'boolean')
+    throw new UsageError('headless must be on or off');
+  return {
+    engine: engine as BrowserSettings['engine'],
+    profile: profile ?? null,
+    sessionName: sessionName ?? null,
+    headless: obj.headless !== false,
+  };
+}
+
+async function readText(file: string): Promise<string> {
+  try {
+    return await readFile(file, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return '';
+    throw err;
+  }
+}
+
+/** The [browser] keys already in the user config, kept when the form saves its four. */
+function existingBrowser(text: string): Record<string, TomlValue> {
+  const table = (parse(text) as Record<string, unknown>).browser;
+  return typeof table === 'object' && table !== null ? (table as Record<string, TomlValue>) : {};
+}
+
+/** Save the browser settings to the user's config.toml; other [browser] keys stay as they were. */
+export async function setBrowserSettings(io: CliIO, raw: unknown): Promise<BrowserSettings> {
+  const next = parseBrowserSettings(raw);
+  const file = userConfigFile(resolvePaths(io.env));
+  const text = await readText(file);
+  const updated = setTable(text, ['browser'], {
+    ...existingBrowser(text),
+    engine: next.engine,
+    profile: next.profile ?? undefined,
+    session_name: next.sessionName ?? undefined,
+    headless: next.headless,
+  });
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, updated, 'utf8');
+  return next;
 }

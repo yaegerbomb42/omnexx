@@ -28,6 +28,8 @@ const FORWARD = new Set([
   'setRoles',
   'contextFiles',
   'setSectionMode',
+  'browser',
+  'setBrowser',
 ]);
 const BREW_PATHS = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'];
 const MODEL_LIST_TIMEOUT_MS = 15_000;

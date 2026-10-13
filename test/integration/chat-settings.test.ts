@@ -1,13 +1,19 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import {
   addProvider,
+  browserSettings,
+  parseBrowserSettings,
   providerCatalog,
   providerSettings,
   removeProvider,
+  setBrowserSettings,
   testProvider,
 } from '../../src/cli/chat-settings.js';
 import type { CliIO } from '../../src/cli/io.js';
+import { resolvePaths, userConfigFile } from '../../src/core/paths.js';
 import { makeRepo } from '../support/harness.js';
 import { isolatedEnv } from '../support/tmp.js';
 
@@ -89,5 +95,58 @@ describe('chat settings: providers for the panel', () => {
     expect(await testProvider(x, 'groq')).toMatchObject({ ok: false, models: 0 });
     expect(await testProvider(x, 'nope')).toMatchObject({ ok: false, detail: 'not set up' });
     expect(await testProvider(x, 'anthropic')).toMatchObject({ ok: false, detail: 'no key set' });
+  });
+});
+
+describe('chat settings: the browser tool', () => {
+  it('reads the schema defaults when nothing is set', async () => {
+    expect(await browserSettings(await io())).toEqual({
+      engine: 'chromium',
+      profile: null,
+      sessionName: null,
+      headless: true,
+    });
+  });
+
+  it('saves to the user config.toml, keeps other [browser] keys and comments, and unsets empties', async () => {
+    const x = await io();
+    const file = userConfigFile(resolvePaths(x.env));
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, '# mine\n[browser]\nenabled = true\nallow = ["example.com"]\n');
+
+    await setBrowserSettings(x, {
+      engine: 'camoufox',
+      profile: '  /tmp/profile  ',
+      sessionName: 'work',
+      headless: false,
+    });
+    expect(await browserSettings(x)).toEqual({
+      engine: 'camoufox',
+      profile: '/tmp/profile',
+      sessionName: 'work',
+      headless: false,
+    });
+    const saved = await readFile(file, 'utf8');
+    expect(saved).toContain('# mine');
+    expect(saved).toContain('enabled = true');
+    expect(saved).toContain('allow = ["example.com"]');
+
+    await setBrowserSettings(x, {
+      engine: 'chromium',
+      profile: '',
+      sessionName: ' ',
+      headless: true,
+    });
+    expect(await browserSettings(x)).toMatchObject({ profile: null, sessionName: null });
+    expect(await readFile(file, 'utf8')).not.toMatch(/profile|session_name/);
+  });
+
+  it('rejects a bad engine, control characters and an unusable session name', () => {
+    expect(() => parseBrowserSettings({ engine: 'firefox' })).toThrow(/chromium or camoufox/);
+    expect(() => parseBrowserSettings({ profile: 'a\nb' })).toThrow(/control characters/);
+    expect(() => parseBrowserSettings({ sessionName: 'a\u0007' })).toThrow(/control characters/);
+    expect(() => parseBrowserSettings({ sessionName: 'has space' })).toThrow(/session name/);
+    expect(() => parseBrowserSettings({ headless: 'yes' })).toThrow(/on or off/);
+    expect(() => parseBrowserSettings({ profile: 42 })).toThrow(/must be text/);
   });
 });
