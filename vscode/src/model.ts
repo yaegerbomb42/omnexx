@@ -5,6 +5,8 @@
 
 export interface RunRow {
   runId: string;
+  /** The goal's first line (omnexx 0.11.4+). */
+  goal?: string | undefined;
   status: string;
   phase: string;
   cycle: number;
@@ -84,6 +86,7 @@ export function parseRuns(text: string): RunRow[] {
     if (!isRecord(x)) throw new Error('expected each run to be an object');
     return {
       runId: str(x, 'runId'),
+      goal: optStr(x, 'goal'),
       status: str(x, 'status'),
       phase: str(x, 'phase'),
       cycle: num(x, 'cycle'),
@@ -99,6 +102,65 @@ export function parseRuns(text: string): RunRow[] {
       health: optStr(x, 'health'),
     };
   });
+}
+
+export interface ChatRow {
+  id: string;
+  title: string;
+  savedAt: number;
+  messages: number;
+}
+
+/** Parse `omnexx chats --json`. */
+export function parseChats(text: string): ChatRow[] {
+  const data = parseJson(text, 'chats --json');
+  if (!Array.isArray(data)) throw new Error('expected a list of chats');
+  return data.map((x): ChatRow => {
+    if (!isRecord(x)) throw new Error('expected each chat to be an object');
+    return {
+      id: str(x, 'id'),
+      title: str(x, 'title'),
+      savedAt: num(x, 'savedAt'),
+      messages: num(x, 'messages'),
+    };
+  });
+}
+
+export type HistoryGroup = 'Today' | 'Yesterday' | 'Earlier';
+export const HISTORY_GROUPS: readonly HistoryGroup[] = ['Today', 'Yesterday', 'Earlier'];
+
+/** Which History heading a time falls under, by local calendar day. */
+export function historyGroup(at: number, now: number): HistoryGroup {
+  const day = (t: number): number => {
+    const d = new Date(t);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  };
+  const today = day(now);
+  if (day(at) >= today) return 'Today';
+  const yesterday = day(today - 1);
+  return day(at) >= yesterday ? 'Yesterday' : 'Earlier';
+}
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/** "just now", "5m ago", "3h ago", "2d ago", then the date. */
+export function relativeTime(at: number, now: number): string {
+  const ago = Math.max(0, now - at);
+  if (ago < MINUTE) return 'just now';
+  if (ago < HOUR) return `${String(Math.floor(ago / MINUTE))}m ago`;
+  if (ago < DAY) return `${String(Math.floor(ago / HOUR))}h ago`;
+  if (ago < 7 * DAY) return `${String(Math.floor(ago / DAY))}d ago`;
+  return new Date(at).toLocaleDateString();
+}
+
+/** A run's History name: its goal, else the repo and id. */
+export function runTitle(run: RunRow): string {
+  const goal = run.goal?.trim();
+  if (!goal) return `${run.repoName} · ${run.runId}`;
+  const short = goal.length > 60 ? `${goal.slice(0, 59).trimEnd()}…` : goal;
+  return short.charAt(0).toUpperCase() + short.slice(1);
 }
 
 /** Parse `omnexx plan --json`. */

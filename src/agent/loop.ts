@@ -181,6 +181,10 @@ export interface LoopDeps {
     onOutage?: (ms: number) => void;
   };
   signal?: AbortSignal;
+  /** A model request is about to go out (for "waiting on the model" estimates). */
+  onRequest?: (r: { model: string; inputTokens: number }) => void;
+  /** A model request answered, after `ms`. */
+  onResponse?: (r: { model: string; inputTokens: number; ms: number }) => void;
   /** In-cycle context control; off when unset. */
   compaction?: { settings: CompactionSettings; summarize?: Summarize };
   /** In-cycle stuck detection; off when unset. */
@@ -402,6 +406,9 @@ export async function runAgentLoop(
             });
             if (!pf.ok) throw new BudgetStopSignal(pf.stop, pf.detail);
             triedAny = true;
+            const ref = `${m.provider}:${m.id}`;
+            const sentAt = deps.clock.now();
+            deps.onRequest?.({ model: ref, inputTokens: estimate });
             try {
               const r = await deps.provider.complete({
                 ...req,
@@ -410,6 +417,11 @@ export async function runAgentLoop(
                 ...(deps.signal ? { signal: deps.signal } : {}),
               });
               chosen = m;
+              deps.onResponse?.({
+                model: ref,
+                inputTokens: estimate,
+                ms: deps.clock.now() - sentAt,
+              });
               return r;
             } catch (err) {
               // A 400 is usually our own mistake, but behind a model pool the next try can land on

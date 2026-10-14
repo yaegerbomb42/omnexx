@@ -24,7 +24,8 @@ Open it from the omnexx icon in the activity bar, or press `Cmd+Alt+O` (`Ctrl+Al
   default with `omnexx.autoApprove`.
 - **Trajectory**: the agent's step list as a timeline, with the active step's progress and what
   it is doing right now.
-- **Live log**: every action, thought and note, timestamped.
+- **Activity inline**: actions, thinking and notes show in the conversation as they happen,
+  with an "est. 5s" countdown while the model answers.
 - **Composer**: Enter sends, Shift+Enter adds a line. While the agent works, a message steers it
   at its next step; pause and stop sit next to the input, and Esc stops.
 - **Models and providers**: click the model name to switch, or add an API key or any
@@ -35,10 +36,11 @@ Open it from the omnexx icon in the activity bar, or press `Cmd+Alt+O` (`Ctrl+Al
 The panel drives `omnexx chat-server`, the same session as the terminal UI, so the
 conversation carries over: `omnexx -c` in a terminal continues it.
 
-## Runs sidebar
+## History
 
-Below the chat, **Runs** lists the runs started from the open folders with their milestones and
-tasks, and lets you watch, pause, resume or stop each one.
+Below the chat, **History** lists past chats and runs for the open folders under Today,
+Yesterday and Earlier, named by what was asked. Click a chat to reopen its transcript and carry
+on; a run shows its milestones and tasks, and you can watch, pause, resume or stop it.
 
 ## Settings
 

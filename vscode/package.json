@@ -2,7 +2,7 @@
   "name": "omnexx",
   "displayName": "omnexx",
   "description": "Chat with the omnexx coding agent right in your editor, with omnexx built in: chat, plan or run autonomously, see token use and cost, and watch long runs' todo lists.",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "publisher": "yaegerbomb42",
   "license": "MIT",
   "private": true,
@@ -48,14 +48,14 @@
         },
         {
           "id": "omnexx.runs",
-          "name": "Runs"
+          "name": "History"
         }
       ]
     },
     "viewsWelcome": [
       {
         "view": "omnexx.runs",
-        "contents": "No runs for this folder yet.\n[Start run](command:omnexx.startRun)\n[Autonomous for N hours](command:omnexx.startAutonomous)\n[Open chat in terminal](command:omnexx.openChat)"
+        "contents": "No chats or runs for this folder yet.\n[Start run](command:omnexx.startRun)\n[Autonomous for N hours](command:omnexx.startAutonomous)\n[Open chat in terminal](command:omnexx.openChat)"
       }
     ],
     "commands": [
@@ -79,7 +79,7 @@
       },
       {
         "command": "omnexx.refresh",
-        "title": "Refresh Runs",
+        "title": "Refresh History",
         "category": "omnexx",
         "icon": "$(refresh)"
       },

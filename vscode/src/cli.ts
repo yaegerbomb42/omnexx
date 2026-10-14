@@ -1,7 +1,14 @@
 import { execFile } from 'node:child_process';
 import * as vscode from 'vscode';
 import { engine } from './engine.js';
-import { parsePlan, parseRuns, type PlanView, type RunRow } from './model.js';
+import {
+  parseChats,
+  parsePlan,
+  parseRuns,
+  type ChatRow,
+  type PlanView,
+  type RunRow,
+} from './model.js';
 
 const CALL_TIMEOUT_MS = 15_000;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
@@ -42,6 +49,16 @@ async function call(args: readonly string[], cwd: string | undefined): Promise<s
 
 export async function listRuns(cwd: string | undefined): Promise<RunRow[]> {
   return parseRuns(await call(['runs', '--json'], cwd));
+}
+
+/** Saved chats in this folder; an older omnexx without `chats` lists none. */
+export async function listChats(cwd: string | undefined): Promise<ChatRow[]> {
+  try {
+    return parseChats(await call(['chats', '--json'], cwd));
+  } catch (err) {
+    if (err instanceof Error && /unknown command/i.test(err.message)) return [];
+    throw err;
+  }
 }
 
 export async function readPlan(runId: string, cwd: string | undefined): Promise<PlanView> {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addEntries,
+  etaText,
   cacheHitPercent,
   cleanQuestion,
   contextPercent,
@@ -178,5 +179,16 @@ describe('timeline and log helpers', () => {
     expect(logRole('err')).toBe('error');
     expect(logRole('user')).toBeUndefined();
     expect(logRole('out')).toBeUndefined();
+  });
+});
+
+describe('etaText', () => {
+  it('counts down from the estimate, then up once it runs over', () => {
+    const w = { startedAt: 1_000, estimateMs: 5_000 };
+    expect(etaText(null, 0)).toBe('');
+    expect(etaText(w, 1_000)).toBe('est. 5s');
+    expect(etaText(w, 3_500)).toBe('est. 3s');
+    expect(etaText(w, 13_000)).toBe('taking longer… 7s');
+    expect(etaText({ startedAt: 0, estimateMs: null }, 12_000)).toBe('12s');
   });
 });

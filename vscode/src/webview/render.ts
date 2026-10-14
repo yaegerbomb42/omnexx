@@ -308,3 +308,19 @@ export function logRole(kind: EntryKind): LogRole | undefined {
       return undefined;
   }
 }
+
+/**
+ * The wait for a model reply: "est. 5s" counting down from the usual response time, then
+ * "taking longer… 7s" counting up past it; "12s" when there is no history yet.
+ */
+export function etaText(
+  waiting: { startedAt: number; estimateMs: number | null } | null | undefined,
+  now: number,
+): string {
+  if (!waiting) return '';
+  const elapsed = Math.max(0, now - waiting.startedAt);
+  if (waiting.estimateMs === null) return `${String(Math.round(elapsed / 1000))}s`;
+  const left = Math.ceil((waiting.estimateMs - elapsed) / 1000);
+  if (left > 0) return `est. ${String(left)}s`;
+  return `taking longer… ${String(Math.round((elapsed - waiting.estimateMs) / 1000))}s`;
+}

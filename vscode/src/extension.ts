@@ -40,6 +40,11 @@ export function activate(context: vscode.ExtensionContext): void {
       chat.newChat();
     }),
     cmd('omnexx.pickModel', () => chat.pickModel()),
+    vscode.commands.registerCommand('omnexx.openChatSession', async (id?: unknown) => {
+      if (typeof id !== 'string') return;
+      await chat.focus();
+      chat.resumeChat(id);
+    }),
     cmd('omnexx.restartChat', () => {
       chat.restart();
     }),

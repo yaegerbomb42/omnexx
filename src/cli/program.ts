@@ -259,6 +259,19 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     });
 
   program
+    .command('chats', { hidden: true })
+    .option('--json', 'machine-readable output')
+    .description('list saved chats in this folder, newest first')
+    .action(async (opts: { json?: boolean }) => {
+      const { realpath } = await import('node:fs/promises');
+      const { listChats } = await import('../tui/chat-history.js');
+      const chats = await listChats(resolvePaths(io.env), await realpath(io.cwd));
+      if (opts.json) println(io.stdout, JSON.stringify(chats, null, 2));
+      else for (const c of chats) println(io.stdout, `${c.id}  ${c.title}`);
+      setExit(EXIT.ok);
+    });
+
+  program
     .command('diff')
     .argument('[runId]')
     .option('--since <milestoneId>', 'diff from a milestone checkpoint')

@@ -146,8 +146,11 @@ async function runRow(store: RunStore, now: number) {
       now,
     });
   }
+  // The goal's first line names the run in the editor's History.
+  const goal = (await store.readGoal()).text.split('\n').find((l) => l.trim()) ?? '';
   return {
     runId: s.runId,
+    goal: goal.replace(/^#+\s*/, '').trim(),
     status: s.status,
     phase: s.phase,
     cycle: s.cycle,

@@ -14,6 +14,7 @@ import {
   formatClock,
   formatTokens,
   formatUsd,
+  etaText,
   logRole,
   renderMarkdown,
   stepLabel,
@@ -47,6 +48,7 @@ interface State {
   } | null;
   usage: (Usage & { startedAt: number | null }) | null;
   helpers?: crew.Helper[];
+  waiting?: { startedAt: number; estimateMs: number | null } | null;
 }
 
 type Incoming =
@@ -101,7 +103,6 @@ const stopBtn = el('stop', HTMLButtonElement);
 const ask = el('ask', HTMLElement);
 const steps = el('steps', HTMLElement);
 const stepsBody = el('steps-body', HTMLElement);
-const liveLog = el('live-log', HTMLElement);
 const banner = el('banner', HTMLElement);
 const welcome = el('welcome', HTMLElement);
 /** The head agent's avatar in the crew view: the logo the header already shows. */
@@ -111,7 +112,7 @@ let blocks: Block[] = [];
 let logLines: LogLine[] = [];
 let state: State | undefined;
 /** Keep a scroller pinned to the bottom unless the person scrolled up to read. */
-const stick = { conversation: true, log: true };
+const stick = { conversation: true };
 
 const ICON = {
   check:
@@ -121,27 +122,18 @@ const ICON = {
   dot: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
 };
 
-/** 12-hour clock for the live log, e.g. "3:04:05 PM". */
-function clock(at: number): string {
-  return new Date(at).toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-}
-
-/** Messages stay in the conversation; everything else goes to the live log. */
+/** Everything shows in the conversation: actions and thinking as compact lines between messages. */
 function ingest(entries: readonly Entry[]): void {
   const now = Date.now();
   const forLog: LogLine[] = [];
-  const forChat: Entry[] = [];
   for (const e of entries) {
     const role = logRole(e.kind);
     if (role) forLog.push({ at: now, role, text: e.text.trim() });
-    // Errors show in both places: they need attention where the person is reading.
-    if (!role || role === 'error') forChat.push(e);
   }
-  blocks = addEntries(blocks, forChat);
+  blocks = addEntries(
+    blocks,
+    entries.filter((e) => e.text.trim()),
+  );
   logLines = [...logLines, ...forLog.filter((l) => l.text)].slice(-MAX_LOG_LINES);
 }
 
@@ -150,6 +142,11 @@ function messageHtml(b: Block): string {
   if (b.kind === 'out') return `<div class="msg reply">${renderMarkdown(body)}</div>`;
   if (b.kind === 'user')
     return `<div class="msg user"><div class="who">You</div><div class="text">${escapeHtml(body)}</div></div>`;
+  if (b.kind === 'act')
+    return `<div class="msg act"><span class="act-mark" aria-hidden="true">›</span>${escapeHtml(body)}</div>`;
+  if (b.kind === 'think') return `<div class="msg think">${escapeHtml(body)}</div>`;
+  if (b.kind === 'system' || b.kind === 'feed')
+    return `<div class="msg note">${escapeHtml(body)}</div>`;
   const text = b.lines.map((l) => l.trimStart().replace(/^✗ ?/, '')).join('\n');
   return `<div class="msg error">${escapeHtml(text)}</div>`;
 }
@@ -162,7 +159,7 @@ function drawConversation(): void {
   if (state?.busy && !state.live && !state.pending) {
     const doing = logLines.findLast((l) => l.role === 'agent')?.text ?? 'Thinking';
     html.push(
-      `<div class="working">${ICON.spinner}<span>${escapeHtml(doing)}</span>${state.paused ? '<span class="tag">paused</span>' : ''}</div>`,
+      `<div class="working">${ICON.spinner}<span>${escapeHtml(doing)}</span><span id="eta" class="eta">${etaText(state.waiting, Date.now())}</span>${state.paused ? '<span class="tag">paused</span>' : ''}</div>`,
     );
   }
   conversation.innerHTML = html.join('');
@@ -199,18 +196,6 @@ function drawSteps(items: readonly TodoItem[]): void {
       return `<li class="step ${s}"><span class="node" aria-hidden="true"></span><div class="card"><div class="title"><span class="icon">${icons[s]}</span><span class="label">${stepLabel(i)}:</span><span class="text">${escapeHtml(t.text)}</span></div>${stepDetail(s, states, pct, recent)}</div></li>`;
     })
     .join('');
-}
-
-function drawLiveLog(): void {
-  liveLog.innerHTML = logLines.length
-    ? logLines
-        .map(
-          (l) =>
-            `<div class="line ${l.role}"><span class="ts">[${clock(l.at)}]</span> <span class="role">${l.role.toUpperCase()}:</span> ${escapeHtml(l.text)}</div>`,
-        )
-        .join('')
-    : '<div class="line empty">Actions, thinking and notes show here as the agent works.</div>';
-  if (stick.log) liveLog.scrollTop = liveLog.scrollHeight;
 }
 
 function stat(id: string, value: string, title: string): void {
@@ -302,7 +287,6 @@ function apply(s: State): void {
   inspector.onBusy(s.busy, post);
   // An older omnexx sends no helpers; treat that as none.
   crew.drawCrew(s.helpers ?? [], logoSrc);
-  drawLiveLog();
   drawConversation();
 }
 
@@ -340,7 +324,6 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
     blocks = [];
     logLines = [];
     drawConversation();
-    drawLiveLog();
   } else if (m.type === 'error' || m.type === 'down') {
     const text = typeof m.message === 'string' ? m.message : 'Something went wrong';
     showBanner(text, m.type === 'error' ? 'error' : 'info');
@@ -373,9 +356,6 @@ conversation.addEventListener('scroll', () => {
   stick.conversation =
     conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 40;
 });
-liveLog.addEventListener('scroll', () => {
-  stick.log = liveLog.scrollHeight - liveLog.scrollTop - liveLog.clientHeight < 24;
-});
 
 document.addEventListener('click', (e) => {
   const target = e.target instanceof Element ? e.target : null;
@@ -399,9 +379,6 @@ document.addEventListener('click', (e) => {
     inspector.close();
     if (settings.isOpen()) settings.close();
     else settings.open(post);
-  } else if (action === 'clear-log') {
-    logLines = [];
-    drawLiveLog();
   } else if (action) post({ type: action });
   const path = target.closest<HTMLElement>('[data-open]')?.dataset.open;
   if (path) post({ type: 'open', path });
@@ -429,6 +406,10 @@ crew.wire();
 modelPicker.wire(() => {
   settings.open(post);
 });
-setInterval(drawUptime, CLOCK_TICK_MS);
+setInterval(() => {
+  drawUptime();
+  const eta = document.getElementById('eta');
+  if (eta) eta.textContent = etaText(state?.waiting, Date.now());
+}, CLOCK_TICK_MS);
 post({ type: 'ready' });
 input.focus();
