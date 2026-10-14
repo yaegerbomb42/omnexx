@@ -7,6 +7,7 @@ import { CodexRunner } from './runners/codex.ts';
 import { ClineRunner } from './runners/cline.ts';
 import { OpenHandsRunner } from './runners/openhands.ts';
 import { endpointFromEnv, startMeter, type Meter } from './meter.ts';
+import { cachedSetup, planJobs, runPool, tagLines, type Job } from './pool.ts';
 import { mkdir } from 'node:fs/promises';
 import { createResultsWriter, resultsDir } from './results.ts';
 import type { BenchConfig, Suite, TaskRunResult } from './types.ts';
@@ -59,6 +60,8 @@ interface Opts {
   context: string;
   endpoint?: string;
   judge?: boolean;
+  concurrency: string;
+  reps: string;
 }
 
 /** 61_234 → "61k". */
@@ -87,6 +90,12 @@ async function main(): Promise<void> {
       'one OpenAI-compatible endpoint for every agent, metered the same way, from env vars PREFIX_BASE_URL, PREFIX_MODEL, PREFIX_API_KEY',
     )
     .option('--judge', "omnexx: keep the user's judge (e.g. Nimble) on")
+    .option(
+      '--concurrency <n>',
+      'runs in flight at once, each in its own work dir with its own meter',
+      '4',
+    )
+    .option('--reps <n>', 'run every task × agent pair n times; results are tagged by rep', '1')
     .option('--dry-run', 'show what would run without running it')
     .parse();
   const opts = program.opts<Opts>();
@@ -102,84 +111,106 @@ async function main(): Promise<void> {
 
   const endpoint = opts.endpoint ? endpointFromEnv(process.env, opts.endpoint) : undefined;
   if (endpoint) await mkdir(resultsDir(config.out), { recursive: true });
-  const meter = endpoint
-    ? await startMeter(endpoint, join(resultsDir(config.out), 'calls.jsonl'))
-    : undefined;
-  const model = endpoint?.model ?? opts.model;
-  const runners: AgentRunner[] = [];
-  for (const name of config.agents) {
-    const make = RUNNERS[name];
-    if (!make) fail(`Unknown agent: ${name}`);
-    if (opts.context !== 'lean' && opts.context !== 'full')
-      throw new Error('--context is lean or full');
-    const runner = make({
-      hours: Number(opts.hours),
-      budget: Number(opts.budget),
-      model,
-      context: opts.context,
-      meter,
-      judge: opts.judge ?? false,
-    });
-    if (!(await runner.isAvailable())) console.warn(`Warning: agent '${name}' is not available`);
-    runners.push(runner);
+  const callsLog = join(resultsDir(config.out), 'calls.jsonl');
+  if (opts.context !== 'lean' && opts.context !== 'full') fail('--context is lean or full');
+  const concurrency = positiveInt('--concurrency', opts.concurrency);
+  const reps = positiveInt('--reps', opts.reps);
+  const runnerOpts: RunnerOpts = {
+    hours: Number(opts.hours),
+    budget: Number(opts.budget),
+    model: endpoint?.model ?? opts.model,
+    context: opts.context,
+    judge: opts.judge ?? false,
+  };
+  // A throwaway meter only so runners that need one can be built for the availability check.
+  const probe = endpoint ? await startMeter(endpoint) : undefined;
+  try {
+    for (const name of config.agents) {
+      const runner = makeRunner(name, { ...runnerOpts, meter: probe });
+      if (!(await runner.isAvailable())) console.warn(`Warning: agent '${name}' is not available`);
+    }
+  } finally {
+    await probe?.close();
   }
 
   const tasks = (await suite.loadTasks()).filter((t) => !opts.task || t.id === opts.task);
   if (!tasks.length) fail('No tasks to run');
+  const jobs = planJobs(tasks, config.agents, reps);
 
   console.log(`Suite ${config.suite}; agents ${config.agents.join(', ')}; out ${config.out}`);
   console.log(`Tasks: ${tasks.map((t) => t.id).join(', ')}`);
+  console.log(
+    `${String(jobs.length)} runs (${String(reps)} rep(s)), ${String(Math.min(concurrency, jobs.length))} at a time`,
+  );
   if (opts.dryRun) {
-    await meter?.close();
+    for (const job of jobs) console.log(`  ${job.tag}`);
     return;
   }
 
   const writer = createResultsWriter(config);
-  for (const task of tasks) {
-    console.log(`\n=== ${task.id} ===`);
-    for (const runner of runners) {
-      // Next to the results (bench/results/<name>/work), never in the repo's own tree.
-      const workDir = join(resultsDir(config.out), 'work', config.suite, task.id, runner.agentName);
-      const startedAt = new Date().toISOString();
-      let result: TaskRunResult;
-      try {
-        await suite.setupTask(task, workDir);
-        const goal = await suite.getGoal(task);
-        // The agent works; the suite's hidden check decides whether it resolved the task.
-        const { resultDir, ...metrics } = await runner.run(task, workDir, goal);
-        const resolved = await suite.checkTask(task, resultDir ?? workDir);
-        result = {
-          taskId: task.id,
-          suite: config.suite,
-          agent: runner.agentName,
-          metrics: { ...metrics, resolved },
-          startedAt,
-          finishedAt: new Date().toISOString(),
-        };
-        // Fresh tokens are what a run really costs; cache reads are re-sent context billed at about
-        // a tenth of the price, so they are shown apart instead of inflating one total.
-        const fresh = metrics.tokens_in + metrics.tokens_out;
-        const calls = metrics.requests === undefined ? '' : `, ${String(metrics.requests)} calls`;
-        console.log(
-          `  ${resolved ? 'PASS' : 'FAIL'} ${runner.agentName}: $${metrics.usd.toFixed(4)}, ${fmtK(fresh)} fresh + ${fmtK(metrics.cached)} cached tokens${calls}, ${(metrics.wall_ms / 1000).toFixed(0)}s`,
-        );
-      } catch (error) {
-        console.error(`  ERROR ${runner.agentName}: ${String(error)}`);
-        result = {
-          taskId: task.id,
-          suite: config.suite,
-          agent: runner.agentName,
-          metrics: { ...ZERO, resolved: false },
-          startedAt,
-          finishedAt: new Date().toISOString(),
-          error: String(error),
-        };
-      }
-      await writer.writeResult(result);
+  const work = join(resultsDir(config.out), 'work', config.suite);
+  // One setup (and npm install) per task, copied into each run's own work dir.
+  const setup = cachedSetup(suite, join(work, '.templates'));
+  const runJob = async (job: Job): Promise<void> => {
+    const { task, agent, rep, tag } = job;
+    const say = (line: string): void => {
+      console.log(tagLines(tag, line));
+    };
+    // Its own work dir and its own meter (own port, own totals), so concurrent runs never share.
+    const workDir = join(work, task.id, agent, `r${String(rep)}`);
+    const meter = endpoint ? await startMeter(endpoint, callsLog, tag) : undefined;
+    const startedAt = new Date().toISOString();
+    const base = { taskId: task.id, suite: config.suite, agent, rep, startedAt };
+    let result: TaskRunResult;
+    try {
+      say('start');
+      const runner = makeRunner(agent, { ...runnerOpts, meter });
+      await setup(task, workDir);
+      const goal = await suite.getGoal(task);
+      // The agent works; the suite's hidden check decides whether it resolved the task.
+      const { resultDir, ...metrics } = await runner.run(task, workDir, goal);
+      const resolved = await suite.checkTask(task, resultDir ?? workDir);
+      result = {
+        ...base,
+        metrics: { ...metrics, resolved },
+        finishedAt: new Date().toISOString(),
+      };
+      say(`${resolved ? 'PASS' : 'FAIL'} ${summary(metrics)}`);
+    } catch (error) {
+      console.error(tagLines(tag, `ERROR ${String(error)}`));
+      result = {
+        ...base,
+        metrics: { ...ZERO, resolved: false },
+        finishedAt: new Date().toISOString(),
+        error: String(error),
+      };
+    } finally {
+      await meter?.close();
     }
-  }
-  await meter?.close();
+    await writer.writeResult(result);
+  };
+  await runPool(jobs, concurrency, runJob);
   console.log(`\nResults: ${writer.getOutDir()}/${writer.getRunId()}.md`);
+}
+
+/** Fresh tokens are what a run really costs; cache reads (billed ~1/10) are shown apart. */
+function summary(m: Omit<TaskRunResult['metrics'], 'resolved'>): string {
+  const fresh = m.tokens_in + m.tokens_out;
+  const calls = m.requests === undefined ? '' : `, ${String(m.requests)} calls`;
+  return `$${m.usd.toFixed(4)}, ${fmtK(fresh)} fresh + ${fmtK(m.cached)} cached tokens${calls}, ${(m.wall_ms / 1000).toFixed(0)}s`;
+}
+
+function makeRunner(name: string, o: RunnerOpts): AgentRunner {
+  const make = RUNNERS[name];
+  if (!make) fail(`Unknown agent: ${name}`);
+  return make(o);
+}
+
+/** A positive integer option, or exit with a clear message. */
+function positiveInt(flag: string, raw: string): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) fail(`${flag} must be a positive integer, got '${raw}'`);
+  return n;
 }
 
 function fail(msg: string): never {
