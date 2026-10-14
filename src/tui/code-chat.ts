@@ -41,6 +41,16 @@ import type { ToolWhere } from '../tools/extra/types.js';
 import { helperRunner } from '../agent/subagent.js';
 import type { TodoItem } from '../tools/todo.js';
 import type { Tool, ToolContext } from '../tools/types.js';
+import {
+  applyContext,
+  deleteContextItem,
+  EMPTY_OVERRIDES,
+  listContext,
+  updateContextItem,
+  type ContextItem,
+  type ContextOverrides,
+  type ContextState,
+} from './context-edit.js';
 import { runGates } from '../verify/gates.js';
 import { emptyTelemetry, fold, type Telemetry } from '../telemetry/aggregate.js';
 
@@ -137,6 +147,8 @@ export class CodeChat {
   /** The last thinking line shown, so an identical one isn't printed again. */
   private lastThought = '';
   private history: Message[] = [];
+  /** Context-inspector edits to the system prompt and tool definitions. */
+  private overrides: ContextOverrides = EMPTY_OVERRIDES;
   /** Set by open(); where repo memory lives. */
   paths: OmnexxPaths | undefined;
   /** Before each message: the files as they were, and how long the conversation was. */
@@ -326,7 +338,57 @@ export class CodeChat {
   }
 
   private baseTokens(): number {
-    return estimateTokens(JSON.stringify([this.system, this.tools.map(toolSpec)]));
+    const { system, tools } = this.effective(this.tools);
+    return estimateTokens(JSON.stringify([system, tools]));
+  }
+
+  private contextState(): ContextState {
+    return {
+      system: this.system,
+      tools: this.tools.map(toolSpec),
+      history: this.history,
+      overrides: this.overrides,
+    };
+  }
+
+  /** The system prompt and tools a request sends, with the inspector's edits applied. */
+  private effective(tools: readonly Tool[]): {
+    system: { text: string; cacheBreakpoint?: boolean }[];
+    tools: ReturnType<typeof toolSpec>[];
+    runnable: Tool[];
+  } {
+    const applied = applyContext({ ...this.contextState(), tools: tools.map(toolSpec) });
+    const kept = new Set(applied.tools.map((t) => t.name));
+    return {
+      system: applied.system,
+      tools: applied.tools,
+      runnable: tools.filter((t) => kept.has(t.name)),
+    };
+  }
+
+  /** Everything the next request sends, item by item, for the context inspector. */
+  contextItems(): ContextItem[] {
+    return listContext(this.contextState());
+  }
+
+  private changeContext(next: ContextState): void {
+    if (this.busy)
+      throw new Error('wait for the agent to finish (or stop it), then edit the context');
+    this.overrides = next.overrides;
+    this.conversation = [...next.history];
+  }
+
+  editContext(id: string, text: string): void {
+    this.changeContext(updateContextItem(this.contextState(), id, text));
+  }
+
+  deleteContext(id: string): void {
+    this.changeContext(deleteContextItem(this.contextState(), id));
+  }
+
+  /** Bring back the default system prompt and tools (conversation edits stay). */
+  resetContext(): void {
+    this.changeContext({ ...this.contextState(), overrides: EMPTY_OVERRIDES });
   }
 
   /**
@@ -335,8 +397,9 @@ export class CodeChat {
    * even before anything is said.
    */
   get contextParts(): { system: number; tools: number; conversation: number } {
-    const system = estimateTokens(JSON.stringify(this.system));
-    const tools = estimateTokens(JSON.stringify(this.tools.map(toolSpec)));
+    const applied = this.effective(this.tools);
+    const system = estimateTokens(JSON.stringify(applied.system));
+    const tools = estimateTokens(JSON.stringify(applied.tools));
     return { system, tools, conversation: Math.max(0, this.contextUsed - system - tools) };
   }
 
@@ -418,7 +481,8 @@ export class CodeChat {
     opts: { plan?: boolean; images?: ContentBlock[] } = {},
   ): Promise<void> {
     // Plan mode: read-only tools, and the ask goes in the message (the cached prefix is unchanged).
-    const tools = opts.plan ? this.tools.filter((t) => t.readOnly) : this.tools;
+    const request = this.effective(opts.plan ? this.tools.filter((t) => t.readOnly) : this.tools);
+    const tools = request.runnable;
     const ask = opts.plan ? `${PLAN_MODE}\n\n${text}` : text;
     this.view = view;
     this.snapshots.push({
@@ -433,10 +497,10 @@ export class CodeChat {
     try {
       const result = await runAgentLoop(
         {
-          system: this.system,
+          system: request.system,
           history: this.history,
           first: { role: 'user', content: [{ type: 'text', text: ask }, ...(opts.images ?? [])] },
-          tools: tools.map(toolSpec),
+          tools: request.tools,
         },
         {
           provider: this.provider,

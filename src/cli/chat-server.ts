@@ -17,11 +17,13 @@ import { println, type CliIO } from './io.js';
  * yolo {on} ·
  * model {ref} · models · connect {value, name?} · undo · clear · compact · sync (resend all) ·
  * settings · addProvider {provider?, key?, url?} · removeProvider {name} · testProvider {name} ·
- * roles · setRoles {roles} · contextFiles · setSectionMode {id, mode} · browser ·
+ * roles · setRoles {roles} · contextFiles · setSectionMode {id, mode} · contextList ·
+ * contextUpdate {id, text} · contextDelete {id} · contextReset · browser ·
  * setBrowser {engine, profile?, sessionName?, headless}.
  * Out: ready {version} · state (below; `entries` holds only lines not sent before) · models
  * {items, unreachable, current} · settings {catalog, connected} · providerTest {name, ok, models,
- * detail} · browser {engine, profile, sessionName, headless} · error {message}.
+ * detail} · contextItems {items, busy} · browser {engine, profile, sessionName, headless} ·
+ * error {message}.
  */
 
 export interface ChatUsage {
@@ -86,6 +88,13 @@ function parseCommand(line: string): Command {
 function text(c: Command, key: string): string {
   const v = c[key];
   if (typeof v !== 'string' || !v.trim()) throw new Error(`"${c.type}" needs a "${key}" string`);
+  return v;
+}
+
+/** A string that may be empty (an edit can clear a block's text). */
+function rawText(c: Command, key: string): string {
+  const v = c[key];
+  if (typeof v !== 'string') throw new Error(`"${c.type}" needs a "${key}" string`);
   return v;
 }
 
@@ -192,6 +201,10 @@ export async function serveChat(
   const sendContextFiles = async (): Promise<void> => {
     const { contextFiles } = await import('./chat-context.js');
     write({ type: 'contextFiles', ...(await contextFiles(io)) });
+  };
+  /** The context inspector's items: what the next request sends, with token counts. */
+  const sendContext = (): void => {
+    write({ type: 'contextItems', items: session.contextItems(), busy: session.chatBusy });
   };
   /** Roles as saved, plus which models are out of quota right now (ref → when it ran out). */
   const sendRoles = async (): Promise<void> => {
@@ -303,6 +316,21 @@ export async function serveChat(
             await sendContextFiles();
           }),
         );
+        return;
+      case 'contextList':
+        sendContext();
+        return;
+      case 'contextUpdate':
+        session.changeContext({ op: 'edit', id: text(c, 'id'), text: rawText(c, 'text') });
+        sendContext();
+        return;
+      case 'contextDelete':
+        session.changeContext({ op: 'delete', id: text(c, 'id') });
+        sendContext();
+        return;
+      case 'contextReset':
+        session.changeContext({ op: 'reset' });
+        sendContext();
         return;
       case 'browser':
         run(sendBrowser());

@@ -4,7 +4,12 @@
  * themes and flat in light and high-contrast ones.
  */
 :root {
-  --gap: 8px;
+  --gap: 6px;
+  /* Type scale: every size derives from the editor's font size; nothing below 85% of it. */
+  --fs-xs: calc(var(--vscode-font-size, 13px) * 0.85);
+  --fs-sm: calc(var(--vscode-font-size, 13px) * 0.92);
+  --fs-md: var(--vscode-font-size, 13px);
+  --fs-lg: calc(var(--vscode-font-size, 13px) * 1.08);
   --radius: 8px;
   --fg: var(--vscode-foreground);
   --muted: var(--vscode-descriptionForeground);
@@ -64,7 +69,7 @@ body {
   background: var(--surface);
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 button {
@@ -105,7 +110,7 @@ svg {
 }
 
 .word {
-  font-size: 1.45em;
+  font-size: var(--fs-lg);
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -133,7 +138,7 @@ body.vscode-high-contrast-light .word {
   background: var(--card);
   border-radius: 999px;
   padding: 2px 10px;
-  font-size: 0.9em;
+  font-size: var(--fs-sm);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -148,7 +153,7 @@ body.vscode-high-contrast-light .word {
   min-width: 0;
   text-align: left;
   font-family: var(--mono);
-  font-size: 0.85em;
+  font-size: var(--fs-sm);
 }
 
 .chip.model::after {
@@ -212,7 +217,7 @@ body.vscode-high-contrast-light .word {
 }
 
 .k {
-  font-size: 0.72em;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
@@ -220,7 +225,7 @@ body.vscode-high-contrast-light .word {
 
 .v {
   font-family: var(--mono);
-  font-size: 1.05em;
+  font-size: var(--fs-md);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
@@ -232,7 +237,7 @@ body.vscode-high-contrast-light .word {
   display: flex;
   align-items: center;
   gap: var(--gap);
-  font-size: 0.8em;
+  font-size: var(--fs-xs);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -291,7 +296,7 @@ body.vscode-high-contrast-light .word {
   background: none;
   padding: 1px 6px;
   border-radius: 999px;
-  font-size: 0.88em;
+  font-size: var(--fs-sm);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -312,7 +317,7 @@ body.vscode-high-contrast-light .word {
   margin: 0 10px 8px;
   padding: 6px 10px;
   border-radius: var(--radius);
-  font-size: 0.9em;
+  font-size: var(--fs-sm);
   display: flex;
   gap: var(--gap);
   justify-content: space-between;
@@ -366,20 +371,20 @@ body.vscode-high-contrast-light .word {
 }
 
 .section.live .h {
-  font-size: 0.78em;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .sub-h {
   color: var(--muted);
-  font-size: 0.85em;
+  font-size: var(--fs-sm);
 }
 
 .count {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 0.85em;
+  font-size: var(--fs-sm);
   color: var(--accent);
 }
 
@@ -468,7 +473,7 @@ body.vscode-high-contrast-light .word {
 
 .title .label {
   font-family: var(--mono);
-  font-size: 0.9em;
+  font-size: var(--fs-sm);
   flex: none;
   margin-top: 1px;
 }
@@ -506,14 +511,14 @@ body.vscode-high-contrast-light .word {
 
 .sub {
   margin-top: 2px;
-  font-size: 0.88em;
+  font-size: var(--fs-sm);
   color: var(--muted);
 }
 
 .sub.ok {
   color: var(--ok);
   font-family: var(--mono);
-  font-size: 0.8em;
+  font-size: var(--fs-xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -524,7 +529,7 @@ body.vscode-high-contrast-light .word {
   gap: 8px;
   margin-top: 8px;
   font-family: var(--mono);
-  font-size: 0.85em;
+  font-size: var(--fs-sm);
   color: var(--accent);
 }
 
@@ -537,7 +542,7 @@ body.vscode-high-contrast-light .word {
   list-style: none;
   margin: 6px 0 0;
   padding: 0;
-  font-size: 0.88em;
+  font-size: var(--fs-sm);
 }
 
 .doing li {
@@ -591,7 +596,7 @@ body.vscode-high-contrast-light .word {
 }
 
 .who {
-  font-size: 0.72em;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--violet);
@@ -628,7 +633,7 @@ body.vscode-high-contrast-light .word {
 .msg.error {
   color: var(--bad);
   font-family: var(--mono);
-  font-size: 0.88em;
+  font-size: var(--fs-sm);
   white-space: pre-wrap;
   border-left: 2px solid var(--bad);
   padding-left: 8px;
@@ -677,7 +682,7 @@ blockquote {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 0.9em;
+  font-size: var(--fs-sm);
   min-width: 0;
 }
 
@@ -689,7 +694,7 @@ blockquote {
 
 .tag {
   flex: none;
-  font-size: 0.75em;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--warn);
@@ -706,7 +711,7 @@ blockquote {
 
 .welcome h2 {
   color: var(--fg);
-  font-size: 1.15em;
+  font-size: var(--fs-lg);
   margin: 0 0 4px;
 }
 
@@ -741,7 +746,7 @@ blockquote {
 }
 
 .ask-title {
-  font-size: 0.72em;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--warn);
@@ -779,7 +784,7 @@ blockquote {
   overflow-y: auto;
   padding: 4px 10px 8px;
   font-family: var(--mono);
-  font-size: 0.82em;
+  font-size: var(--fs-xs);
   line-height: 1.45;
   background: color-mix(in srgb, #000 18%, var(--surface));
 }
@@ -869,7 +874,7 @@ textarea::placeholder {
   border: 0;
   background: none;
   padding: 0;
-  font-size: 0.85em;
+  font-size: var(--fs-sm);
   color: var(--muted);
 }
 
@@ -911,7 +916,7 @@ body.settings-open > :not(.top, .settings, script) {
 
 .set-head h2 {
   margin: 0;
-  font-size: 1.15em;
+  font-size: var(--fs-lg);
 }
 
 .set-section {
@@ -926,14 +931,14 @@ body.settings-open > :not(.top, .settings, script) {
 
 .set-section h3 {
   margin: 0 0 2px;
-  font-size: 0.78em;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--accent);
 }
 
 .set-section label {
-  font-size: 0.85em;
+  font-size: var(--fs-sm);
   color: var(--muted);
 }
 
@@ -960,7 +965,7 @@ select.field {
 
 .hint {
   margin: 0;
-  font-size: 0.85em;
+  font-size: var(--fs-sm);
   color: var(--muted);
 }
 
@@ -993,7 +998,7 @@ select.field {
 
 .p-url {
   font-family: var(--mono);
-  font-size: 0.8em;
+  font-size: var(--fs-xs);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1015,7 +1020,7 @@ select.field {
 
 .pill {
   font-family: var(--mono);
-  font-size: 0.75em;
+  font-size: var(--fs-xs);
   padding: 0 6px;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -1026,7 +1031,7 @@ select.field {
   background: none;
   border-radius: 6px;
   padding: 2px 10px;
-  font-size: 0.88em;
+  font-size: var(--fs-sm);
 }
 
 .ghost:hover {
@@ -1043,11 +1048,11 @@ select.field {
   color: var(--bad);
   border-radius: 6px;
   padding: 2px 10px;
-  font-size: 0.88em;
+  font-size: var(--fs-sm);
 }
 
 .signup {
-  font-size: 0.85em;
+  font-size: var(--fs-sm);
   color: var(--vscode-textLink-foreground);
   justify-self: start;
 }
@@ -1060,7 +1065,7 @@ select.field {
 }
 
 .status {
-  font-size: 0.85em;
+  font-size: var(--fs-sm);
   margin-right: auto;
 }
 
@@ -1269,7 +1274,7 @@ body.vscode-high-contrast-light .send {
   height: 22px;
   border-radius: 6px;
   font-family: var(--mono);
-  font-size: 0.68em;
+  font-size: var(--fs-xs);
   font-weight: 700;
   color: #fff;
   background: linear-gradient(135deg, hsl(var(--h) 75% 55%), hsl(calc(var(--h) + 40) 70% 45%));
@@ -1336,7 +1341,7 @@ body.vscode-light .badge {
   align-items: center;
   gap: 8px;
   padding: 8px 8px 4px;
-  font-size: 0.75em;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
@@ -1345,7 +1350,7 @@ body.vscode-light .badge {
 .mp-group .badge {
   width: 18px;
   height: 18px;
-  font-size: 0.85em;
+  font-size: var(--fs-sm);
 }
 
 .mp-item {
@@ -1356,7 +1361,7 @@ body.vscode-light .badge {
   border-radius: 6px;
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 0.9em;
+  font-size: var(--fs-sm);
 }
 
 .mp-item.active {
@@ -1399,7 +1404,7 @@ body.vscode-light .badge {
   gap: 8px;
   padding: 6px 8px;
   border-top: 1px solid var(--line);
-  font-size: 0.85em;
+  font-size: var(--fs-sm);
 }
 
 .mp-note {
@@ -1431,7 +1436,7 @@ body.vscode-light .badge {
 
 .pk-sub {
   color: var(--muted);
-  font-size: 0.85em;
+  font-size: var(--fs-sm);
 }
 
 .caret {
@@ -1452,7 +1457,7 @@ body.vscode-light .badge {
 
 .t-group {
   margin: 8px 0 4px;
-  font-size: 0.72em;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
@@ -1484,7 +1489,7 @@ body.vscode-light .badge {
 
 .t-label {
   font-weight: 600;
-  font-size: 0.9em;
+  font-size: var(--fs-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1492,7 +1497,7 @@ body.vscode-light .badge {
 
 .t-sub {
   font-family: var(--mono);
-  font-size: 0.72em;
+  font-size: var(--fs-xs);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1526,7 +1531,7 @@ body.vscode-light .badge {
   align-items: center;
   gap: 8px;
   font-weight: 700;
-  font-size: 0.9em;
+  font-size: var(--fs-sm);
 }
 
 .head-agent img {
@@ -1615,13 +1620,13 @@ body.vscode-light .badge {
 .h-top .badge {
   width: 18px;
   height: 18px;
-  font-size: 0.6em;
+  font-size: var(--fs-xs);
 }
 
 .h-name {
   flex: 1;
   font-weight: 600;
-  font-size: 0.9em;
+  font-size: var(--fs-sm);
 }
 
 .h-ok {
@@ -1636,7 +1641,7 @@ body.vscode-light .badge {
 
 .h-task {
   margin-top: 2px;
-  font-size: 0.85em;
+  font-size: var(--fs-sm);
   color: var(--muted);
   overflow: hidden;
   display: -webkit-box;
@@ -1647,7 +1652,7 @@ body.vscode-light .badge {
 .h-foot {
   margin-top: 3px;
   font-family: var(--mono);
-  font-size: 0.75em;
+  font-size: var(--fs-xs);
   color: var(--muted);
 }
 
@@ -1675,7 +1680,7 @@ body.vscode-light .badge {
   gap: 8px;
   padding: 5px 8px;
   border-bottom: 1px solid var(--line);
-  font-size: 0.8em;
+  font-size: var(--fs-xs);
 }
 
 .bdots {
@@ -1720,7 +1725,7 @@ body.vscode-light .badge {
   border: 1px solid color-mix(in srgb, var(--violet) 60%, transparent);
   color: var(--violet);
   font-family: var(--mono);
-  font-size: 0.9em;
+  font-size: var(--fs-sm);
 }
 
 #b-img {
@@ -1893,7 +1898,7 @@ body.vscode-light .live-log {
 }
 
 .pal-name {
-  font-size: 0.72em;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-soft);
@@ -1944,7 +1949,7 @@ body.vscode-light .live-log {
 .role-what {
   flex: 1;
   min-width: 0;
-  font-size: 0.8em;
+  font-size: var(--fs-xs);
   color: var(--text-soft);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1961,7 +1966,7 @@ body.vscode-light .live-log {
   border: 1px solid color-mix(in srgb, var(--fg) 28%, transparent);
   background: color-mix(in srgb, var(--fg) 11%, var(--surface));
   font-family: var(--mono);
-  font-size: 0.8em;
+  font-size: var(--fs-xs);
   color: var(--text-strong);
   cursor: grab;
   user-select: none;
@@ -1983,7 +1988,7 @@ body.vscode-light .live-log {
 .rchip .badge {
   width: 18px;
   height: 18px;
-  font-size: 0.72em;
+  font-size: var(--fs-xs);
   border-radius: 50%;
 }
 
@@ -2008,7 +2013,7 @@ body.vscode-light .live-log {
   background: none;
   padding: 0 2px;
   color: var(--text-soft);
-  font-size: 1.1em;
+  font-size: var(--fs-md);
   line-height: 1;
   cursor: pointer;
 }
@@ -2018,7 +2023,7 @@ body.vscode-light .live-log {
 }
 
 .rc-empty {
-  font-size: 0.8em;
+  font-size: var(--fs-xs);
   color: var(--text-soft);
   font-style: italic;
   padding: 3px 0;
@@ -2058,7 +2063,7 @@ body.vscode-light .live-log {
   border-radius: 5px;
   background: none;
   padding: 2px 4px;
-  font-size: 0.75em;
+  font-size: var(--fs-xs);
   color: var(--text-soft);
   white-space: nowrap;
   overflow: hidden;
@@ -2129,7 +2134,7 @@ body.ctx-open > :not(.top, #ctxpage, script) {
 
 .ctx-sum b {
   font-family: var(--mono);
-  font-size: 1.1em;
+  font-size: var(--fs-md);
 }
 
 .ctx-sum div:nth-child(1) b {
@@ -2145,7 +2150,7 @@ body.ctx-open > :not(.top, #ctxpage, script) {
 }
 
 .ctx-sum span {
-  font-size: 0.78em;
+  font-size: var(--fs-xs);
   color: var(--text-soft);
 }
 
@@ -2197,12 +2202,12 @@ body.ctx-open > :not(.top, #ctxpage, script) {
 
 .cf-size {
   font-family: var(--mono);
-  font-size: 0.8em;
+  font-size: var(--fs-xs);
   color: var(--text-soft);
 }
 
 .cf-about {
-  font-size: 0.82em;
+  font-size: var(--fs-xs);
   color: var(--text-soft);
 }
 
@@ -2212,7 +2217,7 @@ body.ctx-open > :not(.top, #ctxpage, script) {
 }
 
 .seg.mini button {
-  font-size: 0.78em;
+  font-size: var(--fs-xs);
   padding: 0 4px;
 }
 
@@ -2230,7 +2235,7 @@ body.ctx-open > :not(.top, #ctxpage, script) {
   grid-column: 1 / -1;
   margin-top: -2px;
   font-family: var(--mono);
-  font-size: 0.75em;
+  font-size: var(--fs-xs);
   color: var(--text-soft);
   cursor: help;
 }
@@ -2286,4 +2291,377 @@ body.ctx-open > :not(.top, #ctxpage, script) {
   .tiles {
     grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   }
+}
+
+/*
+ * Compact layout: the panel fits a ~350×800 sidebar with little scrolling. One-row stats,
+ * slimmer header, mode bar and step cards, a shorter live log and a tighter composer.
+ */
+.top {
+  padding: 5px 8px 4px;
+  gap: 6px;
+}
+
+.brand {
+  gap: 5px;
+}
+
+.logo {
+  width: 18px;
+  height: 18px;
+}
+
+.chip {
+  padding: 1px 8px;
+}
+
+.icon {
+  padding: 3px;
+}
+
+.stats {
+  margin: 0 8px;
+  padding: 5px 8px 4px;
+  gap: 2px 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.k {
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.v {
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+}
+
+.ctx-parts {
+  margin-top: 0;
+}
+
+@media (max-width: 260px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.toolbar {
+  padding: 5px 8px;
+}
+
+.section > summary {
+  padding: 3px 8px;
+  gap: 6px;
+}
+
+.steps {
+  max-height: 28%;
+}
+
+.timeline {
+  padding: 0 8px 6px 28px;
+}
+
+.timeline::before {
+  left: 14px;
+  top: 8px;
+  bottom: 12px;
+}
+
+.step {
+  margin-top: 3px;
+}
+
+.node {
+  left: -19px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+}
+
+.step.active .node {
+  box-shadow:
+    0 0 0 3px var(--accent-soft),
+    0 0 8px var(--accent);
+}
+
+.card,
+.step.done .card {
+  padding: 2px 8px;
+}
+
+.step.active .card {
+  padding-block: 4px;
+}
+
+.title {
+  gap: 5px;
+  font-size: var(--fs-sm);
+}
+
+.sub {
+  margin-top: 0;
+  font-size: var(--fs-xs);
+}
+
+.progress {
+  margin-top: 3px;
+  gap: 6px;
+  font-size: var(--fs-xs);
+}
+
+.progress .track {
+  height: 4px;
+}
+
+.doing {
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+}
+
+.conversation {
+  padding: 6px 8px;
+  gap: 6px;
+  min-height: 120px;
+}
+
+.msg.user {
+  padding: 3px 8px;
+}
+
+.msg.reply p,
+.msg.reply ul,
+.msg.reply ol,
+.msg.reply pre,
+.msg.reply blockquote {
+  margin: 4px 0;
+}
+
+pre {
+  padding: 6px 8px;
+}
+
+.welcome {
+  padding: 4px 10px 8px;
+}
+
+.suggestions button {
+  padding: 4px 8px;
+}
+
+.ask,
+.banner {
+  margin: 0 8px 6px;
+  padding: 5px 8px;
+}
+
+.live-log {
+  max-height: 96px;
+  min-height: 36px;
+  padding: 2px 8px 4px;
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+}
+
+.composer {
+  padding: 5px 8px 6px;
+  gap: 3px 6px;
+}
+
+textarea {
+  min-height: 32px;
+  padding: 6px 32px 6px 8px;
+}
+
+.send {
+  right: 4px;
+  bottom: 4px;
+}
+
+.row {
+  gap: 2px 12px;
+}
+
+/* Context indicator: a plain-text button that opens the inspector. */
+button.ctx {
+  border: 0;
+  background: none;
+  padding: 1px 0;
+  margin: 0;
+  width: 100%;
+  text-align: left;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  border-radius: 4px;
+}
+
+button.ctx #ctx-text {
+  color: var(--fg);
+  font-family: var(--mono);
+}
+
+.ctx-go {
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+button.ctx:hover .ctx-go {
+  text-decoration: underline;
+}
+
+/* Context inspector */
+body.inspect-open > :not(.top, #inspector, script) {
+  display: none !important;
+}
+
+.ci-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: var(--fs-sm);
+}
+
+.ci-bar > span {
+  flex: 1 1 auto;
+}
+
+.ci-bar b {
+  font-family: var(--mono);
+  color: var(--accent);
+}
+
+.ci-note {
+  margin: 4px 0 6px;
+  font-size: var(--fs-xs);
+}
+
+.ci-group {
+  border-top: 1px solid var(--line);
+}
+
+.ci-group > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ci-group > summary::-webkit-details-marker,
+.ci > details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ci-group[open] > summary .chev {
+  transform: rotate(45deg) translateY(-2px);
+}
+
+.ci-group .sub-h {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ci-list {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ci > details {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+}
+
+.ci > details[open] {
+  background: var(--card-strong);
+}
+
+.ci > details > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.ci-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ci-tok {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.ci-flag {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--warn);
+}
+
+.ci.removed .ci-label {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.ci-text {
+  margin: 0 8px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: var(--fs-xs);
+}
+
+textarea.ci-edit {
+  margin: 0 8px;
+  width: calc(100% - 16px);
+  max-height: 320px;
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  resize: vertical;
+}
+
+.ci-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 4px 8px 6px;
+}
+
+.ci-actions .danger {
+  color: var(--bad);
+}
+
+.ci,
+.ci-group .h {
+  min-width: 0;
+}
+
+.ci-group .h {
+  white-space: nowrap;
+}
+
+.ci-group .sub-h {
+  flex: 1;
+}
+
+.ci > details {
+  overflow: hidden;
 }

@@ -1,3 +1,4 @@
+import type { ContextItem } from './context-edit.js';
 import { AUTO_TIMES, readTime, timeLabel, type AutoSetup } from './auto-setup.js';
 import { join } from 'node:path';
 import { loadConfig } from '../config/load.js';
@@ -891,6 +892,24 @@ export class Session {
           parts: this.code.contextParts,
         }
       : undefined;
+  }
+
+  /** The context inspector: every item the next chat request sends (empty before a chat). */
+  contextItems(): ContextItem[] {
+    return this.code?.contextItems() ?? [];
+  }
+
+  /** Apply an inspector change: edit {id, text}, delete {id}, or reset to defaults. */
+  changeContext(
+    change:
+      { op: 'edit'; id: string; text: string } | { op: 'delete'; id: string } | { op: 'reset' },
+  ): void {
+    const code = this.code;
+    if (!code) throw new Error('no chat yet: send a message first');
+    if (change.op === 'edit') code.editContext(change.id, change.text);
+    else if (change.op === 'delete') code.deleteContext(change.id);
+    else code.resetContext();
+    this.changed();
   }
 
   /** True while /pause holds the chat at its next step. */

@@ -26,6 +26,7 @@ import {
 } from './render.js';
 import * as contextPage from './contextPage.js';
 import * as crew from './crew.js';
+import * as inspector from './inspector.js';
 import * as modelPicker from './modelPicker.js';
 import * as settings from './settings.js';
 
@@ -298,6 +299,7 @@ function apply(s: State): void {
   drawControls(s);
   drawStats(s);
   drawSteps(s.todos);
+  inspector.onBusy(s.busy, post);
   // An older omnexx sends no helpers; treat that as none.
   crew.drawCrew(s.helpers ?? [], logoSrc);
   drawLiveLog();
@@ -325,6 +327,7 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
       (m.unreachable as string[] | undefined) ?? [],
       typeof m.current === 'string' ? m.current : null,
     );
+  if (m.type !== 'state' && inspector.onMessage(m)) return;
   if (m.type !== 'state' && contextPage.onMessage(m)) return;
   if (m.type !== 'state' && settings.onMessage(m)) return;
   if (m.type === 'state') apply(m);
@@ -332,6 +335,7 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
     // A new chat, a fresh omnexx process or a resync: back to the conversation, from the start.
     settings.close();
     contextPage.close();
+    inspector.close();
     crew.resetViews();
     blocks = [];
     logLines = [];
@@ -385,12 +389,14 @@ document.addEventListener('click', (e) => {
     const chip = target.closest<HTMLElement>('[data-action]');
     if (modelPicker.isOpen()) modelPicker.close();
     else if (chip) modelPicker.open(chip, post);
-  } else if (action === 'context') {
+  } else if (action === 'inspect') {
     settings.close();
-    if (contextPage.isOpen()) contextPage.close();
-    else contextPage.open(post);
+    contextPage.close();
+    if (inspector.isOpen()) inspector.close();
+    else inspector.open(post);
   } else if (action === 'settings') {
     contextPage.close();
+    inspector.close();
     if (settings.isOpen()) settings.close();
     else settings.open(post);
   } else if (action === 'clear-log') {
@@ -416,6 +422,9 @@ document.addEventListener('keydown', (e) => {
 
 settings.wire(post);
 contextPage.wire(post);
+inspector.wire(post, () => {
+  contextPage.open(post);
+});
 crew.wire();
 modelPicker.wire(() => {
   settings.open(post);
