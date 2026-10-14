@@ -191,7 +191,7 @@ export class Session {
   browserFrame: (BrowserFrame & { seq: number; at: number }) | undefined;
   /** Helpers (subagents) started for the current message, in start order. */
   helpers: Helper[] = [];
-  /** OMNEXX_NO_MASCOT=1 hides the animated character. */
+  /** The animated character is off unless OMNEXX_MASCOT=1; the header is just the name. */
   readonly mascot: boolean;
   readonly history: string[] = [];
 
@@ -207,7 +207,7 @@ export class Session {
     private readonly now: () => number = Date.now,
   ) {
     this.b = brand({ env: io.env, isTTY: true });
-    this.mascot = !io.env.OMNEXX_NO_MASCOT;
+    this.mascot = Boolean(io.env.OMNEXX_MASCOT) && !io.env.OMNEXX_NO_MASCOT;
     this.nex = { mood: 'hello', at: now(), say: '' };
     this.lastActivity = now();
   }
