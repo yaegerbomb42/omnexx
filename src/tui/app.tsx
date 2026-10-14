@@ -10,6 +10,7 @@ import { DiffView } from './diff.js';
 import { RunCard } from './run-card.js';
 import { AgentsView } from './agents.js';
 import { ModelPicker, RankEditor } from './model-picker.js';
+import { AutoTimePicker, timeLabel } from './auto-setup.js';
 import type { TodoItem } from '../tools/todo.js';
 import { MarkdownLine } from './markdown.js';
 import {
@@ -193,6 +194,9 @@ function StatusBar({ session, width }: { session: Session; width: number }) {
 /** What the empty input box suggests, by what the session is waiting for. */
 function placeholderFor(session: Session): string {
   if (session.chat) return `message ${session.chat.ref} (/setup off to leave)`;
+  if (session.autoSetup?.step === 'custom') return 'how long? e.g. 90m, 3h, 1d (esc to cancel)';
+  if (session.autoSetup?.step === 'goal')
+    return `what should it work on for ${timeLabel(session.autoSetup.time)}? enter on empty: keep improving the repo`;
   if (session.awaiting === 'key') return 'paste the API key, then enter';
   if (session.awaiting === 'url') return '<url> [key] [--name alias]';
   if (session.pending) return 'y to allow, anything else to refuse';
@@ -303,6 +307,14 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
   useInput((ch, key) => {
     if (key.ctrl && ch === 'c') {
       exit();
+      return;
+    }
+    if (session.autoSetup?.step === 'time') {
+      if (key.upArrow) session.autoKey({ up: true });
+      else if (key.downArrow) session.autoKey({ down: true });
+      else if (key.return) session.autoKey({ enter: true });
+      else if (key.escape || ch === 'q') session.autoKey({ close: true });
+      else if (/^[1-8]$/.test(ch)) session.autoKey({ pick: Number(ch) - 1 });
       return;
     }
     if (session.rankView) {
@@ -492,6 +504,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
         {session.agentsView && <AgentsView state={session.agentsView} width={width} />}
         {session.modelPicker && <ModelPicker state={session.modelPicker} width={width} />}
         {session.rankView && <RankEditor state={session.rankView} width={width} />}
+        {session.autoSetup && <AutoTimePicker state={session.autoSetup} width={width} />}
         <Box width={width}>
           <Box flexDirection="column" flexGrow={1}>
             {session.live && (

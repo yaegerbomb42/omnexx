@@ -67,11 +67,15 @@ export const BEYOND_RUBRIC = [
 ];
 
 /** The user's planning effort for this run ([plan] helpers and milestones), as instructions. */
+/** A code run with no test command: the task checks are all that verify the work. */
+const NO_TESTS_NOTE =
+  "No test command is configured for this project, so each task's checks are the only proof it works: give every task a check that exercises the change (run the script or page, a build, `node -e` calling the function, a small test you add and run), never just a file or text search. When a task adds a test, its check runs that test.";
+
 function effortNote(run: Run, mode: PlannerMode): string {
-  const writing =
-    run.state.writing && (mode.kind === 'initial' || mode.kind === 'expand')
-      ? `\n\n${WRITING_PLANNER_NOTE}`
-      : '';
+  const planning = mode.kind === 'initial' || mode.kind === 'expand';
+  let writing = '';
+  if (planning && run.state.writing) writing = `\n\n${WRITING_PLANNER_NOTE}`;
+  else if (planning && run.state.noChecks) writing = `\n\n${NO_TESTS_NOTE}`;
   return writing + effortOnly(run, mode);
 }
 

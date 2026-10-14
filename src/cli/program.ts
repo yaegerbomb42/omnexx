@@ -151,7 +151,7 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .option('--model-worker <alias>', 'worker model alias, e.g. sonnet')
     .option('--push <mode>', 'none | branch')
     .option('--from <ref>', 'branch the run from this ref (default HEAD)')
-    .option('--i-know-there-are-no-checks', 'allow a run without gates (limited to one cycle)')
+    .option('--i-know-there-are-no-checks', 'no longer needed: runs without tests are reviewed')
     .option('-q, --quiet', 'feed: only commits, verdicts and stops')
     .option('--verbose', 'feed: every model turn and tool call')
     .option('--debug', 'feed: every raw event')

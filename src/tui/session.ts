@@ -1,3 +1,4 @@
+import { AUTO_TIMES, readTime, timeLabel, type AutoSetup } from './auto-setup.js';
 import { join } from 'node:path';
 import { loadConfig } from '../config/load.js';
 import { Writable } from 'node:stream';
@@ -98,7 +99,7 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'diff', help: 'browse what changed' },
   {
     name: 'autonomous',
-    help: 'work on the repo for a set time: /autonomous 8h [goal] (default: improve it)',
+    help: 'work on its own for a set time: pick how long, then the goal (or /autonomous 8h [goal])',
   },
   { name: 'go', help: 'plan mode: approve the plan and carry it out' },
   { name: 'undo', help: 'put the files back as they were before the last message' },
@@ -446,6 +447,11 @@ export class Session {
       pending.resolve(yes);
       return;
     }
+    // Setting up an autonomous run: an empty goal is a real answer (keep improving the repo).
+    if (this.autoSetup && this.autoSetup.step !== 'time') {
+      await this.autoInput(text);
+      return;
+    }
     if (!text) return;
     const awaiting = this.awaiting;
     if (awaiting) {
@@ -611,6 +617,70 @@ export class Session {
 
   /** The open /models ranking editor. */
   rankView: RankState | undefined;
+  /** `/autonomous` with no arguments: picking the time, then the goal. */
+  autoSetup: AutoSetup | undefined;
+
+  openAutoSetup(): void {
+    this.autoSetup = { step: 'time', cursor: 4 };
+    this.changed();
+  }
+
+  /** Keys while the time list is open. */
+  autoKey(k: {
+    up?: boolean;
+    down?: boolean;
+    enter?: boolean;
+    close?: boolean;
+    pick?: number;
+  }): void {
+    const a = this.autoSetup;
+    if (a?.step !== 'time') return;
+    if (k.close) {
+      this.autoSetup = undefined;
+      this.push('system', 'autonomous run cancelled');
+    } else if (k.up) a.cursor = Math.max(0, a.cursor - 1);
+    else if (k.down) a.cursor = Math.min(AUTO_TIMES.length - 1, a.cursor + 1);
+    else if (k.enter || k.pick !== undefined) {
+      const choice = AUTO_TIMES[k.pick ?? a.cursor];
+      if (!choice) return;
+      const goal = a.goal === undefined ? {} : { goal: a.goal };
+      if (!choice.value) this.autoSetup = { step: 'custom', ...goal };
+      else if (a.goal !== undefined) void this.launchAuto(choice.value, a.goal);
+      else this.autoSetup = { step: 'goal', time: choice.value };
+    }
+    this.changed();
+  }
+
+  private async launchAuto(time: string, goal: string): Promise<void> {
+    this.autoSetup = undefined;
+    this.push('system', `autonomous run for ${timeLabel(time)}`);
+    try {
+      await this.startRun(goal || AUTONOMOUS_DEFAULT_GOAL, ['--for', time]);
+    } catch (err) {
+      this.push('err', describeError(err));
+    }
+  }
+
+  /** A message typed while setting up an autonomous run: the custom time, or the goal. */
+  private async autoInput(text: string): Promise<void> {
+    const a = this.autoSetup;
+    if (a?.step === 'custom') {
+      const time = readTime(text);
+      if (!time) {
+        this.push('err', `"${text}" isn't a time: try 90m, 3h, 1d or 1h30m`);
+        return;
+      }
+      if (a.goal !== undefined) await this.launchAuto(time, a.goal);
+      else {
+        this.autoSetup = { step: 'goal', time };
+        this.changed();
+      }
+      return;
+    }
+    if (a?.step !== 'goal') return;
+    this.push('user', text || '(keep improving the repo)');
+    await this.launchAuto(a.time, text);
+  }
   /** What choosing in the picker does: switch chat, or add to the ranking. */
   private pickFor: 'chat' | 'rank' = 'chat';
 
@@ -851,6 +921,11 @@ export class Session {
 
   /** Esc: stop the agent's current turn. Returns false when nothing was running. */
   interrupt(): boolean {
+    if (this.autoSetup) {
+      this.autoSetup = undefined;
+      this.push('system', 'autonomous run cancelled');
+      return true;
+    }
     if (!this.code?.busy) return false;
     this.code.interrupt();
     this.react('startled');
@@ -1041,16 +1116,22 @@ export class Session {
         if (rest) await this.startRun(rest);
         else this.setMode('run');
         return;
+      case 'auto':
       case 'autonomous': {
         const [time, ...goal] = args;
         if (!time) {
-          this.push(
-            'system',
-            'usage: /autonomous <time> [goal], e.g. /autonomous 8h make it faster',
-          );
+          this.openAutoSetup();
           return;
         }
-        await this.startRun(goal.join(' ') || AUTONOMOUS_DEFAULT_GOAL, ['--for', time]);
+        const valid = readTime(time);
+        if (!valid) {
+          // "/autonomous make it faster": no time given, so ask for one and keep the goal.
+          this.autoSetup = { step: 'time', cursor: 4, goal: rest };
+          this.push('system', 'pick how long it should work');
+          this.changed();
+          return;
+        }
+        await this.startRun(goal.join(' ') || AUTONOMOUS_DEFAULT_GOAL, ['--for', valid]);
         return;
       }
       case 'plan':

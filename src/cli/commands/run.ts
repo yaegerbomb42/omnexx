@@ -1,3 +1,5 @@
+import { homedir } from 'node:os';
+import { startTracking } from '../bootstrap.js';
 import { isWritingGoal, resolveWriting } from '../../core/writing.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -20,6 +22,9 @@ import { RUN_FLAGS_FILE, superviseForeground } from './control.js';
 import { resolveRunDeps } from '../run-deps.js';
 import { EXIT } from '../exit-codes.js';
 import { bootstrapEmptyProject, isEmptyProject } from '../bootstrap.js';
+
+/** Folders too broad to run in: the home folder and the filesystem root. */
+const TOO_BROAD = new Set([resolve(homedir()), resolve('/')]);
 
 export interface RunFlags {
   goalFile?: string;
@@ -177,19 +182,25 @@ export async function runCommand(io: CliIO, goal: string, flags: FullRunFlags): 
       `empty folder: started a ${writingAsked ? 'writing ' : ''}project (git init, ${files.join(', ')})`,
     );
   }
-  const { config, paths, clock } = await resolveRunDeps(io, io.cwd, overrides);
-  const writing = resolveWriting(config, goal);
-  if (writing && !config.gates.length)
+  if (TOO_BROAD.has(resolve(io.cwd)))
+    throw new UsageError(
+      `omnexx works inside one project folder, not ${io.cwd}`,
+      'cd into the folder you want it to work on (or an empty new one) and run it there',
+    );
+  if (await startTracking(io.cwd))
     println(
       io.stderr,
-      'writing run: no tests needed; each piece is checked by its plan and reviewed before it is kept',
+      'not a git repository: started one (git init, a .gitignore, a first commit) so every change can be undone',
     );
-  if (!config.gates.length && !writing && !flags.iKnowThereAreNoChecks) {
-    throw new UsageError(
-      "no gates configured: nothing would check the agent's work",
-      'run `omnexx init`, pass --gate "npm test", or --i-know-there-are-no-checks for a single cycle',
+  const { config, paths, clock } = await resolveRunDeps(io, io.cwd, overrides);
+  const writing = resolveWriting(config, goal);
+  if (!config.gates.length)
+    println(
+      io.stderr,
+      writing
+        ? 'writing run: no tests needed; each piece is checked by its plan and reviewed before it is kept'
+        : 'no tests configured: each change is checked by its task checks and a reviewer (add tests with `omnexx init` for stronger checks)',
     );
-  }
   const store = await createRun({
     paths,
     cwd: io.cwd,

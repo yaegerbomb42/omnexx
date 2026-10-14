@@ -187,3 +187,48 @@ async function bootstrapWritingProject(dir: string): Promise<string[]> {
   ]);
   return Object.keys(files);
 }
+
+const TRACK_GITIGNORE = `node_modules/
+dist/
+build/
+.venv/
+venv/
+__pycache__/
+.DS_Store
+*.log
+.env
+.env.*
+`;
+
+/**
+ * A folder with files but no git: start tracking it so every change the agent makes can be undone.
+ * Adds a .gitignore for dependencies, builds and secrets when there is none, then commits what's
+ * there. Returns false when the folder already is a repository with a commit.
+ */
+export async function startTracking(dir: string): Promise<boolean> {
+  const top = await git(dir, ['rev-parse', '--show-toplevel'], { allowFailure: true });
+  const head = await git(dir, ['rev-parse', '--verify', '-q', 'HEAD'], { allowFailure: true });
+  if (top.exitCode === 0 && head.exitCode === 0) return false;
+  if (top.exitCode !== 0) await git(dir, ['init', '-q']);
+  if (!(await readdir(dir)).includes('.gitignore'))
+    await writeFile(join(dir, '.gitignore'), TRACK_GITIGNORE);
+  await git(dir, ['add', '-A']);
+  const email = await git(dir, ['config', 'user.email'], { allowFailure: true });
+  const who = email.stdout.trim()
+    ? []
+    : ['-c', 'user.name=omnexx', '-c', 'user.email=omnexx@users.noreply.invalid'];
+  await git(dir, [
+    '-c',
+    'commit.gpgsign=false',
+    '-c',
+    'core.hooksPath=/dev/null',
+    ...who,
+    'commit',
+    '--no-verify',
+    '--allow-empty',
+    '-q',
+    '-m',
+    'chore: start tracking with omnexx',
+  ]);
+  return true;
+}
