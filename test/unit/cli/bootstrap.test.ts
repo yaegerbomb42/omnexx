@@ -5,6 +5,7 @@ import { loadConfig } from '../../../src/config/load.js';
 import {
   bootstrapEmptyProject,
   isEmptyProject,
+  projectFolderFor,
   startTracking,
 } from '../../../src/cli/bootstrap.js';
 import { git } from '../../../src/git/git.js';
@@ -80,5 +81,35 @@ describe('startTracking', () => {
     expect(await startTracking(dir)).toBe(true);
     expect((await git(dir, ['rev-parse', '--verify', 'HEAD'])).exitCode).toBe(0);
     expect(await readFile(join(dir, '.gitignore'), 'utf8')).toBe('secret/\n');
+  });
+});
+
+describe('project folder for a too-broad cwd', () => {
+  it('keeps a normal project folder as is', async () => {
+    const home = await tempDir();
+    const project = join(home, 'app');
+    expect(await projectFolderFor(project, 'fix the bug', home)).toEqual({
+      dir: project,
+      created: false,
+    });
+  });
+
+  it('makes a new folder under ~/omnexx-projects named after the goal when run from / or home', async () => {
+    const home = await tempDir();
+    const first = await projectFolderFor('/', 'Build a Snake game!', home);
+    expect(first).toEqual({
+      dir: join(home, 'omnexx-projects', 'build-a-snake-game'),
+      created: true,
+    });
+    expect(await isEmptyProject(first.dir)).toBe(true);
+    await writeFile(join(first.dir, 'x.txt'), 'x');
+    const second = await projectFolderFor(home, 'build a snake game', home);
+    expect(second.dir).toBe(join(home, 'omnexx-projects', 'build-a-snake-game-2'));
+  });
+
+  it('falls back to "project" when the goal has no letters', async () => {
+    const home = await tempDir();
+    const { dir } = await projectFolderFor('/', '???', home);
+    expect(dir).toBe(join(home, 'omnexx-projects', 'project'));
   });
 });

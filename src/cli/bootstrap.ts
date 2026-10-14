@@ -1,5 +1,6 @@
-import { readdir, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import { PROJECT_CONFIG } from '../config/load.js';
 import { git } from '../git/git.js';
 import { detectBrowserBackend } from '../tools/extra/browser/detector.js';
@@ -231,4 +232,37 @@ export async function startTracking(dir: string): Promise<boolean> {
     'chore: start tracking with omnexx',
   ]);
   return true;
+}
+
+/** Where new projects go when omnexx is started somewhere too broad to work in. */
+const PROJECTS_FOLDER = 'omnexx-projects';
+const MAX_SLUG_LENGTH = 40;
+
+function goalSlug(goal: string): string {
+  const slug = goal
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .slice(0, MAX_SLUG_LENGTH)
+    .replace(/^-+|-+$/g, '');
+  return slug || 'project';
+}
+
+/**
+ * The folder a run should work in. The home folder and `/` are too broad (VS Code with no
+ * folder open starts omnexx in `/`), so a goal started there gets its own new folder under
+ * ~/omnexx-projects, named after the goal; an existing non-empty one gets a -2, -3... suffix.
+ */
+export async function projectFolderFor(
+  cwd: string,
+  goal: string,
+  home: string = homedir(),
+): Promise<{ dir: string; created: boolean }> {
+  const tooBroad = new Set([resolve(home), resolve('/')]);
+  if (!tooBroad.has(resolve(cwd))) return { dir: cwd, created: false };
+  const base = join(home, PROJECTS_FOLDER, goalSlug(goal));
+  for (let n = 1; ; n++) {
+    const dir = n === 1 ? base : `${base}-${n}`;
+    await mkdir(dir, { recursive: true });
+    if (await isEmptyProject(dir)) return { dir, created: true };
+  }
 }
