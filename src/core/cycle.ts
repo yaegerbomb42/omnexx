@@ -373,6 +373,10 @@ export async function stepAct(run: Run): Promise<void> {
   const toolCtx = toolContext(run, edited);
   const running = new RunningContext(run.store, task.id, () => run.clock.now());
   toolCtx.runningContext = running;
+  let editOps = 0;
+  toolCtx.onEdit = () => {
+    editOps++;
+  };
   const runningText = await running.forPrompt();
   const [goal, intent, notes, progressTail, codemap] = await Promise.all([
     run.store.readGoal(),
@@ -450,7 +454,7 @@ export async function stepAct(run: Run): Promise<void> {
         noEditTurns: run.config.stuck.no_edit_turns,
         burnTokens: burnThreshold(run.state.cycleTokens, run.config.stuck.burn_factor),
       },
-      () => edited.size,
+      () => editOps,
     ),
     compaction: {
       settings: {

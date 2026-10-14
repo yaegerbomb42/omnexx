@@ -54,7 +54,7 @@ async function applyEdits(
     text = text.replace(e.old_str, () => e.new_str);
   }
   await writeFile(abs, text);
-  ctx.edited.add(ctx.jail.relative(abs));
+  recordEdit(ctx, abs);
   return ok(`edited ${path} (${edits.length} replacement${edits.length > 1 ? 's' : ''})`);
 }
 
@@ -126,7 +126,14 @@ export const writeFileTool: Tool<typeof writeSchema> = {
     }
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, input.content);
-    ctx.edited.add(ctx.jail.relative(abs));
+    recordEdit(ctx, abs);
     return ok(`wrote ${input.path} (${input.content.split('\n').length} lines)`);
   },
 };
+
+/** Note a successful edit: the file joins `edited`, and every edit (repeat ones too) is counted. */
+function recordEdit(ctx: ToolContext, abs: string): void {
+  const rel = ctx.jail.relative(abs);
+  ctx.edited.add(rel);
+  ctx.onEdit?.(rel);
+}
