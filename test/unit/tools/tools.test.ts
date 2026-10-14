@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { readEvents } from '../../../src/core/events.js';
@@ -90,7 +90,7 @@ describe('search', () => {
     expect(r.content).toContain('src/a.ts:2:');
     expect((await searchTool.run({ pattern: 'sk-ant' }, ctx)).content).toBe('no matches');
     expect((await searchTool.run({ pattern: 'v\\d\\d', glob: 'src/*.ts' }, ctx)).content).toMatch(
-      /more matches not shown/,
+      /src\/big\.ts has more than 20 matches/,
     );
     expect((await searchTool.run({ pattern: '(' }, ctx)).content).toMatch(/invalid regex/);
     expect((await searchTool.run({ pattern: 'x', path: '..' }, ctx)).isError).toBe(true);
@@ -321,5 +321,33 @@ describe('read size caps', () => {
     const wide = await readTool.run({ path: 'src/wide.js' }, ctx);
     expect(wide.content.length).toBeLessThan(62_000);
     expect(wide.content).toMatch(/\(lines \d+-300 not shown\)/);
+  });
+});
+
+describe('search scoping', () => {
+  it('skips unreadable files and dependency folders, and says where a broad search hit', async () => {
+    const root = await repo();
+    const ctx = await toolContext(root);
+    await writeFile(join(root, 'src/locked.ts'), 'export const turbotoolbox = 1;\n');
+    await chmod(join(root, 'src/locked.ts'), 0o000);
+    await writeFile(join(root, 'src/open.ts'), 'export const turbotoolbox = 2;\n');
+    await mkdir(join(root, 'node_modules/pkg'), { recursive: true });
+    await writeFile(join(root, 'node_modules/pkg/i.js'), 'turbotoolbox\n');
+    const r = await searchTool.run({ pattern: 'turbotoolbox' }, ctx);
+    expect(r.isError).toBeFalsy();
+    expect(r.content).toContain('src/open.ts:1:');
+    expect(r.content).not.toContain('node_modules');
+    await chmod(join(root, 'src/locked.ts'), 0o644);
+
+    for (let d = 0; d < 8; d++) {
+      await mkdir(join(root, `apps/a${String(d)}`), { recursive: true });
+      for (let f = 0; f < 3; f++)
+        await writeFile(
+          join(root, `apps/a${String(d)}/f${String(f)}.ts`),
+          Array.from({ length: 10 }, (_, i) => `const hit${String(i)} = 1;`).join('\n'),
+        );
+    }
+    const broad = await searchTool.run({ pattern: 'hit\\d', path: 'apps' }, ctx);
+    expect(broad.content).toMatch(/more matches not shown\. Most are in: a\d \(30\)/);
   });
 });

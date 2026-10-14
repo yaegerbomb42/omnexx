@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.2
+
+- **Search scopes itself**: files it can't read are skipped instead of failing the whole search;
+  dependency, build and cache folders are left out (and `Library`, `.config` and the like when
+  working in a home folder); at most 20 matches per file; a search that hits too much says
+  which folders the matches are in, so the next one can narrow.
+
 ## 0.11.1
 
 - **Quieter chat**: thinking lines show the decision ("Let's list that path") instead of the
