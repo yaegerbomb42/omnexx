@@ -160,7 +160,9 @@ describe('meter attribution under concurrency', () => {
     await new Promise<void>((r) => upstream.listen(0, '127.0.0.1', r));
     cleanups.push(() => upstream.close());
     const dir = await mkdtemp(join(tmpdir(), 'bench-meter-'));
-    cleanups.push(() => { rmSync(dir, { recursive: true, force: true }); });
+    cleanups.push(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
     const log = join(dir, 'calls.jsonl');
     const ep = {
       baseUrl: `http://127.0.0.1:${String((upstream.address() as AddressInfo).port)}/v1`,
