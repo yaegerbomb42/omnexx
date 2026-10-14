@@ -1,4 +1,3 @@
-import { homedir } from 'node:os';
 import { startTracking } from '../bootstrap.js';
 import { isWritingGoal, resolveWriting } from '../../core/writing.js';
 import { readFile } from 'node:fs/promises';
@@ -21,10 +20,8 @@ import { println, type CliIO } from '../io.js';
 import { RUN_FLAGS_FILE, superviseForeground } from './control.js';
 import { resolveRunDeps } from '../run-deps.js';
 import { EXIT } from '../exit-codes.js';
-import { bootstrapEmptyProject, isEmptyProject } from '../bootstrap.js';
+import { bootstrapEmptyProject, isEmptyProject, projectFolderFor } from '../bootstrap.js';
 
-/** Folders too broad to run in: the home folder and the filesystem root. */
-const TOO_BROAD = new Set([resolve(homedir()), resolve('/')]);
 
 export interface RunFlags {
   goalFile?: string;
@@ -172,7 +169,15 @@ export interface FullRunFlags extends RunFlags {
 }
 
 /** `omnexx run`: create the run, then supervise it here or in a detached process. */
-export async function runCommand(io: CliIO, goal: string, flags: FullRunFlags): Promise<number> {
+export async function runCommand(
+  callerIo: CliIO,
+  goal: string,
+  flags: FullRunFlags,
+): Promise<number> {
+  const folder = await projectFolderFor(callerIo.cwd, goal);
+  const io: CliIO = { ...callerIo, cwd: folder.dir };
+  if (folder.created)
+    println(io.stderr, `started from ${callerIo.cwd}: working in a new folder, ${folder.dir}`);
   const overrides = flagsToConfig(flags);
   const writingAsked = flags.kind === 'writing' || (flags.kind !== 'code' && isWritingGoal(goal));
   if (await isEmptyProject(io.cwd)) {
@@ -182,11 +187,6 @@ export async function runCommand(io: CliIO, goal: string, flags: FullRunFlags): 
       `empty folder: started a ${writingAsked ? 'writing ' : ''}project (git init, ${files.join(', ')})`,
     );
   }
-  if (TOO_BROAD.has(resolve(io.cwd)))
-    throw new UsageError(
-      `omnexx works inside one project folder, not ${io.cwd}`,
-      'cd into the folder you want it to work on (or an empty new one) and run it there',
-    );
   if (await startTracking(io.cwd))
     println(
       io.stderr,
