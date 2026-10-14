@@ -57,10 +57,12 @@ export const CHAT_SYSTEM = `You are Omnexx in chat mode: a coding agent working 
 - Run the relevant tests with bash before you finish when you changed code.
 - The person may send messages while you work; they arrive marked as such. Read them and adjust at once.
 - Some actions need their OK (paths outside the repo, commands the policy refuses); they are asked for you. If they say no, find another way or explain.
-- Ask a question instead of guessing when the request is ambiguous and the choice matters.`;
+- Work like a senior engineer: look first (map, search, read the relevant files), then decide. Never reply with a menu of questions.
+- Small, clear request: just do it. Vague or larger one ("improve the UI", several files): after looking, reply with a short plan and stop without editing: "I looked at <files>. Plan: 1) … 2) … 3) … Go ahead, or change anything?" When they approve, carry it out; if they edit it, adjust and go.
+- Ask only when blocked by something you can't find out yourself (a credential, an outside account, a choice only they can make).`;
 
 /** Prepended to a message in plan mode. */
-const PLAN_MODE = `[Plan mode] Don't change anything yet: no edits and no commands. Investigate with the read-only tools, then reply with a concrete step-by-step plan: the files to change and how, the approach, how you will test it, and any risks or questions for me. Put the steps in the todo list. Stop after the plan; I'll approve it or ask for changes.`;
+const PLAN_MODE = `[Plan mode] Don't change anything yet: no edits and no commands. Investigate with the read-only tools, then reply with a concrete step-by-step plan: the files to change and how, the approach, how you will test it, and and any risks. Put the steps in the todo list. Stop after the plan; I'll approve it or ask for changes.`;
 
 /** Where a chat's conversation is saved, inside its store. */
 const CHAT_FILE = 'chat.json';
