@@ -24,3 +24,22 @@ describe('autonomous setup', () => {
     expect(timeLabel('1d')).toBe('1 day');
   });
 });
+
+describe('CLI notes vs errors in the chat view', () => {
+  it('keeps notes neutral and real failures red', async () => {
+    const { looksLikeError } = await import('../../../src/tui/session.js');
+    for (const note of [
+      'not a git repository: started one (git init, a .gitignore, a first commit) so every change can be undone',
+      'no tests configured: each change is checked by its task checks and a reviewer (add tests with `omnexx init` for stronger checks)',
+      'supervisor pid 85689; `omnexx status r_1`, `omnexx logs -f r_1`',
+      'empty folder: started a writing project (git init, omnexx.toml)',
+    ])
+      expect(looksLikeError(note)).toBe(false);
+    for (const err of [
+      'error[usage]: missing goal',
+      'setup command failed: npm install (exit 1)',
+      'cannot read package.json',
+    ])
+      expect(looksLikeError(err)).toBe(true);
+  });
+});

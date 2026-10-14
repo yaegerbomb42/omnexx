@@ -49,3 +49,39 @@ describe('list', () => {
     expect(await listTree(root, root, 1)).toBe('src/');
   });
 });
+
+describe('forgiving tool input', () => {
+  it('renames the argument names models use and drops extras', async () => {
+    const { lenientInput } = await import('../../../src/agent/loop.js');
+    const { readTool } = await import('../../../src/tools/read.js');
+    const { searchTool } = await import('../../../src/tools/search.js');
+    expect(
+      lenientInput(readTool.schema, { path: 'src/main.js', line_start: 1, line_end: 400 }),
+    ).toEqual({ path: 'src/main.js', start: 1, end: 400 });
+    const s = lenientInput(searchTool.schema, {
+      pattern: 'requestAnimationFrame',
+      max_results: 50,
+      depth: 2,
+    });
+    expect(searchTool.schema.safeParse(s).success).toBe(true);
+    expect(lenientInput(readTool.schema, { path: 'a.ts' })).toBeUndefined();
+  });
+});
+
+describe('ambiguous edits', () => {
+  it('say where each copy of old_str is', async () => {
+    const { strReplaceTool } = await import('../../../src/tools/edit.js');
+    const { toolContext } = await import('../../support/tool-context.js');
+    const root = await tempRepo();
+    await writeFile(
+      join(root, 'g.js'),
+      'a\nrequestAnimationFrame(loop);\nb\nrequestAnimationFrame(loop);\n',
+    );
+    const ctx = await toolContext(root);
+    const r = await strReplaceTool.run(
+      { path: 'g.js', old_str: 'requestAnimationFrame(loop);', new_str: 'x' },
+      ctx,
+    );
+    expect(r.content).toContain('at lines 2, 4');
+  });
+});

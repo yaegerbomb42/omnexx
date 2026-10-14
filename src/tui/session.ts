@@ -49,6 +49,13 @@ import { emptyTelemetry, fold, type Telemetry } from '../telemetry/aggregate.js'
 import { EventTail } from '../telemetry/feed.js';
 import { humanize, type Verbosity } from '../telemetry/humanize.js';
 
+/** A stderr line that reports a failure, as opposed to a note about what the CLI did. */
+export function looksLikeError(line: string): boolean {
+  const leads = /^\s*(?:error|✗|fatal|warning|refused)\b/i;
+  const says = /\b(?:error|failed|cannot|can't|not found|denied|invalid)\b/i;
+  return leads.test(line) || says.test(line);
+}
+
 export type EntryKind = 'feed' | 'out' | 'err' | 'user' | 'system' | 'act' | 'think';
 export interface Entry {
   id: number;
@@ -420,7 +427,9 @@ export class Session {
         write: (chunk: Buffer | string, _enc, cb) => {
           const s = chunk.toString();
           if (kind === 'out') out += s;
-          this.push(kind, s);
+          // CLI notes go to stderr too ("started a git repository"); only real errors are red.
+          for (const line of s.split('\n').filter((l) => l.trim()))
+            this.push(kind === 'err' && !looksLikeError(line) ? 'system' : kind, line);
           cb();
         },
       });

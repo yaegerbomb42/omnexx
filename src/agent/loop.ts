@@ -79,6 +79,50 @@ const TOOL_ALIASES: Record<string, string> = {
 };
 
 /** What the model is told when it seems stuck in an interactive turn. */
+/** Argument names models use for the ones our tools take. */
+const ARG_SYNONYMS: Record<string, string> = {
+  file_path: 'path',
+  filepath: 'path',
+  filename: 'path',
+  file: 'path',
+  dir: 'path',
+  directory: 'path',
+  line_start: 'start',
+  start_line: 'start',
+  from_line: 'start',
+  line_end: 'end',
+  end_line: 'end',
+  to_line: 'end',
+  query: 'pattern',
+  regex: 'pattern',
+  cmd: 'command',
+  old_string: 'old_str',
+  new_string: 'new_str',
+  old_text: 'old_str',
+  new_text: 'new_str',
+  text: 'content',
+};
+
+/**
+ * The input with synonyms renamed and keys the tool doesn't take dropped, or undefined when
+ * nothing changed. Only for tools whose schema is a plain object.
+ */
+export function lenientInput(schema: unknown, input: unknown): Record<string, unknown> | undefined {
+  const shape = (schema as { shape?: Record<string, unknown> }).shape;
+  if (!shape || typeof input !== 'object' || input === null || Array.isArray(input))
+    return undefined;
+  const out: Record<string, unknown> = {};
+  let changed = false;
+  for (const [k, v] of Object.entries(input)) {
+    const name: string | undefined = k in shape ? k : ARG_SYNONYMS[k];
+    if (name && name in shape && !(name in out)) {
+      out[name] = v;
+      if (name !== k) changed = true;
+    } else changed = true;
+  }
+  return changed ? out : undefined;
+}
+
 export function stuckNudge(detail: string): string {
   return `[harness] You seem to be going in circles (${detail}). If the request is done, stop calling tools and give your summary now. If not, say in one line what is blocking you, then take a different approach; don't repeat the same searches or commands.`;
 }
@@ -561,6 +605,14 @@ export async function runAgentLoop(
           const decoded = decodeJsonStrings(call.input);
           if (decoded !== call.input) {
             const again = tool.schema.safeParse(prepare(decoded));
+            if (again.success) parsed = again;
+          }
+        }
+        // Models name arguments their own way (line_start, file_path) and add extras (max_results).
+        if (!parsed.success) {
+          const lenient = lenientInput(tool.schema, call.input);
+          if (lenient !== undefined) {
+            const again = tool.schema.safeParse(prepare(lenient));
             if (again.success) parsed = again;
           }
         }
