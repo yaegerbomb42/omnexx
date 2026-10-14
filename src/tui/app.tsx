@@ -546,6 +546,14 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
             />
           </Box>
         )}
+        {!showMascot && (
+          <Text>
+            <Text color={GREEN} bold>
+              omnexx
+            </Text>
+            <Text color={GRAY}>{` · ${session.mode === 'run' ? 'long run' : session.mode}`}</Text>
+          </Text>
+        )}
         <Box width={width}>
           <Box borderStyle="single" borderColor={GREEN} paddingX={1} flexGrow={1}>
             <Text color={GREEN}>{'› '}</Text>
