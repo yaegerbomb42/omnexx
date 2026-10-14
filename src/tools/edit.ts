@@ -4,6 +4,17 @@ import { z } from 'zod';
 import { OmnexxError } from '../errors.js';
 import { fail, ok, resolvePath, type Tool, type ToolContext, type ToolOutput } from './types.js';
 
+/** 1-based line numbers where `needle` starts in `text` (the first ten). */
+function linesOf(text: string, needle: string): number[] {
+  const out: number[] = [];
+  let at = text.indexOf(needle);
+  while (at >= 0 && out.length < 10) {
+    out.push(text.slice(0, at).split('\n').length);
+    at = text.indexOf(needle, at + needle.length);
+  }
+  return out;
+}
+
 export const WRITE_MAX_LINES = 50;
 
 const editSchema = z.strictObject({ old_str: z.string().min(1), new_str: z.string() });
@@ -35,8 +46,9 @@ async function applyEdits(
   for (const [i, e] of edits.entries()) {
     const n = countOccurrences(text, e.old_str);
     if (n !== 1) {
+      const where = n > 1 ? ` (at lines ${linesOf(text, e.old_str).join(', ')})` : '';
       return fail(
-        `edit ${i + 1}: old_str found ${n} times in ${path}; it must match exactly once (include more surrounding lines). No changes were written.`,
+        `edit ${i + 1}: old_str found ${n} times in ${path}${where}; it must match exactly once: add a line before or after that only the one you mean has. No changes were written.`,
       );
     }
     text = text.replace(e.old_str, () => e.new_str);

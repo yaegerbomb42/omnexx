@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.3
+
+- Notes from a command ("started a git repository", "no tests configured") no longer show as red
+  errors in the chat view; only real failures do.
+- Tools take the argument names models use (`line_start`, `file_path`, `query`, …) and ignore
+  extras like `max_results` instead of failing the call.
+- An edit whose text appears more than once says on which lines, so the model can pick the one
+  it means instead of re-reading the file.
+
 ## 0.11.2
 
 - **Search scopes itself**: files it can't read are skipped instead of failing the whole search;
