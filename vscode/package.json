@@ -1,8 +1,8 @@
 {
   "name": "omnexx",
   "displayName": "omnexx",
-  "description": "A Cline-style chat for the omnexx coding agent, with omnexx built in: chat, plan or run autonomously, see token use and cost, and watch long runs' todo lists.",
-  "version": "0.7.0",
+  "description": "Chat with the omnexx coding agent right in your editor, with omnexx built in: chat, plan or run autonomously, see token use and cost, and watch long runs' todo lists.",
+  "version": "0.8.1",
   "publisher": "yaegerbomb42",
   "license": "MIT",
   "private": true,

@@ -1,9 +1,9 @@
 # omnexx for VS Code
 
-A chat panel for the [omnexx](https://omnexx.org) coding agent, in the sidebar like Cline: chat
+A chat panel for the [omnexx](https://omnexx.org) coding agent, right in your sidebar: chat
 with it, have it plan, or let it run on its own for hours, and watch every step.
 
-![The omnexx chat panel mid-task](media/screenshot.png)
+![The omnexx chat panel mid-task](https://raw.githubusercontent.com/yaegerbomb42/omnexx/main/vscode/media/screenshot.png)
 
 ## Needs
 
