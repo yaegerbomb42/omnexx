@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.10.0
+
+- **Fast path**: small goals get one pass on the whole goal, gated and reviewed like any cycle;
+  the planner takes over only if it doesn't get there (`[plan] mode = auto|fast|full`).
+- **Planning effort for long runs**: `--plan-helpers N` (planner helpers at once) and
+  `--plan-milestones N` (a cap the first plan is held to).
+- **Writing runs**: books, reports and research documents, no tests needed ("write me a book
+  about…" or `--kind writing`). An outline and a bible first, a task per chapter with word-count
+  and placeholder checks, an editor-style reviewer, and chapter summaries in the context map.
+- **Far fewer tokens** (head-to-head bench, same model as Cline and OpenHands): an early audit
+  skips padded milestones, the end audit judges only what was asked, the reviewer blocks only on
+  evidence, review findings are amended instead of redone, and committed `node_modules` is no
+  longer described file by file. Most bench tasks now take 8–19k fresh tokens, down from
+  63k–2.4M.
+- **Fewer tool slips**: a `list` tool; invented tool names (`print_tree`, `ls`, `cat`, `grep`…)
+  run the real tool; an empty search lists files; chat turns that circle are told once, then
+  stopped; dev servers run 20 s and are stopped for you; "Missing script" names the scripts that
+  exist.
+- **Clearer terminal**: your messages, tool use, thinking and errors each have their own look.
+- **Nimble judge** speaks Ollama's current systemone format. The planner falls back to the next
+  model when one keeps failing, and a stuck task asks for a different approach before switching
+  models.
+- **Bench**: Cline and OpenHands runners behind a metering proxy (`--endpoint PREFIX`).
+
 ## 0.9.0
 
 - **Routing strategies per role**: priority, random, least busy (parallel helpers spread over

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0
+
+- Built on omnexx 0.10.0: fast path for small goals, writing runs (books, reports), fewer
+  tokens per task and fewer tool slips.
+- **Browser settings**: engine (Chromium or Camoufox), visible window or headless, profile folder
+  and session name, saved to your config.
+
 ## 0.6.0
 
 - **omnexx is built in.** The extension ships its own copy of omnexx and runs it on the editor's
