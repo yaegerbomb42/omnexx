@@ -83,6 +83,33 @@ describe('anti-cheat', () => {
     expect(v.map((x) => x.rule)).toEqual(['deleted-test', 'deleted-test', 'test-count-drop']);
   });
 
+  it('allows a test ported to another language when git sees it as delete plus add', () => {
+    // A JS→TS port rewrites most lines, so `git diff -M` reports D + A instead of R (bench task-03).
+    const v = antiCheat({
+      ...base,
+      changes: [
+        { status: 'D', path: 'test/legacy.test.js', added: 0, removed: 40 },
+        { status: 'A', path: 'test/legacy.test.ts', added: 45, removed: 0 },
+      ],
+      patch: '',
+    });
+    expect(v).toEqual([]);
+  });
+
+  it('still flags a deleted test whose replacement lives elsewhere or is not a test', () => {
+    const v = antiCheat({
+      ...base,
+      changes: [
+        { status: 'D', path: 'test/a.test.js', added: 0, removed: 5 },
+        { status: 'A', path: 'other/a.test.ts', added: 5, removed: 0 },
+        { status: 'D', path: 'test/b.test.js', added: 0, removed: 5 },
+        { status: 'A', path: 'test/b.ts', added: 5, removed: 0 },
+      ],
+      patch: '',
+    });
+    expect(v.map((x) => x.detail)).toEqual(['test/a.test.js', 'test/b.test.js']);
+  });
+
   it.each([
     "it.skip('x', () => {})",
     "test.only('x', () => {})",

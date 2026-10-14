@@ -52,14 +52,32 @@ export interface AntiCheatInput {
   results: readonly GateResult[];
 }
 
+/** A path without its last extension: `test/a.test.js` → `test/a.test`. */
+const stem = (p: string): string => p.replace(/\.[^./]+$/, '');
+
+/**
+ * Deleted tests with an added test at the same path in another language (`a.test.js` →
+ * `a.test.ts`). A port rewrites most lines, so git reports a delete plus an add, not a rename.
+ */
+function portedTests(changes: readonly FileChange[], isTest: (p: string) => boolean): Set<string> {
+  const added = new Set(
+    changes.filter((c) => c.status === 'A' && isTest(c.path)).map((c) => stem(c.path)),
+  );
+  return new Set(
+    changes.filter((c) => c.status === 'D' && added.has(stem(c.path))).map((c) => c.path),
+  );
+}
+
 export function antiCheat(input: AntiCheatInput): Violation[] {
   const allow = new Set(input.allow);
   const out: Violation[] = [];
   const isTest = (p: string): boolean => matchesAny(p, TEST_FILE_PATTERNS) !== undefined;
 
   if (!allow.has('delete-tests')) {
+    const ported = portedTests(input.changes, isTest);
     for (const c of input.changes) {
-      if (c.status === 'D' && isTest(c.path)) out.push({ rule: 'deleted-test', detail: c.path });
+      if (c.status === 'D' && isTest(c.path) && !ported.has(c.path))
+        out.push({ rule: 'deleted-test', detail: c.path });
       if (c.status === 'R' && c.oldPath && isTest(c.oldPath) && !isTest(c.path)) {
         out.push({ rule: 'deleted-test', detail: `${c.oldPath} renamed to non-test ${c.path}` });
       }

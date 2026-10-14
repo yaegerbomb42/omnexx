@@ -95,6 +95,41 @@ describe('worktree + checkpoint + rollback', () => {
     await removeWorktree(repo, wt.path);
   });
 
+  it('leaves coverage reports a test run wrote out of the diff and the commit', async () => {
+    // Bench task-02: `vitest --coverage` wrote coverage/ on every gate run; it was committed, the
+    // audit then planned work to "reconcile" it, and regenerated timestamps looked like changes.
+    const repo = await seeded();
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(join(repo, 'coverage/src'), { recursive: true });
+    await mkdir(join(repo, 'pkg/.nyc_output'), { recursive: true });
+    await writeFile(join(repo, 'coverage/src/index.html'), '<p>at 12:00</p>\n');
+    await writeFile(join(repo, 'pkg/.nyc_output/out.json'), '{}\n');
+    const start = await headSha(repo);
+    expect((await workingTreeDiff(repo, start)).changes).toEqual([]);
+
+    await writeFile(join(repo, 'a.txt'), 'two\n');
+    const diff = await workingTreeDiff(repo, start);
+    expect(diff.changes.map((c) => c.path)).toEqual(['a.txt']);
+    const sha = await commitCheckpoint(repo, 's', '', { run: 'r', task: 't', cycle: 1 });
+    expect(
+      (await git(repo, ['diff-tree', '--no-commit-id', '--name-only', '-r', sha])).stdout,
+    ).toBe('a.txt');
+  });
+
+  it('still stages coverage files the repo already tracks', async () => {
+    const repo = await seeded();
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(join(repo, 'coverage'), { recursive: true });
+    await writeFile(join(repo, 'coverage/badge.svg'), 'old\n');
+    await git(repo, ['add', '-A']);
+    await git(repo, ['commit', '-qm', 'badge']);
+    const start = await headSha(repo);
+    await writeFile(join(repo, 'coverage/badge.svg'), 'new\n');
+    expect((await workingTreeDiff(repo, start)).changes.map((c) => c.path)).toEqual([
+      'coverage/badge.svg',
+    ]);
+  });
+
   it('commits with a fallback identity when none is configured', async () => {
     const repo = await seeded();
     await git(repo, ['config', '--unset', 'user.email']);

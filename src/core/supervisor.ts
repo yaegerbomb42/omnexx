@@ -629,7 +629,13 @@ class Supervisor {
   private async planAudit(): Promise<boolean> {
     const r = this.run;
     const cfg = r.config.review;
-    if (!cfg.audit || r.state.auditRounds >= cfg.max_audits) return false;
+    // A goal the fast path finished is small: one round of gaps, not a series of re-audits that
+    // each find something new to add (bench task-02's second round planned 10 nodes of polish).
+    const maxRounds = r.state.fastPath === 'tried' ? 1 : cfg.max_audits;
+    // Reaching here means the last round's work is finished: improvement rounds after it are not
+    // audit work and must not inherit its cycle budget.
+    r.state.auditWorkFrom = undefined;
+    if (!cfg.audit || r.state.auditRounds >= maxRounds) return false;
     if (this.goalMetAt && this.goalMetAt === (await this.head())) return false;
     const result = await this.audit();
     const round = r.state.auditRounds + 1;
@@ -646,7 +652,39 @@ class Supervisor {
       if (!(err instanceof PlannerIncomplete)) throw err;
       return false;
     }
-    return r.requirePlan().nodes.length > before && runnableTasks(r.requirePlan()).length > 0;
+    const added =
+      r.requirePlan().nodes.length > before && runnableTasks(r.requirePlan()).length > 0;
+    if (added) {
+      r.state.auditWorkFrom = r.state.cycle;
+      await r.save();
+    }
+    return added;
+  }
+
+  /**
+   * Audit work runs on a tree that already passed every gate, so it gets `audit_max_cycles`
+   * cycles. What is still open then is skipped (the report lists it), no further audit runs, and
+   * the run finishes on the last green commit instead of grinding on gaps the auditor imagined.
+   */
+  private async auditOverBudget(): Promise<void> {
+    const r = this.run;
+    const from = r.state.auditWorkFrom;
+    if (from === undefined) return;
+    const cycles = r.state.cycle - from;
+    if (cycles < r.config.review.audit_max_cycles) return;
+    const open = r.requirePlan().nodes.filter((n) => n.status === 'todo' || n.status === 'doing');
+    r.state.auditWorkFrom = undefined;
+    if (open.length) {
+      for (const n of open) {
+        n.status = 'parked';
+        n.skipped = true;
+        n.parkedReason = `audit follow-up skipped: over its ${cycles}-cycle budget`;
+      }
+      r.state.auditRounds = Math.max(r.state.auditRounds, r.config.review.max_audits);
+      r.events.emit('audit.budget_spent', { cycles, skipped: open.map((n) => n.id) });
+      await r.savePlan();
+    }
+    await r.save();
   }
 
   private async head(): Promise<string> {
@@ -810,6 +848,7 @@ class Supervisor {
   private async select(): Promise<string | Outcome> {
     const r = this.run;
     await this.settleSplits();
+    await this.auditOverBudget();
     for (const m of await settleMilestones(r)) {
       if (m.attempts >= MAX_MILESTONE_REPLANS) {
         m.status = 'parked';
