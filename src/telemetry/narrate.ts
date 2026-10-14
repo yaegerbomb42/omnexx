@@ -59,8 +59,12 @@ export function narrateTool(name: string, input: Record<string, unknown>): strin
       return IMAGE.test(path) ? `analyzing image ${path}` : `reading ${path}`;
     case 'outline':
       return `skimming the structure of ${path}`;
-    case 'search':
-      return `searching the codebase for ${clip(s(input.pattern), 50)}`;
+    case 'search': {
+      const pattern = s(input.pattern).trim();
+      return pattern ? `searching the codebase for ${clip(pattern, 50)}` : 'listing the files';
+    }
+    case 'list':
+      return `listing ${path || 'the project'}`;
     case 'write_file':
       return `writing code to ${path}`;
     case 'str_replace':
@@ -127,4 +131,25 @@ export function narrateTool(name: string, input: Record<string, unknown>): strin
     default:
       return `using ${name}`;
   }
+}
+
+/** Sentences that only restate the request ("The user says: …", "We need to …"): models repeat these every turn. */
+const RESTATES =
+  /^(?:the\s+)?user(?:'s)?\b|^(?:we|i)\s+(?:need|have|want|should|must)\s+to\b|^(?:this|that)\s+is\s+vague\b|^(?:likely|probably|perhaps|maybe)\b|^per\b|^request\b/i;
+
+/**
+ * One line for a model's thinking: the decision, not the preamble. Models such as DeepSeek open
+ * every thought by restating the request; the part worth showing is the end ("Let's list that
+ * path."). Returns '' when nothing is left or it repeats `previous`.
+ */
+export function thinkingGist(text: string, previous = '', max = 200): string {
+  const sentences = text
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[.!?])\s+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const fresh = sentences.filter((x) => !RESTATES.test(x) && !/"[^"]{20,}"/.test(x));
+  const picked = (fresh.length ? fresh : sentences).slice(-2).join(' ');
+  const gist = picked.length > max ? `…${picked.slice(-(max - 1))}` : picked;
+  return gist && gist !== previous ? gist : '';
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.1
+
+- **Quieter chat**: thinking lines show the decision ("Let's list that path") instead of the
+  request the model restates every turn, and a repeated thought isn't printed again.
+- Tool lines say what they act on: "listing infra/apps" instead of "using list", an invented
+  tool name shows as the tool that ran, and an empty search reads "listing the files".
+
 ## 0.11.0
 
 - **Guided autonomous runs**: `/autonomous` (or `/auto`) with nothing after it asks how long

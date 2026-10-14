@@ -541,8 +541,9 @@ export async function runAgentLoop(
       const toolStart = deps.clock.now();
       deps.events.emit('tool.start', {
         tool: call.name,
+        // An invented name (print_tree) is narrated as the tool that actually runs (list).
         doing: narrateTool(
-          call.name,
+          tool?.name ?? call.name,
           typeof call.input === 'object' && call.input !== null
             ? (call.input as Record<string, unknown>)
             : {},
