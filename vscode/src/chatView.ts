@@ -28,6 +28,10 @@ const FORWARD = new Set([
   'setRoles',
   'contextFiles',
   'setSectionMode',
+  'contextList',
+  'contextUpdate',
+  'contextDelete',
+  'contextReset',
   'browser',
   'setBrowser',
 ]);
@@ -320,9 +324,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 </head>
 <body>
 <header class="top">
-  <div class="brand"><img class="logo" src="${logo.toString()}" alt="" width="26" height="26"><span class="word">omnexx</span></div>
+  <div class="brand"><img class="logo" src="${logo.toString()}" alt="" width="18" height="18"><span class="word">omnexx</span></div>
   <button id="model" class="chip model" data-action="pickModel" title="Chat model: click to switch or add a provider">Pick a model</button>
-  <button class="icon" data-action="context" title="Context: what the agent sees" aria-label="Context"><svg viewBox="0 0 16 16"><path d="M8 1.8 14 5 8 8.2 2 5zM2 8l6 3.2L14 8M2 11l6 3.2 6-3.2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg></button>
   <button class="icon" data-action="settings" title="Settings" aria-label="Settings"><svg viewBox="0 0 16 16"><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zm6 3.3V7.2l-1.7-.4a4.6 4.6 0 0 0-.5-1.2l.9-1.5-1.1-1.1-1.5.9c-.4-.2-.8-.4-1.2-.5L8.8 1.7H7.2l-.4 1.7c-.4.1-.8.3-1.2.5l-1.5-.9-1.1 1.1.9 1.5c-.2.4-.4.8-.5 1.2L1.7 7.2v1.6l1.7.4c.1.4.3.8.5 1.2l-.9 1.5 1.1 1.1 1.5-.9c.4.2.8.4 1.2.5l.4 1.7h1.6l.4-1.7c.4-.1.8-.3 1.2-.5l1.5.9 1.1-1.1-.9-1.5c.2-.4.4-.8.5-1.2z" fill="none" stroke="currentColor" stroke-width="1.1"/></svg></button>
 </header>
 <section class="stats" aria-label="Session">
@@ -330,7 +333,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   <div class="tile"><div class="k">Turns</div><div class="v" id="stat-turns">0</div></div>
   <div class="tile"><div class="k">Tokens</div><div class="v" id="stat-tokens">0</div></div>
   <div class="tile"><div class="k">Cost</div><div class="v" id="stat-cost">$0.00</div></div>
-  <div class="ctx" title="Context in use; omnexx compacts the conversation when it fills"><span class="k">Context</span><div class="track"><div class="fill" id="ctx-fill"></div></div><span id="ctx-text">—</span></div>
+  <button class="ctx" data-action="inspect" title="Context in use; omnexx compacts the conversation when it fills. Click to see, edit or delete what the model gets."><span class="k">Context</span><div class="track"><div class="fill" id="ctx-fill"></div></div><span id="ctx-text">—</span><span class="ctx-go">Inspect ›</span></button>
   <div id="ctx-parts" class="ctx-parts"></div>
 </section>
 <div class="toolbar">
@@ -366,7 +369,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 </details>
 <main id="log" class="conversation" aria-live="polite"></main>
 <section id="settings" class="settings" hidden aria-label="Settings"></section>
-<section id="ctxpage" class="settings" hidden aria-label="Context"></section>
+<section id="ctxpage" class="settings" hidden aria-label="Context files"></section>
+<section id="inspector" class="settings" hidden aria-label="Context inspector"></section>
 <section id="ask" class="ask" hidden role="alertdialog" aria-labelledby="ask-text">
   <div class="ask-title">Approval needed</div>
   <div id="ask-text"></div>

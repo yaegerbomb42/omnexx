@@ -54,7 +54,7 @@ async function start() {
       await new Promise((r) => setTimeout(r, 20));
     }
   };
-  return { repo, send, out, states, until, stdin, done };
+  return { repo, send, out, states, until, stdin, done, provider };
 }
 
 describe('omnexx chat-server (the VS Code chat panel protocol)', () => {
@@ -188,6 +188,71 @@ describe('omnexx chat-server (the VS Code chat panel protocol)', () => {
       'bad json',
     );
 
+    t.stdin.end();
+    expect(await t.done).toBe(0);
+  });
+
+  it('lists, edits, deletes and resets context items, and the next request uses them', async () => {
+    const t = await start();
+    await t.until(() => t.out.find((o) => o.type === 'ready'), 'ready');
+    t.send({ type: 'send', text: 'make a.js' });
+    await t.until(() => t.states().find((s) => s.pending !== null), 'approval question');
+    t.send({ type: 'answer', yes: false });
+    await t.until(() => {
+      const s = t.states().at(-1);
+      return s && !s.busy && (s.usage?.turns ?? 0) > 0 ? s : undefined;
+    }, 'idle after the reply');
+
+    interface Item {
+      id: string;
+      group: string;
+      text: string;
+      removed: boolean;
+      tokens: number;
+    }
+    const lastItems = (): Item[] | undefined =>
+      t.out.findLast((o) => o.type === 'contextItems')?.items as Item[] | undefined;
+    t.send({ type: 'contextList' });
+    const items = await t.until(lastItems, 'context items');
+    expect(items.map((i) => i.group)).toEqual(expect.arrayContaining(['system', 'tools', 'chat']));
+    expect(items.find((i) => i.id === 'tool:bash')).toBeDefined();
+    const chatCount = items.filter((i) => i.group === 'chat').length;
+
+    const count = t.out.filter((o) => o.type === 'contextItems').length;
+    t.send({ type: 'contextUpdate', id: 'system:0', text: 'EDITED SYSTEM' });
+    t.send({ type: 'contextDelete', id: 'tool:bash' });
+    t.send({ type: 'contextDelete', id: 'chat:0:0' });
+    const edited = await t.until(
+      () =>
+        t.out.filter((o) => o.type === 'contextItems').length >= count + 3
+          ? lastItems()
+          : undefined,
+      'edited items',
+    );
+    expect(edited.find((i) => i.id === 'system:0')?.text).toBe('EDITED SYSTEM');
+    expect(edited.find((i) => i.id === 'tool:bash')?.removed).toBe(true);
+    expect(edited.filter((i) => i.group === 'chat').length).toBe(chatCount - 1);
+
+    const before = t.provider.requests.length;
+    t.send({ type: 'send', text: 'again' });
+    const req = await t.until(() => t.provider.requests[before], 'next request');
+    expect(req.system[0]?.text).toBe('EDITED SYSTEM');
+    expect(req.tools.map((x) => x.name)).not.toContain('bash');
+    expect(JSON.stringify(req.messages)).not.toContain('make a.js');
+    await t.until(() => (t.states().at(-1)?.busy === false ? true : undefined), 'idle again');
+
+    t.send({ type: 'contextReset' });
+    const reset = await t.until(() => {
+      const it = lastItems();
+      return it?.find((i) => i.id === 'tool:bash')?.removed === false ? it : undefined;
+    }, 'reset items');
+    expect(reset.find((i) => i.id === 'system:0')?.text).not.toBe('EDITED SYSTEM');
+
+    t.send({ type: 'contextUpdate', id: 'nope', text: 'x' });
+    await t.until(
+      () => t.out.find((o) => o.type === 'error' && String(o.message).includes('no context item')),
+      'error for an unknown id',
+    );
     t.stdin.end();
     expect(await t.done).toBe(0);
   });

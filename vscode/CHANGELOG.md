@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.2
+
+- **Compact chat panel**: needs much less scrolling in a narrow sidebar. Stats sit on one row,
+  the header, mode bar, step cards, live log and composer are slimmer, and the conversation gets
+  the room back.
+- One text scale based on the editor font size: no oversized header, nothing too small to read.
+- **Context inspector**: the context line reads "Context 42k / 128k · Inspect ›" and opens a list
+  of everything the model gets next turn (system prompt, tool definitions, chat history), each
+  with its token count. Open an item to read it, edit or delete it, or restore the default system
+  prompt and tools. Edits change the next request (and invalidate the prompt cache). Context files
+  and sections are one click away.
+
 ## 0.8.1
 
 - New store description; the screenshot shows on the store page again.

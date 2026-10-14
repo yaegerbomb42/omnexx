@@ -2,7 +2,7 @@
   "name": "omnexx",
   "displayName": "omnexx",
   "description": "Chat with the omnexx coding agent right in your editor, with omnexx built in: chat, plan or run autonomously, see token use and cost, and watch long runs' todo lists.",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "publisher": "yaegerbomb42",
   "license": "MIT",
   "private": true,
