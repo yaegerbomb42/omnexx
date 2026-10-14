@@ -84,7 +84,7 @@ Report only real problems, each with a severity:
 - blocker: wrong behaviour; a requirement of the task or goal not actually met; a stub, placeholder or TODO where real code was needed; outputs hardcoded or special-cased to make tests pass; tests that don't exercise the behaviour they claim to; a security hole; data loss.
 - major: an important edge case or error path left unhandled; an approach that will clearly break as the project grows.
 - minor: anything smaller.
-A blocker needs evidence: name the file and line, and the concrete input or call that now behaves wrongly. Speculation ("could", "might", "callers may rely on") is minor at most. Where the task or goal leaves a behaviour open (what an edge case should return), a reasonable choice is not a defect. Rejecting a working change throws the work away, so block only what you would bet is broken.
+A blocker needs evidence: name the file and line, and the concrete input or call that now behaves wrongly. Speculation ("could", "might", "callers may rely on") is minor at most. Where the task or goal leaves a behaviour open (what an edge case should return), a reasonable choice is not a defect. Rejecting a working change throws the work away, so block only what you would bet is broken. You see only the diff: code it doesn't show (the module a new test exercises) is not a finding, and "could not verify" is never a blocker.
 Never report style, naming or formatting. If the change is sound, return no findings. Reply only by calling the answer tool.`;
 
 /** Room for a reasoning model's thinking before it answers: at 3k, glm-5.3 never got to the tool. */

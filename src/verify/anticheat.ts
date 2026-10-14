@@ -36,6 +36,12 @@ const MARKERS: readonly [RegExp, string][] = [
   [/\bt\.Skip(Now|f)?\s*\(/, 'go t.Skip'],
 ];
 
+/**
+ * Tool-generated output (coverage reports ship `/* eslint-disable *\/` banners). A test run
+ * writes it, not the agent, so markers there say nothing about cheating.
+ */
+const GENERATED_OUTPUT = ['coverage/**', '**/coverage/**', '.nyc_output/**', '**/.nyc_output/**'];
+
 export interface AntiCheatInput {
   changes: readonly FileChange[];
   patch: string;
@@ -74,7 +80,7 @@ export function antiCheat(input: AntiCheatInput): Violation[] {
         file = line.replace(/^\+\+\+ (b\/)?/, '');
         continue;
       }
-      if (!line.startsWith('+')) continue;
+      if (!line.startsWith('+') || matchesAny(file, GENERATED_OUTPUT) !== undefined) continue;
       for (const [re, label] of MARKERS) {
         if (re.test(line)) {
           out.push({

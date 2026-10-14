@@ -102,6 +102,15 @@ describe('anti-cheat', () => {
     expect(v[0]?.detail).toContain('src/a.test.ts');
   });
 
+  it.each([
+    'coverage/block-navigation.js',
+    'pkg/coverage/lcov-report/prettify.js',
+    '.nyc_output/x.js',
+  ])('ignores markers in generated coverage output: %s', (file) => {
+    const v = antiCheat({ ...base, changes: [], patch: patch(file, '/* eslint-disable */') });
+    expect(v).toEqual([]);
+  });
+
   it('ignores directive names inside strings (a test listing the banned markers)', () => {
     expect(
       antiCheat({
