@@ -185,14 +185,20 @@ export async function startMeter(ep: Endpoint, log?: string): Promise<Meter> {
   };
 }
 
-/** Only these API paths are forwarded upstream; anything else is refused. */
-const FORWARDED = new Set(['/chat/completions', '/completions', '/models', '/embeddings']);
+/** The only API paths forwarded upstream, by the name a request uses; anything else is refused. */
+const FORWARDED: Readonly<Record<string, string>> = {
+  'chat/completions': '/chat/completions',
+  completions: '/completions',
+  models: '/models',
+  embeddings: '/embeddings',
+};
 
 /** The upstream path for a request ("/v1/chat/completions" → "/chat/completions"), or undefined. */
 export function forwardPath(url: string | undefined): string | undefined {
-  const pathname = new URL(url ?? '/', 'http://meter.local').pathname;
-  const path = pathname.startsWith('/v1/') ? pathname.slice(3) : pathname;
-  return FORWARDED.has(path) ? path : undefined;
+  const pathname = new URL(url ?? '/', 'https://meter.local').pathname;
+  const name = pathname.replace(/^\/(?:v1\/)?/, '');
+  // The value comes from the table above, never from the request.
+  return Object.hasOwn(FORWARDED, name) ? FORWARDED[name] : undefined;
 }
 
 function withoutTrailingSlashes(url: string): string {
