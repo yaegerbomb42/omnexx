@@ -53,6 +53,14 @@ const text = (c: ReturnType<typeof buildCycleContext>) =>
   [...c.system.map((b) => b.text), JSON.stringify(c.first)].join('\n');
 
 describe('context sections', () => {
+  it('marks every block after the static worker prompt as volatile', () => {
+    const c = buildCycleContext({
+      ...inputs,
+      sections: sectionsSchema.parse({ codemap: 'pinned' }),
+    });
+    expect(c.system.map((b) => Boolean(b.volatile))).toEqual([false, true, true, true]);
+  });
+
   it('defaults: codemap optional (listed with its size), the rest pinned', () => {
     const c = buildCycleContext({ ...inputs, sections: sectionsSchema.parse({}) });
     const all = text(c);
