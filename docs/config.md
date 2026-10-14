@@ -296,13 +296,14 @@ run to ask. `--for` also sets `budget.max_hours`; `budget.max_usd` still applies
 
 Earned done. On by default; each part costs model calls, so tune it to your budget.
 
-| Key              | Default     | Meaning                                                                                                                      |
-| ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `enabled`        | `true`      | Review each change that passed the gates before it is committed; blocking findings send it back                              |
-| `review_models`  | `"worker"`  | Which role's models review (`cheap`, `worker`, `planner`). Reviews are frequent, so the worker's models keep them affordable |
-| `block_on`       | `"blocker"` | Severity that rejects a change (`blocker` or `major`)                                                                        |
-| `strict_checks`  | `true`      | Refuse plans whose task checks only look for files or text                                                                   |
-| `audit`          | `true`      | Before a run may finish, audit the result against the goal's "done when" list; gaps become a new milestone                   |
-| `audit_models`   | `"planner"` | Which role's models audit (rare and judgement-heavy)                                                                         |
-| `max_audits`     | `3`         | Audit rounds before the run finishes anyway                                                                                  |
-| `max_diff_chars` | `40000`     | Larger diffs are cut (head and tail kept) before review                                                                      |
+| Key                | Default     | Meaning                                                                                                                      |
+| ------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`          | `true`      | Review each change that passed the gates before it is committed; blocking findings send it back                              |
+| `review_models`    | `"worker"`  | Which role's models review (`cheap`, `worker`, `planner`). Reviews are frequent, so the worker's models keep them affordable |
+| `block_on`         | `"blocker"` | Severity that rejects a change (`blocker` or `major`)                                                                        |
+| `strict_checks`    | `true`      | Refuse plans whose task checks only look for files or text                                                                   |
+| `audit`            | `true`      | Before a run may finish, audit the result against the goal's "done when" list; gaps become a new milestone                   |
+| `audit_models`     | `"planner"` | Which role's models audit (rare and judgement-heavy)                                                                         |
+| `max_audits`       | `3`         | Audit rounds before the run finishes anyway (1 when the fast path met the goal)                                              |
+| `audit_max_cycles` | `4`         | Cycles one audit round's work may take; what is still open then is skipped and the run finishes on the last green commit     |
+| `max_diff_chars`   | `40000`     | Larger diffs are cut (head and tail kept) before review                                                                      |

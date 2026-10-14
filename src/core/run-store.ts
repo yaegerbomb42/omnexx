@@ -126,6 +126,8 @@ export const stateSchema = z.object({
   prUrl: z.string().optional(),
   /** Pre-finish audits run so far (each may add a milestone of gaps to close). */
   auditRounds: z.number().int().default(0),
+  /** The cycle the latest audit round's work was planned at, while that work is open. */
+  auditWorkFrom: z.number().int().optional(),
   /** The fast path (one pass on the whole goal before planning): tried, then failed if it fell back. */
   fastPath: z.enum(['tried', 'failed']).optional(),
   rejectedCycles: z.number().default(0),

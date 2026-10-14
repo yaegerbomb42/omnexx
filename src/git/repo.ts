@@ -15,6 +15,46 @@ export async function statusPorcelain(cwd: string): Promise<string> {
   return (await git(cwd, ['status', '--porcelain=v1', '--untracked-files=all'])).stdout;
 }
 
+/** Where test runners write coverage reports by default (vitest, jest, c8, nyc). */
+const COVERAGE_OUTPUT = [':(glob)coverage/**', ':(glob)**/.nyc_output/**'];
+
+/**
+ * `git add -A`, minus coverage reports a test run wrote that `base` doesn't track (`vitest
+ * --coverage` writes one on every gate run). They are tool output, not work: committed, they churn
+ * on every run and look like changes. Files the repo already tracks stage as usual.
+ */
+export async function stageAll(
+  cwd: string,
+  base: string,
+  env?: Record<string, string>,
+): Promise<void> {
+  const opts = env ? { env } : {};
+  await git(cwd, ['add', '-A'], opts);
+  const added = (
+    await git(
+      cwd,
+      ['diff', '--cached', '--name-only', '--diff-filter=A', '-z', base, '--', ...COVERAGE_OUTPUT],
+      opts,
+    )
+  ).stdout
+    .split('\0')
+    .filter(Boolean);
+  if (!added.length) return;
+  await git(
+    cwd,
+    [
+      'rm',
+      '-r',
+      '--cached',
+      '--quiet',
+      '--ignore-unmatch',
+      '--pathspec-from-file=-',
+      '--pathspec-file-nul',
+    ],
+    { ...opts, input: added.join('\0') },
+  );
+}
+
 export const isClean = async (cwd: string): Promise<boolean> => (await statusPorcelain(cwd)) === '';
 
 export interface FileChange {
@@ -40,7 +80,7 @@ export async function workingTreeDiff(
     ? env
     : { GIT_INDEX_FILE: `${cwd}/${env.GIT_INDEX_FILE}` };
   await git(cwd, ['read-tree', base], { env: abs });
-  await git(cwd, ['add', '-A'], { env: abs });
+  await stageAll(cwd, base, abs);
   const treeHash = (await git(cwd, ['write-tree'], { env: abs })).stdout.trim();
   const raw = (await git(cwd, ['diff', '--cached', '--binary', '-M', base], { env: abs })).stdout;
   // The git wrapper strips the final newline; `git apply` needs it back.

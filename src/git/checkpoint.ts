@@ -1,5 +1,5 @@
 import { git } from './git.js';
-import { headSha } from './repo.js';
+import { headSha, stageAll } from './repo.js';
 import { formatTrailers, type OmnexxTrailers } from './trailers.js';
 
 /** Settings that keep an unattended commit from hanging or running user code. */
@@ -19,7 +19,7 @@ export async function commitCheckpoint(
   body: string,
   trailers: OmnexxTrailers,
 ): Promise<string> {
-  await git(cwd, ['add', '-A']);
+  await stageAll(cwd, 'HEAD');
   const message = `${subject}\n\n${body.trim() ? `${body.trim()}\n\n` : ''}${formatTrailers(trailers)}\n`;
   await git(cwd, [...SAFE, ...(await identity(cwd)), 'commit', '--no-verify', '-q', '-F', '-'], {
     input: message,

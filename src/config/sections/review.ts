@@ -22,5 +22,11 @@ export const review = z
     audit: z.boolean().default(true),
     /** Audit rounds that may add work before the run finishes anyway. */
     max_audits: z.number().int().min(1).max(10).default(3),
+    /**
+     * Cycles one audit round's work may take. Its gates passed before the audit, so what is still
+     * open after this is skipped and the run finishes on the last green commit (bench runs met
+     * the goal in cycle 1, then spent 20+ cycles on audit-added work).
+     */
+    audit_max_cycles: z.number().int().min(1).max(100).default(4),
   })
   .prefault({});
