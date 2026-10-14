@@ -203,7 +203,13 @@ describe('omnexx chat-server (the VS Code chat panel protocol)', () => {
       return s && !s.busy && (s.usage?.turns ?? 0) > 0 ? s : undefined;
     }, 'idle after the reply');
 
-    interface Item { id: string; group: string; text: string; removed: boolean; tokens: number }
+    interface Item {
+      id: string;
+      group: string;
+      text: string;
+      removed: boolean;
+      tokens: number;
+    }
     const lastItems = (): Item[] | undefined =>
       t.out.findLast((o) => o.type === 'contextItems')?.items as Item[] | undefined;
     t.send({ type: 'contextList' });
