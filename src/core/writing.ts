@@ -29,7 +29,9 @@ export const WRITING_PLANNER_NOTE = `This is a writing run: the deliverable is p
 - M1 is the foundation: an outline file (every part and chapter or section, one paragraph each) and a bible file (premise or thesis, audience, voice and style rules, names and facts, open threads). Later tasks follow them.
 - Then one milestone per part or group of chapters, and one task per chapter or section, kind "writing" (kind "research" for gathering sources and notes, with every claim cited). Each task writes one file under a clear folder (e.g. book/03-the-storm.md), in full.
 - Checks are mechanical and must fail before the task is done: the file exists, a minimum word count, and no placeholder text, e.g. \`test -f book/03-the-storm.md && test "$(wc -w < book/03-the-storm.md)" -ge 2500 && ! grep -qiE 'TODO|TBD|lorem ipsum|\\[insert' book/03-the-storm.md\`. Set the word counts from the outline's sense of length.
-- Size tasks so one cycle can write them well (about 1,500 to 4,000 words each). Expand later milestones when reached; the last milestone joins the parts (table of contents, a combined file if the goal asks for one).`;
+- Size tasks so one cycle can write them well (about 1,500 to 4,000 words each). Expand later milestones when reached; the last milestone joins the parts (table of contents, a combined file if the goal asks for one).
+- Combine or copy files with a shell command in the task's steps (\`cat book/0*.md > book/manuscript.md\`), never by retyping them: retyped text drifts and costs a cycle per chapter.
+- No separate "consistency report" or "fix mismatches" tasks: every piece is already reviewed against the bible before it is kept.`;
 
 export const WRITING_REVIEW_SYSTEM = `You are an exacting editor reviewing one piece of an ongoing manuscript before it is kept. You get the task, the goal and the diff.
 
