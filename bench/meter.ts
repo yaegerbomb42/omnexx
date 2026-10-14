@@ -113,8 +113,12 @@ export function callLabel(raw: string): string {
   }
 }
 
-/** With `log`, one JSON line per call (label and usage) is appended there. */
-export async function startMeter(ep: Endpoint, log?: string): Promise<Meter> {
+/**
+ * With `log`, one JSON line per call (label and usage) is appended there. With `tag`, every line
+ * carries it: concurrent runs each get their own meter (own port, own totals) sharing one log, and
+ * the tag says which run a call belongs to.
+ */
+export async function startMeter(ep: Endpoint, log?: string, tag?: string): Promise<Meter> {
   let totals = EMPTY;
   const upstream = withoutTrailingSlashes(ep.baseUrl);
   const server: Server = createServer((req, res) => {
@@ -158,7 +162,7 @@ export async function startMeter(ep: Endpoint, log?: string): Promise<Meter> {
         if (log && raw !== undefined)
           await appendFile(
             log,
-            `${JSON.stringify({ at: Date.now(), label: callLabel(raw), status: up.status, usage })}\n`,
+            `${JSON.stringify({ at: Date.now(), ...(tag === undefined ? {} : { tag }), label: callLabel(raw), status: up.status, usage })}\n`,
           );
       } catch (err) {
         totals = { ...totals, errors: totals.errors + 1 };

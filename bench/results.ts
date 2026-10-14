@@ -3,6 +3,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 import { writeFile, appendFile } from 'node:fs/promises';
 import type { TaskRunResult, BenchConfig } from './types.ts';
+import { createMutex } from './pool.ts';
 
 /** Results writer: outputs markdown table + raw JSONL. */
 /** Every result set lives here, under a name; nothing is written anywhere else. */
@@ -22,6 +23,8 @@ export class ResultsWriter {
   private readonly jsonlPath: string;
   private readonly mdPath: string;
   private readonly runId: string;
+  /** Concurrent runs finish at once: each append + markdown rebuild runs alone, in order. */
+  private readonly serial = createMutex();
 
   constructor(config: BenchConfig) {
     this.outDir = resultsDir(config.out);
@@ -36,20 +39,17 @@ export class ResultsWriter {
   }
 
   /** Write a single task result (appends to JSONL, rebuilds markdown). */
-  async writeResult(result: TaskRunResult): Promise<void> {
-    // Append to JSONL
-    await appendFile(this.jsonlPath, JSON.stringify(result) + '\n', 'utf-8');
-
-    // Rebuild markdown table from all results
-    await this.rebuildMarkdown();
+  writeResult(result: TaskRunResult): Promise<void> {
+    return this.writeResults([result]);
   }
 
   /** Write multiple results at once. */
-  async writeResults(results: TaskRunResult[]): Promise<void> {
-    for (const result of results) {
-      await appendFile(this.jsonlPath, JSON.stringify(result) + '\n', 'utf-8');
-    }
-    await this.rebuildMarkdown();
+  writeResults(results: TaskRunResult[]): Promise<void> {
+    return this.serial(async () => {
+      const lines = results.map((r) => JSON.stringify(r) + '\n').join('');
+      if (lines) await appendFile(this.jsonlPath, lines, 'utf-8');
+      await this.rebuildMarkdown();
+    });
   }
 
   /** Get the output directory. */
@@ -105,17 +105,22 @@ export class ResultsWriter {
     }
 
     // Sort by agent, then taskId
-    results.sort((a, b) => a.agent.localeCompare(b.agent) || a.taskId.localeCompare(b.taskId));
+    results.sort(
+      (a, b) =>
+        a.agent.localeCompare(b.agent) ||
+        a.taskId.localeCompare(b.taskId) ||
+        (a.rep ?? 1) - (b.rep ?? 1),
+    );
 
     let table =
-      '| Task | Agent | Resolved | USD | Tokens In | Tokens Out | Cached | Wall Time | Interventions |\n';
+      '| Task | Rep | Agent | Resolved | USD | Tokens In | Tokens Out | Cached | Wall Time | Interventions |\n';
     table +=
-      '|------|-------|----------|-----|-----------|------------|--------|-----------|---------------|\n';
+      '|------|-----|-------|----------|-----|-----------|------------|--------|-----------|---------------|\n';
 
     for (const r of results) {
       const m = r.metrics;
       const wallSec = (m.wall_ms / 1000).toFixed(1);
-      table += `| ${r.taskId} | ${r.agent} | ${m.resolved ? '✅' : '❌'} | $${m.usd.toFixed(4)} | ${m.tokens_in.toLocaleString()} | ${m.tokens_out.toLocaleString()} | ${m.cached.toLocaleString()} | ${wallSec}s | ${m.interventions} |\n`;
+      table += `| ${r.taskId} | ${String(r.rep ?? 1)} | ${r.agent} | ${m.resolved ? '✅' : '❌'} | $${m.usd.toFixed(4)} | ${m.tokens_in.toLocaleString()} | ${m.tokens_out.toLocaleString()} | ${m.cached.toLocaleString()} | ${wallSec}s | ${m.interventions} |\n`;
     }
 
     // Add summary row
@@ -124,7 +129,7 @@ export class ResultsWriter {
     const avgUsd = results.reduce((sum, r) => sum + r.metrics.usd, 0) / total;
     const avgWall = results.reduce((sum, r) => sum + r.metrics.wall_ms, 0) / total;
     const firstAgent = results[0]?.agent ?? 'unknown';
-    table += `| **Summary** | ${firstAgent} | ${resolved}/${total} | $${avgUsd.toFixed(4)} | - | - | - | ${(avgWall / 1000).toFixed(1)}s | - |\n`;
+    table += `| **Summary** | - | ${firstAgent} | ${resolved}/${total} | $${avgUsd.toFixed(4)} | - | - | - | ${(avgWall / 1000).toFixed(1)}s | - |\n`;
 
     return table;
   }

@@ -30,6 +30,8 @@ export interface TaskRunResult {
   suite: string;
   /** Agent name (e.g., 'omnexx', 'claude-code', 'codex'). */
   agent: string;
+  /** 1-based repetition number, when the invocation ran each pair more than once (`--reps`). */
+  rep?: number;
   /** Benchmark metrics. */
   metrics: BenchmarkResult;
   /** ISO timestamp when the run started. */
