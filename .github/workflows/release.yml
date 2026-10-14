@@ -35,3 +35,30 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm publish --provenance --access public
+
+  # Publishes the VS Code extension (with the CLI built in) to the VS Code Marketplace and Open
+  # VSX. --skip-duplicate makes it a no-op when vscode/package.json wasn't bumped for this tag.
+  extension:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Package
+        working-directory: vscode
+        run: npm run package
+      - name: VS Code Marketplace
+        working-directory: vscode
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx @vscode/vsce publish --packagePath omnexx-*.vsix --skip-duplicate
+      - name: Open VSX
+        working-directory: vscode
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npx ovsx publish omnexx-*.vsix --skip-duplicate
