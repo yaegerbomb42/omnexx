@@ -39,7 +39,30 @@ From an unattended run that built a Markdown notes app from a single goal, on fr
 |       **12 / 14**       | **$0.00** |      **86%**      |    **2.6 h**    |
 
 Every kept step is a small commit that passed your tests, typecheck and lint; everything else is
-rolled back. A public benchmark against other harnesses is in progress.
+rolled back.
+
+### Head to head: same model, the harness is the only difference
+
+Ten coding tasks ([jimmy10](bench/suites/jimmy10), hidden acceptance checks), every harness on
+DeepSeek-V4.1-Flash, tokens counted by one metering proxy in front of the model:
+
+| Harness   | Solved  | Median fresh tokens | Total fresh tokens | Median time |
+| --------- | :-----: | :-----------------: | :----------------: | :---------: |
+| omnexx    | 9 / 10  |         15k         |        371k        |    34 s     |
+| Cline     | 9 / 10  |        15.5k        |        194k        |    23 s     |
+| OpenHands | 10 / 10 |        19.5k        |        214k        |    35 s     |
+
+One run each (2026-10-13), so expect some noise: omnexx's miss (the long multi-part build) passed
+at 39k tokens on a rerun. omnexx is on par on most tasks; two refactor and test-writing tasks
+still cost it 2.5x, which is the next thing being fixed. Reproduce with `npm run bench` (see
+[bench/](bench)).
+
+## Not just code
+
+Goals like "write me a book about…" or "draft a research report on…" run without tests: omnexx
+writes an outline and a bible (names, facts, style), then one chapter per task, each checked for
+length and placeholders and read by an editor-style reviewer against the bible, until the book is
+done. `--kind writing` forces it.
 
 ## The VS Code panel
 
