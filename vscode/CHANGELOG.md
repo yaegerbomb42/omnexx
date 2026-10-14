@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1
+
+- New store description; the screenshot shows on the store page again.
+
 ## 0.8.0
 
 - Built on omnexx 0.11.3: guided autonomous runs, runs without tests or git, quieter chat
