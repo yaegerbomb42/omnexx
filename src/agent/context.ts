@@ -65,9 +65,11 @@ export function buildCycleContext(i: CycleInputs): {
   blocks.push({ label: 'goal', text: `# Goal\n\n${i.goal.trim()}${intent}` });
   if (keep('lessons', i.notes))
     blocks.push({ label: 'notes', text: `# Lessons (notes.md)\n\n${i.notes.trim()}` });
-  const system: SystemBlock[] = blocks.map((b, n) =>
-    n === blocks.length - 1 ? { text: b.text, cacheBreakpoint: true } : { text: b.text },
-  );
+  const system: SystemBlock[] = blocks.map((b, n) => ({
+    text: b.text,
+    ...(n > 0 ? { volatile: true } : {}),
+    ...(n === blocks.length - 1 ? { cacheBreakpoint: true } : {}),
+  }));
 
   const parts = [`# Plan\n\n${compactPlanView(i.plan, i.task.id)}`];
   const progress = i.memory ?? (i.progressTail ? `# Recent progress\n\n${i.progressTail}` : '');

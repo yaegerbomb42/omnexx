@@ -52,6 +52,19 @@ describe('toChatMessages', () => {
       { role: 'tool', tool_call_id: 'c1', content: 'ERROR: nope' },
     ]);
   });
+
+  it('keeps per-run system blocks out of the system message so tools stay in the cached prefix', () => {
+    const out = toChatMessages({
+      ...req,
+      system: [
+        { text: 'static' },
+        { text: 'goal', volatile: true },
+        { text: 'notes', volatile: true },
+      ],
+    });
+    expect(out[0]).toEqual({ role: 'system', content: 'static' });
+    expect(out[1]).toEqual({ role: 'user', content: 'goal\n\nnotes\n\ndo it' });
+  });
 });
 
 describe('OpenAICompatProvider against a loopback mock', () => {

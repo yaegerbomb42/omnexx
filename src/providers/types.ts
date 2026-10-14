@@ -20,6 +20,12 @@ export interface SystemBlock {
   text: string;
   /** Put a cache breakpoint after this block. */
   cacheBreakpoint?: boolean;
+  /**
+   * Changes between runs or cycles (goal, notes, codemap). Chat Completions templates render
+   * tools after the system message, so a provider without explicit breakpoints moves these
+   * blocks into the first user message to keep system + tools a byte-stable cached prefix.
+   */
+  volatile?: boolean;
 }
 
 export interface ToolSpec {

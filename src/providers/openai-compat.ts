@@ -46,9 +46,11 @@ interface ChatResponse {
 
 /** Map our provider-neutral conversation to Chat Completions messages. */
 export function toChatMessages(req: CompletionRequest): ChatMessage[] {
-  const out: ChatMessage[] = [
-    { role: 'system', content: req.system.map((b) => b.text).join('\n\n') },
-  ];
+  const stable = req.system.filter((b) => !b.volatile).map((b) => b.text);
+  let carried = req.system.filter((b) => b.volatile).map((b) => b.text);
+  const out: ChatMessage[] = [{ role: 'system', content: stable.join('\n\n') }];
+  if (carried.length && !req.messages.some((m) => m.role === 'user'))
+    out.push({ role: 'user', content: carried.join('\n\n') });
   for (const m of req.messages) {
     if (m.role === 'assistant') {
       const text = m.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n');
@@ -70,7 +72,8 @@ export function toChatMessages(req: CompletionRequest): ChatMessage[] {
       });
       continue;
     }
-    const texts: string[] = [];
+    const texts: string[] = [...carried];
+    carried = [];
     const images: ChatPart[] = [];
     for (const b of m.content) {
       if (b.type === 'tool_result')
