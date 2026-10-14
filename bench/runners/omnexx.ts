@@ -99,6 +99,10 @@ export class OmnexxRunner extends AgentRunner {
     });
     const wall_ms = Date.now() - start;
 
+    // Keep the run's events and state with the results, so each call traces to a cycle.
+    await saveRunLog(home, `${workDir}.run`).catch((e: unknown) => {
+      console.warn(`  could not save the omnexx run log: ${String(e)}`);
+    });
     const state = await latestState(home);
     if (!state) throw new Error(`omnexx left no run state in ${home}`);
     const metrics = this.opts.meter
@@ -196,6 +200,13 @@ async function hasScript(dir: string, name: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Copies the newest run folder (events.jsonl, state.json, progress) to `dest`; no-op if none. */
+export async function saveRunLog(home: string, dest: string): Promise<void> {
+  const last = (await readdir(join(home, 'runs')).catch(() => [])).sort().at(-1);
+  if (!last) return;
+  await cp(join(home, 'runs', last), dest, { recursive: true });
 }
 
 async function latestState(home: string): Promise<RunState | undefined> {

@@ -4,7 +4,32 @@ import {
   createFakeClaudeCodeRunner,
   createFakeCodexRunner,
 } from '../../../bench/runners/index.ts';
-import { metricsFromState } from '../../../bench/runners/omnexx.ts';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { metricsFromState, saveRunLog } from '../../../bench/runners/omnexx.ts';
+
+describe('saveRunLog', () => {
+  it('copies the latest run folder (events, state) to the destination', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'omnexx-runlog-'));
+    for (const id of ['r_1', 'r_2']) {
+      await mkdir(join(home, 'runs', id), { recursive: true });
+      await writeFile(join(home, 'runs', id, 'events.jsonl'), `{"run":"${id}"}\n`);
+    }
+    const dest = join(home, 'out', 'omnexx.run');
+
+    await saveRunLog(home, dest);
+
+    expect(await readFile(join(dest, 'events.jsonl'), 'utf-8')).toContain('r_2');
+  });
+
+  it('does nothing when the run left no folder', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'omnexx-runlog-'));
+    await saveRunLog(home, join(home, 'out'));
+    expect(existsSync(join(home, 'out'))).toBe(false);
+  });
+});
 import type { TaskDef } from '../../../bench/types.ts';
 
 describe('Fake runners for testing', () => {
