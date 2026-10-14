@@ -1,3 +1,4 @@
+import { thinkingGist } from '../telemetry/narrate.js';
 import { InCycleWatch } from '../guard/stuck.js';
 import { orderForStrategy, strategyFor } from '../config/routing.js';
 import { randomBytes } from 'node:crypto';
@@ -97,12 +98,6 @@ export interface ChatView {
   todo: (items: TodoItem[]) => void;
 }
 
-const firstLine = (t: string): string =>
-  t
-    .split('\n')
-    .find((l) => l.trim())
-    ?.trim() ?? '';
-
 /** The line of a failed action's output worth showing: the error, not the `[exit 1, …]` header. */
 export function errorLine(t: string): string {
   const lines = t
@@ -139,6 +134,8 @@ function chatModel(ref: string, config: OmnexxConfig): ResolvedModel {
  * turn cleanly; long conversations are trimmed, then summarized, between messages.
  */
 export class CodeChat {
+  /** The last thinking line shown, so an identical one isn't printed again. */
+  private lastThought = '';
   private history: Message[] = [];
   /** Set by open(); where repo memory lives. */
   paths: OmnexxPaths | undefined;
@@ -382,9 +379,13 @@ export class CodeChat {
         if (e.isError)
           v.line({ kind: 'err', text: `  ✗ ${errorLine(str(e.error)).slice(0, 160)}` });
         return;
-      case 'agent.thinking':
-        v.line({ kind: 'think', text: firstLine(str(e.text)).slice(0, 200) });
+      case 'agent.thinking': {
+        const gist = thinkingGist(str(e.text), this.lastThought);
+        if (!gist) return;
+        this.lastThought = gist;
+        v.line({ kind: 'think', text: gist });
         return;
+      }
       case 'todo.update':
         v.todo(Array.isArray(e.items) ? (e.items as TodoItem[]) : []);
         return;
