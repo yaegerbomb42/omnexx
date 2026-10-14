@@ -51,9 +51,9 @@ import { humanize, type Verbosity } from '../telemetry/humanize.js';
 
 /** A stderr line that reports a failure, as opposed to a note about what the CLI did. */
 export function looksLikeError(line: string): boolean {
-  return /^\s*(?:error|✗|fatal|warning|refused)\b|\b(?:error|failed|cannot|can't|not found|denied|invalid)\b/i.test(
-    line,
-  );
+  const leads = /^\s*(?:error|✗|fatal|warning|refused)\b/i;
+  const says = /\b(?:error|failed|cannot|can't|not found|denied|invalid)\b/i;
+  return leads.test(line) || says.test(line);
 }
 
 export type EntryKind = 'feed' | 'out' | 'err' | 'user' | 'system' | 'act' | 'think';
