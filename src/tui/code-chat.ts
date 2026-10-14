@@ -41,6 +41,14 @@ import type { ToolWhere } from '../tools/extra/types.js';
 import { helperRunner } from '../agent/subagent.js';
 import type { TodoItem } from '../tools/todo.js';
 import type { Tool, ToolContext } from '../tools/types.js';
+import { CHAT_FILE, listChats, readSavedChat, type ChatSummary } from './chat-history.js';
+import {
+  estimateLatency,
+  loadLatency,
+  recordLatency,
+  saveLatency,
+  type LatencyStats,
+} from './latency.js';
 import {
   applyContext,
   deleteContextItem,
@@ -74,8 +82,10 @@ export const CHAT_SYSTEM = `You are Omnexx in chat mode: a coding agent working 
 /** Prepended to a message in plan mode. */
 const PLAN_MODE = `[Plan mode] Don't change anything yet: no edits and no commands. Investigate with the read-only tools, then reply with a concrete step-by-step plan: the files to change and how, the approach, how you will test it, and and any risks. Put the steps in the todo list. Stop after the plan; I'll approve it or ask for changes.`;
 
-/** Where a chat's conversation is saved, inside its store. */
-const CHAT_FILE = 'chat.json';
+/** Where response times are kept between sessions. */
+function latencyFile(paths: OmnexxPaths): string {
+  return join(paths.configHome, 'latency.json');
+}
 
 /** Tools chat leaves out: helpers need a run. */
 const CHAT_DENIED = new Set(['task']);
@@ -108,6 +118,8 @@ export interface ChatView {
   /** Reply text as it streams in (cleared when the reply lands as an `out` line). */
   stream: (delta: string) => void;
   todo: (items: TodoItem[]) => void;
+  /** A model request went out (with an expected duration when there is history), or answered (null). */
+  waiting?: (w: { startedAt: number; estimateMs: number | null } | null) => void;
 }
 
 /** The line of a failed action's output worth showing: the error, not the `[exit 1, …]` header. */
@@ -151,6 +163,10 @@ export class CodeChat {
   private history: Message[] = [];
   /** Context-inspector edits to the system prompt and tool definitions. */
   private overrides: ContextOverrides = EMPTY_OVERRIDES;
+  /** Recent response times per model, for the editor's countdown. */
+  private latency: LatencyStats = {};
+  /** The saved chat this one continues, if it was reopened from History. */
+  private resumedFrom: string | undefined;
   /** Set by open(); where repo memory lives. */
   paths: OmnexxPaths | undefined;
   /** Before each message: the files as they were, and how long the conversation was. */
@@ -256,6 +272,7 @@ export class CodeChat {
     ];
     const chat = new CodeChat(config, deps.provider, tools, system, ctx, events, store, ref);
     chat.paths = paths;
+    chat.latency = await loadLatency(latencyFile(paths));
     // Chat gets helpers too (the task and agent tools), on the chat model and the chat's spend.
     ctx.subagent = chat.helpers({ repoRoot: jail.root, env: io.env }, clock);
     return chat;
@@ -546,6 +563,16 @@ export class CodeChat {
             if (d.text) view.stream(d.text);
           },
           pendingInput: () => this.queue.splice(0),
+          onRequest: ({ model, inputTokens }) => {
+            const est = estimateLatency(this.latency, model, inputTokens);
+            view.waiting?.({ startedAt: Date.now(), estimateMs: est ?? null });
+          },
+          onResponse: ({ model, inputTokens, ms }) => {
+            view.waiting?.(null);
+            this.latency = recordLatency(this.latency, model, { ms, tokens: inputTokens });
+            if (this.paths)
+              void saveLatency(latencyFile(this.paths), this.latency).catch(() => undefined);
+          },
           // Within one long turn only old tool output is trimmed; summaries happen between turns.
           compaction: {
             settings: {
@@ -566,6 +593,7 @@ export class CodeChat {
     } finally {
       this.abort = undefined;
       this.paused = false;
+      view.waiting?.(null);
       this.contextUsed = this.baseTokens() + contextTokens(this.history);
     }
     if (this.ctx.edited.size && this.config.gates.length) await this.check(view);
@@ -594,7 +622,25 @@ export class CodeChat {
       model: this.model,
       savedAt: Date.now(),
       history: this.history,
+      ...(this.resumedFrom ? { resumedFrom: this.resumedFrom } : {}),
     }).catch(() => undefined);
+  }
+
+  /** Saved chats in this folder, newest first (this one included once it has messages). */
+  async savedChats(): Promise<ChatSummary[]> {
+    return this.paths ? listChats(this.paths, this.ctx.jail.root) : [];
+  }
+
+  /** Reopen a saved chat: its conversation continues here, and History shows it once. */
+  async resume(id: string): Promise<Message[]> {
+    if (!this.paths) throw new Error('chat history is not available');
+    if (this.busy) throw new Error('wait for the agent to finish (or stop it), then switch chats');
+    const saved = await readSavedChat(this.paths, this.ctx.jail.root, id);
+    await this.clear();
+    this.conversation = saved.history;
+    this.resumedFrom = id === this.store.runId ? undefined : id;
+    await this.persist();
+    return saved.history;
   }
 
   /** Load the newest saved chat for this folder into this one (--continue). Returns its length. */

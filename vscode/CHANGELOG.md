@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.3
+
+- **No more separate live log**: actions, thinking and notes show inline in the conversation,
+  between the messages they belong to.
+- **History** replaces Runs: past chats and runs under Today, Yesterday and Earlier, named by
+  what was asked ("Fix arcade nav buttons"), with when and how it went. Click a chat to reopen
+  its transcript and carry on.
+- **Reply countdown**: while the model answers, the working line shows "est. 5s" from that
+  model's recent response times (scaled by prompt size), then "taking longer… 7s".
+
 ## 0.8.2
 
 - **Compact chat panel**: needs much less scrolling in a narrow sidebar. Stats sit on one row,

@@ -90,6 +90,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.server.send({ type: 'clear' });
   }
 
+  /** Reopen a saved chat from History: its transcript shows and the conversation continues. */
+  resumeChat(id: string): void {
+    if (!this.server.running) this.server.start();
+    this.server.send({ type: 'resumeChat', id });
+  }
+
   restart(): void {
     this.server.restart();
   }
@@ -379,10 +385,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     <button class="secondary" data-action="deny">Deny</button>
   </div>
 </section>
-<details class="section live" open>
-  <summary><span class="chev" aria-hidden="true"></span><span class="h">Live log</span><span class="sub-h">actions &amp; thinking</span><button class="icon small" data-action="clear-log" title="Clear the log" aria-label="Clear the log"><svg viewBox="0 0 16 16"><path d="M3 4h10M6 4V2.5h4V4m-5.5 0 .5 9.5h6l.5-9.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button></summary>
-  <div id="live-log" class="live-log" role="log"></div>
-</details>
 <footer class="composer">
   <div class="input-wrap">
     <textarea id="input" rows="1" aria-label="Message omnexx"></textarea>

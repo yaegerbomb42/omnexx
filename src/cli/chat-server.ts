@@ -18,11 +18,11 @@ import { println, type CliIO } from './io.js';
  * model {ref} · models · connect {value, name?} · undo · clear · compact · sync (resend all) ·
  * settings · addProvider {provider?, key?, url?} · removeProvider {name} · testProvider {name} ·
  * roles · setRoles {roles} · contextFiles · setSectionMode {id, mode} · contextList ·
- * contextUpdate {id, text} · contextDelete {id} · contextReset · browser ·
+ * contextUpdate {id, text} · contextDelete {id} · contextReset · chats · resumeChat {id} · browser ·
  * setBrowser {engine, profile?, sessionName?, headless}.
  * Out: ready {version} · state (below; `entries` holds only lines not sent before) · models
  * {items, unreachable, current} · settings {catalog, connected} · providerTest {name, ok, models,
- * detail} · contextItems {items, busy} · browser {engine, profile, sessionName, headless} ·
+ * detail} · contextItems {items, busy} · chats {chats} · browser {engine, profile, sessionName, headless} ·
  * error {message}.
  */
 
@@ -60,6 +60,8 @@ export interface ChatState {
   run: { id: string; alive: boolean; phase?: string; done?: number; tasks?: number } | null;
   /** Helpers (subagents) for the current message. */
   helpers: Helper[];
+  /** A model request in flight: when it went out and how long it usually takes (null: unknown). */
+  waiting: { startedAt: number; estimateMs: number | null } | null;
   /** The latest browser frame's number and page; the image comes as a `browserFrame` message. */
   browser: { seq: number; url: string; action: string; at: number } | null;
 }
@@ -163,6 +165,7 @@ export async function serveChat(
         : null,
       run: session.runId ? { id: session.runId, alive: session.runAlive, ...session.info } : null,
       helpers: session.helpers,
+      waiting: session.waiting,
       browser: session.browserFrame
         ? {
             seq: session.browserFrame.seq,
@@ -315,6 +318,25 @@ export async function serveChat(
             await setSectionMode(io, text(c, 'id'), text(c, 'mode'));
             await sendContextFiles();
           }),
+        );
+        return;
+      case 'chats':
+        run(
+          session.savedChats().then((chats) => {
+            write({ type: 'chats', chats });
+          }),
+        );
+        return;
+      case 'resumeChat':
+        run(
+          (async () => {
+            // Mark the panel's start first, so a reload shows only the reopened chat.
+            clearedAt = session.entries.at(-1)?.id ?? clearedAt;
+            sentUpTo = clearedAt;
+            await session.resumeChat(text(c, 'id'));
+            write({ type: 'ready', version: opts.version });
+            emit();
+          })(),
         );
         return;
       case 'contextList':

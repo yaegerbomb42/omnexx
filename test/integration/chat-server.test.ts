@@ -253,6 +253,23 @@ describe('omnexx chat-server (the VS Code chat panel protocol)', () => {
       () => t.out.find((o) => o.type === 'error' && String(o.message).includes('no context item')),
       'error for an unknown id',
     );
+
+    // History: the chat is listed by what was asked first, and reopening it shows its transcript.
+    t.send({ type: 'clear' });
+    t.send({ type: 'chats' });
+    const listed = await t.until(
+      () => t.out.findLast((o) => o.type === 'chats' && (o.chats as unknown[]).length > 0),
+      'chat list',
+    );
+    const chat = (listed.chats as { id: string; title: string }[])[0];
+    expect(chat?.title).toBe('Again');
+    const readies = t.out.filter((o) => o.type === 'ready').length;
+    t.send({ type: 'resumeChat', id: chat?.id });
+    await t.until(() => {
+      if (t.out.filter((o) => o.type === 'ready').length <= readies) return undefined;
+      const texts = t.states().flatMap((s) => s.entries.map((e) => e.text));
+      return texts.some((x) => x.startsWith('reopened "Again"')) ? true : undefined;
+    }, 'reopened transcript');
     t.stdin.end();
     expect(await t.done).toBe(0);
   });

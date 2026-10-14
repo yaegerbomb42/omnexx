@@ -2665,3 +2665,48 @@ textarea.ci-edit {
 .ci > details {
   overflow: hidden;
 }
+
+/* Activity inline in the conversation (the separate live log is gone). */
+.msg.act,
+.msg.think,
+.msg.note {
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.msg.act {
+  font-family: var(--mono);
+  color: var(--log-agent);
+  display: flex;
+  gap: 6px;
+}
+
+.act-mark {
+  flex: none;
+  color: var(--muted);
+}
+
+.msg.think {
+  font-style: italic;
+  color: var(--log-think);
+  border-left: 2px solid color-mix(in srgb, var(--violet) 40%, transparent);
+  padding-left: 6px;
+}
+
+.msg.note {
+  color: var(--log-system);
+}
+
+.conversation .msg.act + .msg.act {
+  margin-top: -4px;
+}
+
+.working .eta {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}

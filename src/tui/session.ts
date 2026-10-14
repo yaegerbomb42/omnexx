@@ -1,4 +1,5 @@
 import type { ContextItem } from './context-edit.js';
+import { chatTitle, transcriptEntries, type ChatSummary } from './chat-history.js';
 import { AUTO_TIMES, readTime, timeLabel, type AutoSetup } from './auto-setup.js';
 import { join } from 'node:path';
 import { loadConfig } from '../config/load.js';
@@ -181,6 +182,8 @@ export class Session {
   /** A y/n question from chat mode waiting on the person (permission to go past a guard). */
   pending: { question: string; resolve: (yes: boolean) => void } | undefined;
   private code: CodeChat | undefined;
+  /** The model request in flight, with its expected duration (for the editor's countdown). */
+  waiting: { startedAt: number; estimateMs: number | null } | null = null;
   private opening: Promise<CodeChat> | undefined;
   /** Model chosen with /model before the chat opened. */
   private chatModel: string | undefined;
@@ -894,6 +897,21 @@ export class Session {
       : undefined;
   }
 
+  /** Saved chats in this folder, for the editor's History. */
+  async savedChats(): Promise<ChatSummary[]> {
+    return (await this.openCode()).savedChats();
+  }
+
+  /** Reopen a saved chat and show its transcript. */
+  async resumeChat(id: string): Promise<void> {
+    const history = await (await this.openCode()).resume(id);
+    this.todos = [];
+    this.helpers = [];
+    this.push('system', `reopened "${chatTitle(history)}"`);
+    for (const e of transcriptEntries(history))
+      this.push(e.kind, e.text, { markdown: e.kind === 'out' });
+  }
+
   /** The context inspector: every item the next chat request sends (empty before a chat). */
   contextItems(): ContextItem[] {
     return this.code?.contextItems() ?? [];
@@ -991,6 +1009,10 @@ export class Session {
     },
     todo: (items: TodoItem[]) => {
       this.todos = items;
+      this.changed();
+    },
+    waiting: (w: { startedAt: number; estimateMs: number | null } | null) => {
+      this.waiting = w;
       this.changed();
     },
     browser: (f: BrowserFrame) => {
