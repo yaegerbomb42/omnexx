@@ -88,13 +88,19 @@ describe('project folder for a too-broad cwd', () => {
   it('keeps a normal project folder as is', async () => {
     const home = await tempDir();
     const project = join(home, 'app');
-    expect(await projectFolderFor(project, 'fix the bug', home)).toEqual({ dir: project, created: false });
+    expect(await projectFolderFor(project, 'fix the bug', home)).toEqual({
+      dir: project,
+      created: false,
+    });
   });
 
   it('makes a new folder under ~/omnexx-projects named after the goal when run from / or home', async () => {
     const home = await tempDir();
     const first = await projectFolderFor('/', 'Build a Snake game!', home);
-    expect(first).toEqual({ dir: join(home, 'omnexx-projects', 'build-a-snake-game'), created: true });
+    expect(first).toEqual({
+      dir: join(home, 'omnexx-projects', 'build-a-snake-game'),
+      created: true,
+    });
     expect(await isEmptyProject(first.dir)).toBe(true);
     await writeFile(join(first.dir, 'x.txt'), 'x');
     const second = await projectFolderFor(home, 'build a snake game', home);

@@ -22,7 +22,6 @@ import { resolveRunDeps } from '../run-deps.js';
 import { EXIT } from '../exit-codes.js';
 import { bootstrapEmptyProject, isEmptyProject, projectFolderFor } from '../bootstrap.js';
 
-
 export interface RunFlags {
   goalFile?: string;
   planOnly?: boolean;
