@@ -2,7 +2,12 @@ import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { readEvents } from '../../../src/core/events.js';
-import { bashTool, readLogTool, trimOutput } from '../../../src/tools/bash.js';
+import {
+  bashTool,
+  DEFAULT_BASH_TIMEOUT_MS,
+  readLogTool,
+  trimOutput,
+} from '../../../src/tools/bash.js';
 import { multiEditTool, strReplaceTool, writeFileTool } from '../../../src/tools/edit.js';
 import { extractSymbols, outlineTool } from '../../../src/tools/outline.js';
 import { readTool } from '../../../src/tools/read.js';
@@ -194,6 +199,32 @@ describe('bash + read_log', () => {
       bashTool.normalize?.({ command: 'true', timeout: 120000 }),
     );
     expect(parsed.timeout).toBe('120000');
+  });
+
+  it('caps a command without a timeout at the default, not the whole run budget', async () => {
+    // Bench task-10: `find /` and `grep -r /private/var/folders` each held a cycle for 5-7 min.
+    const root = await repo();
+    const seen: number[] = [];
+    const base = await toolContext(root);
+    const ctx = {
+      ...base,
+      maxCmdTimeoutMs: 30 * 60_000,
+      exec: (_c: string, o: { timeoutMs: number }) => {
+        seen.push(o.timeoutMs);
+        return Promise.resolve({
+          exitCode: 0,
+          timedOut: true,
+          aborted: false,
+          output: '',
+          durationMs: 1,
+        });
+      },
+    } as typeof base;
+    const r = await bashTool.run({ command: 'find / -name x' }, ctx);
+    expect(seen[0]).toBe(DEFAULT_BASH_TIMEOUT_MS);
+    expect(r.content).toMatch(/timed out after 120s.*timeout/s);
+    await bashTool.run({ command: 'npm test', timeout: '10m' }, ctx);
+    expect(seen[1]).toBe(10 * 60_000);
   });
 
   it('refuses policy violations, logs tool.denied, and calls the safety hook only for allowed commands', async () => {

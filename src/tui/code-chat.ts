@@ -178,6 +178,8 @@ export class CodeChat {
   usd = 0;
   /** Token, tool and turn totals for this conversation, folded from its events. */
   telemetry: Telemetry = emptyTelemetry();
+  /** Every successful edit, repeat edits to one file included (the no-edits watch counts these). */
+  private editOps = 0;
   /** Estimated tokens the next request starts with (system + tools + conversation). */
   contextUsed = 0;
 
@@ -197,6 +199,9 @@ export class CodeChat {
       strategyFor(config.models, 'chat'),
     );
     this.contextUsed = this.baseTokens();
+    ctx.onEdit = () => {
+      this.editOps++;
+    };
     // One listener for the whole chat: every action shows as a line while it happens.
     events.onEvent((e) => {
       fold(this.telemetry, e);
@@ -510,6 +515,7 @@ export class CodeChat {
     });
     this.ctx.edited.clear();
     this.ctx.reads?.clear();
+    const editsBefore = this.editOps;
     await this.compactIfNeeded();
     const abort = new AbortController();
     this.abort = abort;
@@ -545,7 +551,7 @@ export class CodeChat {
               noEditTurns: CHAT_NO_EDIT_TURNS,
               burnTokens: undefined,
             },
-            () => this.ctx.edited.size,
+            () => this.editOps - editsBefore,
           ),
           watchMode: 'nudge',
           maxTokens: this.config.providers.anthropic.max_tokens,

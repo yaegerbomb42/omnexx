@@ -62,10 +62,17 @@ const schema = z.strictObject({
   timeout: z
     .string()
     .optional()
-    .describe('e.g. "2m" (a bare number is milliseconds); capped by the run config'),
+    .describe(
+      'Default 2m. e.g. "10m" for a long build or suite (a bare number is milliseconds); capped by the run config',
+    ),
 });
 
 const DEV_SERVER_PEEK_MS = 20_000;
+/**
+ * A command without its own timeout gets this much, not the run's whole command cap (30 min):
+ * a stray `find /` once held a cycle for 7 minutes. Longer builds and suites pass `timeout`.
+ */
+export const DEFAULT_BASH_TIMEOUT_MS = 2 * 60_000;
 const DEV_SERVERS: readonly RegExp[] = [
   /\b(?:npm|pnpm|yarn|bun) (?:run )?(?:dev|start|serve|preview|watch)\b/,
   /\bvite(?: dev| serve| preview)?(?:$|[\s&;])/,
@@ -111,7 +118,8 @@ function commandStatus(
 ): string {
   const secs = Math.round(timeoutMs / 1000);
   if (peeked) return `dev server still running after ${secs}s; stopped by the harness (it started)`;
-  if (r.timedOut) return `timed out after ${secs}s`;
+  if (r.timedOut)
+    return `timed out after ${secs}s; if it needs longer, run it again with a larger timeout (e.g. "10m")`;
   return `exit ${String(r.exitCode)}`;
 }
 
@@ -144,7 +152,7 @@ export const bashTool: Tool<typeof schema> = {
       return fail(`refused by policy (${verdict.rule}): ${verdict.reason}`);
     }
     ctx.onBash?.(input.command);
-    let timeoutMs = ctx.maxCmdTimeoutMs;
+    let timeoutMs = Math.min(DEFAULT_BASH_TIMEOUT_MS, ctx.maxCmdTimeoutMs);
     if (input.timeout) {
       try {
         // A bare number is milliseconds, as most tool APIs mean it.
