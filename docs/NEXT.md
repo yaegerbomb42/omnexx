@@ -30,7 +30,7 @@ only `omnexx@0.1.0`.
 
 0. **Ship `feat/autonomy-2`** (2026-10-13): open the PR, merge after CI, release 0.10.0 and a new
    extension with the bundled CLI. Then rerun the head-to-head 3x per task (`npm run bench --
---suite jimmy10 --agents omnexx,cline,openhands --endpoint ~/.omnexx-bench.env`) for stable
+--suite jimmy10 --agents omnexx,cline,openhands --endpoint DEEPSEEK` after `set -a; . ~/.omnexx-bench.env; set +a`) for stable
    numbers, and finish the judge row (Nimble steer vs off; it hasn't changed results so far).
    Remaining gaps: task-02/03 still use ~2.5x Cline's fresh tokens; 20 duplicate CSS selectors
    need a visual check; CLM context mode not started.

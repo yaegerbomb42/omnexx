@@ -39,7 +39,7 @@ SonarCloud findings from the #20 integration merge are still open.
 
 - **2026-10-13 (single agent), branch `feat/autonomy-2`:** efficiency work driven by a
   head-to-head bench (same model, DeepSeek-V4.1-Flash, for every harness; tokens counted by
-  one metering proxy, `bench --endpoint <envfile>`). Cline and OpenHands runners added. Fixes:
+  one metering proxy, `bench --endpoint <PREFIX>`). Cline and OpenHands runners added. Fixes:
   fast path (`[plan] mode`: one pass on the whole goal, planner only if it fails), planning
   effort flags (`--plan`, `--plan-helpers`, `--plan-milestones`), early "goal met" audit that
   skips padded milestones, audit scoped to what was asked, reviewer blocks only on evidence,

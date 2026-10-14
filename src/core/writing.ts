@@ -7,15 +7,60 @@ import type { OmnexxConfig } from '../config/schema.js';
  * one-line summary in the map, and the agent keeps a bible (names, facts, style, open threads)
  * in its general notes, so a long manuscript stays consistent across hundreds of cycles.
  */
-const WRITE_VERB = /\b(write|draft|author|compose|research|outline)\b/i;
-const PROSE =
-  /\b(book|novel|novella|stor(y|ies)|essay|article|report|paper|thesis|dissertation|guide|handbook|manual|whitepaper|white paper|research (doc|document|report|note)s?|document|chapters?|screenplay|script for a (film|play)|blog posts?|newsletter|memoir|biography|curriculum|course)\b/i;
-const CODE =
-  /\b(function|class|api|endpoint|bug|refactor|test(s|ing)?|compile|typescript|javascript|python|src\/|\.ts\b|\.js\b|\.py\b|component|database|deploy)\b/i;
+const WRITE_VERBS = ['write', 'draft', 'author', 'compose', 'research', 'outline'];
+const PROSE_WORDS = [
+  'book',
+  'novel',
+  'novella',
+  'story',
+  'stories',
+  'essay',
+  'article',
+  'report',
+  'paper',
+  'thesis',
+  'dissertation',
+  'guide',
+  'handbook',
+  'manual',
+  'whitepaper',
+  'document',
+  'chapter',
+  'chapters',
+  'screenplay',
+  'script',
+  'blog',
+  'newsletter',
+  'memoir',
+  'biography',
+  'curriculum',
+  'course',
+];
+const CODE_WORDS = [
+  'function',
+  'class',
+  'api',
+  'endpoint',
+  'bug',
+  'refactor',
+  'test',
+  'tests',
+  'testing',
+  'compile',
+  'typescript',
+  'javascript',
+  'python',
+  'component',
+  'database',
+  'deploy',
+];
+const CODE_PATH = /src\/|\.(?:ts|js|py)\b/i;
 
 export function isWritingGoal(goal: string): boolean {
   const head = goal.slice(0, 2_000);
-  return WRITE_VERB.test(head) && PROSE.test(head) && !CODE.test(head);
+  const words = new Set(head.toLowerCase().match(/[a-z]+/g) ?? []);
+  const has = (list: readonly string[]): boolean => list.some((w) => words.has(w));
+  return has(WRITE_VERBS) && has(PROSE_WORDS) && !has(CODE_WORDS) && !CODE_PATH.test(head);
 }
 
 /** The run is a writing run: set explicitly, or detected from the goal in auto. */

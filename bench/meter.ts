@@ -116,10 +116,15 @@ export function callLabel(raw: string): string {
 /** With `log`, one JSON line per call (label and usage) is appended there. */
 export async function startMeter(ep: Endpoint, log?: string): Promise<Meter> {
   let totals = EMPTY;
-  const upstream = ep.baseUrl.replace(/\/+$/, '');
+  const upstream = withoutTrailingSlashes(ep.baseUrl);
   const server: Server = createServer((req, res) => {
     void (async () => {
-      const path = (req.url ?? '/').replace(/^\/v1/, '');
+      const path = forwardPath(req.url);
+      if (!path) {
+        res.writeHead(404, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'meter: not an OpenAI API path' } }));
+        return;
+      }
       const raw = req.method === 'POST' ? await readBody(req) : undefined;
       const body = raw === undefined ? undefined : rewriteBody(raw, ep.model);
       const dump = process.env.BENCH_METER_DUMP;
@@ -180,16 +185,27 @@ export async function startMeter(ep: Endpoint, log?: string): Promise<Meter> {
   };
 }
 
-/** The endpoint from an env file of KEY=value lines (DEEPSEEK_BASE_URL, _MODEL, _API_KEY style). */
-export function endpointFromEnv(text: string, prefix: string): Endpoint {
-  const env = new Map<string, string>();
-  for (const line of text.split('\n')) {
-    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
-    if (m?.[1] && m[2] !== undefined) env.set(m[1], m[2].replace(/^['"]|['"]$/g, ''));
-  }
+/** Only these API paths are forwarded upstream; anything else is refused. */
+const FORWARDED = new Set(['/chat/completions', '/completions', '/models', '/embeddings']);
+
+/** The upstream path for a request ("/v1/chat/completions" → "/chat/completions"), or undefined. */
+export function forwardPath(url: string | undefined): string | undefined {
+  const pathname = new URL(url ?? '/', 'http://meter.local').pathname;
+  const path = pathname.startsWith('/v1/') ? pathname.slice(3) : pathname;
+  return FORWARDED.has(path) ? path : undefined;
+}
+
+function withoutTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === '/') end--;
+  return url.slice(0, end);
+}
+
+/** The endpoint from environment variables PREFIX_BASE_URL, PREFIX_MODEL and PREFIX_API_KEY. */
+export function endpointFromEnv(env: NodeJS.ProcessEnv, prefix: string): Endpoint {
   const get = (k: string): string => {
-    const v = env.get(`${prefix}_${k}`);
-    if (!v) throw new Error(`${prefix}_${k} missing from the endpoint env file`);
+    const v = env[`${prefix}_${k}`]?.trim();
+    if (!v) throw new Error(`${prefix}_${k} is not set`);
     return v;
   };
   return { baseUrl: get('BASE_URL'), model: get('MODEL'), apiKey: get('API_KEY') };

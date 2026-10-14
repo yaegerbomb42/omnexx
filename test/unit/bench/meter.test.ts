@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   addUsage,
   endpointFromEnv,
+  forwardPath,
   rewriteBody,
   startMeter,
   usageFrom,
@@ -48,13 +49,18 @@ describe('bench metering proxy', () => {
     expect(JSON.parse(rewriteBody('{"model":"x"}', 'm'))).toEqual({ model: 'm' });
   });
 
-  it('reads the endpoint from an env file and names a missing variable', () => {
-    expect(endpointFromEnv('A_BASE_URL=https://h/v1\nA_MODEL="M"\nA_API_KEY=k\n', 'A')).toEqual({
-      baseUrl: 'https://h/v1',
-      model: 'M',
-      apiKey: 'k',
-    });
-    expect(() => endpointFromEnv('A_MODEL=M', 'A')).toThrow(/A_BASE_URL/);
+  it('reads the endpoint from env vars and names a missing one', () => {
+    expect(
+      endpointFromEnv({ A_BASE_URL: 'https://h/v1', A_MODEL: 'M', A_API_KEY: 'k' }, 'A'),
+    ).toEqual({ baseUrl: 'https://h/v1', model: 'M', apiKey: 'k' });
+    expect(() => endpointFromEnv({ A_MODEL: 'M' }, 'A')).toThrow(/A_BASE_URL is not set/);
+  });
+
+  it('forwards only OpenAI API paths', () => {
+    expect(forwardPath('/v1/chat/completions')).toBe('/chat/completions');
+    expect(forwardPath('/models')).toBe('/models');
+    expect(forwardPath('/v1/../admin')).toBeUndefined();
+    expect(forwardPath('/internal/metadata')).toBeUndefined();
   });
 
   it('forwards with the real key and counts tokens the endpoint reports', async () => {

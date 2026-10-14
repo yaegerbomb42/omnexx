@@ -18,6 +18,12 @@ const PROSE_TAIL = 800;
  * Cheap-model one-line purposes for codemap entries (plan §14.2): only for the given paths,
  * batched, budget-gated, and best effort; a failed call just leaves those entries without one.
  */
+/** A chapter's opening and ending, enough to summarise what happens in it. */
+function proseExcerpt(text: string): string {
+  if (text.length <= PROSE_HEAD + PROSE_TAIL) return text;
+  return `${text.slice(0, PROSE_HEAD)}\n…\n${text.slice(-PROSE_TAIL)}`;
+}
+
 export async function describeFiles(
   run: Run,
   map: Codemap,
@@ -36,11 +42,9 @@ export async function describeFiles(
     const batch = targets.slice(i, i + batchSize);
     const files = await Promise.all(
       batch.map(async (e) => {
+        const prose = run.state.writing && e.kind === 'doc';
         const head = await readFile(join(run.worktree, e.path), 'utf8').then(
-          (t) =>
-            run.state.writing && e.kind === 'doc' && t.length > PROSE_HEAD + PROSE_TAIL
-              ? `${t.slice(0, PROSE_HEAD)}\n…\n${t.slice(-PROSE_TAIL)}`
-              : t.slice(0, run.state.writing && e.kind === 'doc' ? PROSE_HEAD + PROSE_TAIL : 600),
+          (t) => (prose ? proseExcerpt(t) : t.slice(0, 600)),
           () => '',
         );
         return `## ${e.path}\nsymbols: ${e.symbols.join(', ')}\n${run.redactor.text(head)}`;

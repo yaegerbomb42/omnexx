@@ -203,7 +203,13 @@ export async function reviewChange(
         () => '',
       )
     : '';
-  const prompt = `# Goal\n${goal.slice(0, 3_000)}\n\n${bible ? `# The author's bible (names, facts, style)\n${bible.slice(0, 6_000)}\n\n` : ''}# Task ${task.id}: ${task.title}\n${task.why}\n${task.acceptance.length ? `Acceptance:\n${task.acceptance.map((a) => `- ${a}`).join('\n')}` : ''}\n\n# The change (unified diff)\n${clipDiff(diff, run.config.review.max_diff_chars)}`;
+  const acceptance = task.acceptance.map((a) => '- ' + a).join('\n');
+  const prompt = [
+    `# Goal\n${goal.slice(0, 3_000)}`,
+    ...(bible ? [`# The author's bible (names, facts, style)\n${bible.slice(0, 6_000)}`] : []),
+    `# Task ${task.id}: ${task.title}\n${task.why}\n${acceptance ? 'Acceptance:\n' + acceptance : ''}`,
+    `# The change (unified diff)\n${clipDiff(diff, run.config.review.max_diff_chars)}`,
+  ].join('\n\n');
   try {
     return await ask(
       run,

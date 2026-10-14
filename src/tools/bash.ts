@@ -66,13 +66,19 @@ const schema = z.strictObject({
 });
 
 const DEV_SERVER_PEEK_MS = 20_000;
-const DEV_SERVER =
-  /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|preview|watch)\b|vite(?:\s+(?:dev|serve|preview))?(?=\s|$|&|;)|next\s+(?:dev|start)|nodemon|webpack\s+serve|astro\s+dev|remix\s+dev|http-server|live-server)/;
+const DEV_SERVERS: readonly RegExp[] = [
+  /\b(?:npm|pnpm|yarn|bun) (?:run )?(?:dev|start|serve|preview|watch)\b/,
+  /\bvite(?: dev| serve| preview)?(?:$|[\s&;])/,
+  /\bnext (?:dev|start)\b/,
+  /\b(?:nodemon|http-server|live-server)\b/,
+  /\b(?:webpack serve|astro dev|remix dev)\b/,
+];
 
 /** A command that starts a long-running dev server (not a build or a test run). */
 export function isDevServer(command: string): boolean {
   if (/\b(build|test|lint|typecheck)\b/.test(command) && !/(&&|;)/.test(command)) return false;
-  return DEV_SERVER.test(command);
+  const flat = command.replace(/\s+/g, ' ');
+  return DEV_SERVERS.some((re) => re.test(flat));
 }
 
 /** "Missing script" from npm: name the scripts that do exist, in the folder the command ran in. */
@@ -96,6 +102,17 @@ export async function missingScriptHint(
   } catch {
     return '';
   }
+}
+
+function commandStatus(
+  r: { timedOut: boolean; exitCode: number },
+  timeoutMs: number,
+  peeked: boolean,
+): string {
+  const secs = Math.round(timeoutMs / 1000);
+  if (peeked) return `dev server still running after ${secs}s; stopped by the harness (it started)`;
+  if (r.timedOut) return `timed out after ${secs}s`;
+  return `exit ${String(r.exitCode)}`;
 }
 
 export const bashTool: Tool<typeof schema> = {
@@ -152,11 +169,7 @@ export const bashTool: Tool<typeof schema> = {
       ...(ctx.signal ? { signal: ctx.signal } : {}),
     });
     const peeked = devServer && r.timedOut;
-    const status = peeked
-      ? `dev server still running after ${Math.round(timeoutMs / 1000)}s; stopped by the harness (it started)`
-      : r.timedOut
-        ? `timed out after ${Math.round(timeoutMs / 1000)}s`
-        : `exit ${r.exitCode}`;
+    const status = commandStatus(r, timeoutMs, peeked);
     const body =
       trimOutput(r.output, id) + (await missingScriptHint(r.output, input.command, ctx.jail.root));
     const text = `[${status}, ${Math.round(r.durationMs)}ms, log ${id}]\n${body}`;

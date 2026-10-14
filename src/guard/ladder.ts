@@ -6,6 +6,13 @@ import type { StuckFinding } from './stuck.js';
  * every stuck finding moves it one rung up: retry with the evidence, then a fundamentally
  * different approach, then a stronger model, then a split, then park.
  */
+/** " Already tried, so rule these out: "a"; "b"." or nothing. */
+function ruledOut(tried: readonly string[]): string {
+  if (!tried.length) return '';
+  const list = tried.map((a) => JSON.stringify(a)).join('; ');
+  return ` Already tried, so rule these out: ${list}.`;
+}
+
 export interface Rung {
   id: 'retry_with_evidence' | 'different_approach' | 'escalate_model' | 'replan_task' | 'park';
   /** Mutates the task; returns a short description for the event log. */
@@ -36,7 +43,7 @@ export const differentApproach: Rung = {
     task.failureSignatures = [];
     task.evidence = [
       ...task.evidence,
-      `Repeated attempts failed the same way.${tried.length ? ` Already tried, so rule these out: ${tried.map((a) => `"${a}"`).join('; ')}.` : ''} Take a fundamentally different approach: re-read the failing output from scratch, question the assumption the earlier attempts shared, and change the level you work at (a different file, algorithm, or a smaller first step).`,
+      `Repeated attempts failed the same way.${ruledOut(tried)} Take a fundamentally different approach: re-read the failing output from scratch, question the assumption the earlier attempts shared, and change the level you work at (a different file, algorithm, or a smaller first step).`,
     ].slice(-3);
     return 'different approach requested';
   },

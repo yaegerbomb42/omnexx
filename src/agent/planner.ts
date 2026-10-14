@@ -82,7 +82,7 @@ function effortOnly(run: Run, mode: PlannerMode): string {
     ...(milestones === undefined
       ? []
       : [
-          `Use at most ${milestones === 1 ? 'one milestone' : `${String(milestones)} milestones`}.`,
+          `Use at most ${milestones === 1 ? 'one milestone' : String(milestones) + ' milestones'}.`,
         ]),
     ...(helpers === undefined
       ? []

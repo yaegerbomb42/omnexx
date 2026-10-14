@@ -137,7 +137,13 @@ export function withoutVendored(patch: string): string {
 export async function trackedFiles(root: string): Promise<string[]> {
   const out = await git(root, ['ls-files', '-z'], { allowFailure: true });
   const files = out.exitCode === 0 ? out.stdout.split('\0').filter(Boolean) : await walkFiles(root);
-  return files.filter((f) => !VENDORED.test(f)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return files.filter((f) => !VENDORED.test(f)).sort(byCodeUnits);
+}
+
+/** Plain code-unit order (stable across locales, unlike localeCompare). */
+function byCodeUnits(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
 }
 
 export async function buildCodemap(root: string): Promise<Codemap> {

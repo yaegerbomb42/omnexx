@@ -1,6 +1,11 @@
-import { plannerCandidates } from '../agent/planner.js';
 import { formatDuration, parseDuration } from '../config/duration.js';
-import { BEYOND_RUBRIC, NO_TOOL_CALLS, PlannerIncomplete, runPlanner } from '../agent/planner.js';
+import {
+  BEYOND_RUBRIC,
+  NO_TOOL_CALLS,
+  PlannerIncomplete,
+  plannerCandidates,
+  runPlanner,
+} from '../agent/planner.js';
 import { allOf, WebhookNotifier } from '../notify/webhook.js';
 import { openPullRequest } from '../git/pr.js';
 import { closeSession } from '../tools/extra/browser.js';

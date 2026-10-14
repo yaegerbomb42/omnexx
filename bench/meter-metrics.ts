@@ -1,7 +1,7 @@
 import type { BenchmarkResult } from './types.ts';
-import type { Meter, MeterTotals } from './meter.ts';
+import type { MeterTotals } from './meter.ts';
 
-export type { Meter };
+export type { Meter } from './meter.ts';
 
 /** Bench metrics from the metering proxy: fresh input, cache reads and output, as the endpoint billed them. */
 export function meterMetrics(t: MeterTotals, wall_ms: number): BenchmarkResult {

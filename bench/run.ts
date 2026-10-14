@@ -7,7 +7,7 @@ import { CodexRunner } from './runners/codex.ts';
 import { ClineRunner } from './runners/cline.ts';
 import { OpenHandsRunner } from './runners/openhands.ts';
 import { endpointFromEnv, startMeter, type Meter } from './meter.ts';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { createResultsWriter, resultsDir } from './results.ts';
 import type { BenchConfig, Suite, TaskRunResult } from './types.ts';
 import type { AgentRunner } from './runners/base.ts';
@@ -26,7 +26,8 @@ interface RunnerOpts {
 }
 
 function needMeter(o: RunnerOpts): { meter: Meter; model: string; hours: number } {
-  if (!o.meter || !o.model) throw new Error('this agent needs --endpoint (an env file)');
+  if (!o.meter || !o.model)
+    throw new Error('this agent needs --endpoint <PREFIX> (PREFIX_BASE_URL, _MODEL, _API_KEY set)');
   return { meter: o.meter, model: o.model, hours: o.hours };
 }
 
@@ -57,7 +58,6 @@ interface Opts {
   model?: string;
   context: string;
   endpoint?: string;
-  endpointPrefix: string;
   judge?: boolean;
 }
 
@@ -83,10 +83,9 @@ async function main(): Promise<void> {
       'lean',
     )
     .option(
-      '--endpoint <envfile>',
-      'one OpenAI-compatible endpoint for every agent, metered the same way (PREFIX_BASE_URL, _MODEL, _API_KEY)',
+      '--endpoint <prefix>',
+      'one OpenAI-compatible endpoint for every agent, metered the same way, from env vars PREFIX_BASE_URL, PREFIX_MODEL, PREFIX_API_KEY',
     )
-    .option('--endpoint-prefix <prefix>', 'variable prefix in the endpoint env file', 'DEEPSEEK')
     .option('--judge', "omnexx: keep the user's judge (e.g. Nimble) on")
     .option('--dry-run', 'show what would run without running it')
     .parse();
@@ -101,9 +100,7 @@ async function main(): Promise<void> {
   if (!makeSuite) fail(`Unknown suite: ${config.suite}`);
   const suite = makeSuite();
 
-  const endpoint = opts.endpoint
-    ? endpointFromEnv(await readFile(opts.endpoint, 'utf-8'), opts.endpointPrefix)
-    : undefined;
+  const endpoint = opts.endpoint ? endpointFromEnv(process.env, opts.endpoint) : undefined;
   if (endpoint) await mkdir(resultsDir(config.out), { recursive: true });
   const meter = endpoint
     ? await startMeter(endpoint, join(resultsDir(config.out), 'calls.jsonl'))
