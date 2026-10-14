@@ -532,9 +532,6 @@ class Supervisor {
       if (await this.recoverNoProgress(sinceCycles)) return undefined;
       return { status: 'needs-human', reason: `no accepted commit for ${sinceCycles} cycles` };
     }
-    // Without tests a code run gets one cycle; a writing run is checked by its reviewer instead.
-    if (r.state.noChecks && !r.state.writing && r.state.cycle >= 1)
-      return { status: 'finished', reason: 'single cycle (no checks configured)' };
     return undefined;
   }
 

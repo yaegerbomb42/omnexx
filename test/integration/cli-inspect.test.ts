@@ -115,7 +115,7 @@ describe('inspection commands on a finished run', () => {
     expect((await run(['status', 'r_nope'])).err).toMatch(/no run r_nope/);
   });
 
-  it('commands without any runs say so; run without gates is refused', async () => {
+  it('commands without any runs say so', async () => {
     const t = await startTestRun({
       repo: await makeRepo(),
       provider: new ScriptedProvider(() => ({})),
@@ -125,7 +125,5 @@ describe('inspection commands on a finished run', () => {
     expect((await cli(['status'], empty, t.repo)).err).toMatch(/no runs yet/);
     expect((await cli(['runs'], empty, t.repo)).out).toContain('no runs yet');
     expect(JSON.parse((await cli(['runs', '--json'], empty, t.repo)).out)).toEqual([]);
-    const withKey = { ...empty, ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000' };
-    expect((await cli(['run', 'do things'], withKey, t.repo)).err).toMatch(/no gates configured/);
   });
 });

@@ -12,7 +12,7 @@ export const FAST_TASK = 'M1.T01';
 /** Whether this run starts on the fast path. */
 export function tryFastPath(config: OmnexxConfig, goal: string): boolean {
   const p = config.plan;
-  if (p.mode === 'full' || !config.gates.length) return false;
+  if (p.mode === 'full') return false;
   if (p.mode === 'fast') return true;
   // Auto: long goals (a spec, a multi-hour build), autonomous runs and runs where the user sized
   // the plan want milestones from the start.

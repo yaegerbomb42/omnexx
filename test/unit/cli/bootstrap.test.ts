@@ -1,8 +1,12 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../../src/config/load.js';
-import { bootstrapEmptyProject, isEmptyProject } from '../../../src/cli/bootstrap.js';
+import {
+  bootstrapEmptyProject,
+  isEmptyProject,
+  startTracking,
+} from '../../../src/cli/bootstrap.js';
 import { git } from '../../../src/git/git.js';
 import { isolatedEnv, tempDir, tempRepo } from '../../support/tmp.js';
 
@@ -51,5 +55,30 @@ describe('empty-folder bootstrap', () => {
       requires_script: 'start',
     });
     expect(await readFile(join(dir, 'AGENTS.md'), 'utf8')).toContain('$PORT');
+  });
+});
+
+describe('startTracking', () => {
+  it('turns a plain folder into a repo with a .gitignore and a first commit, once', async () => {
+    const dir = await tempDir();
+    await writeFile(join(dir, 'notes.txt'), 'hello\n');
+    await mkdir(join(dir, 'node_modules/x'), { recursive: true });
+    await writeFile(join(dir, 'node_modules/x/i.js'), '1');
+    expect(await startTracking(dir)).toBe(true);
+    const files = (await git(dir, ['ls-files'])).stdout.split('\n');
+    expect(files).toContain('notes.txt');
+    expect(files).toContain('.gitignore');
+    expect(files.some((f) => f.startsWith('node_modules'))).toBe(false);
+    expect(await startTracking(dir)).toBe(false);
+  });
+
+  it('commits a repo that has no commit yet, keeping its own .gitignore', async () => {
+    const dir = await tempDir();
+    await git(dir, ['init', '-q']);
+    await writeFile(join(dir, '.gitignore'), 'secret/\n');
+    await writeFile(join(dir, 'a.md'), '# a\n');
+    expect(await startTracking(dir)).toBe(true);
+    expect((await git(dir, ['rev-parse', '--verify', 'HEAD'])).exitCode).toBe(0);
+    expect(await readFile(join(dir, '.gitignore'), 'utf8')).toBe('secret/\n');
   });
 });

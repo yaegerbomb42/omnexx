@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0
+
+- **Guided autonomous runs**: `/autonomous` (or `/auto`) with nothing after it asks how long
+  (30 minutes to 24 hours, or type a time like `90m`), then what to work on; enter on an empty
+  line keeps improving the repo.
+- **Runs work without tests or git**: with no test command, each task's checks and the reviewer
+  decide what is kept (no more one-cycle limit); a folder that isn't a git repository is tracked
+  first (git init, a `.gitignore`, a first commit) so every change can be undone.
+
 ## 0.10.0
 
 - **Fast path**: small goals get one pass on the whole goal, gated and reviewed like any cycle;

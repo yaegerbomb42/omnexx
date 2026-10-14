@@ -65,3 +65,61 @@ describe('custom slash commands', () => {
     expect(sent).toEqual(['Explain the plan file simply.']);
   });
 });
+
+describe('/autonomous with no arguments', () => {
+  const session = async () => {
+    const io = {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new PassThrough(),
+      env: await isolatedEnv(),
+      cwd: await makeRepo(),
+      isTTY: false,
+    } as CliIO;
+    const s = new Session(io, () => Promise.resolve(0));
+    const runs: { goal: string; extra: readonly string[] }[] = [];
+    (s as unknown as { startRun: (g: string, e: readonly string[]) => Promise<void> }).startRun = (
+      goal,
+      extra,
+    ) => {
+      runs.push({ goal, extra });
+      return Promise.resolve();
+    };
+    return { s, runs };
+  };
+
+  it('asks how long, then what to work on; an empty goal keeps improving the repo', async () => {
+    const { s, runs } = await session();
+    await s.submit('/autonomous');
+    expect(s.autoSetup).toEqual({ step: 'time', cursor: 4 });
+    s.autoKey({ up: true });
+    s.autoKey({ enter: true });
+    expect(s.autoSetup).toEqual({ step: 'goal', time: '4h' });
+    await s.submit('');
+    expect(s.autoSetup).toBeUndefined();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.extra).toEqual(['--for', '4h']);
+    expect(runs[0]?.goal).toMatch(/^Improve this repository/);
+  });
+
+  it('takes a typed time and a goal; esc cancels', async () => {
+    const { s, runs } = await session();
+    await s.submit('/auto');
+    s.autoKey({ pick: 7 });
+    expect(s.autoSetup).toEqual({ step: 'custom' });
+    await s.submit('soon');
+    expect(s.autoSetup).toEqual({ step: 'custom' });
+    await s.submit('90m');
+    await s.submit('make the docs clearer');
+    expect(runs[0]).toEqual({ goal: 'make the docs clearer', extra: ['--for', '90m'] });
+
+    await s.submit('/autonomous make it faster');
+    s.autoKey({ pick: 0 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(runs[1]).toEqual({ goal: 'make it faster', extra: ['--for', '30m'] });
+
+    await s.submit('/autonomous');
+    expect(s.interrupt()).toBe(true);
+    expect(s.autoSetup).toBeUndefined();
+  });
+});
