@@ -209,6 +209,37 @@ describe('M2: hierarchical plan, milestones, checkpoints and the report', () => 
 });
 
 describe('M2: stuck handling, budget and judge', () => {
+  it('a planner model that keeps failing hands planning to the next model instead of stopping', async () => {
+    // Arrange: opus answers in prose (no tool calls); sonnet plans properly.
+    const good = planner([{ id: 'M1', title: 'Ship', tasks: [fileTask('M1.T01')] }]);
+    const script: Script = (m) => {
+      if (m.planner && m.request.model.includes('opus')) return say('Here is my plan in words.');
+      return scenario(good, fileWorker)(m);
+    };
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider: new ScriptedProvider(script),
+      config: {
+        gates: [GATE],
+        models: { planner: ['anthropic:opus', 'anthropic:sonnet'], worker: 'anthropic:sonnet' },
+      },
+    });
+
+    // Act
+    const out = await superviseTest(t);
+
+    // Assert
+    expect(out.status).toBe('finished');
+    const events = await readEvents(t.run.store.eventsPath);
+    expect(types(events, 'planner.fallback')).toMatchObject([
+      {
+        from: expect.stringContaining('anthropic:') as string,
+        to: expect.stringContaining('anthropic:') as string,
+      },
+    ]);
+    expect((await t.run.store.readState()).acceptedCommits).toBe(1);
+  });
+
   it('a verify-only task with nothing to change is done in one cycle, not retried until parked', async () => {
     // Arrange: M1.T01 builds something; M1.T02 only "runs the full test suite" (no checks).
     const plan = planner([
@@ -348,7 +379,7 @@ describe('M2: stuck handling, budget and judge', () => {
     expect(types(events, 'ladder.rung').map((e) => e.rung)).not.toContain('stop_and_ask');
   });
 
-  it('impossible-task: 3 rejections escalate to the strong model, 3 more ask the planner to split it (it cannot), then it parks; nothing runnable → needs-human (exit 2) and a push', async () => {
+  it('impossible-task: 3 rejections ask for a different approach, 3 more escalate to the strong model, 3 more ask the planner to split it (it cannot), then it parks; nothing runnable → needs-human (exit 2) and a push', async () => {
     const plan = impossiblePlan();
     const worker = impossibleWorker;
     const t = await startTestRun({
@@ -360,19 +391,20 @@ describe('M2: stuck handling, budget and judge', () => {
     const out = await superviseTest(t, pushes);
     expect(out).toMatchObject({ status: 'needs-human', exitCode: 2 });
     const events = await readEvents(t.run.store.eventsPath);
-    expect(types(events, 'rollback')).toHaveLength(6);
+    expect(types(events, 'rollback')).toHaveLength(9);
     expect(types(events, 'ladder.rung').map((e) => e.rung)).toEqual([
+      'different_approach',
       'escalate_model',
       'replan_task',
       'park',
       'stop_and_ask',
     ]);
-    // Cycles 1-3 use the worker model; after escalation, cycles 4-6 use the planner model.
+    // Cycles 1-6 use the worker model (a different approach first); after escalation, 7-9 use the planner model.
     const models = (t.run.deps.provider as ScriptedProvider).requests
       .filter((q) => JSON.stringify(q.messages[0]).includes('Work on M1.T01'))
       .map((q) => q.model);
-    expect(new Set(models.slice(0, 6))).toEqual(new Set(['claude-sonnet-5-5']));
-    expect(new Set(models.slice(6))).toEqual(new Set(['claude-opus-5-5']));
+    expect(new Set(models.slice(0, 12))).toEqual(new Set(['claude-sonnet-5-5']));
+    expect(new Set(models.slice(12))).toEqual(new Set(['claude-opus-5-5']));
     expect(
       types(events, 'stuck.signal')
         .map((e) => e.signal)
@@ -380,6 +412,8 @@ describe('M2: stuck handling, budget and judge', () => {
     ).toEqual([
       'consecutive_rejections',
       'consecutive_rejections',
+      'consecutive_rejections',
+      'repeated_signature',
       'repeated_signature',
       'repeated_signature',
     ]);
@@ -387,7 +421,8 @@ describe('M2: stuck handling, budget and judge', () => {
     expect(plan2 && getNode(plan2, 'M1.T01')).toMatchObject({
       status: 'parked',
       escalated: true,
-      approachesTried: ['Tried +1', 'Tried +2', 'Tried +3', 'Tried +4', 'Tried +5', 'Tried +6'],
+      // The list keeps the latest 8 approaches.
+      approachesTried: Array.from({ length: 8 }, (_, i) => `Tried +${String(i + 2)}`),
     });
     expect(pushes.at(-1)).toMatchObject({ kind: 'needs-human', parked: 1 });
     expect(await readFile(t.run.store.file('REPORT.md'), 'utf8')).toMatch(
@@ -430,6 +465,7 @@ describe('M2: stuck handling, budget and judge', () => {
       { task: 'M1.T01', into: ['M1.T03', 'M1.T04'] },
     ]);
     expect(types(events, 'ladder.rung').map((e) => e.rung)).toEqual([
+      'different_approach',
       'escalate_model',
       'replan_task',
     ]);
@@ -447,6 +483,7 @@ describe('M2: stuck handling, budget and judge', () => {
         .filter((x) => x !== 'M1.T01'),
     ).toEqual(['M1.T03', 'M1.T04', 'M1.T02']);
     expect(types(events, 'stuck.signal').map((e) => e.signal)).toEqual([
+      'task_cycles',
       'task_cycles',
       'task_cycles',
     ]);
@@ -646,17 +683,23 @@ describe('M2: stuck handling, budget and judge', () => {
         return;
       }
       const q = (
-        JSON.parse(req.body) as { questions: { name: string; type: string; options?: string[] }[] }
+        JSON.parse(req.body) as {
+          questions: Record<string, { type: string; criteria?: Record<string, null> | string[] }>;
+        }
       ).questions;
       const out: Record<string, unknown> = {};
-      for (const x of q) {
-        const pick = x.options
-          ? x.options.includes(answers[n % answers.length] ?? '')
+      for (const [name, x] of Object.entries(q)) {
+        const options =
+          x.type === 'choice' && x.criteria && !Array.isArray(x.criteria)
+            ? Object.keys(x.criteria)
+            : undefined;
+        const pick = options
+          ? options.includes(answers[n % answers.length] ?? '')
             ? answers[n % answers.length]
-            : x.options[0]
+            : options[0]
           : undefined;
         n++;
-        out[x.name] =
+        out[name] =
           x.type === 'choice'
             ? { choice: pick, probabilities: { [pick ?? '']: 0.99 }, confidence: 0.99 }
             : { probability: n % 2 ? 0.05 : 0.95 };

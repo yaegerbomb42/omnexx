@@ -28,8 +28,9 @@ const MARKERS: readonly [RegExp, string][] = [
   [/@pytest\.mark\.(skip|xfail)/, '@pytest.mark.skip'],
   [/\bpytest\.skip\s*\(/, 'pytest.skip()'],
   [/\bunittest\.skip/, 'unittest.skip'],
-  [/@ts-(ignore|nocheck|expect-error)\b/, '@ts-ignore'],
-  [/eslint-disable/, 'eslint-disable'],
+  // Directives only count inside a comment, not as text in a string (a test listing banned markers).
+  [/(\/\/|\/\*)\s*@ts-(ignore|nocheck|expect-error)\b/, '@ts-ignore'],
+  [/(\/\/|\/\*)\s*eslint-disable/, 'eslint-disable'],
   [/#\s*type:\s*ignore/, 'type: ignore'],
   [/#\s*noqa\b/, 'noqa'],
   [/\bt\.Skip(Now|f)?\s*\(/, 'go t.Skip'],

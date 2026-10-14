@@ -10,7 +10,7 @@ An optional decision layer: a small model answers typed questions (pick one of N
 | `nimble`         | Bespoke Labs' Nimble 9B on Ollama ≥ 0.35: `POST {url}/v1/systemone` with `{model, state, questions, keep_alive}`. Plain `fetch`, no extra dependency.                        |
 | `llm`            | The `cheap` model role answers the same questions through a forced tool call. Costs money; every call goes through the budget pre-flight. Also usable as `fallback = "llm"`. |
 
-The adapter sends questions as `{name, type, question, options|levels}` and accepts answers keyed by name (an object, or an array of objects with `name`). Verify this matches the Nimble release you run; if it doesn't, every call becomes a logged `judge.miss` and nothing else changes.
+The adapter sends Ollama's systemone shape: `questions` is an object keyed by name, each `{type, instructions, criteria}` (choice: option → null; score: the ordered levels). Answers come back keyed by name, with the value under `choice`, `noul` or `score`. Checked live against `nimble` on Ollama 0.40.3 (2026-10-13): ~1 s cold, ~20 ms warm. If a future release changes the shape, every call becomes a logged `judge.miss` and nothing else changes.
 
 ## Uses in this build
 

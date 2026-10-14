@@ -66,6 +66,8 @@ export async function startTestRun(opts: {
   const config = defaultConfig({
     gates: [NODE_TEST_GATE],
     beyond: { enabled: false },
+    // Most tests script the planner; the fast path's own tests opt in.
+    plan: { mode: 'full' },
     // Review and audit add model calls; tests for them opt in explicitly.
     review: { enabled: false, audit: false, strict_checks: false },
     // Tests keep the real HOME; never let the host's ~/.claude/skills into a test run's prompts.

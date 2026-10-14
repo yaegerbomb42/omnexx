@@ -21,16 +21,20 @@ export async function rollbackTo(
   cwd: string,
   lastGreen: string,
   save?: { path: string; redact: (s: string) => string },
-): Promise<{ savedPatch: boolean }> {
+): Promise<{ savedPatch: boolean; exact: boolean }> {
   let savedPatch = false;
+  let exact = false;
   if (save) {
-    const patch = sanitizePatch((await workingTreeDiff(cwd, lastGreen)).patch, save.redact);
+    const raw = (await workingTreeDiff(cwd, lastGreen)).patch;
+    const patch = sanitizePatch(raw, save.redact);
     if (patch.trim()) {
       await writeFile(save.path, patch, { mode: 0o600 });
       savedPatch = true;
+      // Nothing redacted or dropped: the saved patch can be applied again as is.
+      exact = patch === raw;
     }
   }
   await git(cwd, ['reset', '-q', '--hard', lastGreen]);
   await git(cwd, ['clean', '-q', '-fd']);
-  return { savedPatch };
+  return { savedPatch, exact };
 }

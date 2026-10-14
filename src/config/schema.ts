@@ -245,7 +245,7 @@ export const stuckSchema = z.strictObject({
   max_same_signature: z.number().int().positive().default(3),
   /** A task that has used this many cycles (accepted-partial or rejected) without finishing is stuck. */
   max_task_cycles: z.number().int().positive().default(8),
-  no_progress_cycles: z.number().int().positive().default(8),
+  no_progress_cycles: z.number().int().positive().default(12),
   no_progress_hours: z.number().positive().default(3),
   oscillation_window: z.number().int().positive().default(5),
   /** In-cycle: the same tool call with the same arguments this many times ends the cycle. */

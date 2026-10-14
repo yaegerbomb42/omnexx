@@ -14,6 +14,8 @@ export const TASK_KINDS = [
   'migration',
   'docs',
   'investigate',
+  'writing',
+  'research',
 ] as const;
 export const NODE_STATUS = ['todo', 'doing', 'done', 'parked'] as const;
 export type NodeStatus = (typeof NODE_STATUS)[number];
@@ -48,6 +50,10 @@ export const planNodeSchema = nodeInputSchema.extend({
   /** The in-cycle stuck signal that cut the previous attempt short, if one did. */
   lastCutShort: z.string().optional(),
   parkedReason: z.string().optional(),
+  /** A rejected attempt the reviewer only asked to amend: re-applied at the start of the next one. */
+  amendPatch: z.string().optional(),
+  /** Parked because the goal was met without it: doesn't stop the run from finishing. */
+  skipped: z.literal(true).optional(),
   /** Index into the strategy ladder for this task. */
   rung: z.number().int().nonnegative().default(0),
   /** Cycles on this task use the planner (strong) model instead of the worker model. */

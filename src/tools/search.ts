@@ -8,7 +8,7 @@ import { isSecretPath } from '../security/paths.js';
 import { fail, ok, type Tool } from './types.js';
 
 export const MAX_HITS = 100;
-const SKIP_DIRS = new Set([
+export const SKIP_DIRS = new Set([
   '.git',
   'node_modules',
   'dist',
@@ -21,7 +21,9 @@ const SKIP_DIRS = new Set([
 ]);
 
 const schema = z.strictObject({
-  pattern: z.string().min(1).describe('Regular expression (ripgrep syntax)'),
+  pattern: z
+    .string()
+    .describe('Regular expression (ripgrep syntax); empty lists the files instead'),
   glob: z.string().optional().describe('Only files matching this glob, e.g. "src/**/*.ts"'),
   path: z.string().optional().describe('Directory to search, relative to the repo root'),
 });
@@ -111,6 +113,11 @@ export const searchTool: Tool<typeof schema> = {
       dir = ctx.jail.resolve(input.path ?? '.', 'read');
     } catch (err) {
       return fail(err instanceof OmnexxError ? err.message : String(err));
+    }
+    // Models send an empty pattern (or ".") when they mean "show me the files".
+    if (!input.pattern.trim()) {
+      const { listTree } = await import('./list.js');
+      return ok(await listTree(dir, ctx.jail.resolve('.', 'read'), 3));
     }
     try {
       new RegExp(input.pattern);

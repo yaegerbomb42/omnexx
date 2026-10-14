@@ -96,6 +96,7 @@ describe('run --plan-only', () => {
     expect((await store.readPlan())?.nodes.map((n) => n.id)).toEqual(['M1', 'M1.T01', 'M2']);
     expect(provider.requests[0]?.tools.map((t) => t.name).sort()).toEqual([
       'context',
+      'list',
       'outline',
       'read',
       'read_log',
@@ -314,6 +315,38 @@ describe('agent loop limits and control inside a cycle', () => {
     await runBaseline(stopped.run);
     await stopped.run.store.writeControl({ request: 'stop', at: 1 });
     expect((await runOneCycle(stopped.run, 'M1.T01')).reasons).toEqual(['no changes']);
+  });
+
+  it('invented tool names run the real tool, and an empty search lists the files', async () => {
+    const results: string[] = [];
+    const script: Script = ({ turn, request }) => {
+      const last = request.messages.at(-1)?.content.find((b) => b.type === 'tool_result');
+      if (last?.type === 'tool_result') results.push(JSON.stringify(last.content));
+      return (
+        [
+          call('print_tree', {}),
+          call('search', { pattern: '' }),
+          call('str_replace', {
+            path: 'src/math.js',
+            old_str: 'return a - b;',
+            new_str: 'return a + b;',
+          }),
+          say('done'),
+        ][turn] ?? say('done')
+      );
+    };
+    const t = await startTestRun({
+      fixture: 'ts-failing-test',
+      provider: new ScriptedProvider(script),
+      plan,
+    });
+    await runBaseline(t.run);
+    const v = await runOneCycle(t.run, 'M1.T01');
+    expect(v.verdict).toBe('accept');
+    const calls = (await readEvents(t.run.store.eventsPath)).filter((e) => e.type === 'tool.call');
+    expect(calls.slice(0, 2).map((e) => e.isError)).toEqual([false, false]);
+    expect(results[0]).toContain('src/math.js');
+    expect(results[1]).toContain('src/math.js');
   });
 
   it('judge off: a whole cycle makes zero HTTP calls', async () => {

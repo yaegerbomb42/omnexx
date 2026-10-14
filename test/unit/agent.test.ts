@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -6,6 +6,7 @@ import {
   renderCodemap,
   setPurposes,
   updateCodemap,
+  withoutVendored,
 } from '../../src/agent/codemap.js';
 import { buildCycleContext, turnRequest } from '../../src/agent/context.js';
 import { WORKER_SYSTEM } from '../../src/agent/prompts.js';
@@ -17,6 +18,28 @@ import { WORKER_TOOLS, toolSpec } from '../../src/tools/registry.js';
 import { tempRepo } from '../support/tmp.js';
 
 describe('codemap', () => {
+  it('drops vendored files from a diff shown to the reviewer and auditor', () => {
+    const section = (path: string) =>
+      `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-a\n+b\n`;
+    const patch =
+      section('src/utils.ts') +
+      section('node_modules/.vite/vitest/results.json') +
+      section('README.md');
+    expect(withoutVendored(patch)).toBe(section('src/utils.ts') + section('README.md'));
+  });
+
+  it('leaves out committed dependency and build folders', async () => {
+    const repo = await tempRepo();
+    await mkdir(join(repo, 'node_modules/typescript/lib'), { recursive: true });
+    await mkdir(join(repo, 'src/dist'), { recursive: true });
+    await writeFile(join(repo, 'node_modules/typescript/lib/tsc.js'), 'export const t = 1;\n');
+    await writeFile(join(repo, 'src/dist/out.js'), 'export const o = 1;\n');
+    await writeFile(join(repo, 'src/main.ts'), 'export const m = 1;\n');
+    await git(repo, ['add', '-A']);
+    await git(repo, ['commit', '-qm', 'c']);
+    expect((await buildCodemap(repo)).entries.map((e) => e.path)).toEqual(['src/main.ts']);
+  });
+
   it('builds, updates only touched files (others byte-identical), keeps purposes, and drops deleted files', async () => {
     const repo = await tempRepo();
     await writeFile(join(repo, 'a.ts'), 'export function alpha() {}\n');

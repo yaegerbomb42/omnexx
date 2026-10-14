@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AgentRunner } from './base.ts';
+import { meterMetrics, type Meter } from '../meter-metrics.ts';
 import type { AgentRunOutput, BenchmarkResult, TaskDef } from '../types.ts';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -32,6 +33,10 @@ export interface OmnexxRunnerOptions {
   model?: string | undefined;
   /** lean: 0.8 defaults (codemap optional). full: every context section pinned (pre-0.8). */
   context?: 'lean' | 'full';
+  /** A metering proxy every model call goes through; `model` is then that endpoint's model id. */
+  meter?: Meter | undefined;
+  /** Keep the user's judge (e.g. Nimble). Off by default so only the pinned model makes calls. */
+  judge?: boolean;
 }
 
 /**
@@ -72,6 +77,7 @@ export class OmnexxRunner extends AgentRunner {
     args.push('--hours', String(hours), '--push', 'none', '--quiet');
     if (await hasScript(workDir, 'test')) args.push('--gate', 'npm test');
 
+    this.opts.meter?.reset();
     const start = Date.now();
     const { timedOut } = await this.spawnWithTimeout('node', args, {
       cwd: workDir,
@@ -80,8 +86,10 @@ export class OmnexxRunner extends AgentRunner {
         OMNEXX_HOME: home,
         OMNEXX_CONFIG_HOME: await benchConfigHome(home, {
           beyond: this.opts.beyond ?? false,
-          model: this.opts.model,
+          model: this.opts.meter ? `bench:${this.opts.model ?? ''}` : this.opts.model,
           context: this.opts.context ?? 'lean',
+          judge: this.opts.judge ?? false,
+          endpoint: this.opts.meter?.url,
         }),
         CI: '1',
       },
@@ -93,8 +101,11 @@ export class OmnexxRunner extends AgentRunner {
 
     const state = await latestState(home);
     if (!state) throw new Error(`omnexx left no run state in ${home}`);
+    const metrics = this.opts.meter
+      ? meterMetrics(this.opts.meter.totals(), wall_ms)
+      : metricsFromState(state, wall_ms);
     return {
-      ...metricsFromState(state, wall_ms),
+      ...metrics,
       interventions: timedOut ? 1 : 0,
       resultDir: state.worktree,
     };
@@ -123,22 +134,33 @@ export function metricsFromState(state: RunState, wall_ms: number): BenchmarkRes
 const POOL_FILES = ['models.json', 'roles.json', 'context-sections.json'];
 const ALL_PINNED = ['role', 'codemap', 'intent', 'lessons', 'progress'];
 
-/** The copy's own [models] tables (and their sub-tables) out, so the pinned model is the only one. */
-export function withoutModelsTables(toml: string): string {
+/** The copy's own [name] tables (and their sub-tables) out, e.g. so a pinned model is the only one. */
+export function withoutTables(toml: string, names: readonly string[]): string {
   let skipping = false;
   return toml
     .split('\n')
     .filter((line) => {
       const header = /^\s*\[+([^\]]+)\]+\s*$/.exec(line)?.[1]?.trim();
-      if (header !== undefined) skipping = header === 'models' || header.startsWith('models.');
+      if (header !== undefined)
+        skipping = names.some((n) => header === n || header.startsWith(`${n}.`));
       return !skipping;
     })
     .join('\n');
 }
 
+export function withoutModelsTables(toml: string): string {
+  return withoutTables(toml, ['models']);
+}
+
 async function benchConfigHome(
   home: string,
-  o: { beyond: boolean; model?: string | undefined; context: 'lean' | 'full' },
+  o: {
+    beyond: boolean;
+    model?: string | undefined;
+    context: 'lean' | 'full';
+    judge: boolean;
+    endpoint?: string | undefined;
+  },
 ): Promise<string> {
   const src =
     process.env.OMNEXX_CONFIG_HOME ??
@@ -155,6 +177,9 @@ async function benchConfigHome(
     const m = JSON.stringify(o.model);
     text += `\n[models]\nplanner = ${m}\nworker = ${m}\ncheap = ${m}\nhelpers = ${m}\nchat = ${m}\n`;
   }
+  if (!o.judge) text = withoutTables(text, ['judge']);
+  if (o.endpoint)
+    text += `\n[providers.endpoints.bench]\nkind = "openai"\nbase_url = ${JSON.stringify(o.endpoint)}\nfree = true\n`;
   if (o.context === 'full')
     text += `\n[context.sections]\n${ALL_PINNED.map((s) => `${s} = "pinned"`).join('\n')}\n`;
   if (!/^\[beyond\]/m.test(text)) text += `\n[beyond]\nenabled = ${String(o.beyond)}\n`;

@@ -271,6 +271,7 @@ describe('registry', () => {
     expect(a).not.toContain('$schema');
     expect(READ_ONLY_TOOLS.map((t) => t.name).sort()).toEqual([
       'context',
+      'list',
       'outline',
       'read',
       'read_log',

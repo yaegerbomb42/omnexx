@@ -1,15 +1,24 @@
 import { formatDuration, parseDuration } from '../config/duration.js';
-import { BEYOND_RUBRIC, NO_TOOL_CALLS, PlannerIncomplete, runPlanner } from '../agent/planner.js';
+import {
+  BEYOND_RUBRIC,
+  NO_TOOL_CALLS,
+  PlannerIncomplete,
+  plannerCandidates,
+  runPlanner,
+} from '../agent/planner.js';
 import { allOf, WebhookNotifier } from '../notify/webhook.js';
 import { openPullRequest } from '../git/pr.js';
 import { closeSession } from '../tools/extra/browser.js';
 import { saveToRepoMemory } from './repo-memory.js';
-import { renderCodemap, type Codemap } from '../agent/codemap.js';
+import { renderCodemap, withoutVendored, type Codemap } from '../agent/codemap.js';
 import { readIntent } from '../agent/intent.js';
 import { git } from '../git/git.js';
 import { readTextOr } from './atomic.js';
 import { auditResult, blocking, clipDiff, renderFindings } from '../verify/review.js';
 import { join } from 'node:path';
+import { rm } from 'node:fs/promises';
+import { FAST_TASK, fastPathSpent, fastPlan, tryFastPath } from './fast-path.js';
+import { resolveWriting } from './writing.js';
 import { EXIT } from '../cli/exit-codes.js';
 import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
@@ -116,6 +125,26 @@ const PLANNER_RETRIES = 2;
 
 class Supervisor {
   private plannerRetries = 0;
+  /** Milestones done when the goal was last checked, so the early audit runs once per milestone. */
+  private milestonesChecked = 0;
+  /** HEAD when the early audit found the goal met; the end-of-run audit then has nothing new to see. */
+  private goalMetAt: string | undefined;
+
+  /** Mark the current lead planner model as failed and move to the next candidate, if any. */
+  private fallBackPlanner(end: string): boolean {
+    const r = this.run;
+    const candidates = plannerCandidates(r, r.chains.planner);
+    const [lead, next] = candidates;
+    if (!lead || !next) return false;
+    r.plannerFailed.add(`${lead.provider}:${lead.id}`);
+    this.plannerRetries = 0;
+    r.events.emit('planner.fallback', {
+      from: `${lead.provider}:${lead.id}`,
+      to: `${next.provider}:${next.id}`,
+      end,
+    });
+    return true;
+  }
 
   constructor(
     private readonly run: Run,
@@ -503,7 +532,8 @@ class Supervisor {
       if (await this.recoverNoProgress(sinceCycles)) return undefined;
       return { status: 'needs-human', reason: `no accepted commit for ${sinceCycles} cycles` };
     }
-    if (r.state.noChecks && r.state.cycle >= 1)
+    // Without tests a code run gets one cycle; a writing run is checked by its reviewer instead.
+    if (r.state.noChecks && !r.state.writing && r.state.cycle >= 1)
       return { status: 'finished', reason: 'single cycle (no checks configured)' };
     return undefined;
   }
@@ -555,10 +585,38 @@ class Supervisor {
     const r = this.run;
     await r.setPhase('planning');
     await this.setup();
-    await initCodemap(r);
+    const goal = (await r.store.readGoal()).text;
+    if (!r.state.writing && resolveWriting(r.config, goal)) {
+      r.state.writing = true;
+      r.events.emit('run.kind', { kind: 'writing' });
+    }
+    // Writing runs always plan: a manuscript needs its outline and bible before the first page.
+    const fast = !r.state.writing && r.state.fastPath === undefined && tryFastPath(r.config, goal);
+    await initCodemap(r, { describe: !fast });
     if (!r.state.baseline) await runBaseline(r);
-    await runPlanner(r, { kind: 'initial' });
+    if (fast) {
+      r.plan = fastPlan(r.config, goal);
+      await r.savePlan();
+      r.state.fastPath = 'tried';
+      await r.save();
+      r.events.emit('plan.written', { mode: 'fast', nodes: r.plan.nodes.length, turns: 0, usd: 0 });
+    } else {
+      await runPlanner(r, { kind: 'initial' });
+    }
     await r.setPhase('select');
+  }
+
+  /** The fast path had its tries: drop its one-task plan so the planner plans from here. */
+  private async fastPathFallback(): Promise<boolean> {
+    const r = this.run;
+    if (r.state.fastPath !== 'tried' || !r.plan) return false;
+    if (!fastPathSpent(r.plan, r.config.plan.fast_attempts)) return false;
+    r.state.fastPath = 'failed';
+    r.events.emit('fast_path.fallback', { attempts: getNode(r.plan, FAST_TASK).attempts });
+    r.plan = undefined;
+    await rm(r.store.file('plan.json'), { force: true });
+    await r.save();
+    return true;
   }
 
   /**
@@ -575,21 +633,8 @@ class Supervisor {
     const r = this.run;
     const cfg = r.config.review;
     if (!cfg.audit || r.state.auditRounds >= cfg.max_audits) return false;
-    const goal = (await r.store.readGoal()).text;
-    const intent = await readIntent(r.store);
-    const codemapText = await readTextOr(r.store.file('codemap.json'), '');
-    const map = codemapText
-      ? renderCodemap(JSON.parse(codemapText) as Codemap, r.config.context.repo_map_max_tokens)
-      : '';
-    const diff = (
-      await git(r.worktree, ['diff', `${r.state.startRef}..HEAD`], { allowFailure: true })
-    ).stdout;
-    const result = await auditResult(
-      r,
-      goal,
-      intent,
-      `${map}\n\n# Everything this run changed (diff from the start)\n${clipDiff(diff, cfg.max_diff_chars * 2)}`,
-    );
+    if (this.goalMetAt && this.goalMetAt === (await this.head())) return false;
+    const result = await this.audit();
     const round = r.state.auditRounds + 1;
     r.state.auditRounds = round;
     await r.save();
@@ -605,6 +650,63 @@ class Supervisor {
       return false;
     }
     return r.requirePlan().nodes.length > before && runnableTasks(r.requirePlan()).length > 0;
+  }
+
+  private async head(): Promise<string> {
+    return (await git(this.run.worktree, ['rev-parse', 'HEAD'])).stdout.trim();
+  }
+
+  /** The auditor's view of everything this run changed, against the goal and intent. */
+  private async audit(): Promise<Awaited<ReturnType<typeof auditResult>>> {
+    const r = this.run;
+    const cfg = r.config.review;
+    const goal = (await r.store.readGoal()).text;
+    const intent = await readIntent(r.store);
+    const codemapText = await readTextOr(r.store.file('codemap.json'), '');
+    const map = codemapText
+      ? renderCodemap(JSON.parse(codemapText) as Codemap, r.config.context.repo_map_max_tokens)
+      : '';
+    const diff = withoutVendored(
+      (await git(r.worktree, ['diff', `${r.state.startRef}..HEAD`], { allowFailure: true })).stdout,
+    );
+    return auditResult(
+      r,
+      goal,
+      intent,
+      `${map}\n\n# Everything this run changed (diff from the start)\n${clipDiff(diff, cfg.max_diff_chars * 2)}`,
+    );
+  }
+
+  /**
+   * Planners pad small goals with extra milestones (hardening, polish) that cost more than the goal.
+   * Each time a milestone finishes with more still open, the auditor checks the goal; when nothing
+   * the user asked for is missing, the open work is skipped and the run moves on to finish. Off in
+   * improvement rounds and autonomous runs, which exist to do more than the goal.
+   */
+  private async goalMetEarly(): Promise<boolean> {
+    const r = this.run;
+    const plan = r.requirePlan();
+    const done = planCounts(plan).milestonesDone;
+    if (done <= this.milestonesChecked) return false;
+    this.milestonesChecked = done;
+    if (!r.config.review.audit || r.state.beyondRounds > 0 || r.config.autonomous.enabled)
+      return false;
+    const open = plan.nodes.filter((n) => n.status === 'todo' || n.status === 'doing');
+    if (!open.some((n) => n.type === 'milestone')) return false;
+    const result = await this.audit();
+    if (!result) return false;
+    const gaps = blocking(result.findings, 'major');
+    r.events.emit('audit.early', { milestonesDone: done, gaps: gaps.length });
+    if (gaps.length) return false;
+    for (const n of open) {
+      n.status = 'parked';
+      n.skipped = true;
+      n.parkedReason = 'not needed: the goal is already met';
+    }
+    r.events.emit('plan.skipped', { nodes: open.map((n) => n.id) });
+    this.goalMetAt = await this.head();
+    await r.savePlan();
+    return true;
   }
 
   private async planBeyond(): Promise<boolean> {
@@ -725,6 +827,7 @@ class Supervisor {
         reason: `milestone ${m.id}'s tasks are done but its checks fail; add tasks under ${m.id} to make them pass`,
       });
     }
+    await this.goalMetEarly();
     const plan = r.requirePlan();
     const next = runnableTasks(plan)[0];
     if (next) return next.id;
@@ -765,7 +868,7 @@ class Supervisor {
     if (
       counts.todo === 0 &&
       openMilestones.length === 0 &&
-      (auto || plan.nodes.every((n) => n.status !== 'parked'))
+      (auto || plan.nodes.every((n) => n.status !== 'parked' || n.skipped))
     ) {
       if (await this.planAudit()) return this.select();
       if (await this.planBeyond()) return this.select();
@@ -796,6 +899,7 @@ class Supervisor {
           await this.plan();
           continue;
         }
+        if (await this.fastPathFallback()) continue;
         const picked = await this.select();
         if (typeof picked !== 'string') return picked;
         await this.cycle(picked);
@@ -821,6 +925,8 @@ class Supervisor {
         }
         if (err.end === 'stop' || err.end === 'stop-now')
           return { status: 'user-stop', reason: 'stopped during planning' };
+        // Retries used up on this model: plan with the next one before asking anyone.
+        if (err.end !== 'max_usd' && this.fallBackPlanner(err.end)) continue;
         return err.end === 'max_usd'
           ? { status: 'budget-stop', reason: 'max_usd reached while planning' }
           : {

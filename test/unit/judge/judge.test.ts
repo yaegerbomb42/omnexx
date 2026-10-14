@@ -77,11 +77,10 @@ describe('NimbleJudge against a mock /v1/systemone', () => {
       srv.requests.find((q) => q.url === '/v1/systemone')?.body ?? '{}',
     ) as Record<string, unknown>;
     expect(body).toMatchObject({ model: 'nimble', state: { a: 1 }, keep_alive: '30m' });
-    expect((body.questions as { name: string; options?: string[] }[])[0]).toMatchObject({
-      name: 'next_move',
-      type: 'choice',
-      options: [...NEXT_MOVES],
-    });
+    const questions = body.questions as Record<string, { criteria?: Record<string, null> }>;
+    expect(questions.next_move).toMatchObject({ type: 'choice' });
+    expect(Object.keys(questions.next_move?.criteria ?? {})).toEqual([...NEXT_MOVES]);
+    expect(questions.drift).toMatchObject({ type: 'noul', instructions: driftQuestion.prompt });
     // The version check is cached after the first success.
     await nimble(srv.url).ask('drift', {}, [driftQuestion]);
   });

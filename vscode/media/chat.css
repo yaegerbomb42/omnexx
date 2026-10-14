@@ -155,12 +155,6 @@ body.vscode-high-contrast-light .word {
   content: ' ▾';
   color: var(--muted);
 }
-
-.chip.danger {
-  border-color: var(--warn);
-  color: var(--warn);
-}
-
 .icon {
   border: 0;
   background: none;
@@ -189,9 +183,6 @@ body.vscode-high-contrast-light .word {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--card);
-}
-
-.stats {
   position: relative;
   overflow: hidden;
 }
@@ -772,16 +763,6 @@ blockquote {
   padding: 3px 14px;
   border: 1px solid transparent;
 }
-
-.primary {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-}
-
-.primary:hover {
-  background: var(--vscode-button-hoverBackground);
-}
-
 .secondary {
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
@@ -802,23 +783,9 @@ blockquote {
   line-height: 1.45;
   background: color-mix(in srgb, #000 18%, var(--surface));
 }
-
-body.vscode-light .live-log {
-  background: color-mix(in srgb, #000 4%, var(--surface));
-}
-
 .line {
   overflow-wrap: anywhere;
 }
-
-.line .ts {
-  color: var(--muted);
-}
-
-.line.agent .role {
-  color: var(--ok);
-}
-
 .line.think {
   color: var(--muted);
   font-style: italic;
@@ -828,20 +795,6 @@ body.vscode-light .live-log {
   color: var(--violet);
   font-style: normal;
 }
-
-.line.system .role {
-  color: var(--accent);
-}
-
-.line.error,
-.line.error .role {
-  color: var(--bad);
-}
-
-.line.empty {
-  color: var(--muted);
-}
-
 /* Composer */
 .composer {
   display: grid;
@@ -890,11 +843,6 @@ textarea::placeholder {
   border-radius: 6px;
   color: var(--accent);
 }
-
-.send:hover {
-  background: var(--accent-soft);
-}
-
 .side {
   display: flex;
   flex-direction: column;
@@ -1073,22 +1021,6 @@ select.field {
   border: 1px solid var(--line);
   color: var(--muted);
 }
-
-.pill.ok {
-  border-color: color-mix(in srgb, var(--ok) 60%, transparent);
-  color: var(--ok);
-}
-
-.pill.warn {
-  border-color: color-mix(in srgb, var(--warn) 60%, transparent);
-  color: var(--warn);
-}
-
-.pill.local {
-  border-color: color-mix(in srgb, var(--violet) 60%, transparent);
-  color: var(--violet);
-}
-
 .ghost {
   border: 1px solid var(--line);
   background: none;
@@ -1272,12 +1204,6 @@ textarea:focus {
   border-color: color-mix(in srgb, var(--accent) 60%, transparent);
   color: var(--accent);
 }
-
-.pill.warn {
-  border-color: color-mix(in srgb, var(--amber) 60%, transparent);
-  color: var(--amber);
-}
-
 .suggestions button {
   display: flex;
   align-items: center;
@@ -1311,11 +1237,6 @@ textarea:focus {
 body.vscode-light .live-log {
   background: color-mix(in srgb, var(--accent) 5%, var(--surface));
 }
-
-.line.system .role {
-  color: var(--amber);
-}
-
 .chip.danger {
   border-color: var(--amber);
   color: var(--amber);

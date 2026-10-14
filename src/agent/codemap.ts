@@ -117,10 +117,33 @@ async function walkFiles(root: string): Promise<string[]> {
   return out;
 }
 
+/** Dependency and build folders: not the project's code even when a repo commits them. */
+const VENDORED =
+  /(^|\/)(node_modules|bower_components|vendor|dist|build|\.venv|venv|__pycache__|target|\.next|coverage)\//;
+
+export const isVendored = (path: string): boolean => VENDORED.test(path);
+
+/** A unified diff without the sections for vendored files (a committed node_modules churns on every test run). */
+export function withoutVendored(patch: string): string {
+  return patch
+    .split(/^(?=diff --git )/m)
+    .filter((section) => {
+      const path = /^diff --git a\/(\S+)/.exec(section)?.[1];
+      return !path || !isVendored(path);
+    })
+    .join('');
+}
+
 export async function trackedFiles(root: string): Promise<string[]> {
   const out = await git(root, ['ls-files', '-z'], { allowFailure: true });
   const files = out.exitCode === 0 ? out.stdout.split('\0').filter(Boolean) : await walkFiles(root);
-  return files.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return files.filter((f) => !VENDORED.test(f)).sort(byCodeUnits);
+}
+
+/** Plain code-unit order (stable across locales, unlike localeCompare). */
+function byCodeUnits(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
 }
 
 export async function buildCodemap(root: string): Promise<Codemap> {

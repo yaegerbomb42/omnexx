@@ -17,10 +17,11 @@ import { println, type CliIO } from './io.js';
  * yolo {on} ·
  * model {ref} · models · connect {value, name?} · undo · clear · compact · sync (resend all) ·
  * settings · addProvider {provider?, key?, url?} · removeProvider {name} · testProvider {name} ·
- * roles · setRoles {roles} · contextFiles · setSectionMode {id, mode}.
+ * roles · setRoles {roles} · contextFiles · setSectionMode {id, mode} · browser ·
+ * setBrowser {engine, profile?, sessionName?, headless}.
  * Out: ready {version} · state (below; `entries` holds only lines not sent before) · models
  * {items, unreachable, current} · settings {catalog, connected} · providerTest {name, ok, models,
- * detail} · error {message}.
+ * detail} · browser {engine, profile, sessionName, headless} · error {message}.
  */
 
 export interface ChatUsage {
@@ -184,6 +185,10 @@ export async function serveChat(
     const { providerSettings } = await import('./chat-settings.js');
     write({ type: 'settings', ...(await providerSettings(io)) });
   };
+  const sendBrowser = async (): Promise<void> => {
+    const { browserSettings } = await import('./chat-settings.js');
+    write({ type: 'browser', ...(await browserSettings(io)) });
+  };
   const sendContextFiles = async (): Promise<void> => {
     const { contextFiles } = await import('./chat-context.js');
     write({ type: 'contextFiles', ...(await contextFiles(io)) });
@@ -296,6 +301,18 @@ export async function serveChat(
           import('./chat-context.js').then(async ({ setSectionMode }) => {
             await setSectionMode(io, text(c, 'id'), text(c, 'mode'));
             await sendContextFiles();
+          }),
+        );
+        return;
+      case 'browser':
+        run(sendBrowser());
+        return;
+      case 'setBrowser':
+        run(
+          import('./chat-settings.js').then(async ({ setBrowserSettings }) => {
+            await setBrowserSettings(io, c);
+            session.push('system', 'browser settings saved; new runs use them');
+            await sendBrowser();
           }),
         );
         return;

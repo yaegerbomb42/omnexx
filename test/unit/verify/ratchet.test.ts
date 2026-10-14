@@ -91,13 +91,28 @@ describe('anti-cheat', () => {
     "test('x', { skip: true }, () => {})",
     '@pytest.mark.skip(reason="later")',
     '// @ts-ignore',
+    '  /* @ts-expect-error wrong type */',
     '/* eslint-disable no-console */',
+    'foo(); // eslint-disable-line',
     'x = 1  # type: ignore',
     't.Skip("flaky")',
   ])('flags an added marker: %s', (line) => {
     const v = antiCheat({ ...base, changes: [], patch: patch('src/a.test.ts', line) });
     expect(v.map((x) => x.rule)).toEqual(['skip-marker']);
     expect(v[0]?.detail).toContain('src/a.test.ts');
+  });
+
+  it('ignores directive names inside strings (a test listing the banned markers)', () => {
+    expect(
+      antiCheat({
+        ...base,
+        changes: [],
+        patch: patch(
+          'test/lint.test.ts',
+          "const banned = ['as any', '@ts-ignore', 'eslint-disable'];",
+        ),
+      }),
+    ).toEqual([]);
   });
 
   it('ignores removed and context lines, and markers inside words', () => {

@@ -65,10 +65,60 @@ const schema = z.strictObject({
     .describe('e.g. "2m" (a bare number is milliseconds); capped by the run config'),
 });
 
+const DEV_SERVER_PEEK_MS = 20_000;
+const DEV_SERVERS: readonly RegExp[] = [
+  /\b(?:npm|pnpm|yarn|bun) (?:run )?(?:dev|start|serve|preview|watch)\b/,
+  /\bvite(?: dev| serve| preview)?(?:$|[\s&;])/,
+  /\bnext (?:dev|start)\b/,
+  /\b(?:nodemon|http-server|live-server)\b/,
+  /\b(?:webpack serve|astro dev|remix dev)\b/,
+];
+
+/** A command that starts a long-running dev server (not a build or a test run). */
+export function isDevServer(command: string): boolean {
+  if (/\b(build|test|lint|typecheck)\b/.test(command) && !/(&&|;)/.test(command)) return false;
+  const flat = command.replace(/\s+/g, ' ');
+  return DEV_SERVERS.some((re) => re.test(flat));
+}
+
+/** "Missing script" from npm: name the scripts that do exist, in the folder the command ran in. */
+export async function missingScriptHint(
+  output: string,
+  command: string,
+  root: string,
+): Promise<string> {
+  if (!/Missing script:/i.test(output)) return '';
+  const dir = /(?:^|&&|;)\s*cd\s+([^\s&;|]+)/.exec(command)?.[1] ?? '.';
+  // Only folders inside the repo.
+  if (dir.startsWith('/') || dir.startsWith('~') || dir.split('/').includes('..')) return '';
+  try {
+    const pkg = JSON.parse(await readFile(join(root, dir, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    const names = Object.keys(pkg.scripts ?? {});
+    return names.length
+      ? `\n[scripts in ${dir}/package.json: ${names.join(', ')}]`
+      : `\n[${dir}/package.json has no scripts]`;
+  } catch {
+    return '';
+  }
+}
+
+function commandStatus(
+  r: { timedOut: boolean; exitCode: number },
+  timeoutMs: number,
+  peeked: boolean,
+): string {
+  const secs = Math.round(timeoutMs / 1000);
+  if (peeked) return `dev server still running after ${secs}s; stopped by the harness (it started)`;
+  if (r.timedOut) return `timed out after ${secs}s`;
+  return `exit ${String(r.exitCode)}`;
+}
+
 export const bashTool: Tool<typeof schema> = {
   name: 'bash',
   description:
-    'Run a shell command in the repo root and wait for it to finish (never poll). Output is trimmed; use read_log for the full log. git writes, network, sudo and paths outside the repo are refused.',
+    'Run a shell command in the repo root and wait for it to finish (never poll). Output is trimmed; use read_log for the full log. Dev servers (npm run dev, vite, next dev) run for 20 s and are then stopped for you, so their startup output shows whether they work; never background or kill them yourself. git writes, network, sudo and paths outside the repo are refused.',
   schema,
   readOnly: false,
   // Models often send the timeout as a number of milliseconds.
@@ -106,6 +156,9 @@ export const bashTool: Tool<typeof schema> = {
         return fail(`invalid timeout "${input.timeout}"`);
       }
     }
+    // A dev server never exits: peek at its startup instead of waiting out the whole timeout.
+    const devServer = isDevServer(input.command);
+    if (devServer) timeoutMs = Math.min(timeoutMs, DEV_SERVER_PEEK_MS);
     const id = ctx.nextCommandId();
     const r = await (ctx.exec ?? runShell)(input.command, {
       cwd: ctx.jail.root,
@@ -115,12 +168,12 @@ export const bashTool: Tool<typeof schema> = {
       redact: (s) => ctx.redactor.text(s),
       ...(ctx.signal ? { signal: ctx.signal } : {}),
     });
-    const status = r.timedOut
-      ? `timed out after ${Math.round(timeoutMs / 1000)}s`
-      : `exit ${r.exitCode}`;
-    const body = trimOutput(r.output, id);
+    const peeked = devServer && r.timedOut;
+    const status = commandStatus(r, timeoutMs, peeked);
+    const body =
+      trimOutput(r.output, id) + (await missingScriptHint(r.output, input.command, ctx.jail.root));
     const text = `[${status}, ${Math.round(r.durationMs)}ms, log ${id}]\n${body}`;
-    return r.exitCode === 0 && !r.timedOut ? ok(text) : fail(text);
+    return peeked || (r.exitCode === 0 && !r.timedOut) ? ok(text) : fail(text);
   },
 };
 

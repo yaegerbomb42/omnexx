@@ -11,6 +11,7 @@ export default tseslint.config(
       'node_modules/**',
       'test/fixtures/**',
       'bench/suites/*/*/solution/**',
+      'bench/results/**',
       'test/.build/**',
       'eslint.config.js',
       'vscode/build.mjs',

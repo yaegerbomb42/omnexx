@@ -1,3 +1,4 @@
+import { InCycleWatch } from '../guard/stuck.js';
 import { orderForStrategy, strategyFor } from '../config/routing.js';
 import { randomBytes } from 'node:crypto';
 import { mkdir, readdir } from 'node:fs/promises';
@@ -41,6 +42,9 @@ import type { TodoItem } from '../tools/todo.js';
 import type { Tool, ToolContext } from '../tools/types.js';
 import { runGates } from '../verify/gates.js';
 import { emptyTelemetry, fold, type Telemetry } from '../telemetry/aggregate.js';
+
+/** Questions read without editing; only this many turns in a row without an edit is circling. */
+const CHAT_NO_EDIT_TURNS = 25;
 
 export const CHAT_SYSTEM = `You are Omnexx in chat mode: a coding agent working turn by turn with a person at the keyboard, directly in their repository (your cwd).
 
@@ -450,6 +454,16 @@ export class CodeChat {
           tools,
           toolCtx: this.ctx,
           budget: { ...this.config.budget, max_turns_per_cycle: 200 },
+          // A chat turn that circles gets told so once, then stops (it once burned 400k tokens).
+          watch: new InCycleWatch(
+            {
+              repeatedToolCall: this.config.stuck.repeated_tool_call,
+              noEditTurns: CHAT_NO_EDIT_TURNS,
+              burnTokens: undefined,
+            },
+            () => this.ctx.edited.size,
+          ),
+          watchMode: 'nudge',
           maxTokens: this.config.providers.anthropic.max_tokens,
           clock: realClock,
           events: this.events,

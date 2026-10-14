@@ -37,6 +37,20 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-13 (single agent), branch `feat/autonomy-2`:** efficiency work driven by a
+  head-to-head bench (same model, DeepSeek-V4.1-Flash, for every harness; tokens counted by
+  one metering proxy, `bench --endpoint <PREFIX>`). Cline and OpenHands runners added. Fixes:
+  fast path (`[plan] mode`: one pass on the whole goal, planner only if it fails), planning
+  effort flags (`--plan`, `--plan-helpers`, `--plan-milestones`), early "goal met" audit that
+  skips padded milestones, audit scoped to what was asked, reviewer blocks only on evidence,
+  review-only rejections amended instead of redone, codemap skips vendored folders and the
+  fast path skips file descriptions, audit retries an empty answer, anti-cheat flags
+  directives only in comments, planner falls back to the next model, `different_approach`
+  ladder rung (`no_progress_cycles` 8 → 12), Nimble adapter fixed for Ollama's systemone shape,
+  browser controls in Settings, 14 dead CSS rules removed. Bench (jimmy10, run 8 vs the
+  first run): omnexx 9/10 (task-10 passed on rerun at 39k fresh), 8-19k fresh tokens on most
+  tasks, from 63k-2.4M; Cline 9/10, OpenHands 10/10. Results in `bench/results/ds-*`.
+
 - **2026-10-11/12 (single agent):** released 0.5.0. Fixed the flaky detach/pause process test
   (#92; it raced the run's end), retired `next` (#91), added the Homebrew formula (#90). npm
   0.5.0 published via trusted publishing (staged, approved by the owner); Homebrew tap live and

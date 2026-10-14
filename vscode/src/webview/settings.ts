@@ -1,6 +1,6 @@
 /**
  * The settings page inside the chat panel (the gear): the chat model, connected providers, a form
- * to add one, the approval default, and advanced links. Data comes from `omnexx chat-server`
+ * to add one, the approval default, the agent's browser, and advanced links. Data comes from `omnexx chat-server`
  * (`settings`, `models`) through the extension; keys arrive masked and are sent once, on save.
  */
 import * as modelPicker from './modelPicker.js';
@@ -27,6 +27,13 @@ export interface ConnectedProvider {
   keySource: string | null;
 }
 
+interface BrowserPrefs {
+  engine: 'chromium' | 'camoufox';
+  profile: string | null;
+  sessionName: string | null;
+  headless: boolean;
+}
+
 type Post = (msg: Record<string, unknown>) => void;
 
 const CUSTOM = '__custom';
@@ -46,6 +53,8 @@ let tests: Record<string, 'running' | { ok: boolean; detail: string }> = {};
 /** Whether this opening of the page has checked every provider yet. */
 let testedOnOpen = false;
 let saving = false;
+/** The agent's browser settings from config, or undefined until they arrive. */
+let browserPrefs: BrowserPrefs | undefined;
 let engineInfo: { source: string; version: string | null; bundled: string } | undefined;
 
 const ENGINE_LABEL: Record<string, string> = {
@@ -64,6 +73,52 @@ function engineHtml(): string {
       : '';
   return `<p class="hint">Engine: ${what}.</p>${install}`;
 }
+function browserHtml(): string {
+  if (!browserPrefs) return '<p class="hint">Loading browser settings…</p>';
+  const b = browserPrefs;
+  const pressed = (on: boolean): string => `aria-pressed="${String(on)}"`;
+  return `<label>Engine</label>
+  <div class="seg wide" role="group" aria-label="Browser engine">
+    <button data-browser-engine="chromium" ${pressed(b.engine === 'chromium')}>Chromium</button>
+    <button data-browser-engine="camoufox" ${pressed(b.engine === 'camoufox')}>Camoufox</button>
+  </div>
+  ${b.engine === 'camoufox' ? '<p class="hint">Needs: npm i -g playwright-core camoufox-js &amp;&amp; npx camoufox-js fetch</p>' : ''}
+  <label>Window</label>
+  <div class="seg wide" role="group" aria-label="Headless">
+    <button data-browser-headless="on" ${pressed(b.headless)}>Headless</button>
+    <button data-browser-headless="off" ${pressed(!b.headless)}>Show window</button>
+  </div>
+  <label for="browser-profile">Profile folder</label>
+  <input id="browser-profile" class="field" type="text" placeholder="optional: reuse its logins" spellcheck="false" value="${escapeHtml(b.profile ?? '')}">
+  <label for="browser-session">Session name</label>
+  <input id="browser-session" class="field" type="text" placeholder="optional" spellcheck="false" value="${escapeHtml(b.sessionName ?? '')}">
+  <p class="hint">Saved to your user config.toml; new runs use them.</p>`;
+}
+
+/** Save the browser settings with one change applied, reading the text fields as they stand. */
+function saveBrowser(post: Post, change: Partial<BrowserPrefs>): void {
+  if (!browserPrefs) return;
+  const text = (id: string): string => {
+    const el = document.getElementById(id);
+    return el instanceof HTMLInputElement ? el.value.trim() : '';
+  };
+  const profile = text('browser-profile');
+  const sessionName = text('browser-session');
+  browserPrefs = {
+    ...browserPrefs,
+    profile: profile || null,
+    sessionName: sessionName || null,
+    ...change,
+  };
+  post({
+    type: 'setBrowser',
+    engine: browserPrefs.engine,
+    headless: browserPrefs.headless,
+    ...(browserPrefs.profile ? { profile: browserPrefs.profile } : {}),
+    ...(browserPrefs.sessionName ? { sessionName: browserPrefs.sessionName } : {}),
+  });
+}
+
 /** The person has typed or picked something in the add form, so a redraw keeps it. */
 let formTouched = false;
 let status: { text: string; kind: 'ok' | 'error' | 'busy' } | undefined;
@@ -142,6 +197,7 @@ function draw(): void {
   </div>
   <p class="hint">How new chats start. Auto-approve lets omnexx go outside the repo and run guarded commands without asking; hard-blocked commands stay blocked.</p>
 </section>
+<section class="set-section"><h3>Browser</h3><div id="browser-box">${browserHtml()}</div></section>
 <section class="set-section"><h3>Advanced</h3>
   <div id="engine-box" class="engine">${engineHtml()}</div>
   <div class="links">
@@ -239,6 +295,7 @@ export function open(post: Post): void {
   post({ type: 'settings' });
   post({ type: 'models' });
   post({ type: 'engineInfo' });
+  post({ type: 'browser' });
   roles.request(post);
 }
 
@@ -280,6 +337,16 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
     };
     const box = document.getElementById('engine-box');
     if (box) box.innerHTML = engineHtml();
+    return true;
+  } else if (m.type === 'browser') {
+    browserPrefs = {
+      engine: m.engine === 'camoufox' ? 'camoufox' : 'chromium',
+      profile: typeof m.profile === 'string' ? m.profile : null,
+      sessionName: typeof m.sessionName === 'string' ? m.sessionName : null,
+      headless: m.headless !== false,
+    };
+    const box = document.getElementById('browser-box');
+    if (box) box.innerHTML = browserHtml();
     return true;
   } else if (m.type === 'prefs') {
     autoApproveDefault = m.autoApproveDefault === true;
@@ -365,6 +432,8 @@ export function wire(post: Post): void {
       const confirm = t.closest<HTMLElement>('[data-remove-confirm]')?.dataset.removeConfirm;
       const approval = t.closest<HTMLElement>('[data-approval-default]')?.dataset.approvalDefault;
       const ext = t.closest<HTMLElement>('[data-action-ext]')?.dataset.actionExt;
+      const engine = t.closest<HTMLElement>('[data-browser-engine]')?.dataset.browserEngine;
+      const headless = t.closest<HTMLElement>('[data-browser-headless]')?.dataset.browserHeadless;
       if (test) {
         runTest(post, test);
         draw();
@@ -378,6 +447,12 @@ export function wire(post: Post): void {
         autoApproveDefault = approval === 'auto';
         post({ type: 'setApprovalDefault', on: autoApproveDefault });
         draw();
+      } else if (engine === 'chromium' || engine === 'camoufox') {
+        saveBrowser(post, { engine });
+        q('browser-box', HTMLElement).innerHTML = browserHtml();
+      } else if (headless) {
+        saveBrowser(post, { headless: headless === 'on' });
+        q('browser-box', HTMLElement).innerHTML = browserHtml();
       } else if (ext) post({ type: ext });
     }
   });
@@ -389,8 +464,15 @@ export function wire(post: Post): void {
     }
     if (e.target instanceof Element && e.target.closest('.add')) formTouched = true;
   });
+  // The browser text fields save when the person leaves them (or presses Enter).
+  page.addEventListener('change', (e) => {
+    if (e.target instanceof Element && e.target.closest('#browser-box')) saveBrowser(post, {});
+  });
   page.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target instanceof HTMLInputElement) save(post);
+    if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+      if (e.target.closest('#browser-box')) e.target.blur();
+      else save(post);
+    }
     if (e.key === 'Escape') close();
   });
 }

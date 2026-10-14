@@ -5,7 +5,7 @@ import { cacheHitRate } from '../telemetry/aggregate.js';
 import { fmtMs, fmtTokens } from '../telemetry/humanize.js';
 import type { Entry, Session } from './session.js';
 
-import { CYAN, GRAY, GREEN, RED } from './colors.js';
+import { CYAN, GRAY, GREEN, MUTED, RED, VIOLET } from './colors.js';
 import { DiffView } from './diff.js';
 import { RunCard } from './run-card.js';
 import { AgentsView } from './agents.js';
@@ -39,32 +39,46 @@ function useSession(session: Session): void {
   );
 }
 
+/**
+ * Each kind of line has its own look, so a glance tells them apart: your messages carry a green
+ * badge, tool use a cyan arrow, the model's thinking sits dimmed behind a violet bar, errors red.
+ */
 function EntryLine({ e }: { e: Entry }) {
   switch (e.kind) {
     case 'user':
       return (
-        <Text>
-          <Text color={GREEN}>{'› '}</Text>
-          <Text bold>{e.text}</Text>
-        </Text>
+        <Box marginTop={1}>
+          <Text backgroundColor={GREEN} color="black" bold>
+            {' you '}
+          </Text>
+          <Text bold color="whiteBright">{` ${e.text}`}</Text>
+        </Box>
       );
     case 'act':
       return (
         <Text>
-          <Text color={CYAN}>{'▸ '}</Text>
-          <Text>{e.text}</Text>
+          <Text color={CYAN} bold>
+            {'▸ '}
+          </Text>
+          <Text color="white">{e.text}</Text>
         </Text>
       );
     case 'think':
       return (
-        <Text color={GRAY} italic>
-          {`thinking: ${e.text}`}
+        <Text>
+          <Text color={VIOLET}>{'┃ '}</Text>
+          <Text color={VIOLET} dimColor>
+            {'thinking '}
+          </Text>
+          <Text color={MUTED} italic>
+            {e.text}
+          </Text>
         </Text>
       );
     case 'system':
-      return <Text color={GRAY}>{e.text}</Text>;
+      return <Text color={MUTED}>{e.text}</Text>;
     case 'err':
-      return <Text color={RED}>{e.text}</Text>;
+      return <Text color={RED}>{e.text.trimStart().startsWith('✗') ? e.text : `✗ ${e.text}`}</Text>;
     case 'out':
       return e.md ? <MarkdownLine text={e.text} md={e.md} /> : <Text>{e.text}</Text>;
     default:

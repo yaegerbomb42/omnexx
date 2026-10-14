@@ -1,3 +1,5 @@
+import { WRITING_PLANNER_NOTE } from '../core/writing.js';
+import type { ResolvedModel } from '../providers/pricing.js';
 import { join } from 'node:path';
 import { readTextOr } from '../core/atomic.js';
 import { renderNotes } from '../core/notes.js';
@@ -63,6 +65,35 @@ export const BEYOND_RUBRIC = [
   'observability: logs and errors that make failures diagnosable',
   'refactors that remove real duplication or risk, with tests green before and after',
 ];
+
+/** The user's planning effort for this run ([plan] helpers and milestones), as instructions. */
+function effortNote(run: Run, mode: PlannerMode): string {
+  const writing =
+    run.state.writing && (mode.kind === 'initial' || mode.kind === 'expand')
+      ? `\n\n${WRITING_PLANNER_NOTE}`
+      : '';
+  return writing + effortOnly(run, mode);
+}
+
+function effortOnly(run: Run, mode: PlannerMode): string {
+  if (mode.kind !== 'initial') return '';
+  const { helpers, milestones } = run.config.plan;
+  const notes = [
+    ...(milestones === undefined
+      ? []
+      : [
+          `Use at most ${milestones === 1 ? 'one milestone' : String(milestones) + ' milestones'}.`,
+        ]),
+    ...(helpers === undefined
+      ? []
+      : [
+          helpers === 0
+            ? 'Explore on your own; helpers are off for this run.'
+            : `You may run up to ${String(helpers)} helpers at once (the task tool) to explore parts of the repository in parallel.`,
+        ]),
+  ];
+  return notes.length ? `\n\nPlanning effort set by the user: ${notes.join(' ')}` : '';
+}
 
 function instruction(mode: PlannerMode, plan: Plan | undefined, baseline = ''): string {
   if (mode.kind === 'initial')
@@ -178,7 +209,8 @@ export function brokenChecks(update: PlanUpdate, strict = true): string[] {
     for (const m of update.milestones)
       for (const t of m.tasks ?? []) {
         const checks = t.checks ?? [];
-        if (!checks.length || t.kind === 'docs' || t.kind === 'investigate') continue;
+        if (!checks.length || ['docs', 'investigate', 'writing', 'research'].includes(t.kind ?? ''))
+          continue;
         if (checks.every(isWeakCheck))
           out.push(
             `${t.id}: its checks only look for files or text (${checks.map((c) => `\`${c}\``).join(', ')}); add a check that runs the code, e.g. a test command for this behaviour`,
@@ -228,6 +260,27 @@ const PLAN_NUDGES = [
   },
 ] as const;
 
+const modelKey = (m: ResolvedModel): string => `${m.provider}:${m.id}`;
+
+/**
+ * The planner's models: its own chain, then the worker models as fallbacks, minus any that
+ * already failed at planning this run. Never empty: with every candidate failed, the chain as is.
+ */
+export function plannerCandidates(
+  run: { plannerFailed: ReadonlySet<string>; chains: { worker: readonly ResolvedModel[] } },
+  chain: readonly ResolvedModel[],
+): ResolvedModel[] {
+  const seen = new Set<string>();
+  const all = [...chain, ...run.chains.worker].filter((m) => {
+    const k = modelKey(m);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const left = all.filter((m) => !run.plannerFailed.has(modelKey(m)));
+  return left.length ? left : [...chain];
+}
+
 export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   const goal = await run.store.readGoal();
   const intent = await readIntent(run.store);
@@ -247,6 +300,11 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     normalize: (input) => normalizePlanUpdate(input, run.plan),
     readOnly: true,
     async run(input) {
+      const cap = run.config.plan.milestones;
+      if (mode.kind === 'initial' && cap !== undefined && input.milestones.length > cap)
+        return fail(
+          `plan rejected: ${String(input.milestones.length)} milestones, but this run allows at most ${String(cap)}. Merge milestones until there are ${String(cap)} or fewer.`,
+        );
       const broken = brokenChecks(input, run.config.review.strict_checks);
       if (broken.length)
         return fail(`plan rejected: checks that cannot pass:\n${broken.join('\n')}`);
@@ -280,9 +338,10 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       }
     },
   };
+  const helpers = run.config.plan.helpers ?? run.config.context.subagent_parallel;
   const tools = [
     ...(await readOnlyTools(run.config, { repoRoot: run.worktree, env: run.deps.env })).filter(
-      (t) => !PLANNER_DENIED.has(t.name),
+      (t) => !PLANNER_DENIED.has(t.name) && (helpers > 0 || t.name !== 'task'),
     ),
     writePlan as Tool,
   ];
@@ -334,19 +393,24 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       ],
       first: {
         role: 'user',
-        content: [{ type: 'text', text: instruction(mode, run.plan, baseline) }],
+        content: [
+          { type: 'text', text: instruction(mode, run.plan, baseline) + effortNote(run, mode) },
+        ],
       },
       tools: tools.map(toolSpec),
     },
     {
       provider: run.deps.provider,
-      models: (
-        await run.router.pick({
-          action: plannerAction(mode),
-          needs: { tools: true },
-          facts: { mode: mode.kind },
-        })
-      ).chain,
+      models: plannerCandidates(
+        run,
+        (
+          await run.router.pick({
+            action: plannerAction(mode),
+            needs: { tools: true },
+            facts: { mode: mode.kind },
+          })
+        ).chain,
+      ),
       providerBlocked: (p) => run.providerBlocked(p),
       modelExhausted: (r) => run.modelExhausted(r),
       markExhausted: (r) => {
@@ -369,7 +433,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       },
       control: () => run.control(),
       signal: run.abort.signal,
-      parallelTasks: run.config.context.subagent_parallel,
+      parallelTasks: Math.max(1, helpers),
       // Planners explore like workers when left alone: on a large repo glm-5.3 read for 46
       // turns and hit the token cap three times without a plan. Ask for the plan on a deadline.
       pendingInput: () => {

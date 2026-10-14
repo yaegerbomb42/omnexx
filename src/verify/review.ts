@@ -1,3 +1,5 @@
+import { WRITING_REVIEW_SYSTEM } from '../core/writing.js';
+import { readScopeNotes } from '../agent/scopes.js';
 import { z } from 'zod';
 import type { PlanNode } from '../core/plan.js';
 import type { Run } from '../core/run.js';
@@ -82,6 +84,7 @@ Report only real problems, each with a severity:
 - blocker: wrong behaviour; a requirement of the task or goal not actually met; a stub, placeholder or TODO where real code was needed; outputs hardcoded or special-cased to make tests pass; tests that don't exercise the behaviour they claim to; a security hole; data loss.
 - major: an important edge case or error path left unhandled; an approach that will clearly break as the project grows.
 - minor: anything smaller.
+A blocker needs evidence: name the file and line, and the concrete input or call that now behaves wrongly. Speculation ("could", "might", "callers may rely on") is minor at most. Where the task or goal leaves a behaviour open (what an edge case should return), a reasonable choice is not a defect. Rejecting a working change throws the work away, so block only what you would bet is broken.
 Never report style, naming or formatting. If the change is sound, return no findings. Reply only by calling the answer tool.`;
 
 /** Room for a reasoning model's thinking before it answers: at 3k, glm-5.3 never got to the tool. */
@@ -90,7 +93,7 @@ const AUDIT_MAX_TOKENS = 16_000;
 
 const AUDIT_SYSTEM = `You audit the result of a long autonomous coding run before it is allowed to finish. You get what the user asked for (the goal and its "done when" list) and the code as it is now.
 
-List every gap between what was asked and what exists: a "done when" item not met, a feature missing or only stubbed, behaviour that is clearly shallow or untested, missing documentation the goal asked for. Each gap must be concrete and checkable, phrased as work to do. If everything asked for is genuinely done to a professional standard, return no findings. Reply only by calling the answer tool.`;
+List every gap between what was asked and what exists: a "done when" item or success criterion not met, a feature the goal asks for missing or only stubbed, documentation the goal asks for missing. Every change already passed the test gates and a per-change review. Judge only against what the goal and its "done when" list ask for: improvements, extra tests, hardening, cleanup of files the goal doesn't mention and stricter readings of the wording are not gaps (they belong to later improvement rounds). Each gap must be concrete and checkable, phrased as work to do, and severity major only when an explicit requirement is unmet. If what was asked for is done, return no findings. Reply only by calling the answer tool.`;
 
 /** Keep the head and tail of a long diff: the start shows structure, the end the latest edits. */
 export function clipDiff(diff: string, max: number): string {
@@ -114,7 +117,29 @@ export function renderFindings(findings: readonly Finding[]): string {
     .join('\n');
 }
 
+/** Added on the one retry after an empty or malformed answer (a model once sent `{}`). */
+const ANSWER_SHAPE =
+  '\n\nCall the answer tool with {"findings": [{"severity", "file", "problem", "fix"}, ...], "summary": "..."}. Use "findings": [] when nothing is wrong.';
+
 async function ask(
+  run: Run,
+  system: string,
+  prompt: string,
+  role: string,
+  chain: 'cheap' | 'worker' | 'planner',
+  maxTokens = 3_000,
+  why?: (reason: string) => void,
+): Promise<z.infer<typeof reviewSchema> | undefined> {
+  const last = { reason: '' };
+  const first = await askOnce(run, system, prompt, role, chain, maxTokens, (w) => {
+    last.reason = w;
+    why?.(w);
+  });
+  if (first || !last.reason.startsWith('unusable findings')) return first;
+  return askOnce(run, system, prompt + ANSWER_SHAPE, role, chain, maxTokens, why);
+}
+
+async function askOnce(
   run: Run,
   system: string,
   prompt: string,
@@ -172,11 +197,23 @@ export async function reviewChange(
   goal: string,
   diff: string,
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
-  const prompt = `# Goal\n${goal.slice(0, 3_000)}\n\n# Task ${task.id}: ${task.title}\n${task.why}\n${task.acceptance.length ? `Acceptance:\n${task.acceptance.map((a) => `- ${a}`).join('\n')}` : ''}\n\n# The change (unified diff)\n${clipDiff(diff, run.config.review.max_diff_chars)}`;
+  // A writing review checks the piece against the bible the author keeps in its general notes.
+  const bible = run.state.writing
+    ? await readScopeNotes({ store: run.store, repoRoot: run.state.repoRoot }, 'general').catch(
+        () => '',
+      )
+    : '';
+  const acceptance = task.acceptance.map((a) => '- ' + a).join('\n');
+  const prompt = [
+    `# Goal\n${goal.slice(0, 3_000)}`,
+    ...(bible ? [`# The author's bible (names, facts, style)\n${bible.slice(0, 6_000)}`] : []),
+    `# Task ${task.id}: ${task.title}\n${task.why}\n${acceptance ? 'Acceptance:\n' + acceptance : ''}`,
+    `# The change (unified diff)\n${clipDiff(diff, run.config.review.max_diff_chars)}`,
+  ].join('\n\n');
   try {
     return await ask(
       run,
-      REVIEW_SYSTEM,
+      run.state.writing ? WRITING_REVIEW_SYSTEM : REVIEW_SYSTEM,
       prompt,
       'review',
       run.config.review.review_models,
@@ -195,7 +232,7 @@ export async function auditResult(
   intent: string,
   codebase: string,
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
-  const prompt = `# What the user asked for\n${goal.slice(0, 4_000)}\n\n${intent.slice(0, 4_000)}\n\n# The code now\n${codebase}`;
+  const prompt = `# What the user asked for\n${goal.slice(0, 4_000)}\n\n${intent.slice(0, 4_000)}\n\n# The work now\n${codebase}`;
   try {
     // Audits go to the planner chain, often reasoning models: their thinking counts against the
     // output limit, and 3k tokens ran out before the answer on every bench run.

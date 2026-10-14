@@ -86,4 +86,58 @@ describe('earned done: audit before finishing', () => {
     expect(w2).toMatch(/Audit 1: close the gaps/);
     expect(w2).not.toMatch(/M1\.T01/);
   });
+
+  it('skips padded milestones once an audit says the goal is met, and finishes', async () => {
+    const scripted = new ScriptedProvider(
+      scenario(
+        planner([
+          { id: 'M1', title: 'The goal', tasks: [fileTask('M1.T01')] },
+          { id: 'M2', title: 'Hardening nobody asked for', tasks: [fileTask('M2.T01')] },
+        ]),
+        fileWorker,
+      ),
+    );
+    let audits = 0;
+    const provider: Provider = {
+      name: 'anthropic',
+      complete(req: CompletionRequest): Promise<CompletionResponse> {
+        if (!req.system.some((b) => b.text.includes('You audit the result')))
+          return scripted.complete(req);
+        audits++;
+        return Promise.resolve({
+          content: [
+            { type: 'tool_use', id: `a${audits}`, name: 'answer', input: { findings: [] } },
+          ],
+          stopReason: 'tool_use',
+          usage: emptyUsage(),
+          model: req.model,
+        });
+      },
+    };
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider,
+      config: { gates: [GATE], review: { enabled: false, audit: true, strict_checks: false } },
+    });
+    const out = await supervise(t.run.deps, t.run.state.runId, {
+      bootId: 'b',
+      heartbeatMs: 50,
+      controlPollMs: 20,
+      pausePollMs: 10,
+    });
+    expect(out.status).toBe('finished');
+    // One audit when M1 finished; nothing changed after it, so no second one at the end.
+    expect(audits).toBe(1);
+    const plan = await t.run.store.readPlan();
+    expect(plan?.nodes.find((n) => n.id === 'M2')).toMatchObject({
+      status: 'parked',
+      skipped: true,
+    });
+    expect(plan?.nodes.find((n) => n.id === 'M2.T01')).toMatchObject({ skipped: true });
+    const events = await readEvents(t.run.store.eventsPath);
+    expect(events.filter((e) => e.type === 'plan.skipped').map((e) => e.nodes)).toEqual([
+      ['M2', 'M2.T01'],
+    ]);
+    expect((await t.run.store.readState()).acceptedCommits).toBe(1);
+  });
 });
