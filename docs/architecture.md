@@ -59,6 +59,15 @@ Edits are built to survive small drift and to say right away when they broke som
 - **Diagnostics in the result.** For TS/JS files in a repo with its own `typescript` and a root `tsconfig.json`, an in-process language service (a worker thread, warm for the session) checks the edited file before and after the edit. Only errors the edit introduced are appended, at most three, each under 160 characters: `⚠ line 42: TS2345 …`. If the check takes over 1.5 s it's skipped silently; the first, cold check usually is, and later ones are warm. Python files get an `ast.parse` syntax check. Formatting and checks run repo code, so they run only when tools run on the host, never in a sandbox.
 - **Did you mean.** `read`, `outline` and the edit tools answer a missing path with up to three close repo paths: the same file name first, then by edit distance.
 
+## Reading by symbol
+
+`read_symbol {symbol, path?, depth?: 0|1}` replaces the usual search → outline → read → search-the-types → read-them run of turns with one call (`src/tools/read-symbol.ts`, `symbol-ts.ts`, `symbol-heuristic.ts`, `ts-worker.ts`). It returns the symbol's full definition with line numbers, the definitions of the types named in its signature (parameters and return; heritage for classes), and at depth 1 the one-line signatures of up to 10 callers (the enclosing function of each reference) and 10 callees, each with `file:line`.
+
+- **Language service first.** In a repo with its own `typescript` and a root `tsconfig.json`, on the host, a warm worker (the same prelude as the edit diagnostics checker, `ts-worker.ts`) uses navigate-to, go-to-definition and find-references. Only definitions in the repo count. If it isn't ready within 8 s, or finds nothing, the heuristic answers.
+- **Heuristic fallback.** For any repo (TS/JS, Python, Go, Rust): definitions from the `outline` rules, bodies by brace matching (indentation for Python), callers by `name(` on a line, callees by the calls in the body that resolve to a repo definition.
+- **No guessing.** Several definitions with the name are listed as `file:line` candidates to pick with `path`; a missing name gets up to five close names.
+- **Capped.** The answer stays under ~2.5k tokens: long type definitions show their first 25 lines, and an oversized definition is cut with a note naming the line to read from. On a small TS fixture it costs 205 tokens in one call versus 468 over the six calls it replaces.
+
 ## Metrics for the M4 benchmark
 
 `turn` events carry tokens split into uncached / cache write / cache read / output, cost and cache-read share. `omnexx status --json` reports totals, `cacheHitRatio`, `usdPerAcceptedCommit`, turns, model calls, active time, and judge agreement with the rules.

@@ -37,7 +37,7 @@ export interface PostEditOptions {
 }
 
 /** Formatter and checks run repo code on the host: only when tools run on the host, not in a sandbox. */
-function onHost(ctx: ToolContext): boolean {
+export function onHost(ctx: ToolContext): boolean {
   return ctx.exec === undefined || ctx.exec === runShell;
 }
 

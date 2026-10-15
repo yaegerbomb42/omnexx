@@ -16,7 +16,7 @@ const SKIP_DIRS = new Set([
 const MAX_FILES = 5_000;
 const MAX_SUGGESTIONS = 3;
 
-async function walk(root: string): Promise<string[]> {
+export async function walk(root: string): Promise<string[]> {
   const out: string[] = [];
   let level = [root];
   while (level.length && out.length < MAX_FILES) {
@@ -42,7 +42,7 @@ async function walk(root: string): Promise<string[]> {
   return out.slice(0, MAX_FILES);
 }
 
-function distance(a: string, b: string): number {
+export function distance(a: string, b: string): number {
   let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) {
     const row = [i];
