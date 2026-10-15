@@ -24,7 +24,7 @@ const INTERFACE_MAX_CHARS = 12_000;
 const WRITER_MAX_TOKENS = 16_000;
 const JUDGE_MAX_TOKENS = 8_000;
 const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s+\S/;
-const SPEC_PATH = new RegExp(`^${SPEC_DIR}/(?!\\.\\.?$)[A-Za-z0-9_.-]+$`);
+const SPEC_PATH = new RegExp(String.raw`^${SPEC_DIR}/(?!\.\.?$)[A-Za-z0-9_.-]+$`);
 
 /** Numbered or bulleted lines in the goal: a rough count of its separate requirements. */
 export function countRequirements(goal: string): number {
@@ -43,23 +43,57 @@ export function specTestsWanted(config: OmnexxConfig, goal: string, writing: boo
 }
 
 const CODE_FILE = /\.(?:[cm]?[jt]sx?|py|go|rs|java|kt|rb)$/;
-const TEST_FILE =
-  /(?:^|\/)(?:tests?|__tests__|spec)\/|[._-](?:test|spec)\.|(?:^|\/)test_[^/]*\.py$/;
+const TEST_DIRS = new Set(['test', 'tests', '__tests__', 'spec']);
+const TEST_NAME = /[._-](?:test|spec)\./;
 const CONTROL = /^(?:if|for|while|switch|catch|return|else|do|try|await|throw|new|typeof)\b/;
 const DECLARATION =
-  /^(?:export\s|module\.exports|exports\.|(?:async\s+)?function\s|class\s|interface\s|type\s|def\s|async\s+def\s|pub\s|func\s)/;
-/** A method or property header inside a class body (`name(args) {`, `get name() {`). */
-const MEMBER =
-  /^(?:(?:public|private|protected|static|async|get|set|readonly)\s+)*#?[A-Za-z_$][\w$]*\s*(?:<[^>]*>)?\([^)]*\)?\s*(?::[^{=]*)?\{?\s*$/;
+  /^(?:export\s|module\.exports|exports\.|function\s|async\s|class\s|interface\s|type\s|def\s|pub\s|func\s)/;
+const MODIFIERS = new Set([
+  'public',
+  'private',
+  'protected',
+  'static',
+  'async',
+  'get',
+  'set',
+  'readonly',
+]);
+/** `name(` or `#name<T>(` at the start of a member header. */
+const MEMBER_HEAD = /^#?[A-Za-z_$][\w$]*(?:<[^>]*>)?\(/;
+
+function isTestFile(path: string): boolean {
+  const parts = path.split('/');
+  const name = parts.at(-1) ?? '';
+  return (
+    parts.slice(0, -1).some((d) => TEST_DIRS.has(d)) ||
+    TEST_NAME.test(name) ||
+    (name.startsWith('test_') && name.endsWith('.py'))
+  );
+}
+
+/** A method header inside a class or object body: `name(args) {`, `get name() {`. */
+function isMember(line: string): boolean {
+  if (!line.endsWith('{')) return false;
+  const words = line.split(' ');
+  let i = 0;
+  while (i < words.length - 1 && MODIFIERS.has(words[i] ?? '')) i++;
+  return MEMBER_HEAD.test(words.slice(i).join(' '));
+}
+
+/** Drop a trailing `{` (and `=> {`) from a header line. */
+function header(line: string): string {
+  const open = line.endsWith('{') ? line.slice(0, -1).trimEnd() : line;
+  return open.endsWith('=>') ? `${open.slice(0, -2).trimEnd()} =>` : open;
+}
 
 /** One source line as a signature, or undefined when it is body. */
 function signatureLine(raw: string): string | undefined {
   const line = raw.trim();
   if (!line || line.startsWith('//') || line.startsWith('#') || CONTROL.test(line))
     return undefined;
-  if (!DECLARATION.test(line) && !MEMBER.test(line)) return undefined;
+  if (!DECLARATION.test(line) && !isMember(line)) return undefined;
   const indent = raw.length - raw.trimStart().length;
-  return `${' '.repeat(Math.min(indent, 4))}${line.replace(/\s*\{\s*$/, '').replace(/\s*=>\s*\{?\s*$/, ' =>')}`;
+  return `${' '.repeat(Math.min(indent, 4))}${header(line)}`;
 }
 
 /**
@@ -72,7 +106,7 @@ export function publicInterface(
   maxChars = INTERFACE_MAX_CHARS,
 ): string {
   const parts = files
-    .filter((f) => CODE_FILE.test(f.path) && !TEST_FILE.test(f.path))
+    .filter((f) => CODE_FILE.test(f.path) && !isTestFile(f.path))
     .map((f) => {
       const sigs = f.text
         .split('\n')
@@ -115,7 +149,7 @@ Write tests that would catch a wrong reading of the spec:
 - above all the interactions between requirements: one operation built on another (an operation that completes something an earlier call set up, an undo, a transfer, a save and restore), walked through a concrete call sequence. An internal step often wrongly re-runs a public check that its own earlier bookkeeping now fails.
 Assert only what the spec states. Where it leaves a behaviour open, don't test it. Don't test internals, timing, messages or formatting the spec doesn't fix.
 
-Use the project's own test runner and module style (see the project facts). Put every file under ${SPEC_DIR}/ at the repository root (one small file per requirement or interaction, import the code by a relative path from there), and give one shell command that runs only those files and exits non-zero when one fails. Reply only by calling the answer tool.`;
+Use the project's own test runner and module style (see the project facts). Put every file under ${SPEC_DIR}/ at the repository root (one small file per requirement or interaction, import the code by a relative path from there), and give one shell command that runs only those files, naming each file (not a directory or glob), and exits non-zero when one fails. Reply only by calling the answer tool.`;
 
 const JUDGE_SYSTEM = `You settle a dispute about acceptance tests. An independent model wrote tests from a specification; the agent that wrote the code says some of them contradict the specification. Decide for each disputed test file by the specification alone: drop it only when the test asserts something the spec contradicts or leaves open. A test that is right and code that is wrong means the test stays. Reply only by calling the answer tool.`;
 
@@ -213,7 +247,7 @@ export async function judgeDispute(
 
 /** Output that says the suite itself never ran: a runner that found no files, a bad command. */
 const BROKEN =
-  /no test files found|no tests? found|command not found|unknown (?:option|command)|ENOENT[^\n]*omnexx-spec|SyntaxError[^\n]*omnexx-spec/i;
+  /no test files found|no tests? found|could not find|command not found|unknown (?:option|command)|ENOENT[^\n]*omnexx-spec|SyntaxError[^\n]*omnexx-spec/i;
 
 export function suiteBroken(output: string): boolean {
   return BROKEN.test(output);

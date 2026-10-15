@@ -97,10 +97,8 @@ async function runSuite(r: Run, suite: SpecSuite): Promise<{ pass: boolean; outp
   const dir = join(r.worktree, SPEC_DIR);
   await excludeFromGit(r);
   try {
-    for (const f of suite.files) {
-      await mkdir(dirname(join(r.worktree, f.path)), { recursive: true });
-      await writeFile(join(r.worktree, f.path), f.content);
-    }
+    await mkdir(dir, { recursive: true });
+    await Promise.all(suite.files.map((f) => writeFile(join(r.worktree, f.path), f.content)));
     const res = await r.exec(suite.command, {
       cwd: r.worktree,
       env: r.childEnv,

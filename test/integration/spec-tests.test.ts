@@ -26,7 +26,7 @@ const GOAL = [
 /** The spec test needs out/M2.T01.txt: only the fix task (M2.T01) makes it pass. */
 const SPEC_FILE = 'omnexx-spec/fulfil.test.mjs';
 const SUITE = {
-  command: 'node --test omnexx-spec/',
+  command: 'node --test omnexx-spec/fulfil.test.mjs',
   files: [
     {
       path: SPEC_FILE,
