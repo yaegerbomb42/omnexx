@@ -34,6 +34,7 @@
     "vscode/src/webview/contextPage.ts",
     "vscode/src/webview/inspector.ts",
     "vscode/src/webview/mcp.ts",
-    "vscode/src/webview/skills.ts"
+    "vscode/src/webview/skills.ts",
+    "vscode/src/webview/agentCard.ts"
   ]
 }

@@ -13,6 +13,7 @@ import {
   type CycleSummary,
 } from '../agent/compaction.js';
 import { buildCycleContext } from '../agent/context.js';
+import { briefInput } from '../config/agent-settings.js';
 import { renderCodemap, type Codemap } from '../agent/codemap.js';
 import { runAgentLoop, type LoopDeps } from '../agent/loop.js';
 import type { ResolvedModel } from '../providers/pricing.js';
@@ -419,6 +420,7 @@ export async function stepAct(run: Run): Promise<void> {
     ...(runningText ? { runningContext: runningText } : {}),
     role: await loadRoleCard(run.store, task, run.state.repoRoot),
     sections: run.config.context.sections,
+    ...briefInput(run.config),
     tools: tools.map(toolSpec),
   });
   run.events.emit('cycle.context', {

@@ -1,4 +1,5 @@
 import { thinkingGist } from '../telemetry/narrate.js';
+import { agentBriefFor } from '../config/agent-settings.js';
 import { InCycleWatch } from '../guard/stuck.js';
 import { orderForStrategy, strategyFor, type Strategy } from '../config/routing.js';
 import { randomBytes } from 'node:crypto';
@@ -284,6 +285,8 @@ export class CodeChat {
       ...(instructions ? [{ text: instructions }] : []),
       ...(known.length ? [{ text: `# Lessons about this repo\n\n${renderNotes(known)}` }] : []),
       { text: codemap, cacheBreakpoint: true },
+      // The user's agent settings (effort, time): after the cached prefix, so it never busts it.
+      ...(agentBriefFor(config) ? [{ text: agentBriefFor(config) ?? '', volatile: true }] : []),
     ];
     const chat = new CodeChat(config, deps.provider, tools, system, ctx, events, store, model);
     chat.paths = paths;

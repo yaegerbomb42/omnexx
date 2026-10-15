@@ -1,4 +1,5 @@
 import { ProviderError } from '../errors.js';
+import { geminiThinking } from './turn-effort.js';
 import type {
   CompletionRequest,
   CompletionResponse,
@@ -98,7 +99,10 @@ export class GeminiProvider implements Provider {
         : undefined,
       contents: toContents(req),
       tools: tools.length ? tools : undefined,
-      generationConfig: { maxOutputTokens: req.maxTokens },
+      generationConfig: {
+        maxOutputTokens: req.maxTokens,
+        ...(geminiThinking(req) ? { thinkingConfig: geminiThinking(req) } : {}),
+      },
     };
     const signals = [AbortSignal.timeout(this.opts.timeoutMs), ...(req.signal ? [req.signal] : [])];
     const url = `${base}/v1beta/models/${encodeURIComponent(req.model)}:generateContent`;

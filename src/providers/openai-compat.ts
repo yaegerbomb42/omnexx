@@ -1,5 +1,6 @@
 import { ProviderError } from '../errors.js';
 import { authHeaders, type EndpointAuth } from './auth-headers.js';
+import { openaiReasoning } from './turn-effort.js';
 import type {
   CompletionRequest,
   CompletionResponse,
@@ -148,12 +149,14 @@ export class OpenAICompatProvider implements Provider {
    */
   async complete(req: CompletionRequest): Promise<CompletionResponse> {
     let thinking: boolean | undefined;
+    let sendEffort = true;
     for (let i = 0; ; i++) {
       try {
         const cap = this.outputCaps.get(req.model);
         return await this.attempt(
           cap && cap < req.maxTokens ? { ...req, maxTokens: cap } : req,
           thinking,
+          sendEffort,
         );
       } catch (err) {
         if (i >= 3 || !(err instanceof ProviderError) || err.status !== 400) throw err;
@@ -166,6 +169,11 @@ export class OpenAICompatProvider implements Provider {
           this.parallelToolCalls = false;
           continue;
         }
+        // A model without reasoning knobs: drop the turn effort and send the plain request.
+        if (sendEffort && req.turnEffort !== undefined && /reasoning/i.test(err.message)) {
+          sendEffort = false;
+          continue;
+        }
         if (!/enable_thinking/i.test(err.message)) throw err;
         thinking = thinking === false ? undefined : false;
       }
@@ -175,7 +183,9 @@ export class OpenAICompatProvider implements Provider {
   private async attempt(
     req: CompletionRequest,
     thinking: boolean | undefined,
+    sendEffort = true,
   ): Promise<CompletionResponse> {
+    const effort = sendEffort ? openaiReasoning(req) : undefined;
     const body = {
       model: req.model,
       messages: toChatMessages(req),
@@ -197,6 +207,7 @@ export class OpenAICompatProvider implements Provider {
         : {}),
       ...(req.onDelta ? { stream: true, stream_options: { include_usage: true } } : {}),
       ...(thinking === undefined ? {} : { enable_thinking: thinking }),
+      ...(effort ? { reasoning_effort: effort } : {}),
     };
     const signals = [AbortSignal.timeout(this.opts.timeoutMs), ...(req.signal ? [req.signal] : [])];
     let res: Response;

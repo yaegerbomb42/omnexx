@@ -193,6 +193,22 @@ Pushes carry only the run id, repo name, status, a task title, counts and dollar
 
 An in-cycle signal ends the cycle as `stuck` (events `stuck.in_cycle`, then `stuck.signal`). Its partial work still goes through VERIFY, so it's committed if the gates pass and rolled back otherwise; the next attempt gets the reason as evidence, and the strategy ladder climbs one rung.
 
+## `[agent]`: the five settings the agent manages itself by
+
+Set them with `/settings` in the terminal (Tab moves, ←→ change, Enter saves) or the **Agent** card
+in the VS Code panel; both save to `agent-settings.json` in your config folder. A project can pin
+them here. Unset levels change nothing; set ones derive the keys below, above your `config.toml`
+and below a project's `omnexx.toml` and CLI flags (so `--for 8h` still wins).
+
+| Key                   | Default | Meaning                                                                                                                                                                                                                                                            |
+| --------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `task_effort`         | unset   | 1 = quick MVP … 10 = build a monolith. Sets `[plan]` `loop_think_turns` (2…32), `loop_rounds` (2…18), `loop_rethinks` (0…5), `mode` (1-3 `fast`, 8-10 or 6+ with ≥4h `full`) and `milestones` (1 at level 1, unset from 8); the agent is told what its level means |
+| `turn_effort`         | unset   | Thinking per model call: `reasoning_effort` minimal/low/medium/high on OpenAI-style APIs, a thinking budget (0…32k tokens) on Anthropic and Gemini                                                                                                                 |
+| `context_level`       | unset   | Context budget 5k, 10k, 20k, 40k, 64k, 96k, 128k, 200k, 300k, 500k (clamped to 85% of the worker model's window). Sets `[context]` `compact_at`, `clear_tool_results_at`, turns and tool results kept, notes and codemap sizes; 1-2 hide the codemap               |
+| `time`                | unset   | `5m`, `15m`, `30m`, `1h`, `2h`, `4h`, `8h` or `unlimited`: `budget.max_hours`, and the agent sizes its plan to it                                                                                                                                                  |
+| `max_tokens_per_turn` | unset   | Output cap per call: `providers.anthropic.max_tokens`                                                                                                                                                                                                              |
+| `ask_on_start`        | `true`  | Offer these at every launch (terminal and VS Code panel); "keep, don't ask again" turns it off                                                                                                                                                                     |
+
 ## `[plan]`: how much planning a run gets
 
 | Key                   | Default  | Meaning                                                                                                                                            |

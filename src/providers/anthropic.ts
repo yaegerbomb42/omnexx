@@ -7,6 +7,7 @@ import type {
   Tool,
 } from '@anthropic-ai/sdk/resources/messages/messages';
 import { ProviderError } from '../errors.js';
+import { anthropicThinking } from './turn-effort.js';
 import type {
   CompletionRequest,
   CompletionResponse,
@@ -82,6 +83,7 @@ export class AnthropicProvider implements Provider {
       }
       return { role: m.role, content };
     });
+    const thinking = anthropicThinking(req);
     return {
       model: req.model,
       max_tokens: req.maxTokens,
@@ -89,6 +91,7 @@ export class AnthropicProvider implements Provider {
       tools,
       messages,
       ...(req.toolChoice ? { tool_choice: req.toolChoice } : {}),
+      ...(thinking ? { thinking } : {}),
     };
   }
 

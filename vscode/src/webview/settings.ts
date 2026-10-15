@@ -7,6 +7,7 @@ import * as modelPicker from './modelPicker.js';
 import * as roles from './roles.js';
 import * as mcp from './mcp.js';
 import * as skills from './skills.js';
+import * as agentCard from './agentCard.js';
 import { badge } from './modelPicker.js';
 import { escapeHtml } from './render.js';
 import * as providerForm from './providerForm.js';
@@ -187,6 +188,7 @@ function draw(): void {
   const page = q('settings', HTMLElement);
   page.innerHTML = `
 <div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
+<section class="set-section"><h3>Agent</h3><div id="agent-box">${agentCard.html()}</div></section>
 <section class="set-section"><h3>Chat model</h3>${modelFieldHtml()}</section>
 <section class="set-section"><h3>Your models</h3><div id="roles-box">${roles.html()}</div></section>
 <section class="set-section"><h3>Skills</h3><div id="skills-box">${skills.html()}</div></section>
@@ -345,6 +347,7 @@ export function open(post: Post): void {
   roles.request(post);
   mcp.request(post);
   skills.request(post);
+  agentCard.request(post);
 }
 
 export function close(): void {

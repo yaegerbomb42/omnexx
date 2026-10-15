@@ -89,6 +89,10 @@ At the `omnexx` prompt:
 - **`/connect env`**: use the keys already in your environment (only the variable name is saved).
 - **`/models`**: tick the models to use and how: top-first, random, or smart (Nimble picks).
   Each runs until its quota is out, then the next takes over.
+- **`/settings`**: how the agent manages itself: effort per task (1 quick MVP … 10 monolith),
+  effort per turn (thinking depth), context (5k … 500k tokens), time on task and max tokens per
+  turn. Offered at every launch until you pick "don't ask again"; the VS Code panel has the same
+  **Agent** card. See [docs/config.md](docs/config.md#agent-the-five-settings-the-agent-manages-itself-by).
 - **`/connect ollama`** (or `lmstudio`, `vllm`, `litellm`): a local model, no key.
 - **`/connect https://host/v1 KEY`**: any OpenAI-compatible endpoint.
 - **`/provider https://host KEY`**: any OpenAI- _or_ Anthropic-compatible endpoint; the API, a

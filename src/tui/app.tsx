@@ -11,6 +11,8 @@ import { RunCard } from './run-card.js';
 import { AgentsView } from './agents.js';
 import { ModelPicker, RankEditor } from './model-picker.js';
 import { AutoTimePicker, timeLabel } from './auto-setup.js';
+import { AgentPanel } from './agent-panel-view.js';
+import { agentPanelKeyOf } from './agent-panel.js';
 import type { TodoItem } from '../tools/todo.js';
 import { MarkdownLine } from './markdown.js';
 import {
@@ -180,7 +182,8 @@ function StatusBar({ session, width }: { session: Session; width: number }) {
   ) : (
     <Text color={GRAY}>{session.estimate ?? 'no run attached'}</Text>
   );
-  const right = statusRight(session);
+  const agent = session.agentSettings.summary;
+  const right = agent ? `${agent} · ${statusRight(session)}` : statusRight(session);
   return (
     <Box width={width} justifyContent="space-between">
       {left}
@@ -315,6 +318,10 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
     // An offer (pull a model) answers on one key; guard questions still need enter.
     if (session.pending?.labels && !input && (ch === 'y' || ch === 'n')) {
       void session.submit(ch);
+      return;
+    }
+    if (session.agentSettings.panel) {
+      void session.agentKey(agentPanelKeyOf(ch, key));
       return;
     }
     if (session.autoSetup?.step === 'time') {
@@ -513,6 +520,9 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
         {session.modelPicker && <ModelPicker state={session.modelPicker} width={width} />}
         {session.rankView && <RankEditor state={session.rankView} width={width} />}
         {session.autoSetup && <AutoTimePicker state={session.autoSetup} width={width} />}
+        {session.agentSettings.panel && (
+          <AgentPanel state={session.agentSettings.panel} width={width} />
+        )}
         <Box width={width}>
           <Box flexDirection="column" flexGrow={1}>
             {session.live && (

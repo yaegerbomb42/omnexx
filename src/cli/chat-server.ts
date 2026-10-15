@@ -24,11 +24,11 @@ import { println, type CliIO } from './io.js';
  * contextRestore {id} · skills · skillsSearch {query} · skillsPreview {id} · skillsInstall {id} ·
  * skillsUpdate · skillsRemove {name} · skillsToggle {name, on} · skillsMarketAdd {source} · chats ·
  * resumeChat {id} · browser · setBrowser {engine, profile?, sessionName?, headless} · mcp {op, …}
- * (see chat-mcp.ts).
+ * (see chat-mcp.ts) · agentSettings · setAgentSettings {levels, askOnStart}.
  * Out: ready {version} · state (below; `entries` holds only lines not sent before) · models
  * {items, unreachable, current} · settings {catalog, connected} · providerTest {name, ok, models,
  * detail} · contextItems {items, busy, budget} · skills… (see chat-skills.ts) · chats {chats} · browser {engine, profile, sessionName, headless} ·
- * error {message}.
+ * agentSettings {levels, askOnStart, saved, summary, meta} · error {message}.
  */
 
 export interface ChatUsage {
@@ -484,6 +484,14 @@ export async function serveChat(
         run(session.submit(`/model ${text(c, 'value')}${name}`));
         return;
       }
+      case 'agentSettings':
+      case 'setAgentSettings':
+        run(
+          import('./chat-agent-settings.js').then(({ agentSettingsCommand }) =>
+            agentSettingsCommand(c, session, write),
+          ),
+        );
+        return;
       case 'sync':
         // A reloaded panel: start it over with the conversation since the last new chat.
         sentUpTo = clearedAt;

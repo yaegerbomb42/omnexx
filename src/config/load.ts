@@ -1,3 +1,4 @@
+import { readAgentSettings, withAgentLayers } from './agent-settings.js';
 import { readSectionModes, sectionsLayer } from './sections-file.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -189,13 +190,17 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<LoadedConfig>
   if (ranked) layers.push({ source: 'your /models ranking (models.json)', data: ranked });
   const user = await readTomlLayer(userConfigFile(paths));
   if (user) layers.push(user);
+  const mergeLayers = (ls: readonly Layer[]): Plain =>
+    [...ls].reverse().reduce<Plain>((acc, l) => deepMerge(acc, l.data), {});
+  // The agent sliders (/settings): the levels, and what they imply for plan/context/budget.
+  const all = withAgentLayers(layers, await readAgentSettings(paths), Boolean(user), mergeLayers);
 
-  const merged = [...layers].reverse().reduce<Plain>((acc, l) => deepMerge(acc, l.data), {});
+  const merged = mergeLayers(all);
   const parsed = configSchema.safeParse(merged);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
     if (!first) throw new ConfigError('invalid configuration');
-    throw formatConfigIssue(first, layers);
+    throw formatConfigIssue(first, all);
   }
   // Smart pool: Nimble picks the model per action. With no judge set up, borrow Nimble for
   // routing only; when Nimble isn't running the router falls back to the pool order.

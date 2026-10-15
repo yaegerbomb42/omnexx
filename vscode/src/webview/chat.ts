@@ -26,6 +26,7 @@ import {
   type TodoItem,
   type Usage,
 } from './render.js';
+import * as agentCard from './agentCard.js';
 import * as contextPage from './contextPage.js';
 import * as crew from './crew.js';
 import * as inspector from './inspector.js';
@@ -68,7 +69,8 @@ type Incoming =
         | 'roles'
         | 'contextFiles'
         | 'engine'
-        | 'browser';
+        | 'browser'
+        | 'agentSettings';
     } & Record<string, unknown>)
   | ({ type: 'browserFrame' } & crew.BrowserFrameMsg)
   | { type: 'ready'; version: string }
@@ -328,6 +330,7 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
     );
   if (m.type !== 'state' && inspector.onMessage(m)) return;
   if (m.type !== 'state' && contextPage.onMessage(m)) return;
+  if (m.type !== 'state' && agentCard.onMessage(m)) return;
   if (m.type !== 'state' && settings.onMessage(m)) return;
   if (m.type === 'state') apply(m);
   else if (m.type === 'ready') {
@@ -339,6 +342,8 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
     blocks = [];
     logLines = [];
     drawConversation();
+    // The agent settings: offered once at the top of the panel while "always ask" is on.
+    agentCard.request(post);
   } else if (m.type === 'error' || m.type === 'down') {
     const text = typeof m.message === 'string' ? m.message : 'Something went wrong';
     showBanner(text, m.type === 'error' ? 'error' : 'info');
@@ -413,6 +418,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 settings.wire(post);
+agentCard.wire(post);
 contextPage.wire(post);
 inspector.wire(post, () => {
   contextPage.open(post);
