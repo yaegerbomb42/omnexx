@@ -248,6 +248,23 @@ describe('omnexx chat-server (the VS Code chat panel protocol)', () => {
     }, 'reset items');
     expect(reset.find((i) => i.id === 'system:0')?.text).not.toBe('EDITED SYSTEM');
 
+    // A note of your own and a pinned chat item go out with the next request, and the
+    // inspector gets the budget to draw its bar against.
+    t.send({ type: 'contextAdd', text: 'NOTE: use pnpm' });
+    const firstChat = reset.find((i) => i.group === 'chat');
+    t.send({ type: 'contextPin', id: firstChat?.id ?? 'chat:0:0' });
+    const noted = await t.until(() => {
+      const it = lastItems();
+      return it?.filter((i) => i.group === 'notes').length === 2 ? it : undefined;
+    }, 'notes');
+    expect(noted.find((i) => i.id === 'note:1')?.text).toBe('NOTE: use pnpm');
+    expect(t.out.findLast((o) => o.type === 'contextItems')?.budget).toBeGreaterThan(0);
+    const beforeNote = t.provider.requests.length;
+    t.send({ type: 'send', text: 'once more' });
+    const noteReq = await t.until(() => t.provider.requests[beforeNote], 'request with notes');
+    expect(noteReq.system.map((b) => b.text).join('\n')).toContain('NOTE: use pnpm');
+    await t.until(() => (t.states().at(-1)?.busy === false ? true : undefined), 'idle after notes');
+
     t.send({ type: 'contextUpdate', id: 'nope', text: 'x' });
     await t.until(
       () => t.out.find((o) => o.type === 'error' && String(o.message).includes('no context item')),

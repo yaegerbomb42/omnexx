@@ -33,6 +33,8 @@ export interface SkillRoots {
   dirs?: readonly string[];
   /** Also read Claude Code's skills (`~/.claude/skills`, repo `.claude/skills`). */
   importClaude?: boolean;
+  /** Skills switched off: left out of the catalog and not loadable. */
+  disabled?: readonly string[];
 }
 
 /** One folder skills are read from, in precedence order (later wins), with where it came from. */
@@ -126,13 +128,16 @@ export async function listSkillsWithSource(
  */
 export async function listSkills(roots: SkillRoots = {}): Promise<SkillSummary[]> {
   const all = await skillMap(roots);
+  const off = new Set(roots.disabled ?? []);
   return [...all.values()]
+    .filter((s) => !off.has(s.name))
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map(({ name, description }) => ({ name, description }));
 }
 
 /** One skill by name with its body (≤ SKILL_MAX_TOKENS), or undefined when it does not exist. */
 export async function loadSkill(name: string, roots: SkillRoots = {}): Promise<Skill | undefined> {
+  if (roots.disabled?.includes(name)) return undefined;
   const skill = (await skillMap(roots)).get(name);
   if (!skill) return undefined;
   const budget = SKILL_MAX_TOKENS * CHARS_PER_TOKEN;

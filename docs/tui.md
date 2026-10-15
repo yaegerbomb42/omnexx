@@ -20,3 +20,14 @@ a run.
   cache hit, spend, commits and rejections.
 
 Turn-by-turn chat (Claude Code style, no long run) is planned; for now every goal is a run.
+
+## Context: what the next request sends
+
+`/context` lists everything the next chat request sends, grouped (system prompt with its
+sources: omnexx's instructions, CLAUDE.md / AGENTS.md, repo lessons, the repo map; tools,
+built-in, MCP and the skills catalog; your notes; the chat history with tool calls and results),
+each with an id and its tokens, under a bar against the context budget. Change it with
+`/context show <id>`, `edit <id> <text>`, `hide <id>` (or `delete`), `restore <id>`, `pin <id>`
+(keeps a chat item as a note, so trimming and compaction can't drop it), `note <text>` (a note
+sent with every request) and `reset` (default system prompt and tools; notes stay). The VS Code
+context inspector does the same with buttons.

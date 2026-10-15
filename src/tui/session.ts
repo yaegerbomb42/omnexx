@@ -1,3 +1,9 @@
+import {
+  contextTransform,
+  parseContextCommand,
+  renderContext,
+  type ContextChange,
+} from './context-ops.js';
 import type { ContextItem } from './context-edit.js';
 import { chatTitle, transcriptEntries, type ChatSummary } from './chat-history.js';
 import { AUTO_TIMES, readTime, timeLabel, type AutoSetup } from './auto-setup.js';
@@ -111,7 +117,14 @@ export const SLASH: readonly SlashCommand[] = [
   },
   { name: 'go', help: 'plan mode: approve the plan and carry it out' },
   { name: 'undo', help: 'put the files back as they were before the last message' },
-  { name: 'skills', help: 'skills omnexx can use; /skills add <path|git-url>' },
+  {
+    name: 'skills',
+    help: 'skills: /skills list, /skills search <q>, /skills install <id>, /skills disable <name>',
+  },
+  {
+    name: 'context',
+    help: 'what the next request sends, with tokens: /context edit|hide|pin|note|restore',
+  },
   {
     name: 'apps',
     help: 'connect apps: /apps lists them, /apps notion signs in, /apps github --set Authorization=<token>',
@@ -978,16 +991,31 @@ export class Session {
   }
 
   /** Apply an inspector change: edit {id, text}, delete {id}, or reset to defaults. */
-  changeContext(
-    change:
-      { op: 'edit'; id: string; text: string } | { op: 'delete'; id: string } | { op: 'reset' },
-  ): void {
+  changeContext(change: ContextChange): void {
     const code = this.code;
     if (!code) throw new Error('no chat yet: send a message first');
     if (change.op === 'edit') code.editContext(change.id, change.text);
     else if (change.op === 'delete') code.deleteContext(change.id);
-    else code.resetContext();
+    else if (change.op === 'reset') code.resetContext();
+    else code.transformContext(contextTransform(change));
     this.changed();
+  }
+
+  /** `/context …`: show the context, or change it, as the VS Code inspector does. */
+  private contextCommand(args: readonly string[]): void {
+    const cmd = parseContextCommand(args);
+    if (cmd.kind === 'show') {
+      const item = this.contextItems().find((i) => i.id === cmd.id);
+      this.push('system', item ? `${item.label}\n\n${item.text}` : `no context item "${cmd.id}"`);
+      return;
+    }
+    if (cmd.kind === 'change') this.changeContext(cmd.change);
+    this.push('system', renderContext(this.contextItems(), this.contextBudget));
+  }
+
+  /** The context budget the chat compacts at (0 before a chat). */
+  get contextBudget(): number {
+    return this.code?.contextLimit ?? 0;
   }
 
   /** True while /pause holds the chat at its next step. */
@@ -1394,6 +1422,9 @@ export class Session {
         return;
       case 'skills':
         await this.cli(['skills', ...(args.length ? args : ['list'])]);
+        return;
+      case 'context':
+        this.contextCommand(args);
         return;
       case 'setup':
         await this.openChat(rest);

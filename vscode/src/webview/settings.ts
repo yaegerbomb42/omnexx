@@ -6,6 +6,7 @@
 import * as modelPicker from './modelPicker.js';
 import * as roles from './roles.js';
 import * as mcp from './mcp.js';
+import * as skills from './skills.js';
 import { badge } from './modelPicker.js';
 import { escapeHtml } from './render.js';
 import * as providerForm from './providerForm.js';
@@ -188,6 +189,7 @@ function draw(): void {
 <div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
 <section class="set-section"><h3>Chat model</h3>${modelFieldHtml()}</section>
 <section class="set-section"><h3>Your models</h3><div id="roles-box">${roles.html()}</div></section>
+<section class="set-section"><h3>Skills</h3><div id="skills-box">${skills.html()}</div></section>
 <section class="set-section"><h3>Providers</h3>${connectedHtml()}</section>
 <section class="set-section add"><h3>Add a provider</h3>
   <input id="tile-search" class="field" type="search" placeholder="Search 30+ providers…" aria-label="Search providers" value="${escapeHtml(tileQuery)}" spellcheck="false">
@@ -342,6 +344,7 @@ export function open(post: Post): void {
   post({ type: 'browser' });
   roles.request(post);
   mcp.request(post);
+  skills.request(post);
 }
 
 export function close(): void {
@@ -353,6 +356,7 @@ export function close(): void {
 export function onMessage(m: { type: string } & Record<string, unknown>): boolean {
   if (roles.onMessage(m)) return true;
   if (mcp.onMessage(m)) return true;
+  if (skills.onMessage(m)) return true;
   if (m.type === 'providerProbe') {
     setProbeBox(providerForm.onProbe(m));
     return true;
@@ -458,6 +462,7 @@ export function wire(post: Post): void {
     if (!t) return;
     if (roles.click(t, post)) return;
     if (mcp.click(t, post)) return;
+    if (skills.click(t, post)) return;
     const tileName = t.closest<HTMLElement>('[data-provider]')?.dataset.provider;
     if (tileName) {
       chosen = tileName;
@@ -540,7 +545,7 @@ export function wire(post: Post): void {
     if (mcp.keydown(e, post)) return;
     if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
       if (e.target.closest('#browser-box')) e.target.blur();
-      else save(post);
+      else if (!skills.enter(e.target)) save(post);
     }
     if (e.key === 'Escape') close();
   });
