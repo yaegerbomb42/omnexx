@@ -28,6 +28,9 @@ import { restoreTree, snapshotTree } from './undo.js';
 import { renderNotes } from '../core/notes.js';
 import type { OmnexxPaths } from '../core/paths.js';
 import { readRepoNotes, saveToRepoMemory } from '../core/repo-memory.js';
+import { FactRecorder } from '../core/fact-recorder.js';
+import { factsBlockFor } from '../core/facts.js';
+import { runShell } from '../core/exec.js';
 import { realClock, type Clock } from '../core/clock.js';
 import { estimateTokens } from '../core/tokens.js';
 import { loadInstructions, renderInstructions } from '../instructions/load.js';
@@ -184,6 +187,8 @@ export class CodeChat {
   private resumedFrom: string | undefined;
   /** Set by open(); where repo memory lives. */
   paths: OmnexxPaths | undefined;
+  /** Records what passed into the repo's verified facts. */
+  facts: FactRecorder | undefined;
   /** Before each message: the files as they were, and how long the conversation was. */
   private snapshots: { tree: string | undefined; historyLength: number }[] = [];
   private queue: string[] = [];
@@ -250,8 +255,16 @@ export class CodeChat {
     await mkdir(tmp, { recursive: true, mode: 0o700 });
     const jail = new PathJail(io.cwd);
     let n = 0;
+    const facts = new FactRecorder({
+      paths,
+      repoRoot: jail.root,
+      workdir: jail.root,
+      gateCommands: config.gates.map((g) => g.run),
+      now: () => clock.now(),
+    });
     const ctx: ToolContext = {
       jail,
+      exec: facts.wrap(runShell),
       env: scrubEnv(io.env, { passthrough: config.policy.env_passthrough, set: { TMPDIR: tmp } }),
       store,
       events,
@@ -282,6 +295,12 @@ export class CodeChat {
     // What earlier runs and chats learned about this repo; the remember tool adds to it.
     const known = await readRepoNotes(paths, jail.root);
     if (known.length) await store.writeNotes(known);
+    const factsBlock = await factsBlockFor(
+      paths,
+      jail.root,
+      jail.root,
+      known.map((k) => k.text),
+    );
     const system = [
       { text: CHAT_SYSTEM },
       ...(instructions ? [{ text: instructions }] : []),
@@ -289,9 +308,12 @@ export class CodeChat {
       { text: codemap, cacheBreakpoint: true },
       // The user's agent settings (effort, time): after the cached prefix, so it never busts it.
       ...(agentBriefFor(config) ? [{ text: agentBriefFor(config) ?? '', volatile: true }] : []),
+      // What ran and passed here before; volatile, since a passing command can add to it.
+      ...(factsBlock ? [{ text: factsBlock, volatile: true }] : []),
     ];
     const chat = new CodeChat(config, deps.provider, tools, system, ctx, events, store, model);
     chat.paths = paths;
+    chat.facts = facts;
     chat.latency = await loadLatency(latencyFile(paths));
     chat.estimator = new ChatEstimate(runHistoryFile(paths), {
       model: () => chat.model,
@@ -741,6 +763,8 @@ export class CodeChat {
   /** Lessons the agent recorded this message become part of the repo's memory. */
   private async rememberForRepo(): Promise<void> {
     if (!this.paths) return;
+    this.facts?.promoteNotes(await this.store.readNotes());
+    await this.facts?.flush();
     await saveToRepoMemory(
       this.paths,
       this.ctx.jail.root,
@@ -832,6 +856,7 @@ export class CodeChat {
   private async check(view: ChatView): Promise<void> {
     view.line({ kind: 'act', text: 'running your checks' });
     const results = await runGates(this.config.gates, {
+      ...(this.ctx.exec ? { exec: this.ctx.exec } : {}),
       cwd: this.ctx.jail.root,
       env: this.ctx.env,
       logsDir: this.store.logsDir,

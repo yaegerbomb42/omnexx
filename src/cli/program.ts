@@ -262,6 +262,24 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     });
 
   program
+    .command('facts')
+    .argument('[action]', '"forget" to drop a fact')
+    .argument('[id]', 'fact id, e.g. F3')
+    .option('--stale', 'only facts whose inputs changed since they were verified')
+    .option('--json', 'machine-readable output')
+    .description('verified facts about this repo (how it builds, tests, lints), or forget <id>')
+    .action(
+      async (
+        action: string | undefined,
+        id: string | undefined,
+        opts: { stale?: boolean; json?: boolean },
+      ) => {
+        const { factsCommand } = await import('./facts.js');
+        setExit(await factsCommand(io, action, id, opts));
+      },
+    );
+
+  program
     .command('chats', { hidden: true })
     .option('--json', 'machine-readable output')
     .description('list saved chats in this folder, newest first')

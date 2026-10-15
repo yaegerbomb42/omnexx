@@ -114,6 +114,10 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'stop', help: 'stop the agent now (same as esc)' },
   { name: 'diff', help: 'browse what changed' },
   {
+    name: 'facts',
+    help: 'verified facts about this repo: /facts, /facts --stale, /facts forget F3',
+  },
+  {
     name: 'autonomous',
     help: 'work on its own for a set time: pick how long, then the goal (or /autonomous 8h [goal])',
   },

@@ -10,6 +10,7 @@ import { allOf, WebhookNotifier } from '../notify/webhook.js';
 import { openPullRequest } from '../git/pr.js';
 import { closeSession } from '../tools/extra/browser.js';
 import { saveToRepoMemory } from './repo-memory.js';
+import { FactRecorder } from './fact-recorder.js';
 import { renderCodemap, withoutVendored, type Codemap } from '../agent/codemap.js';
 import { readIntent } from '../agent/intent.js';
 import { git } from '../git/git.js';
@@ -93,8 +94,10 @@ export const EXIT_FOR: Record<RunStatus, number> = {
 const MAX_MILESTONE_REPLANS = 2;
 
 /** Fold this run's lessons into the repo's memory so the next run or chat starts with them. */
-async function rememberForRepo(run: Run): Promise<void> {
+async function rememberForRepo(run: Run, facts?: FactRecorder): Promise<void> {
   try {
+    facts?.promoteNotes(await run.store.readNotes());
+    await facts?.flush();
     const added = await saveToRepoMemory(
       run.deps.paths,
       run.state.repoRoot,
@@ -1084,6 +1087,16 @@ export async function supervise(
     });
   }
 
+  // Every command the run executes (setup, gates, the agent's bash) keeps the repo's facts current.
+  const facts = new FactRecorder({
+    paths: run.deps.paths,
+    repoRoot: run.state.repoRoot,
+    workdir: run.worktree,
+    gateCommands: run.config.gates.map((g) => g.run),
+    now: () => run.clock.now(),
+    onError: (err) => run.events.emit('facts.save_failed', { error: err.message }),
+  });
+  run.exec = facts.wrap(run.exec);
   const stopHeartbeat = startHeartbeat(run, opts.heartbeatMs);
   // Stall watchdog: any event is activity; a working cycle that goes silent too long is hung.
   let lastActivity = run.clock.now();
@@ -1115,7 +1128,7 @@ export async function supervise(
       clearInterval(watcher);
       stopHeartbeat();
       await closeSession(runId).catch(() => undefined);
-      await rememberForRepo(run);
+      await rememberForRepo(run, facts);
       await sandbox?.stop();
       await releaseLock(run.store.dir, pid);
       throw err;
@@ -1124,7 +1137,7 @@ export async function supervise(
   clearInterval(watcher);
   // No browser outlives its run (a cycle that threw may have skipped its own cleanup).
   await closeSession(runId).catch(() => undefined);
-  await rememberForRepo(run);
+  await rememberForRepo(run, facts);
   if (outcome.status === 'user-stop') await prepareWorktree(run);
   run.state.status = outcome.status;
   run.state.statusReason = outcome.reason;

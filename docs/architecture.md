@@ -17,6 +17,20 @@ omnexx run ──(detach)──> omnexx supervise <runId>   (one per run, lock +
 
 `$OMNEXX_HOME/runs/<runId>/` (outside the repo): `goal.md`, `plan.json` (hierarchical), `progress.md`, `notes.json`/`notes.md`, `codemap.json`/`codemap.md`, `state.json` (phase machine, atomic writes), `events.jsonl`, `heartbeat.json`, `control.json`, `lock`, `logs/`, `rejected/`, `salvage/`, `REPORT.md`. The worktree lives at `$OMNEXX_HOME/worktrees/<repo>-<runId>`.
 
+Per-repo memory lives in `$OMNEXX_HOME/repos/<repo>-<key>/` (key: a hash of the origin remote, so clones share it; outside the repo, so it is never committed): `notes.json` (lessons), `semantic.json`, and `facts.json`.
+
+### Verified facts (`facts.json`)
+
+How to build, test, lint, typecheck and install this repo, each backed by a run that exited 0. A fact is `{id, kind, statement, command?, source, verified: {exitCode, at, durationMs}, boundTo: [{path, hash}]}`; kinds are `build|test|lint|typecheck|run|env|path|convention`.
+
+- **Recorded automatically**: every command a run executes (setup, gates, the agent's `bash`) goes through `run.exec`, which the supervisor wraps with a `FactRecorder`; chat wraps its tool executor and `/check` the same way. A command is kept only when its program is a known runner (npm, pytest, cargo, make, ...) and it classifies as build/test/lint/typecheck/install; configured gate commands are recorded as `gate` facts. A later failure of a known command marks its fact stale.
+- **From lessons**: when lessons are folded into repo memory, a lesson that names a command in backticks which passed this session becomes a `remember` fact with the lesson's wording (the agent stated it; the harness saw the evidence).
+- **Invalidation**: each fact is bound to the content hashes of the build-deciding files present when it passed (`package.json`, lockfiles, `tsconfig.json`, `pyproject.toml`, `Makefile`, `Cargo.toml`, `go.mod`, ...). If any changes or disappears, the fact shows as _unverified_ until the command passes again, which rebinds it.
+- **Injected** as a "Verified facts" block (≤ ~300 tokens; gates and verified facts first) in the volatile part of the worker context (after the settings block) and of the chat system prompt. Facts whose statement is already a lesson are left out.
+- `omnexx facts [--stale] [--json]`, `omnexx facts forget <id>`; `/facts` in the TUI.
+
+Follow-up (not built yet): mining human diffs for conventions.
+
 ## The phase machine
 
 `init → planning → select → act → verify → commit|rollback → record → guard → select … → wrapup → done`
