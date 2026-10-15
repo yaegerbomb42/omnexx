@@ -1,7 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.13.0
 
+- **Zero-config Ollama**: on first run omnexx finds your local Ollama, picks the best installed
+  model that can call tools, gives it a 32k context and says what it chose; with no usable model
+  it offers to `ollama pull` one (a key in the terminal, a button in VS Code).
+- **Faster turns**: independent reads and searches run in parallel, and the model is asked to
+  batch its calls.
+- **Web and browser**: pages come back as clean markdown (often under a tenth of the raw HTML),
+  paged for long pages and cached per run; elements by visible text, label or role; a new
+  `check_page` reports a screenshot, console errors, overflow, overlaps and broken images.
+- **Spec-first tests** (opt-in, `review.spec_tests = auto|on`): acceptance tests written from the
+  goal alone run before a run may finish.
 - **Run estimates**: before a run (and when chat starts work on an approved plan), "est. ~3 min,
   ~40k tokens, ~$0.02" from the most similar past runs, a range when unsure, "no history yet"
   without any; then "~2 min left" as tasks finish. In `omnexx run`, the terminal chat's status

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.0
+
+- Built on omnexx 0.13.0: zero-config Ollama (a **Pull it now** button when no model fits), run
+  estimates under the reply countdown, parallel reads, and cleaner web and browser tools.
+
 ## 0.8.3
 
 - Built on omnexx 0.12.0.
