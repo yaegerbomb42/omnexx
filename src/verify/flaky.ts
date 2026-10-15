@@ -12,12 +12,14 @@ export interface FlakyFinding {
  * Run each gate; when one shows new failures that the parser could name, run the whole gate
  * again (up to `flaky_reruns` times). Ids that failed new and then passed are flaky: the verdict
  * is taken from the last run, so they don't count as a regression, but they are reported. A
- * failure that persists, or a different new one on the re-run, still fails the gate.
+ * failure that persists, or a different new one on the re-run, still fails the gate. Ids in
+ * `known` already persisted through an earlier re-run: they alone don't trigger another.
  */
 export async function runGatesWithFlakyCheck(
   gates: readonly GateConfig[],
   ctx: GateRunContext,
   baseline: Baseline | undefined,
+  known: ReadonlySet<string> = new Set(),
 ): Promise<{ results: GateResult[]; flaky: FlakyFinding[] }> {
   const results: GateResult[] = [];
   const flaky: FlakyFinding[] = [];
@@ -26,7 +28,8 @@ export async function runGatesWithFlakyCheck(
     const seen = new Set<string>();
     for (let i = 1; i <= gate.flaky_reruns; i++) {
       const v = judgeGate(result, baseline);
-      if (v.pass || result.timedOut || !result.structured || !v.newFailures.length) break;
+      const fresh = v.newFailures.filter((id) => !known.has(id));
+      if (v.pass || result.timedOut || !result.structured || !fresh.length) break;
       for (const id of v.newFailures) seen.add(id);
       result = await runGate(gate, { ...ctx, label: `${ctx.label}-rerun${i}` });
     }
