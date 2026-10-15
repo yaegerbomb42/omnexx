@@ -28,6 +28,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run --coverage --project unit --project integration --project chaos",
+    "test:quick": "vitest run --project unit && vitest run --project integration --changed origin/main --passWithNoTests",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:chaos": "vitest run --project chaos",
