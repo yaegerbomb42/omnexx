@@ -3133,3 +3133,49 @@ textarea.ci-edit {
   gap: 6px;
   margin-top: 6px;
 }
+/* Agent settings card (settings page and the launch offer). */
+.agent-start {
+  margin: var(--gap);
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.agent-start-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--gap);
+}
+.agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+.agent-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+}
+.agent-row label {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.agent-row.prominent label {
+  font-size: var(--fs-md);
+  color: var(--fg);
+  font-weight: 600;
+}
+.agent-row input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.agent-meaning {
+  font-size: var(--fs-xs);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.agent-ask {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}

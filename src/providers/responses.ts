@@ -1,5 +1,6 @@
 import { ProviderError } from '../errors.js';
 import { authHeaders, type EndpointAuth } from './auth-headers.js';
+import { openaiReasoning } from './turn-effort.js';
 import type {
   CompletionRequest,
   CompletionResponse,
@@ -102,6 +103,7 @@ export class ResponsesProvider implements Provider {
       model: req.model,
       input: toInput(req),
       max_output_tokens: req.maxTokens,
+      ...(req.turnEffort === undefined ? {} : { reasoning: { effort: openaiReasoning(req) } }),
       ...(req.tools.length
         ? {
             tools: req.tools.map((t) => ({

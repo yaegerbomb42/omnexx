@@ -36,6 +36,8 @@ export async function startTui(
   else if (opts.attach) await session.attach(opts.attach);
   else await session.resumeLatest();
   await session.greet(!state.seenWhy);
+  // The agent sliders: offered at every launch until the person picks "don't ask again".
+  await session.agentSettings.offerAtStart();
   // Fire and forget: a slow or offline registry never delays the session.
   void checkForUpdate({
     current: opts.version,

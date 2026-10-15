@@ -55,6 +55,8 @@ import { describeError } from '../errors.js';
 import { emptyTelemetry, fold, type Telemetry } from '../telemetry/aggregate.js';
 import { EventTail } from '../telemetry/feed.js';
 import { humanize, type Verbosity } from '../telemetry/humanize.js';
+import { AgentSettingsHost } from './agent-settings-host.js';
+import type { PanelKey } from './agent-panel.js';
 
 /** A stderr line that reports a failure, as opposed to a note about what the CLI did. */
 export function looksLikeError(line: string): boolean {
@@ -134,6 +136,10 @@ export const SLASH: readonly SlashCommand[] = [
     help: 'MCP servers with status and tool cost; /mcp gallery, /mcp add <name>, /mcp disable <name>, /mcp import',
   },
   { name: 'cards', help: 'agent cards: local helpers and remote A2A agents; /cards add <url>' },
+  {
+    name: 'settings',
+    help: 'agent settings: effort per task and turn, context, time, max tokens',
+  },
   { name: 'compact', help: 'summarize the conversation to free up context' },
   { name: 'clear', help: 'start a fresh conversation' },
   { name: 'help', help: 'this list' },
@@ -241,6 +247,31 @@ export class Session {
     this.mascot = Boolean(io.env.OMNEXX_MASCOT) && !io.env.OMNEXX_NO_MASCOT;
     this.nex = { mood: 'hello', at: now(), say: '' };
     this.lastActivity = now();
+    this.agentSettings = new AgentSettingsHost(resolvePaths(io.env), () => {
+      this.changed();
+    });
+  }
+
+  /** The agent sliders: saved values, the `/settings` panel and the launch offer. */
+  readonly agentSettings: AgentSettingsHost;
+
+  /** A key while the `/settings` panel is open. */
+  async agentKey(k: PanelKey): Promise<void> {
+    const closed = await this.agentSettings.key(k);
+    if (!closed) return;
+    this.push('system', closed.text);
+    if (closed.saved)
+      await this.reloadChat().catch((err: unknown) => {
+        this.push('err', describeError(err));
+      });
+  }
+
+  /** An open chat re-reads its config (new agent settings), keeping the conversation. */
+  async reloadChat(): Promise<void> {
+    if (!this.code || this.code.busy) return;
+    const history = this.code.conversation;
+    this.code = undefined;
+    (await this.openCode()).conversation = history;
   }
 
   onChange(fn: () => void): () => void {
@@ -1243,6 +1274,11 @@ export class Session {
     const [cmd = '', ...args] = words;
     const rest = line.slice(cmd.length).trim();
     if (this.toggle(cmd)) return;
+    if (cmd === 'settings') {
+      await this.agentSettings.load();
+      this.agentSettings.open(false);
+      return;
+    }
     switch (cmd) {
       case 'help':
         this.push('system', helpText(this.b));

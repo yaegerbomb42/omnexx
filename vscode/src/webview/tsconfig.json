@@ -12,7 +12,8 @@
     "crew.ts",
     "roles.ts",
     "contextPage.ts",
-    "mcp.ts"
+    "mcp.ts",
+    "agentCard.ts"
   ],
   "exclude": []
 }

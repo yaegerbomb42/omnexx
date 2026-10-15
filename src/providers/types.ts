@@ -47,6 +47,11 @@ export interface CompletionRequest {
   /** Which configured provider serves this call (default "anthropic"). */
   route?: string;
   signal?: AbortSignal;
+  /**
+   * Thinking depth for this call, 1-10 ([agent] turn_effort); each provider maps it to its own
+   * knob (reasoning_effort, a thinking budget). Unset: the provider's default.
+   */
+  turnEffort?: number;
   /** Stream text and reasoning as they arrive (interactive chat); the result is the same. */
   onDelta?: (d: { text?: string; reasoning?: string }) => void;
 }

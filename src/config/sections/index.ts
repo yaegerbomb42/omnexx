@@ -5,6 +5,7 @@
  * (`z.strictObject({...}).prefault({})`) so configs without the table still parse.
  * Keep lines sorted by export name.
  */
+export { agent } from './agent.js';
 export { agents } from './agents.js';
 export { autonomous } from './autonomous.js';
 export { beyond } from './beyond.js';

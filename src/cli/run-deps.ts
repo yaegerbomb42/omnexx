@@ -13,6 +13,7 @@ import { withToolRepair } from '../providers/repair.js';
 import { withKeyRotation } from '../providers/key-rotation.js';
 import { makeEndpointProvider } from '../providers/make.js';
 import { ProviderRouter } from '../providers/router.js';
+import { withTurnEffort } from '../providers/turn-effort.js';
 import type { Provider } from '../providers/types.js';
 import type { CliIO } from './io.js';
 
@@ -117,9 +118,11 @@ export async function resolveRunDeps(
         : repaired,
     );
   }
-  const provider: Provider = io.makeProvider
-    ? io.makeProvider(secrets[0] ?? '')
-    : new ProviderRouter(providers);
+  // Effort per turn ([agent] turn_effort) rides on every call this run makes.
+  const provider: Provider = withTurnEffort(
+    io.makeProvider ? io.makeProvider(secrets[0] ?? '') : new ProviderRouter(providers),
+    config.agent.turn_effort,
+  );
   const clock = io.clock ?? realClock;
   return {
     config,

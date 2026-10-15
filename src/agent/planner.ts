@@ -1,4 +1,5 @@
 import { WRITING_PLANNER_NOTE } from '../core/writing.js';
+import { agentBriefFor } from '../config/agent-settings.js';
 import type { ResolvedModel } from '../providers/pricing.js';
 import { join } from 'node:path';
 import { readTextOr } from '../core/atomic.js';
@@ -76,7 +77,9 @@ function effortNote(run: Run, mode: PlannerMode): string {
   let writing = '';
   if (planning && run.state.writing) writing = `\n\n${WRITING_PLANNER_NOTE}`;
   else if (planning && run.state.noChecks) writing = `\n\n${NO_TESTS_NOTE}`;
-  return writing + effortOnly(run, mode);
+  // The user's agent settings: how big to plan, how deep to analyse, how long it may take.
+  const brief = planning ? agentBriefFor(run.config) : undefined;
+  return writing + effortOnly(run, mode) + (brief ? `\n\n${brief}` : '');
 }
 
 function effortOnly(run: Run, mode: PlannerMode): string {

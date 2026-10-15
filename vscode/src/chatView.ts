@@ -47,6 +47,8 @@ const FORWARD = new Set([
   'skillsMarketAdd',
   'browser',
   'setBrowser',
+  'agentSettings',
+  'setAgentSettings',
 ]);
 const BREW_PATHS = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'];
 const MODEL_LIST_TIMEOUT_MS = 15_000;
@@ -386,6 +388,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   <summary><span class="chev" aria-hidden="true"></span><span class="h">Browser</span><span class="sub-h">what the agent sees</span></summary>
   <div class="bframe"><div class="bbar"><span class="bdots" aria-hidden="true"><i></i><i></i><i></i></span><span id="b-url" class="burl"></span><span id="b-action" class="baction"></span></div><img id="b-img" alt="The agent's browser" title="Click to enlarge"></div>
 </details>
+<section id="agent-start" class="agent-start" hidden aria-label="Agent settings"></section>
 <main id="log" class="conversation" aria-live="polite"></main>
 <section id="settings" class="settings" hidden aria-label="Settings"></section>
 <section id="ctxpage" class="settings" hidden aria-label="Context files"></section>

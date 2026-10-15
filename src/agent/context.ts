@@ -25,6 +25,8 @@ export interface CycleInputs {
   runningContext?: string;
   /** The task's role card (who the agent is for it, what done means). */
   role?: string;
+  /** What the user's agent settings mean (effort, time); a volatile block after the goal. */
+  brief?: string;
   /** How each section reaches the model; all pinned when unset (the old behaviour). */
   sections?: SectionModes;
   tools: ToolSpec[];
@@ -63,6 +65,7 @@ export function buildCycleContext(i: CycleInputs): {
   if (keep('codemap', i.codemap)) blocks.push({ label: 'codemap', text: i.codemap });
   const intent = keep('intent', i.intent) ? `\n\n${i.intent ?? ''}` : '';
   blocks.push({ label: 'goal', text: `# Goal\n\n${i.goal.trim()}${intent}` });
+  if (i.brief?.trim()) blocks.push({ label: 'settings', text: i.brief.trim() });
   if (keep('lessons', i.notes))
     blocks.push({ label: 'notes', text: `# Lessons (notes.md)\n\n${i.notes.trim()}` });
   const system: SystemBlock[] = blocks.map((b, n) => ({
