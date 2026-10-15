@@ -5,14 +5,21 @@ REPO="$PWD"
 export npm_config_cache="${npm_config_cache:-${TMPDIR:-/tmp}/omnexx-bench-npm-cache}"
 
 # setup: copy the task's starting repo into the work dir.
-copy_repo() { cp -R "$TASK_DIR/repo/." "$REPO/"; }
+copy_repo() {
+  cp -R "$TASK_DIR/repo/." "$REPO/"
+  return $?
+}
 
 # check: copy the hidden tests to a private temp dir (H), removed on exit.
 hidden_dir() {
   H="$(mktemp -d)"
   trap 'rm -rf "$H"' EXIT
   cp -R "$TASK_DIR/hidden/." "$H/"
+  return $?
 }
 
 # python without bytecode litter or the user's site-packages.
-py() { PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 "$@"; }
+py() {
+  PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 python3 "$@"
+  return $?
+}

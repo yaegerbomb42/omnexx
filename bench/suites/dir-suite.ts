@@ -26,14 +26,16 @@ export class DirSuite implements Suite {
 
   async loadTasks(): Promise<TaskDef[]> {
     const entries = await readdir(this.root, { withFileTypes: true });
-    const tasks: TaskDef[] = [];
-    for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-      if (!e.isDirectory() || !existsSync(join(this.root, e.name, 'check.sh'))) continue;
-      const goal = await readFile(join(this.root, e.name, 'goal.md'), 'utf-8').catch(() => '');
-      const title = /^#\s*(?:Task:\s*)?(.+)$/m.exec(goal)?.[1]?.trim() ?? e.name;
-      tasks.push({ id: e.name, path: e.name, description: title });
-    }
-    return tasks;
+    const dirs = entries
+      .filter((e) => e.isDirectory() && existsSync(join(this.root, e.name, 'check.sh')))
+      .map((e) => e.name)
+      .sort((a, b) => a.localeCompare(b));
+    return Promise.all(
+      dirs.map(async (name) => {
+        const goal = await readFile(join(this.root, name, 'goal.md'), 'utf-8').catch(() => '');
+        return { id: name, path: name, description: goalTitle(goal) ?? name };
+      }),
+    );
   }
 
   async setupTask(task: TaskDef, workDir: string): Promise<void> {
@@ -63,6 +65,15 @@ export class DirSuite implements Suite {
     if (!existsSync(check)) return false;
     return (await runBash(check, workDir)) === 0;
   }
+}
+
+/** The first markdown heading of a goal, without a leading "Task:". */
+export function goalTitle(goal: string): string | undefined {
+  const heading = goal.split('\n').find((line) => line.startsWith('#'));
+  if (!heading) return undefined;
+  const text = heading.replace(/^#+/, '').trim();
+  const title = text.startsWith('Task:') ? text.slice('Task:'.length).trim() : text;
+  return title || undefined;
 }
 
 /** A hidden check that runs longer counts as a fail. */
