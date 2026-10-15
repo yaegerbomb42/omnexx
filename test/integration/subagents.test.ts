@@ -75,7 +75,12 @@ class HelperProvider implements Provider {
 describe('W11: task subagents', () => {
   it('fan out in parallel, get only read-only tools, and hand back just their answers', async () => {
     const provider = new HelperProvider();
-    const t = await startTestRun({ provider, plan: onePlan() });
+    // Helper agents are opt-in: one agent with the whole context is the default.
+    const t = await startTestRun({
+      provider,
+      plan: onePlan(),
+      config: { context: { subagents: true } },
+    });
     await runBaseline(t.run);
     expect(await runOneCycle(t.run, 'M1.T01')).toMatchObject({ verdict: 'accept' });
 

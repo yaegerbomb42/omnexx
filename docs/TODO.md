@@ -37,6 +37,18 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-15 (single agent), branch `feat/think-loop`:** the fast path is now a think-first
+  loop session (`[plan] loop = "fast"`, `core/think-loop.ts`): think with the planner's models
+  (explore, then an explicit analysis), execute in the same conversation with the worker's,
+  gates after each pass with failures sent back to fix forward (no rollback), re-think in place
+  when stuck or on the same failure twice, one review of the whole diff at the end (a finding is
+  one more turn; it replaces the pre-finish audit). A session that ends red goes back to its last
+  green tree; one with no green keeps its patch for the next session. Helper agents are off by
+  default (`[context] subagents = false`; planner helpers too): in hard-1015 they were 24 of
+  ~2,700 omnexx calls and 0.4% of tokens, 92% went to worker conversations. `loop = "all"` runs
+  every planned task this way (opt-in until a bench says so). Bench confirmation pending (the
+  sandbox could not source the bench env).
+
 - **2026-10-14 (web agent), branch `feat/web-hardening`:** `web5` bench suite (offline docs
   sites served from 127.0.0.1 via `.docs/serve.sh`; unfamiliar library API, layout overflow and
   console-error pages checked in headless Chrome, rate-card lookup, v2 migration; reference

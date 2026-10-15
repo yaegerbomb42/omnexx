@@ -279,6 +279,12 @@ export const contextSchema = z.strictObject({
   /** `task` subagents: input+output tokens and turns each child may use. */
   subagent_max_tokens: z.number().int().positive().default(150_000),
   subagent_max_turns: z.number().int().positive().default(15),
+  /**
+   * Whether run agents (worker and planner) get the `task` tool to start helper agents. Off: one
+   * agent with the whole context reads for itself (parallel reads in one turn still run at once);
+   * on the bench, helpers re-read what the agent then read again.
+   */
+  subagents: z.boolean().default(false),
   /** `task` calls made in the same turn run together, at most this many at once. */
   subagent_parallel: z.number().int().min(1).max(8).default(3),
 });

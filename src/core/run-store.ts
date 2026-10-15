@@ -145,6 +145,8 @@ export const stateSchema = z.object({
     .optional(),
   /** The fast path (one pass on the whole goal before planning): tried, then failed if it fell back. */
   fastPath: z.enum(['tried', 'failed']).optional(),
+  /** A think-loop session reviewed its whole diff against the goal: the pre-finish audit is done. */
+  loopReviewed: z.boolean().optional(),
   rejectedCycles: z.number().default(0),
   lastProgressAt: z.number().optional(),
   lastProgressCycle: z.number().default(0),
@@ -161,6 +163,8 @@ export const stateSchema = z.object({
       usd: z.number(),
       worker: z.string().optional(),
       stuck: z.object({ signal: z.string(), detail: z.string() }).optional(),
+      /** A think-loop session ran its end review of the whole diff (see core/think-loop.ts). */
+      reviewed: z.boolean().optional(),
     })
     .optional(),
   /** Token totals of recent cycles, for the in-cycle burn-rate signal. */

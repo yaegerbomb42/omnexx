@@ -342,7 +342,10 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       }
     },
   };
-  const helpers = run.config.plan.helpers ?? run.config.context.subagent_parallel;
+  // Helpers only when asked for: `[plan] helpers`, or `[context] subagents` on.
+  const helpers =
+    run.config.plan.helpers ??
+    (run.config.context.subagents ? run.config.context.subagent_parallel : 0);
   const tools = [
     ...(await readOnlyTools(run.config, { repoRoot: run.worktree, env: run.deps.env })).filter(
       (t) => !PLANNER_DENIED.has(t.name) && (helpers > 0 || t.name !== 'task'),
