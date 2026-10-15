@@ -1,6 +1,6 @@
 import { thinkingGist } from '../telemetry/narrate.js';
 import { InCycleWatch } from '../guard/stuck.js';
-import { orderForStrategy, strategyFor } from '../config/routing.js';
+import { orderForStrategy, strategyFor, type Strategy } from '../config/routing.js';
 import { randomBytes } from 'node:crypto';
 import { mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -184,6 +184,8 @@ export class CodeChat {
   private abort: AbortController | undefined;
   private view: ChatView | undefined;
   private models: ResolvedModel[];
+  /** How the chat's ranked models are used per call (random, priority, fallback). */
+  readonly strategy: Strategy;
   usd = 0;
   /** Token, tool and turn totals for this conversation, folded from its events. */
   telemetry: Telemetry = emptyTelemetry();
@@ -203,9 +205,10 @@ export class CodeChat {
     model: string | undefined,
   ) {
     const refs = model ? [model] : config.models.worker;
+    this.strategy = strategyFor(config.models, 'chat');
     this.models = orderForStrategy(
       (typeof refs === 'string' ? [refs] : refs).map((r) => chatModel(r, config)),
-      strategyFor(config.models, 'chat'),
+      this.strategy,
     );
     this.contextUsed = this.baseTokens();
     ctx.onEdit = () => {
@@ -282,7 +285,7 @@ export class CodeChat {
       ...(known.length ? [{ text: `# Lessons about this repo\n\n${renderNotes(known)}` }] : []),
       { text: codemap, cacheBreakpoint: true },
     ];
-    const chat = new CodeChat(config, deps.provider, tools, system, ctx, events, store, ref);
+    const chat = new CodeChat(config, deps.provider, tools, system, ctx, events, store, model);
     chat.paths = paths;
     chat.latency = await loadLatency(latencyFile(paths));
     chat.estimator = new ChatEstimate(runHistoryFile(paths), {
@@ -329,10 +332,19 @@ export class CodeChat {
     return (typeof h === 'string' ? [h] : h).map((ref) => chatModel(ref, this.config));
   }
 
-  /** "provider:model" of the model chat talks to. */
+  /** The ref that answered last, once one has (a ranked list can move between models). */
+  private served: string | undefined;
+
+  /** "provider:model" of the model chat talks to: the last one that answered, else #1. */
   get model(): string {
+    if (this.served) return this.served;
     const m = this.models[0];
     return m ? `${m.provider}:${m.alias}` : '?';
+  }
+
+  /** The routing mode when the chat has several models to choose from, for the status line. */
+  get routing(): Strategy | undefined {
+    return this.models.length > 1 ? this.strategy : undefined;
   }
 
   /** The conversation so far, to carry into a chat on another model (/model). */
@@ -548,13 +560,17 @@ export class CodeChat {
         {
           provider: this.provider,
           models: this.models,
+          strategy: this.strategy,
           ...(this.paths
             ? (() => {
                 const quota = new QuotaLedger(join(this.paths.configHome, 'quota.json'));
                 return {
-                  modelExhausted: (r: string) => quota.exhaustedAt(r) !== undefined,
+                  modelExhausted: (r: string) => quota.isOut(r),
                   markExhausted: (r: string) => {
                     quota.mark(r);
+                  },
+                  markRateLimited: (r: string, ms: number) => {
+                    quota.mark(r, ms);
                   },
                 };
               })()
@@ -593,6 +609,7 @@ export class CodeChat {
           },
           onResponse: ({ model, inputTokens, ms }) => {
             view.waiting?.(null);
+            this.served = model;
             this.latency = recordLatency(this.latency, model, { ms, tokens: inputTokens });
             if (this.paths)
               void saveLatency(latencyFile(this.paths), this.latency).catch(() => undefined);

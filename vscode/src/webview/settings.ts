@@ -187,7 +187,7 @@ function draw(): void {
   page.innerHTML = `
 <div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
 <section class="set-section"><h3>Chat model</h3>${modelFieldHtml()}</section>
-<section class="set-section"><h3>Who does what</h3><div id="roles-box">${roles.html()}</div></section>
+<section class="set-section"><h3>Your models</h3><div id="roles-box">${roles.html()}</div></section>
 <section class="set-section"><h3>Providers</h3>${connectedHtml()}</section>
 <section class="set-section add"><h3>Add a provider</h3>
   <input id="tile-search" class="field" type="search" placeholder="Search 30+ providers…" aria-label="Search providers" value="${escapeHtml(tileQuery)}" spellcheck="false">

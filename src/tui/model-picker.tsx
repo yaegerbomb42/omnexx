@@ -5,7 +5,8 @@ import { loadConfig } from '../config/load.js';
 import { resolvePaths } from '../core/paths.js';
 import { discoverModels } from '../providers/discovery.js';
 import { envKeys } from '../cli/connect.js';
-import type { PoolMode } from '../config/ranking.js';
+import { nextPoolMode, POOL_MODES, type PoolMode } from '../config/ranking.js';
+import { STRATEGY_HINT, STRATEGY_LABEL } from '../config/routing.js';
 import { CYAN, GRAY, GREEN } from './colors.js';
 
 export type PickerItem =
@@ -147,31 +148,80 @@ export interface RankState {
   grabbed: boolean;
 }
 
-const MODE_HINT: Record<PoolMode, string> = {
-  ordered: 'order: top first. each model until its quota runs out, then the next',
-  random: 'order: random. one model at a time, in a daily shuffle, until its quota runs out',
-  smart: 'order: smart. Nimble picks the best model with quota left per action (else top first)',
-};
+/** What a key does in the /models list (adding and closing are the session's job). */
+export type RankKey = 'up' | 'down' | 'move-up' | 'move-down' | 'grab' | 'remove' | 'mode';
 
-const ROLE_HINT = [
-  'chat, planner, worker and helpers try this first',
-  'first fallback',
-  'next fallback',
-];
+/** Move the item at `from` to `to`, returning a new list. */
+export function moveItem<T>(xs: readonly T[], from: number, to: number): T[] {
+  if (from < 0 || from >= xs.length || to < 0 || to >= xs.length) return [...xs];
+  const out = xs.filter((_, i) => i !== from);
+  const it = xs[from] as T;
+  return [...out.slice(0, to), it, ...out.slice(to)];
+}
 
-/** /models: the ranked provider:model list every role falls back through, top first. */
+/** The /models list after one key, as a new state. */
+export function rankReduce(s: RankState, key: RankKey): RankState {
+  const last = s.ranked.length - 1;
+  const step = (d: number): RankState => {
+    const to = s.cursor + d;
+    if (to < 0 || to > last) return s;
+    const carry = s.grabbed || key === 'move-up' || key === 'move-down';
+    return { ...s, cursor: to, ranked: carry ? moveItem(s.ranked, s.cursor, to) : s.ranked };
+  };
+  switch (key) {
+    case 'up':
+    case 'move-up':
+      return step(-1);
+    case 'down':
+    case 'move-down':
+      return step(1);
+    case 'grab':
+      return { ...s, grabbed: !s.grabbed && s.ranked.length > 0 };
+    case 'remove': {
+      const ranked = s.ranked.filter((_, i) => i !== s.cursor);
+      const cursor = Math.max(0, Math.min(s.cursor, ranked.length - 1));
+      return { ...s, ranked, grabbed: false, cursor };
+    }
+    case 'mode':
+      return { ...s, mode: nextPoolMode(s.mode) };
+  }
+}
+
+/** What a row says next to its rank, given the mode. */
+export function rankNote(mode: PoolMode, i: number, out: boolean): string {
+  if (out) return 'out of quota, skipped until it resets';
+  if (mode === 'random') return 'picked at random';
+  if (i === 0) return mode === 'priority' ? 'tried first every call' : 'used until it runs out';
+  return i === 1 ? 'first fallback' : 'next fallback';
+}
+
+const modeLine = (mode: PoolMode): string =>
+  mode === 'smart'
+    ? 'Smart: a local model picks per action (press m for the main modes)'
+    : `${STRATEGY_LABEL[mode]}: ${STRATEGY_HINT[mode]}`;
+
+/** /models: the ranked provider:model list every role uses, and how it is used. */
 export function RankEditor({ state, width }: { state: RankState; width: number }) {
   return (
     <Box flexDirection="column" borderStyle="single" borderColor={GREEN} paddingX={1} width={width}>
       <Text>
         <Text color={GREEN} bold>
-          your model pool
+          your models, ranked
         </Text>
         <Text color={GRAY}>
-          {'  ↑↓ move · space pick up/drop · a add · x remove · m order · esc done'}
+          {'  ↑↓ select · shift+↑↓ or space move · a add · x remove · m mode · esc done'}
         </Text>
       </Text>
-      <Text color={GRAY}>{MODE_HINT[state.mode]}</Text>
+      <Text>
+        {POOL_MODES.map((m) =>
+          m === state.mode ? (
+            <Text key={m} color={CYAN} bold>{`[${STRATEGY_LABEL[m]}] `}</Text>
+          ) : (
+            <Text key={m} color={GRAY}>{` ${STRATEGY_LABEL[m]}  `}</Text>
+          ),
+        )}
+      </Text>
+      <Text color={GRAY}>{modeLine(state.mode)}</Text>
       {state.ranked.length === 0 && (
         <Text color={GRAY}>
           empty: roles use your config.toml models. press a to add your best model first.
@@ -182,11 +232,7 @@ export function RankEditor({ state, width }: { state: RankState; width: number }
           <Text color={i === state.cursor && state.grabbed ? CYAN : GREEN}>
             {`${i + 1}. ${i === state.cursor && state.grabbed ? '⇕ ' : ''}${ref}`}
           </Text>
-          <Text color={GRAY}>
-            {state.exhausted.has(ref)
-              ? '  out of quota, back after reset'
-              : `  ${state.mode !== 'ordered' ? 'in the pool' : (ROLE_HINT[i] ?? 'fallback')}`}
-          </Text>
+          <Text color={GRAY}>{`  ${rankNote(state.mode, i, state.exhausted.has(ref))}`}</Text>
         </Text>
       ))}
     </Box>

@@ -1,4 +1,10 @@
-import { orderForStrategy, strategyFor } from '../config/routing.js';
+import {
+  callOrder,
+  orderForStrategy,
+  skipsOutModels,
+  strategyFor,
+  type Strategy,
+} from '../config/routing.js';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseDuration } from '../config/duration.js';
@@ -265,7 +271,17 @@ export class Run {
   readonly quota: QuotaLedger;
 
   modelExhausted(ref: string): boolean {
-    return this.quota.exhaustedAt(ref) !== undefined;
+    return this.quota.isOut(ref);
+  }
+
+  /** A fallback list stays off a rate-limited model for `ms`, in every session. */
+  markRateLimited(ref: string, ms: number): void {
+    this.quota.mark(ref, ms);
+  }
+
+  /** How a role's chain is used per call (see routing.ts). */
+  strategy(role: string): Strategy {
+    return strategyFor(this.config.models, role);
   }
 
   markExhausted(ref: string): void {
@@ -302,8 +318,9 @@ export class Run {
     },
   ): Promise<{ res: CompletionResponse; model: ResolvedModel } | undefined> {
     const errors: string[] = [];
-    for (const model of this.chains[opts.chain ?? 'cheap']) {
-      if (this.modelExhausted(`${model.provider}:${model.id}`)) {
+    const strategy = this.strategy(opts.chain ?? 'cheap');
+    for (const model of callOrder(this.chains[opts.chain ?? 'cheap'], strategy)) {
+      if (skipsOutModels(strategy) && this.modelExhausted(`${model.provider}:${model.id}`)) {
         errors.push(`${model.provider}:${model.id}: out of quota`);
         continue;
       }

@@ -436,6 +436,10 @@ export async function stepAct(run: Run): Promise<void> {
     markExhausted: (r) => {
       run.markExhausted(r);
     },
+    markRateLimited: (r, ms) => {
+      run.markRateLimited(r, ms);
+    },
+    strategy: run.strategy('worker'),
     coolProvider: (p, ms) => {
       run.coolProvider(p, ms);
     },

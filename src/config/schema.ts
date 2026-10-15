@@ -87,13 +87,13 @@ export const modelsSchema = z.strictObject({
   planner: modelChain.default('anthropic:opus'),
   worker: modelChain.default('anthropic:sonnet'),
   cheap: modelChain.default('anthropic:haiku'),
-  /** Chat mode's model; the worker chain when unset. `/model` overrides it for a session. */
-  chat: modelRef.optional(),
+  /** Chat mode's ranked models; the worker chain when unset. `/model` overrides it for a session. */
+  chat: modelChain.optional(),
   /** Models for helpers (subagents); the router's pick when unset. */
   helpers: modelChain.optional(),
   /** Helpers running at the same time start on different providers of the helpers chain. */
   spread_helpers: z.boolean().default(true),
-  /** How each role orders its models before use: priority, random, least-busy or smart. */
+  /** How each role uses its models: fallback, priority, random (or least-busy, smart). */
   routing: z.partialRecord(z.enum(ROLE_NAMES), z.enum(STRATEGIES)).default({}),
   /** Extra models the router may pick that aren't in any role chain. */
   extra: z.array(modelRef).default([]),

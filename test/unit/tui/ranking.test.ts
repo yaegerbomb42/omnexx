@@ -5,13 +5,14 @@ import { resolvePaths } from '../../../src/core/paths.js';
 import { isolatedEnv, tempDir } from '../../support/tmp.js';
 
 describe('/models ranking', () => {
-  it('#1 becomes chat, and the list is every role’s failover order', async () => {
+  it('the list is chat’s ranking too, and every role’s failover order', async () => {
     const env = await isolatedEnv();
     const paths = resolvePaths(env);
     await writeRanking(paths, ['anthropic:opus', 'anthropic:sonnet', 'not a ref']);
     expect(await readRanking(paths)).toEqual(['anthropic:opus', 'anthropic:sonnet']);
     const { config } = await loadConfig({ cwd: await tempDir(), env });
-    expect(config.models.chat).toBe('anthropic:opus');
+    expect(config.models.chat).toEqual(['anthropic:opus', 'anthropic:sonnet']);
+    expect(config.models.routing.worker).toBe('fallback');
     expect(config.models.worker).toEqual(['anthropic:opus', 'anthropic:sonnet']);
     expect(config.models.planner).toEqual(['anthropic:opus', 'anthropic:sonnet']);
     // Flags (and a project's omnexx.toml) still win.

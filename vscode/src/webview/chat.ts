@@ -44,6 +44,8 @@ interface State {
   paused: boolean;
   autoApprove: boolean;
   model: string | null;
+  /** How the chat's ranked models are used, when it has several ("Fallback on quota"). */
+  routing?: string | null;
   context: {
     used: number;
     limit: number;
@@ -260,7 +262,13 @@ function placeholderFor(s: State): string {
 }
 
 function drawControls(s: State): void {
-  el('model', HTMLButtonElement).textContent = s.model ?? 'Pick a model';
+  const modelBtn = el('model', HTMLButtonElement);
+  modelBtn.textContent = s.model
+    ? `${s.model}${s.routing ? ` · ${s.routing}` : ''}`
+    : 'Pick a model';
+  modelBtn.title = s.routing
+    ? `Serving now: ${s.model ?? '?'}. Your ranked list is used as: ${s.routing}`
+    : 'Pick a model';
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode]'))
     b.setAttribute('aria-pressed', String(b.dataset.mode === s.mode));
   const approval = el('approval', HTMLButtonElement);

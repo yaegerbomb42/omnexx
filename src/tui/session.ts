@@ -32,16 +32,13 @@ import type { Mood } from './mascot.js';
 import {
   filterChoices,
   loadModelChoices,
+  rankReduce,
   type ModelPickerState,
+  type RankKey,
   type RankState,
 } from './model-picker.js';
-import {
-  POOL_MODES,
-  readPoolMode,
-  readRanking,
-  writePoolMode,
-  writeRanking,
-} from '../config/ranking.js';
+import { readPoolMode, readRanking, writePool, writeRanking } from '../config/ranking.js';
+import { STRATEGY_LABEL } from '../config/routing.js';
 import { QuotaLedger } from '../providers/quota-ledger.js';
 import { compactPlanView, planCounts } from '../core/plan.js';
 import { resolvePaths } from '../core/paths.js';
@@ -178,8 +175,6 @@ const MAX_ENTRIES = 5_000;
  * Everything the TUI does, without React: a transcript of entries, the attached run's live
  * telemetry and plan, and slash commands that reuse the real CLI with its output captured.
  */
-const POOL_LABEL = { ordered: 'top first', random: 'random order', smart: 'Nimble picks' } as const;
-
 export class Session {
   entries: Entry[] = [];
   telemetry: Telemetry = emptyTelemetry();
@@ -801,51 +796,31 @@ export class Session {
   }
 
   /** Keys while the ranking editor is open; every change is saved to models.json at once. */
-  async rankKey(k: {
-    up?: boolean;
-    down?: boolean;
-    grab?: boolean;
-    add?: boolean;
-    remove?: boolean;
-    mode?: boolean;
-    close?: boolean;
-  }): Promise<void> {
+  async rankKey(k: { key?: RankKey; add?: boolean; close?: boolean }): Promise<void> {
     const v = this.rankView;
     if (!v) return;
-    const move = (d: number): void => {
-      const to = v.cursor + d;
-      if (to < 0 || to >= v.ranked.length) return;
-      if (v.grabbed) {
-        const [it] = v.ranked.splice(v.cursor, 1);
-        if (it) v.ranked.splice(to, 0, it);
-      }
-      v.cursor = to;
-    };
     if (k.close) {
       this.rankView = undefined;
+      const mode = v.mode === 'smart' ? 'smart' : STRATEGY_LABEL[v.mode].toLowerCase();
       this.push(
         'system',
         v.ranked.length
-          ? `pool saved (${POOL_LABEL[v.mode]}): ${v.ranked.map((r, i) => `${i + 1}. ${r}`).join('  ')}. new chats and runs use it; /model switches this chat`
+          ? `models saved (${mode}): ${v.ranked.map((r, i) => `${i + 1}. ${r}`).join('  ')}. new chats and runs use them; /model switches this chat`
           : 'no ranking: roles use your config.toml models',
       );
-    } else if (k.up) move(-1);
-    else if (k.down) move(1);
-    else if (k.mode) {
-      v.mode = POOL_MODES[(POOL_MODES.indexOf(v.mode) + 1) % POOL_MODES.length] ?? 'ordered';
-      await writePoolMode(resolvePaths(this.io.env), v.mode);
-    } else if (k.grab) v.grabbed = !v.grabbed && v.ranked.length > 0;
-    else if (k.remove) {
-      v.ranked.splice(v.cursor, 1);
-      v.cursor = Math.max(0, Math.min(v.cursor, v.ranked.length - 1));
-      v.grabbed = false;
-    } else if (k.add) {
+      this.changed();
+      return;
+    }
+    if (k.add) {
       this.rankView = undefined;
       this.pickFor = 'rank';
       await this.openModelPicker();
       return;
     }
-    await writeRanking(resolvePaths(this.io.env), v.ranked);
+    if (!k.key) return;
+    const next = rankReduce(v, k.key);
+    this.rankView = next;
+    await writePool(resolvePaths(this.io.env), next.ranked, next.mode);
     this.changed();
   }
 
@@ -1032,6 +1007,12 @@ export class Session {
 
   get chatModelName(): string | undefined {
     return this.code?.model ?? this.chatModel;
+  }
+
+  /** The chat's ranked-list mode ("Fallback on quota"), when it has more than one model. */
+  get chatRouting(): string | undefined {
+    const r = this.code?.routing;
+    return r ? STRATEGY_LABEL[r] : undefined;
   }
 
   /** `omnexx --continue`: open chat with the last conversation in this folder. */

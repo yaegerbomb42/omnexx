@@ -105,7 +105,7 @@ export function helperRunner(
     const system = card
       ? `${SYSTEM}\n\n# You are the "${card.name}" agent\n\n${card.prompt}`
       : SYSTEM;
-    const chain = orderForStrategy(await env.models(kind), env.strategy ?? 'priority', { busy });
+    const chain = orderForStrategy(await env.models(kind), env.strategy ?? 'fallback', { busy });
     const lead = chain[0]?.provider;
     if (lead) busy.set(lead, (busy.get(lead) ?? 0) + 1);
     let result: Awaited<ReturnType<typeof runAgentLoop>>;
@@ -124,6 +124,9 @@ export function helperRunner(
         {
           ...env.loop,
           models: chain,
+          // least-busy only picks the lead; per call the chain behaves like fallback.
+          strategy:
+            env.strategy === 'random' || env.strategy === 'priority' ? env.strategy : 'fallback',
           tools,
           toolCtx: ctx,
           budget: {
@@ -183,6 +186,9 @@ export function subagentRunner(
         modelExhausted: (r) => run.modelExhausted(r),
         markExhausted: (r) => {
           run.markExhausted(r);
+        },
+        markRateLimited: (r, ms) => {
+          run.markRateLimited(r, ms);
         },
         coolProvider: (p, ms) => {
           run.coolProvider(p, ms);
