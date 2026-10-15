@@ -54,6 +54,12 @@ describe('chat proposes a plan instead of asking questions', () => {
     expect(CHAT_SYSTEM).not.toMatch(/Ask a question instead of guessing/);
   });
 
+  it('answers a greeting with one short line, not a codebase pitch', () => {
+    expect(CHAT_SYSTEM).toMatch(
+      /greeting or small talk gets one short line, like "How can I help today\?"/,
+    );
+  });
+
   it('a vague ask reads the project and replies with a plan; "yes" carries it out', async () => {
     const repo = await makeRepo({ 'hub.html': '<main></main>\n' });
     const env = await isolatedEnv({ ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000' });
