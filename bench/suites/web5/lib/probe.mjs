@@ -120,7 +120,13 @@ export function probe(page, width, expr) {
     return JSON.parse(Buffer.from(m[1], 'base64').toString('utf-8'));
   } finally {
     rmSync(probeFile, { force: true });
-    rmSync(profile, { recursive: true, force: true });
+    // Chrome can still be flushing its profile when it exits; retry, and never fail the probe
+    // over a leftover temp folder.
+    try {
+      rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch {
+      /* a leftover temp profile is harmless */
+    }
   }
 }
 
