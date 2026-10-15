@@ -126,7 +126,7 @@ function commandStatus(
 export const bashTool: Tool<typeof schema> = {
   name: 'bash',
   description:
-    'Run a shell command in the repo root and wait for it to finish (never poll). Output is trimmed; use read_log for the full log. Dev servers (npm run dev, vite, next dev) run for 20 s and are then stopped for you, so their startup output shows whether they work; never background or kill them yourself. git writes, network, sudo and paths outside the repo are refused.',
+    "Run a shell command in the repo root and wait for it to finish (never poll). Output is trimmed; use read_log for the full log. Dev servers (npm run dev, vite, next dev) run for 20 s and are then stopped for you, so their startup output shows whether they work; never background or kill them yourself. git writes, network, sudo and paths outside the repo need the person's OK: in chat just run the command and they are asked; unattended runs refuse them.",
   schema,
   readOnly: false,
   // Models often send the timeout as a number of milliseconds.
