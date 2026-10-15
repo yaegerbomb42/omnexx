@@ -92,7 +92,7 @@ describe('search', () => {
     const root = await repo();
     const ctx = await toolContext(root);
     const r = await searchTool.run({ pattern: 'return a' }, ctx);
-    expect(r.content).toContain('src/a.ts:2:');
+    expect(r.content).toMatch(/^src\/a\.ts\n(.*\n)*\s+2:\s+return a/m);
     expect((await searchTool.run({ pattern: 'sk-ant' }, ctx)).content).toBe('no matches');
     expect((await searchTool.run({ pattern: 'v\\d\\d', glob: 'src/*.ts' }, ctx)).content).toMatch(
       /src\/big\.ts has more than 20 matches/,
@@ -100,7 +100,7 @@ describe('search', () => {
     expect((await searchTool.run({ pattern: '(' }, ctx)).content).toMatch(/invalid regex/);
     expect((await searchTool.run({ pattern: 'x', path: '..' }, ctx)).isError).toBe(true);
     const js = await _internal.viaJs('return a', root, undefined);
-    expect(js).toEqual(['src/a.ts:2:  return a + b;']);
+    expect(js).toEqual(['src/a.ts\u00002:  return a + b;']);
     expect(await _internal.viaJs('KEY', root, '**/*.ts')).toEqual([]);
   });
 
@@ -109,9 +109,9 @@ describe('search', () => {
     const ctx = await toolContext(root);
     const r = await searchTool.run({ pattern: 'return a', path: 'src/a.ts' }, ctx);
     expect(r.isError).toBeUndefined();
-    expect(r.content).toContain('a.ts:2:');
+    expect(r.content).toMatch(/^a\.ts\n(.*\n)*\s+2:\s+return a/m);
     expect(await _internal.viaJs('return a', join(root, 'src'), undefined, 'a.ts')).toEqual([
-      'a.ts:2:  return a + b;',
+      'a.ts\u00002:  return a + b;',
     ]);
   });
 });
@@ -359,7 +359,7 @@ describe('read size caps', () => {
 });
 
 describe('search scoping', () => {
-  it('skips unreadable files and dependency folders, and says where a broad search hit', async () => {
+  it('skips unreadable files and dependency folders, and gives an overview of a broad search', async () => {
     const root = await repo();
     const ctx = await toolContext(root);
     await writeFile(join(root, 'src/locked.ts'), 'export const turbotoolbox = 1;\n');
@@ -369,7 +369,7 @@ describe('search scoping', () => {
     await writeFile(join(root, 'node_modules/pkg/i.js'), 'turbotoolbox\n');
     const r = await searchTool.run({ pattern: 'turbotoolbox' }, ctx);
     expect(r.isError).toBeFalsy();
-    expect(r.content).toContain('src/open.ts:1:');
+    expect(r.content).toMatch(/^src\/open\.ts\n\s+1:/m);
     expect(r.content).not.toContain('node_modules');
     await chmod(join(root, 'src/locked.ts'), 0o644);
 
@@ -382,6 +382,8 @@ describe('search scoping', () => {
         );
     }
     const broad = await searchTool.run({ pattern: 'hit\\d', path: 'apps' }, ctx);
-    expect(broad.content).toMatch(/more matches not shown\. Most are in: a\d \(30\)/);
+    expect(broad.content).toMatch(/^240 matches in 24 files/);
+    expect(broad.content).toMatch(/^a\d\/f\d\.ts \(10\)/m);
+    expect(broad.content).toMatch(/narrow with path or glob/);
   });
 });
