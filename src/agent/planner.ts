@@ -423,6 +423,10 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       markExhausted: (r) => {
         run.markExhausted(r);
       },
+      markRateLimited: (r, ms) => {
+        run.markRateLimited(r, ms);
+      },
+      strategy: run.strategy('planner'),
       coolProvider: (p, ms) => {
         run.coolProvider(p, ms);
       },

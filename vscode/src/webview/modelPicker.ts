@@ -3,13 +3,10 @@
  * grouped by provider, with the current one checked. Opens from the header chip and from the
  * settings page; arrow keys, Enter and Escape work.
  */
+import { badge, type ModelItem } from './badge.js';
 import { escapeHtml } from './render.js';
 
-export interface ModelItem {
-  ref: string;
-  provider: string;
-  model: string;
-}
+export { badge, providerHue, type ModelItem } from './badge.js';
 
 type Post = (msg: Record<string, unknown>) => void;
 
@@ -23,22 +20,6 @@ let anchor: HTMLElement | undefined;
 let post: Post | undefined;
 /** When set, picking a model hands it here (e.g. to add it to a role) instead of switching chat. */
 let onPick: ((ref: string) => void) | undefined;
-
-/** A stable hue per provider name, so each provider keeps its color everywhere. */
-export function providerHue(name: string): number {
-  let h = 0;
-  for (const c of name) h = (h * 31 + (c.codePointAt(0) ?? 0)) % 360;
-  return h;
-}
-
-export function badge(name: string): string {
-  const letters =
-    name
-      .replace(/[^a-z0-9]/gi, '')
-      .slice(0, 2)
-      .toUpperCase() || '?';
-  return `<span class="badge" style="--h:${String(providerHue(name))}">${escapeHtml(letters)}</span>`;
-}
 
 function root(): HTMLElement {
   const el = document.getElementById('model-picker');

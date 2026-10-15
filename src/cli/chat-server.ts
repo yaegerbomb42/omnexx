@@ -19,7 +19,7 @@ import { println, type CliIO } from './io.js';
  * model {ref} · models · connect {value, name?} · undo · clear · compact · sync (resend all) ·
  * settings · addProvider {provider?, key?, url?, fields?, headers?, flavor?} ·
  * probeProvider {provider?, url?, key?, fields?, headers?, flavor?} · removeProvider {name} · testProvider {name} ·
- * roles · setRoles {roles} · contextFiles · setSectionMode {id, mode} · contextList ·
+ * roles · setRoles {roles?, pool?: {ranked, mode}} · contextFiles · setSectionMode {id, mode} · contextList ·
  * contextUpdate {id, text} · contextDelete {id} · contextReset · chats · resumeChat {id} · browser ·
  * setBrowser {engine, profile?, sessionName?, headless} · mcp {op, …} (see chat-mcp.ts).
  * Out: ready {version} · state (below; `entries` holds only lines not sent before) · models
@@ -54,6 +54,8 @@ export interface ChatState {
   paused: boolean;
   autoApprove: boolean;
   model: string | null;
+  /** How the chat's ranked models are used ("Fallback on quota"), when it has several. */
+  routing: string | null;
   /** Tokens in use, the compaction limit, and what they are made of. */
   context: {
     used: number;
@@ -158,6 +160,7 @@ export async function serveChat(
       paused: session.chatPaused,
       autoApprove: session.autoApprove,
       model: session.chatModelName ?? null,
+      routing: session.chatRouting ?? null,
       context: session.context ?? null,
       usage: t
         ? {
@@ -217,14 +220,19 @@ export async function serveChat(
   const sendContext = (): void => {
     write({ type: 'contextItems', items: session.contextItems(), busy: session.chatBusy });
   };
-  /** Roles as saved, plus which models are out of quota right now (ref → when it ran out). */
+  /**
+   * The ranked list everyone uses (the /models pool) and its mode, per-role lists, and which
+   * models are out of quota right now (ref → when it ran out).
+   */
   const sendRoles = async (): Promise<void> => {
     const { readRoles } = await import('../config/roles.js');
+    const { readPoolMode, readRanking } = await import('../config/ranking.js');
     const { QuotaLedger } = await import('../providers/quota-ledger.js');
     const paths = resolvePaths(io.env);
     write({
       type: 'roles',
       roles: await readRoles(paths),
+      pool: { ranked: await readRanking(paths), mode: await readPoolMode(paths) },
       exhausted: new QuotaLedger(join(paths.configHome, 'quota.json')).all(),
     });
   };
@@ -413,9 +421,19 @@ export async function serveChat(
         return;
       case 'setRoles':
         run(
-          import('../config/roles.js').then(async ({ parseRoles, writeRoles }) => {
-            await writeRoles(resolvePaths(io.env), parseRoles(c.roles));
-            session.push('system', 'model roles saved; new chats and runs use them');
+          import('../config/roles.js').then(async ({ parseRoles, writeRoles, ROLES_VERSION }) => {
+            const paths = resolvePaths(io.env);
+            if (typeof c.roles === 'object' && c.roles)
+              await writeRoles(paths, parseRoles({ ...c.roles, version: ROLES_VERSION }));
+            const pool = c.pool as { ranked?: unknown; mode?: unknown } | undefined;
+            if (pool) {
+              const { parsePoolMode, writePool } = await import('../config/ranking.js');
+              const ranked = Array.isArray(pool.ranked)
+                ? pool.ranked.filter((r): r is string => typeof r === 'string')
+                : [];
+              await writePool(paths, ranked, parsePoolMode(pool.mode));
+            }
+            session.push('system', 'your models saved; new chats and runs use them');
             await sendRoles();
           }),
         );

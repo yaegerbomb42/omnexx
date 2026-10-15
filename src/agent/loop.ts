@@ -1,3 +1,10 @@
+import {
+  callOrder,
+  RATE_LIMITED_FOR_MS,
+  skipsOutModels,
+  sticksOnRateLimit,
+  type Strategy,
+} from '../config/routing.js';
 import type { OmnexxConfig } from '../config/schema.js';
 import type { Clock } from '../core/clock.js';
 import type { EventLog } from '../core/events.js';
@@ -156,6 +163,10 @@ export interface LoopDeps {
   modelExhausted?: (ref: string) => boolean;
   /** Record that this provider:model is out of quota, so the chain moves past it. */
   markExhausted?: (ref: string) => void;
+  /** Record that this provider:model is rate-limited for `ms` (fallback lists move past it). */
+  markRateLimited?: (ref: string, ms: number) => void;
+  /** How the chain is used per call (routing.ts): random reshuffles, priority ignores quota marks. */
+  strategy?: Strategy;
   tools: readonly Tool[];
   toolCtx: ToolContext;
   budget: OmnexxConfig['budget'];
@@ -415,8 +426,8 @@ export async function runAgentLoop(
           let triedAny = false;
           const skipped: string[] = [];
           let onlyBudget = true;
-          for (const m of deps.models) {
-            if (deps.modelExhausted?.(`${m.provider}:${m.id}`)) {
+          for (const m of callOrder(deps.models, deps.strategy)) {
+            if (skipsOutModels(deps.strategy) && deps.modelExhausted?.(`${m.provider}:${m.id}`)) {
               onlyBudget = false;
               skipped.push(`${m.provider}:${m.id}: out of quota`);
               continue;
@@ -485,6 +496,9 @@ export async function runAgentLoop(
               // Transient trouble: retry this provider soon. Key or model problems: much later.
               else if (!err.contentFilter)
                 deps.coolProvider?.(m.provider, err.retryable ? 60_000 : 30 * 60_000);
+              // Fallback lists stay off a rate-limited model until it recovers, across sessions.
+              if (err.status === 429 && !isQuotaError(err) && sticksOnRateLimit(deps.strategy))
+                deps.markRateLimited?.(`${m.provider}:${m.id}`, RATE_LIMITED_FOR_MS);
               deps.events.emit('provider.failover', {
                 provider: m.provider,
                 model: m.id,

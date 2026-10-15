@@ -221,7 +221,8 @@ function statusRight(session: Session): string {
   if (session.mode === 'run') return `run mode · feed ${session.verbosity}`;
   const ctx = session.context;
   const used = ctx ? ` · ctx ${fmtTokens(ctx.used)}/${fmtTokens(ctx.limit)}` : '';
-  return `${session.chatModelName ?? 'chat'}${used} · ${session.mode} mode`;
+  const routing = session.chatRouting ? ` (${session.chatRouting.toLowerCase()})` : '';
+  return `${session.chatModelName ?? 'chat'}${routing}${used} · ${session.mode} mode`;
 }
 
 /** Width of the "omnexx" title column; Nex's eye sits right after it. */
@@ -325,12 +326,12 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
       return;
     }
     if (session.rankView) {
-      if (key.upArrow) void session.rankKey({ up: true });
-      else if (key.downArrow) void session.rankKey({ down: true });
-      else if (ch === ' ') void session.rankKey({ grab: true });
+      if (key.upArrow) void session.rankKey({ key: key.shift ? 'move-up' : 'up' });
+      else if (key.downArrow) void session.rankKey({ key: key.shift ? 'move-down' : 'down' });
+      else if (ch === ' ') void session.rankKey({ key: 'grab' });
       else if (ch === 'a') void session.rankKey({ add: true });
-      else if (ch === 'm') void session.rankKey({ mode: true });
-      else if (ch === 'x' || key.backspace || key.delete) void session.rankKey({ remove: true });
+      else if (ch === 'm') void session.rankKey({ key: 'mode' });
+      else if (ch === 'x' || key.backspace || key.delete) void session.rankKey({ key: 'remove' });
       else if (key.escape || key.return || ch === 'q') void session.rankKey({ close: true });
       return;
     }

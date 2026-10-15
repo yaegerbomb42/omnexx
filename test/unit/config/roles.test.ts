@@ -1,9 +1,15 @@
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../../src/config/load.js';
 import { writeRanking } from '../../../src/config/ranking.js';
-import { parseRoles, readRoles, rolesLayer, writeRoles } from '../../../src/config/roles.js';
+import {
+  parseRoles,
+  readRoles,
+  rolesFile,
+  rolesLayer,
+  writeRoles,
+} from '../../../src/config/roles.js';
 import { resolvePaths } from '../../../src/core/paths.js';
 import { isolatedEnv, tempDir } from '../../support/tmp.js';
 
@@ -38,12 +44,35 @@ describe('model roles', () => {
       }),
     ).toEqual({
       models: {
-        chat: 'ollama:qwen',
+        chat: ['ollama:qwen', 'groq:x'],
         helpers: ['groq:x', 'cerebras:y'],
         spread_helpers: false,
         routing: { helpers: 'random' },
       },
     });
+  });
+
+  it('migrates old files: their "priority" stayed on #1 until its quota ran out (fallback)', () => {
+    const old = parseRoles({
+      models: { worker: ['groq:a', 'groq:b'] },
+      strategies: { worker: 'priority', cheap: 'random', planner: 'ordered', chat: 'loud' },
+    });
+    expect(old.strategies).toEqual({ worker: 'fallback', cheap: 'random', planner: 'fallback' });
+    expect(old.models).toEqual({ worker: ['groq:a', 'groq:b'] });
+    const current = parseRoles({ version: 2, models: {}, strategies: { worker: 'priority' } });
+    expect(current.strategies).toEqual({ worker: 'priority' });
+  });
+
+  it('writes the current version, so a saved "priority" stays priority', async () => {
+    const paths = resolvePaths(await isolatedEnv({}));
+    await writeRoles(paths, {
+      models: { worker: ['groq:a'] },
+      strategies: { worker: 'priority' },
+      spreadHelpers: true,
+    });
+    const raw = JSON.parse(await readFile(rolesFile(paths), 'utf8')) as { version: number };
+    expect(raw.version).toBe(2);
+    expect((await readRoles(paths)).strategies.worker).toBe('priority');
   });
 
   it('loads above the /models pool and below the project omnexx.toml', async () => {

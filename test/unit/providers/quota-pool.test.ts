@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { findKeyInText } from '../../../src/cli/connect.js';
 import {
-  dailyShuffle,
+  nextPoolMode,
+  parsePoolMode,
   rankingLayer,
   readPoolMode,
   readRanking,
@@ -23,6 +24,22 @@ describe('quota ledger', () => {
     t += EXHAUSTED_FOR_MS;
     expect(a.exhaustedAt('groq:llama')).toBeUndefined();
   });
+
+  it('keeps a rate-limit mark for its own window, apart from quota marks', async () => {
+    let t = 1_000;
+    const ledger = new QuotaLedger(`${await tempDir()}/quota.json`, () => t);
+    ledger.mark('groq:fast', 60_000);
+    expect(ledger.isOut('groq:fast')).toBe(true);
+    expect(ledger.exhaustedAt('groq:fast')).toBeUndefined();
+    expect(ledger.all()).toEqual({});
+    t += 60_000;
+    expect(ledger.isOut('groq:fast')).toBe(false);
+    ledger.mark('groq:dry');
+    ledger.mark('groq:fast', 60_000);
+    ledger.clear('groq:fast');
+    expect(ledger.isOut('groq:fast')).toBe(false);
+    expect(ledger.isOut('groq:dry')).toBe(true);
+  });
 });
 
 describe('model pool', () => {
@@ -37,19 +54,33 @@ describe('model pool', () => {
     expect(await readPoolMode(paths)).toBe('random');
   });
 
-  it('random order is a permutation, stable within a day, different across days', () => {
-    const refs = Array.from({ length: 12 }, (_, i) => `p:m${i}`);
-    const day1 = Date.UTC(2026, 9, 7, 3);
-    const a = dailyShuffle(refs, day1);
-    expect([...a].sort()).toEqual([...refs].sort());
-    expect(dailyShuffle(refs, day1 + 3_600_000)).toEqual(a);
-    expect(dailyShuffle(refs, day1 + 86_400_000)).not.toEqual(a);
-    const layer = rankingLayer(refs, 'random', day1) as {
-      models: { chat: string; worker: string[] };
+  it('reads old modes as the new ones and cycles random, priority, fallback', () => {
+    expect(parsePoolMode('ordered')).toBe('fallback');
+    expect(parsePoolMode(undefined)).toBe('fallback');
+    expect(parsePoolMode('random')).toBe('random');
+    expect(parsePoolMode('smart')).toBe('smart');
+    expect(nextPoolMode('random')).toBe('priority');
+    expect(nextPoolMode('priority')).toBe('fallback');
+    expect(nextPoolMode('fallback')).toBe('random');
+    expect(nextPoolMode('smart')).toBe('random');
+  });
+
+  it('becomes the chain for chat and every run role, routed by the mode, in rank order', () => {
+    const refs = ['p:a', 'p:b', 'p:c'];
+    expect(rankingLayer([])).toBeUndefined();
+    const layer = rankingLayer(refs, 'random') as {
+      models: { chat: string[]; worker: string[]; routing: Record<string, string> };
     };
-    expect(layer.models.worker).toEqual(a);
-    expect(layer.models.chat).toBe(a[0]);
-    expect((rankingLayer(refs) as { models: { worker: string[] } }).models.worker).toEqual(refs);
+    expect(layer.models.worker).toEqual(refs);
+    expect(layer.models.chat).toEqual(refs);
+    expect(layer.models.routing).toEqual({
+      chat: 'random',
+      planner: 'random',
+      worker: 'random',
+      cheap: 'random',
+    });
+    const smart = rankingLayer(refs, 'smart') as { models: { routing: Record<string, string> } };
+    expect(smart.models.routing.worker).toBe('fallback');
   });
 });
 
@@ -92,7 +123,7 @@ describe('smart pool mode', () => {
     const { config } = await loadConfig({ cwd: await tempDir(), env });
     expect(config.judge.kind).toBe('nimble');
     expect(config.judge.uses).toEqual(['route']);
-    await writePoolMode(paths, 'ordered');
+    await writePoolMode(paths, 'fallback');
     expect((await loadConfig({ cwd: await tempDir(), env })).config.judge.kind).toBe('none');
   });
 });
