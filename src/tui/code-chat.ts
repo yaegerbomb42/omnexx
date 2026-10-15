@@ -68,6 +68,11 @@ import { emptyTelemetry, fold, type Telemetry } from '../telemetry/aggregate.js'
 /** Questions read without editing; only this many turns in a row without an edit is circling. */
 const CHAT_NO_EDIT_TURNS = 25;
 
+/** A saved chat's id: `chat_<UTC timestamp>_<random>`. */
+function newChatId(): string {
+  return `chat_${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}_${randomBytes(3).toString('hex')}`;
+}
+
 export const CHAT_SYSTEM = `You are Omnexx in chat mode: a coding agent working turn by turn with a person at the keyboard, directly in their repository (your cwd).
 
 - Do what they ask, then stop and reply briefly: what you changed and what you checked.
@@ -236,10 +241,7 @@ export class CodeChat {
       io.cwd,
       ref ? { models: { planner: ref, worker: ref, cheap: ref } } : {},
     );
-    const store = new RunStore(
-      paths,
-      `chat_${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}_${randomBytes(3).toString('hex')}`,
-    );
+    const store = new RunStore(paths, newChatId());
     await mkdir(store.logsDir, { recursive: true, mode: 0o700 });
     const redactor = Redactor.fromEnv(io.env, deps.secrets);
     const clock = io.clock ?? realClock;
@@ -674,14 +676,29 @@ export class CodeChat {
   }
 
   /** Save the conversation so `omnexx --continue` can pick it up. */
-  private async persist(): Promise<void> {
-    await writeJsonAtomic(this.store.file(CHAT_FILE), {
+  private savedChat(): Record<string, unknown> {
+    return {
       cwd: this.ctx.jail.root,
       model: this.model,
       savedAt: Date.now(),
       history: this.history,
       ...(this.resumedFrom ? { resumedFrom: this.resumedFrom } : {}),
-    }).catch(() => undefined);
+    };
+  }
+
+  private async persist(): Promise<void> {
+    await writeJsonAtomic(this.store.file(CHAT_FILE), this.savedChat()).catch(() => undefined);
+  }
+
+  /**
+   * Before a new chat starts, the conversation so far gets its own History entry; otherwise the
+   * next message would overwrite it in this session's chat file.
+   */
+  private async archiveConversation(): Promise<void> {
+    if (!this.paths || !this.history.length) return;
+    const dir = join(runsDir(this.paths), newChatId());
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    await writeJsonAtomic(join(dir, CHAT_FILE), this.savedChat());
   }
 
   /** Saved chats in this folder, newest first (this one included once it has messages). */
@@ -836,6 +853,8 @@ export class CodeChat {
 
   /** Forget the conversation (the codebase map and instructions stay). */
   async clear(): Promise<void> {
+    await this.archiveConversation();
+    this.resumedFrom = undefined;
     this.history = [];
     this.telemetry = emptyTelemetry();
     this.contextUsed = this.baseTokens();

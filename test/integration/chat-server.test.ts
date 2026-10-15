@@ -296,4 +296,47 @@ describe('omnexx chat-server (the VS Code chat panel protocol)', () => {
     t.stdin.end();
     expect(await t.done).toBe(0);
   });
+
+  it('keeps the previous chat in History after New chat', async () => {
+    const t = await start();
+    await t.until(() => t.out.find((o) => o.type === 'ready'), 'ready');
+    const idle = (turns: number) =>
+      t.until(
+        () => {
+          const s = t.states().at(-1);
+          return s && !s.busy && (s.usage?.turns ?? 0) >= turns ? s : undefined;
+        },
+        `idle after ${String(turns)} turns`,
+      );
+    t.send({ type: 'send', text: 'first chat' });
+    await t.until(() => t.states().find((s) => s.pending !== null), 'approval question');
+    t.send({ type: 'answer', yes: false });
+    await idle(1);
+    const readies = t.out.filter((o) => o.type === 'ready').length;
+    t.send({ type: 'clear' });
+    await t.until(
+      () => (t.out.filter((o) => o.type === 'ready').length > readies ? true : undefined),
+      'cleared',
+    );
+    const asked = t.states().filter((s) => s.pending !== null).length;
+    t.send({ type: 'send', text: 'second chat' });
+    await t.until(
+      () => (t.states().filter((s) => s.pending !== null).length > asked ? true : undefined),
+      'second approval question',
+    );
+    t.send({ type: 'answer', yes: false });
+    await t.until(() => {
+      const s = t.states().at(-1);
+      return s && !s.busy && s.pending === null ? s : undefined;
+    }, 'second reply');
+    t.send({ type: 'chats' });
+    const listed = await t.until(
+      () => t.out.findLast((o) => o.type === 'chats' && (o.chats as unknown[]).length >= 2),
+      'two chats in History',
+    );
+    const titles = (listed.chats as { title: string }[]).map((c) => c.title).sort();
+    expect(titles).toEqual(['First chat', 'Second chat']);
+    t.stdin.end();
+    expect(await t.done).toBe(0);
+  });
 });
