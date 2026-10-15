@@ -128,6 +128,17 @@ export const stateSchema = z.object({
   auditRounds: z.number().int().default(0),
   /** The cycle the latest audit round's work was planned at, while that work is open. */
   auditWorkFrom: z.number().int().optional(),
+  /** The spec-first acceptance tests (see verify/spec-tests.ts) and their fix rounds so far. */
+  specTests: z
+    .object({
+      status: z.enum(['written', 'fixing', 'passed', 'skipped', 'failed-open']),
+      rounds: z.number().int().default(0),
+      taskId: z.string().optional(),
+      reason: z.string().optional(),
+      /** The judge's last rejected dispute: carried into the next fix task's evidence. */
+      ruling: z.string().optional(),
+    })
+    .optional(),
   /** The fast path (one pass on the whole goal before planning): tried, then failed if it fell back. */
   fastPath: z.enum(['tried', 'failed']).optional(),
   rejectedCycles: z.number().default(0),

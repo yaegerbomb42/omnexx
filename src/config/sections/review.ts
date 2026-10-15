@@ -28,5 +28,17 @@ export const review = z
      * the goal in cycle 1, then spent 20+ cycles on audit-added work).
      */
     audit_max_cycles: z.number().int().min(1).max(100).default(4),
+    /**
+     * Spec-first acceptance tests: before a run may finish, a model that sees only the goal and
+     * the public interface (signatures, not bodies) writes tests for the boundaries and
+     * interactions between requirements; failures go back to the worker. `auto` runs them for
+     * goals above the fast-path size or with several listed requirements (bench task-10: the
+     * worker's code and its own tests agreed on a wrong behaviour that review and audit missed).
+     */
+    spec_tests: z.enum(['auto', 'on', 'off']).default('auto'),
+    /** Models that write the spec tests and judge the worker's disputes of them. */
+    spec_tests_models: z.enum(['cheap', 'worker', 'planner']).default('planner'),
+    /** Fix rounds the spec tests may send back to the worker before the run finishes anyway. */
+    spec_tests_max_rounds: z.number().int().min(1).max(5).default(2),
   })
   .prefault({});
