@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>data-table demo</title>
+  </head>
+  <body>
+    <div id="orders"></div>
+    <script type="module">
+      import { mountTable } from './src/table.js';
+      import { demoRows } from './src/demo-data.js';
+      mountTable(document.getElementById('orders'), {
+        columns: [
+          { key: 'id', label: 'Order', type: 'number' },
+          { key: 'customer', label: 'Customer', type: 'text' },
+          { key: 'total', label: 'Total', type: 'number' },
+          { key: 'placed', label: 'Placed', type: 'date' },
+        ],
+        rows: demoRows,
+      });
+    </script>
+  </body>
+</html>

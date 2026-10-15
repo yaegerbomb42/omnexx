@@ -60,6 +60,14 @@ SonarCloud findings from the #20 integration merge are still open.
   tool-capable local models (`/api/show`), rank coding models first, create an `omnexx-<model>`
   copy with `num_ctx` 32k (16k on small machines), and save it for every role. With nothing
   usable pulled they offer a one-key / one-button pull. Tests use a scripted fetch.
+- **2026-10-14 (agent), branch `feat/bench-hard`:** new `hard10` bench suite
+  (`bench/suites/hard10`, see its README): ten harder tasks (cross-module bug hunts, multi-file
+  TS features, two SWE-bench-style issue fixes, a parity-checked refactor, a jsdom-checked
+  widget, a TS+Python protocol change, a two-hotspot performance task), each with a hidden
+  behavior check and a reference solution; `validate.sh` and an integration test check that every
+  start fails and every reference passes. Suites now share `DirSuite`. The claude-code runner
+  takes `--endpoint` via `PREFIX_ANTHROPIC_BASE_URL` (claude only speaks Anthropic Messages, so it
+  bypasses the OpenAI meter and reports its own usage). No paid agent was run.
 - **2026-10-13 (single agent), branch `feat/autonomy-2`:** efficiency work driven by a
   head-to-head bench (same model, DeepSeek-V4.1-Flash, for every harness; tokens counted by
   one metering proxy, `bench --endpoint <PREFIX>`). Cline and OpenHands runners added. Fixes:

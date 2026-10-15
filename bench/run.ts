@@ -1,8 +1,12 @@
 import { program } from 'commander';
 import { join, resolve } from 'node:path';
-import { getJimmy10Suite, getWeb5Suite } from './suites/index.ts';
+import { getHard10Suite, getJimmy10Suite, getWeb5Suite } from './suites/index.ts';
 import { OmnexxRunner } from './runners/omnexx.ts';
-import { ClaudeCodeRunner } from './runners/claude-code.ts';
+import {
+  anthropicEndpointFromEnv,
+  ClaudeCodeRunner,
+  type AnthropicEndpoint,
+} from './runners/claude-code.ts';
 import { CodexRunner } from './runners/codex.ts';
 import { ClineRunner } from './runners/cline.ts';
 import { OpenHandsRunner } from './runners/openhands.ts';
@@ -16,6 +20,7 @@ import type { AgentRunner } from './runners/base.ts';
 const SUITES: Record<string, () => Suite> = {
   jimmy10: getJimmy10Suite,
   web5: getWeb5Suite,
+  hard10: getHard10Suite,
 };
 
 interface RunnerOpts {
@@ -25,6 +30,10 @@ interface RunnerOpts {
   context: 'lean' | 'full';
   meter?: Meter | undefined;
   judge: boolean;
+  /** claude-code: the endpoint's Anthropic-compatible URL (PREFIX_ANTHROPIC_BASE_URL). */
+  anthropic?: AnthropicEndpoint | undefined;
+  /** Whether --endpoint was given: claude-code then refuses to fall back to the user's login. */
+  endpointGiven: boolean;
 }
 
 function needMeter(o: RunnerOpts): { meter: Meter; model: string; hours: number } {
@@ -45,7 +54,15 @@ const RUNNERS: Record<string, (o: RunnerOpts) => AgentRunner> = {
     }),
   cline: (o) => new ClineRunner(needMeter(o)),
   openhands: (o) => new OpenHandsRunner(needMeter(o)),
-  'claude-code': () => new ClaudeCodeRunner(),
+  'claude-code': (o) => {
+    // Without an Anthropic-format URL, claude would silently bill the user's own login instead
+    // of the endpoint every other agent uses.
+    if (o.endpointGiven && !o.anthropic)
+      throw new Error(
+        'claude-code speaks only the Anthropic Messages API: set PREFIX_ANTHROPIC_BASE_URL (e.g. https://api.deepseek.com/anthropic)',
+      );
+    return new ClaudeCodeRunner(o.anthropic);
+  },
   codex: () => new CodexRunner(),
 };
 
@@ -122,6 +139,8 @@ async function main(): Promise<void> {
     model: endpoint?.model ?? opts.model,
     context: opts.context,
     judge: opts.judge ?? false,
+    anthropic: opts.endpoint ? anthropicEndpointFromEnv(process.env, opts.endpoint) : undefined,
+    endpointGiven: opts.endpoint !== undefined,
   };
   // A throwaway meter only so runners that need one can be built for the availability check.
   const probe = endpoint ? await startMeter(endpoint) : undefined;
