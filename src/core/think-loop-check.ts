@@ -1,8 +1,9 @@
 import { workingTreeDiff } from '../git/repo.js';
 import { antiCheat } from '../verify/anticheat.js';
 import { runGatesWithFlakyCheck } from '../verify/flaky.js';
-import type { GateResult } from '../verify/gates.js';
+import type { GateResult, GateRunContext } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
+import type { SpeculativeChecks } from '../verify/speculative.js';
 import { classify, renderTriage } from '../verify/triage.js';
 import type { PassState } from './doom-breaker.js';
 import { FAST_TASK } from './fast-path.js';
@@ -24,7 +25,21 @@ export interface CheckSession {
   quarantined: Set<string>;
   /** Failure ids that persisted through a re-run: real, not re-run again. */
   persistent: Set<string>;
+  /** Gate runs started in the background after edits; reused only for the exact same tree. */
+  speculative?: SpeculativeChecks;
 }
+
+/** Where and how the loop's gates run; `label` names their log files. */
+export const gateContext = (run: Run, label: string): GateRunContext => ({
+  exec: run.exec,
+  cwd: run.worktree,
+  env: run.childEnv,
+  logsDir: run.store.logsDir,
+  label,
+  maxCmdTimeoutMs: run.maxCmdTimeoutMs,
+  redact: (s) => run.redactor.text(s),
+  signal: run.signal,
+});
 
 export interface TaskCheck {
   command: string;
@@ -76,20 +91,13 @@ export async function checkTree(
     failures.push('Nothing has changed yet: the goal is not done. Make the changes it asks for.');
   }
   const reruns = run.config.plan.loop_flaky_reruns;
+  const early = await session.speculative?.take(treeHash);
   const { results: raw, flaky } = await runGatesWithFlakyCheck(
     run.config.gates.map((g) => ({ ...g, flaky_reruns: reruns })),
-    {
-      exec: run.exec,
-      cwd: run.worktree,
-      env: run.childEnv,
-      logsDir: run.store.logsDir,
-      label: `c${run.state.cycle}-loop${round}`,
-      maxCmdTimeoutMs: run.maxCmdTimeoutMs,
-      redact: (s) => run.redactor.text(s),
-      signal: run.signal,
-    },
+    gateContext(run, `c${run.state.cycle}-loop${round}`),
     run.state.baseline,
     session.persistent,
+    new Map(early?.results.map((r) => [r.name, r])),
   );
   for (const f of flaky) for (const id of f.ids) session.quarantined.add(id);
   if (reruns > 0) for (const r of raw) for (const f of r.failures) session.persistent.add(f.id);

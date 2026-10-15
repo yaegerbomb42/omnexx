@@ -20,11 +20,13 @@ export async function runGatesWithFlakyCheck(
   ctx: GateRunContext,
   baseline: Baseline | undefined,
   known: ReadonlySet<string> = new Set(),
+  /** First-run results already taken for this exact tree (speculative checks), by gate name. */
+  firstRuns: ReadonlyMap<string, GateResult> = new Map(),
 ): Promise<{ results: GateResult[]; flaky: FlakyFinding[] }> {
   const results: GateResult[] = [];
   const flaky: FlakyFinding[] = [];
   for (const gate of gates) {
-    let result = await runGate(gate, ctx);
+    let result = firstRuns.get(gate.name) ?? (await runGate(gate, ctx));
     const seen = new Set<string>();
     for (let i = 1; i <= gate.flaky_reruns; i++) {
       const v = judgeGate(result, baseline);

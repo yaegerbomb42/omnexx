@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
 import { git } from './git.js';
 
 export const headSha = async (cwd: string): Promise<string> =>
@@ -65,6 +67,37 @@ export interface FileChange {
   removed: number;
 }
 
+/** Absolute path of the throwaway index file `index` in the repo's git dir. */
+async function indexEnv(cwd: string, index: string): Promise<{ GIT_INDEX_FILE: string }> {
+  const file = `${(await git(cwd, ['rev-parse', '--git-dir'])).stdout.trim()}/${index}`;
+  return { GIT_INDEX_FILE: file.startsWith('/') ? file : `${cwd}/${file}` };
+}
+
+/** Stage the working tree (untracked files included) into a throwaway index; its tree id. */
+async function stageTree(
+  cwd: string,
+  base: string,
+  env: { GIT_INDEX_FILE: string },
+): Promise<string> {
+  await git(cwd, ['read-tree', base], { env });
+  await stageAll(cwd, base, env);
+  return (await git(cwd, ['write-tree'], { env })).stdout.trim();
+}
+
+/**
+ * Tree id of the working tree, as `workingTreeDiff` reports it, through its own throwaway index:
+ * speculative checks hash the tree in the background while a diff may be taken.
+ */
+export async function workingTreeHash(cwd: string, base: string): Promise<string> {
+  // An index per call: two hashes at once would fight over one index's lock file.
+  const env = await indexEnv(cwd, `omnexx-spec-index-${randomUUID()}`);
+  try {
+    return await stageTree(cwd, base, env);
+  } finally {
+    await rm(env.GIT_INDEX_FILE, { force: true });
+  }
+}
+
 /**
  * Everything that differs between `base` and the working tree, untracked files included.
  * Uses a throwaway index so the real index is never touched.
@@ -73,15 +106,8 @@ export async function workingTreeDiff(
   cwd: string,
   base: string,
 ): Promise<{ changes: FileChange[]; patch: string; treeHash: string }> {
-  const env = {
-    GIT_INDEX_FILE: `${(await git(cwd, ['rev-parse', '--git-dir'])).stdout.trim()}/omnexx-index`,
-  };
-  const abs = env.GIT_INDEX_FILE.startsWith('/')
-    ? env
-    : { GIT_INDEX_FILE: `${cwd}/${env.GIT_INDEX_FILE}` };
-  await git(cwd, ['read-tree', base], { env: abs });
-  await stageAll(cwd, base, abs);
-  const treeHash = (await git(cwd, ['write-tree'], { env: abs })).stdout.trim();
+  const abs = await indexEnv(cwd, 'omnexx-index');
+  const treeHash = await stageTree(cwd, base, abs);
   const raw = (await git(cwd, ['diff', '--cached', '--binary', '-M', base], { env: abs })).stdout;
   // The git wrapper strips the final newline; `git apply` needs it back.
   const patch = raw && !raw.endsWith('\n') ? `${raw}\n` : raw;

@@ -12,6 +12,7 @@ import {
   isClean,
   statusPorcelain,
   workingTreeDiff,
+  workingTreeHash,
 } from '../../../src/git/repo.js';
 import { rollbackTo } from '../../../src/git/rollback.js';
 import { formatTrailers, parseTrailers } from '../../../src/git/trailers.js';
@@ -114,6 +115,20 @@ describe('worktree + checkpoint + rollback', () => {
     expect(
       (await git(repo, ['diff-tree', '--no-commit-id', '--name-only', '-r', sha])).stdout,
     ).toBe('a.txt');
+  });
+
+  it('hashes the working tree as workingTreeDiff does, through its own index', async () => {
+    const repo = await seeded();
+    const start = await headSha(repo);
+    await writeFile(join(repo, 'a.txt'), 'two\n');
+    await writeFile(join(repo, 'new.txt'), 'new\n');
+    const [hash, diff] = await Promise.all([
+      workingTreeHash(repo, start),
+      workingTreeDiff(repo, start),
+    ]);
+    expect(hash).toBe(diff.treeHash);
+    await writeFile(join(repo, 'new.txt'), 'changed\n');
+    expect(await workingTreeHash(repo, start)).not.toBe(hash);
   });
 
   it('still stages coverage files the repo already tracks', async () => {

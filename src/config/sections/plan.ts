@@ -38,6 +38,11 @@ export const plan = z
      * took 12-34 turns, half of each run, mostly experiments the execute phase repeated).
      */
     loop_think_turns: z.number().int().min(1).max(40).default(8),
+    /**
+     * Loop sessions start the gates in the background ~1.5 s after the last edit, so a check
+     * can reuse the result while the model was still talking. Reused only for the exact same tree.
+     */
+    speculative_checks: z.boolean().default(true),
     /** In auto mode, goals longer than this many characters plan first. */
     fast_max_goal_chars: z.number().int().positive().default(2_500),
     /** Helpers the planner may run at once while exploring (0: none, it reads on its own). */

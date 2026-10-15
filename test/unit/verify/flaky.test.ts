@@ -75,6 +75,26 @@ describe('runGatesWithFlakyCheck', () => {
     }
   });
 
+  it('takes a gate first run from firstRuns and still re-runs its new failures live', async () => {
+    const early = replay(fail(['a']));
+    const first = await runGatesWithFlakyCheck(
+      [gate({ flaky_reruns: 0 })],
+      ctx(early.exec),
+      undefined,
+    );
+    const r = replay({ output: tap([]) });
+    const out = await runGatesWithFlakyCheck(
+      [gate(), gate({ name: 'lint', parser: 'generic' })],
+      ctx(r.exec),
+      undefined,
+      new Set(),
+      new Map(first.results.map((g) => [g.name, g])),
+    );
+    // One live re-run of the reused test gate (it passed: flaky), one live run of lint.
+    expect(r.calls()).toBe(2);
+    expect(out.flaky[0]?.ids).toHaveLength(1);
+  });
+
   it('honors more than one re-run', async () => {
     const r = replay(fail(['a']), fail(['a']), { output: tap([]) });
     const out = await runGatesWithFlakyCheck([gate({ flaky_reruns: 2 })], ctx(r.exec), undefined);
