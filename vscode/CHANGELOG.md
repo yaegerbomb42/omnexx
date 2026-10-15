@@ -2,6 +2,7 @@
 
 ## 0.8.3
 
+- Built on omnexx 0.12.0.
 - **No more separate live log**: actions, thinking and notes show inline in the conversation,
   between the messages they belong to.
 - **History** replaces Runs: past chats and runs under Today, Yesterday and Earlier, named by

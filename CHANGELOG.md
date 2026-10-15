@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12.0
+
+- **Chat proposes a plan** for vague or larger requests ("I looked at X. Plan: 1) … Go ahead?")
+  instead of asking a menu of questions; small clear requests are just done.
+- **Run from anywhere**: started in `/` or your home folder, a run gets its own new folder under
+  `~/omnexx-projects`.
+- **Fewer tokens and less time**: tools stay in the cached prompt prefix on Chat Completions
+  endpoints; no false rejections from coverage output or tests-only diffs; audit follow-up is
+  capped; coverage reports stay out of commits; ported tests aren't treated as deleted; every
+  edit counts as progress for the stuck signal; agent commands stop after 2 minutes by default.
+- Context inspector, chat history and response-time estimates for the VS Code panel.
+- Terminal chat: a calm one-line header (the animated character only with `OMNEXX_MASCOT=1`).
+
 ## 0.11.3
 
 - Notes from a command ("started a git repository", "no tests configured") no longer show as red
