@@ -286,6 +286,14 @@ In-cycle context control runs before each turn and works on every provider. Past
 | `max_files`   | `4000`  | Files indexed at most. The index lives next to the repo's memory and only re-embeds files that changed.                                                                  |
 | `chunk_lines` | `60`    | Lines per indexed chunk (a quarter overlap).                                                                                                                             |
 
+## `[mcp]` (see [mcp.md](mcp.md))
+
+| Key                  | Default  | Meaning                                                                                                                                         |
+| -------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `servers.<name>`     | none     | One table per MCP server (command or url, env, allow_tools, …); see [mcp.md](mcp.md#configuration)                                              |
+| `mount`              | `"lazy"` | `"lazy"`: the model gets one `mcp` tool listing the servers and mounts one when it needs it. `"eager"`: every MCP tool is sent on every request |
+| `eager_under_tokens` | `3000`   | Lazy mode sends every tool anyway when all MCP tools together cost fewer tokens than this                                                       |
+
 ## `[skills]` (see [instructions.md](instructions.md#skills))
 
 | Key             | Default | Meaning                                                                                 |

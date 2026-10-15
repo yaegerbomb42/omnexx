@@ -2,11 +2,13 @@ import { z } from 'zod';
 import type { ToolSource, ToolWhere } from './types.js';
 import { resolvePaths } from '../../core/paths.js';
 import { readSecrets } from '../../integrations/secrets.js';
-import { fail, ok, type Tool, type ToolContext, type ToolOutput } from '../types.js';
+import { fail, ok, type Tool } from '../types.js';
 import type { OmnexxConfig } from '../../config/schema.js';
 import { resolveMcpServers } from '../../mcp/config-loader.js';
 import { McpClientManager, type McpToolInfo } from '../../mcp/client-manager.js';
-import { formatMcpToolName, normalizeMcpSchema, trimMcpOutput } from '../../mcp/normalizer.js';
+import { formatMcpToolName, normalizeMcpSchema } from '../../mcp/normalizer.js';
+import { formatResult, lazyMcpTools } from './mcp-lazy.js';
+import { mountsLazily } from '../../mcp/mount.js';
 
 let activeManager: McpClientManager | null = null;
 
@@ -19,32 +21,6 @@ export async function resetMcpManager(): Promise<void> {
     await activeManager.closeAll();
     activeManager = null;
   }
-}
-
-function formatResult(
-  result: {
-    content: {
-      type: string;
-      text?: string | undefined;
-      data?: string | undefined;
-      mimeType?: string | undefined;
-    }[];
-    isError?: boolean | undefined;
-  },
-  ctx: ToolContext,
-): ToolOutput {
-  const parts: string[] = [];
-  for (const item of result.content) {
-    if (item.type === 'text' && item.text) {
-      parts.push(item.text);
-    } else if (item.type === 'image') {
-      parts.push('[Image data dropped]');
-    }
-  }
-  const joined = parts.join('\n');
-  const redacted = ctx.redactor.text(joined);
-  const trimmed = trimMcpOutput(redacted);
-  return result.isError ? fail(trimmed) : ok(trimmed);
 }
 
 const searchSchema = z.strictObject({
@@ -156,6 +132,10 @@ export const source: ToolSource = {
     const allTools = await mgr.listTools();
     if (allTools.length === 0) {
       return [];
+    }
+
+    if (mountsLazily(config.mcp, allTools)) {
+      return lazyMcpTools(mgr, allTools);
     }
 
     // If more than 20 MCP tools total, expose a single mcp_search + mcp_call
