@@ -49,6 +49,16 @@ The lock (`{pid, host, bootId}`, created with `O_EXCL`) is stale when the pid is
 
 The judge (advisory) and the worker lifecycle are described in [judge.md](judge.md) and [workers.md](workers.md).
 
+## Edit tools
+
+Edits are built to survive small drift and to say right away when they broke something (`src/tools/edit.ts`, `replace-lines.ts`, `anchors.ts`, `fuzzy-match.ts`, `post-edit.ts`, `ts-check.ts`).
+
+- **Line anchors.** `read` with `anchors: true` tags each line with a 2-character content hash (`   12 k3  code`), about one extra token per line; plain reads are unchanged. `replace_lines {path, start, end, expected_hash, new_text}` replaces a range without repeating the old text. `expected_hash` is the start line's tag followed by the end line's. If those lines changed, the edit is refused and the message names the range's current tags and first line. If they only moved, the edit follows them to the one place the same pair of tags sits the same distance apart and says where it applied.
+- **Whitespace-tolerant `str_replace`/`multi_edit`.** When `old_str` isn't found exactly, the edit looks for whole lines that match once whitespace is normalized. If there's exactly one such block, it's replaced, `new_str` is re-indented from `old_str`'s indentation to the block's, and the result says "matched lines 12-15 ignoring whitespace". Several loose matches are an error that lists their lines.
+- **Auto-format.** After a successful edit, the file goes through the project's formatter when one is configured: prettier (`node_modules/.bin/prettier` plus a prettier config), `ruff format` (with ruff config) or `gofmt`. It's capped at 2 s. A missing, slow or failing formatter never fails the edit.
+- **Diagnostics in the result.** For TS/JS files in a repo with its own `typescript` and a root `tsconfig.json`, an in-process language service (a worker thread, warm for the session) checks the edited file before and after the edit. Only errors the edit introduced are appended, at most three, each under 160 characters: `⚠ line 42: TS2345 …`. If the check takes over 1.5 s it's skipped silently; the first, cold check usually is, and later ones are warm. Python files get an `ast.parse` syntax check. Formatting and checks run repo code, so they run only when tools run on the host, never in a sandbox.
+- **Did you mean.** `read`, `outline` and the edit tools answer a missing path with up to three close repo paths: the same file name first, then by edit distance.
+
 ## Metrics for the M4 benchmark
 
 `turn` events carry tokens split into uncached / cache write / cache read / output, cost and cache-read share. `omnexx status --json` reports totals, `cacheHitRatio`, `usdPerAcceptedCommit`, turns, model calls, active time, and judge agreement with the rules.

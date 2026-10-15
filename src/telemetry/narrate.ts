@@ -69,6 +69,7 @@ export function narrateTool(name: string, input: Record<string, unknown>): strin
       return `writing code to ${path}`;
     case 'str_replace':
     case 'multi_edit':
+    case 'replace_lines':
       return `editing ${path}`;
     case 'bash':
       return describeCommand(s(input.command));

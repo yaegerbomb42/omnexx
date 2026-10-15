@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
-import { OmnexxError } from '../errors.js';
+import { lineTag } from './anchors.js';
+import { openError } from './did-you-mean.js';
 import { extractSymbols, renderOutline } from './outline.js';
 import { fail, ok, resolvePath, type Tool } from './types.js';
 
@@ -20,6 +21,10 @@ const schema = z.strictObject({
     .positive()
     .optional()
     .describe('Last line (inclusive); at most 400 lines per call'),
+  anchors: z
+    .boolean()
+    .optional()
+    .describe('Tag each line with a 2-char content hash, for replace_lines expected_hash'),
 });
 
 export const readTool: Tool<typeof schema> = {
@@ -33,11 +38,7 @@ export const readTool: Tool<typeof schema> = {
     try {
       text = await readFile(await resolvePath(ctx, input.path, 'read'), 'utf8');
     } catch (err) {
-      return fail(
-        err instanceof OmnexxError
-          ? err.message
-          : `cannot read ${input.path}: ${(err as NodeJS.ErrnoException).code ?? (err as Error).message}`,
-      );
+      return fail(await openError(ctx, input.path, err, '', 'read'));
     }
     if (text.includes('\0')) return fail(`${input.path} looks binary; not shown`);
     const lines = text.split('\n');
@@ -53,7 +54,8 @@ export const readTool: Tool<typeof schema> = {
     let size = 0;
     for (let n = start; n <= end; n++) {
       const l = lines[n - 1] ?? '';
-      const row = `${String(n).padStart(5)}  ${l.length > MAX_LINE_CHARS ? `${l.slice(0, MAX_LINE_CHARS)}… [line is ${l.length} chars; search for text in it]` : l}`;
+      const tag = input.anchors ? ` ${lineTag(l)}` : ' ';
+      const row = `${String(n).padStart(5)}${tag} ${l.length > MAX_LINE_CHARS ? `${l.slice(0, MAX_LINE_CHARS)}… [line is ${l.length} chars; search for text in it]` : l}`;
       if (shown.length && size + row.length > MAX_READ_CHARS) {
         end = n - 1;
         break;
@@ -65,7 +67,7 @@ export const readTool: Tool<typeof schema> = {
     const more = end < lines.length ? `\n(lines ${end + 1}-${lines.length} not shown)` : '';
     const out = `${body}${more}`;
     if (ctx.reads) {
-      const key = `${input.path}:${start}-${end}`;
+      const key = `${input.path}:${start}-${end}${input.anchors ? ':a' : ''}`;
       const hash = createHash('sha256').update(out).digest('hex');
       if (ctx.reads.get(key) === hash) {
         return ok(

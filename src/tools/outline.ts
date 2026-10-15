@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
-import { OmnexxError } from '../errors.js';
+import { openError } from './did-you-mean.js';
 import { fail, ok, type Tool } from './types.js';
 
 export interface Symbol {
@@ -78,11 +78,7 @@ export const outlineTool: Tool<typeof schema> = {
       const text = await readFile(abs, 'utf8');
       return ok(renderOutline(extractSymbols(text), text.split('\n').length));
     } catch (err) {
-      return fail(
-        err instanceof OmnexxError
-          ? err.message
-          : `cannot outline ${input.path}: ${(err as Error).message}`,
-      );
+      return fail(await openError(ctx, input.path, err, '', 'outline'));
     }
   },
 };

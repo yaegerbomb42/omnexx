@@ -93,7 +93,8 @@ function toolLine(e: OmnexxEvent): Line {
         `/${clip(str(input.pattern), 50)}/${input.glob ? ` ${str(input.glob)}` : ''}${err}`,
       ];
     case 'str_replace':
-    case 'multi_edit': {
+    case 'multi_edit':
+    case 'replace_lines': {
       const edits = Array.isArray(input.edits) ? ` (${input.edits.length} edits)` : '';
       return ['normal', glyph, 'edit', `${path}${edits}${err}`];
     }
