@@ -9,7 +9,8 @@ import { pathToFileURL } from 'node:url';
 
 const VIEWPORT_HEIGHT = 900;
 const BUDGET_MS = 3000;
-const CHROME_TIMEOUT_MS = 60_000;
+/** Chrome sometimes prints the DOM and then fails to exit (first run on CI); give up after this. */
+const CHROME_TIMEOUT_MS = 20_000;
 
 const PLAYWRIGHT_BINARIES = [
   'chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium',
@@ -68,6 +69,21 @@ const PROBE = (expr) => `<script>(function(){
   }, 300); });
 })();</script>`;
 
+/** Chrome's stdout; on a timeout, whatever it printed before hanging. */
+function runChrome(chrome, args) {
+  try {
+    return execFileSync(chrome, args, {
+      encoding: 'utf-8',
+      timeout: CHROME_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch (err) {
+    if (typeof err?.stdout === 'string' && err.stdout.includes('__probe')) return err.stdout;
+    throw err;
+  }
+}
+
 /** Loads `page` at `width` px and returns the probe's findings. Throws when Chrome is missing. */
 export function probe(page, width, expr) {
   const chrome = findChrome();
@@ -81,22 +97,24 @@ export function probe(page, width, expr) {
   const profile = mkdtempSync(join(tmpdir(), 'web5-chrome-'));
   writeFileSync(probeFile, injected);
   try {
-    const dom = execFileSync(
-      chrome,
-      [
-        '--headless=new',
-        '--disable-gpu',
-        '--no-sandbox',
-        '--no-first-run',
-        '--hide-scrollbars',
-        `--user-data-dir=${profile}`,
-        `--window-size=${width},${VIEWPORT_HEIGHT}`,
-        `--virtual-time-budget=${BUDGET_MS}`,
-        '--dump-dom',
-        pathToFileURL(probeFile).href,
-      ],
-      { encoding: 'utf-8', timeout: CHROME_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'ignore'] },
-    );
+    const dom = runChrome(chrome, [
+      '--headless=new',
+      '--disable-gpu',
+      '--no-sandbox',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--use-mock-keychain',
+      '--password-store=basic',
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-component-update',
+      '--hide-scrollbars',
+      `--user-data-dir=${profile}`,
+      `--window-size=${width},${VIEWPORT_HEIGHT}`,
+      `--virtual-time-budget=${BUDGET_MS}`,
+      '--dump-dom',
+      pathToFileURL(probeFile).href,
+    ]);
     const m = /<pre id="__probe">([^<]+)<\/pre>/.exec(dom);
     if (!m) throw new Error('page never finished loading');
     return JSON.parse(Buffer.from(m[1], 'base64').toString('utf-8'));

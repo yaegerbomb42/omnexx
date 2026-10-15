@@ -2,7 +2,7 @@
 // Usage: node serve.mjs <siteDir> <port>
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { extname, join, normalize } from 'node:path';
+import { extname, resolve, sep } from 'node:path';
 
 const [siteDir, portArg] = process.argv.slice(2);
 const port = Number(portArg);
@@ -16,12 +16,26 @@ const TYPES = {
   '.js': 'text/javascript',
   '.json': 'application/json',
   '.txt': 'text/plain',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
 };
+const ROOT = resolve(siteDir);
+
+/** The file under ROOT a request path names, or null when it would leave ROOT. */
+function fileFor(rawUrl) {
+  let path;
+  try {
+    path = decodeURIComponent((rawUrl ?? '/').split(/[?#]/)[0] ?? '/');
+  } catch {
+    return null;
+  }
+  const file = resolve(ROOT, `.${path.endsWith('/') ? `${path}index.html` : path}`);
+  return file.startsWith(ROOT + sep) ? file : null;
+}
 
 const server = createServer(async (req, res) => {
-  const path = normalize(decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname));
-  if (path.includes('..')) return res.writeHead(400).end('bad path');
-  const file = join(siteDir, path.endsWith('/') ? `${path}index.html` : path);
+  const file = fileFor(req.url);
+  if (!file) return res.writeHead(400).end('bad path');
   try {
     const body = await readFile(file);
     res
