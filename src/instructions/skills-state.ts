@@ -48,5 +48,5 @@ export async function updateSkillsState(
 
 export function setSkillEnabled(s: SkillsState, name: string, on: boolean): SkillsState {
   const rest = s.disabled.filter((n) => n !== name);
-  return { ...s, disabled: on ? rest : [...rest, name].sort() };
+  return { ...s, disabled: on ? rest : [...rest, name].sort((a, b) => a.localeCompare(b)) };
 }
