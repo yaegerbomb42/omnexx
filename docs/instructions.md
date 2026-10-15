@@ -55,12 +55,40 @@ in an earlier one):
 
 Set them up with `omnexx skills` or `/skills` in the TUI:
 
-| Command                             | What it does                                                        |
-| ----------------------------------- | ------------------------------------------------------------------- |
-| `omnexx skills list`                | every skill, where it comes from, its description                   |
-| `omnexx skills add <path\|git-url>` | copy a skill, a folder of them, or a repo's `skills/` into your own |
-| `omnexx skills remove <name>`       | remove one you added (skills from other sources are left alone)     |
-| `omnexx skills import`              | show the Claude Code skills in use                                  |
+| Command                                           | What it does                                                          |
+| ------------------------------------------------- | --------------------------------------------------------------------- |
+| `omnexx skills list`                              | every skill, where it comes from, its description                     |
+| `omnexx skills add <path\|git-url>`               | copy a skill, a folder of them, or a repo's `skills/` into your own   |
+| `omnexx skills remove <name>`                     | remove one you added (skills from other sources are left alone)       |
+| `omnexx skills import`                            | show the Claude Code skills in use                                    |
+| `omnexx skills enable\|disable <name>`            | switch a skill on or off; off skills leave the catalog and can't load |
+| `omnexx skills search [words]`                    | search the marketplaces (`--refresh` skips the day-old cache)         |
+| `omnexx skills info <id>`                         | a marketplace skill's source, file list and SKILL.md, before install  |
+| `omnexx skills install <id>`                      | copy its files into your skills and switch it on (nothing is run)     |
+| `omnexx skills update [name]`                     | re-install marketplace skills whose files changed upstream            |
+| `omnexx skills market [add\|remove] <owner/repo>` | list, add or remove a marketplace                                     |
+
+The list shows each skill's source, whether it is on, and what its line in the `skill` tool's
+catalog costs on every request. The VS Code panel has the same under **Settings → Skills**: the
+installed list with on/off switches and a link to each SKILL.md, then a gallery to search,
+preview (source and files first) and install, update, or add a marketplace.
+
+### Marketplaces
+
+A marketplace is a GitHub repo with `SKILL.md` folders anywhere in it. Anthropic's
+[anthropics/skills](https://github.com/anthropics/skills) is always listed; add more by
+`owner/repo` or URL. A repo with a Claude Code plugin marketplace file
+(`.claude-plugin/marketplace.json`) also brings in the GitHub repos its plugins point at
+(`{"source": "github", "repo": "owner/repo"}`). Catalogs come from the GitHub tree API plus
+`raw.githubusercontent.com` (no clone; `GITHUB_TOKEN` is used when set, for rate limits) and are
+cached for a day in `<config home>/cache/skills-market.json`. Ids look like
+`anthropics/skills:skills/pdf`; a bare name works when it is unique.
+
+Safety: installs copy files only (plain relative paths, no `..`, at most 100 files of 1 MB each)
+into your omnexx user skills folder; scripts in a skill are never run by installing it. The
+choices (skills switched off, marketplaces added, where each install came from and its version)
+are kept in `<config home>/skills.json`. skills.sh has an API, but it needs a Vercel OIDC token,
+so it isn't built in; its skills live in GitHub repos you can add as marketplaces.
 
 ```ts
 const roots = {

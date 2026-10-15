@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { OmnexxConfig } from '../../config/schema.js';
 import { listSkills, loadSkill, type SkillRoots } from '../../instructions/skills.js';
+import { readSkillsState } from '../../instructions/skills-state.js';
 import { fail, ok, type Tool } from '../types.js';
 import type { ToolSource } from './types.js';
 
@@ -47,11 +48,12 @@ export function skillCatalog(skills: readonly { name: string; description: strin
 
 /** On-demand loader for skills (see docs/instructions.md); the description lists what exists. */
 export function skillTool(config: Pick<OmnexxConfig, 'skills'>, catalog = ''): Tool<typeof schema> {
-  const rootsFor = (repoRoot: string, env: NodeJS.ProcessEnv): SkillRoots => ({
+  const rootsFor = async (repoRoot: string, env: NodeJS.ProcessEnv): Promise<SkillRoots> => ({
     repoRoot,
     env,
     dirs: config.skills.dirs,
     importClaude: config.skills.import_claude,
+    disabled: (await readSkillsState(env)).disabled,
   });
   return {
     name: 'skill',
@@ -59,7 +61,7 @@ export function skillTool(config: Pick<OmnexxConfig, 'skills'>, catalog = ''): T
     schema,
     readOnly: true,
     async run(input, ctx) {
-      const roots = rootsFor(ctx.jail.root, ctx.env);
+      const roots = await rootsFor(ctx.jail.root, ctx.env);
       if (input.name === 'list') {
         const all = await listSkills(roots);
         return ok(
@@ -89,6 +91,7 @@ export const source: ToolSource = {
       env: where?.env ?? process.env,
       dirs: config.skills.dirs,
       importClaude: config.skills.import_claude,
+      disabled: (await readSkillsState(where?.env ?? process.env)).disabled,
     });
     return [skillTool(config, skillCatalog(skills))];
   },

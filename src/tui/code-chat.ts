@@ -433,9 +433,17 @@ export class CodeChat {
     this.changeContext(deleteContextItem(this.contextState(), id));
   }
 
-  /** Bring back the default system prompt and tools (conversation edits stay). */
+  /** Any other inspector change (add a note, pin, restore one item), as a pure function. */
+  transformContext(change: (s: ContextState) => ContextState): void {
+    this.changeContext(change(this.contextState()));
+  }
+
+  /** Bring back the default system prompt and tools (conversation edits and notes stay). */
   resetContext(): void {
-    this.changeContext({ ...this.contextState(), overrides: EMPTY_OVERRIDES });
+    this.changeContext({
+      ...this.contextState(),
+      overrides: { ...EMPTY_OVERRIDES, notes: this.overrides.notes ?? [] },
+    });
   }
 
   /**

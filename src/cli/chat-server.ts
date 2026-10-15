@@ -20,11 +20,14 @@ import { println, type CliIO } from './io.js';
  * settings · addProvider {provider?, key?, url?, fields?, headers?, flavor?} ·
  * probeProvider {provider?, url?, key?, fields?, headers?, flavor?} · removeProvider {name} · testProvider {name} ·
  * roles · setRoles {roles?, pool?: {ranked, mode}} · contextFiles · setSectionMode {id, mode} · contextList ·
- * contextUpdate {id, text} · contextDelete {id} · contextReset · chats · resumeChat {id} · browser ·
- * setBrowser {engine, profile?, sessionName?, headless} · mcp {op, …} (see chat-mcp.ts).
+ * contextUpdate {id, text} · contextDelete {id} · contextReset · contextAdd {text} · contextPin {id} ·
+ * contextRestore {id} · skills · skillsSearch {query} · skillsPreview {id} · skillsInstall {id} ·
+ * skillsUpdate · skillsRemove {name} · skillsToggle {name, on} · skillsMarketAdd {source} · chats ·
+ * resumeChat {id} · browser · setBrowser {engine, profile?, sessionName?, headless} · mcp {op, …}
+ * (see chat-mcp.ts).
  * Out: ready {version} · state (below; `entries` holds only lines not sent before) · models
  * {items, unreachable, current} · settings {catalog, connected} · providerTest {name, ok, models,
- * detail} · contextItems {items, busy} · chats {chats} · browser {engine, profile, sessionName, headless} ·
+ * detail} · contextItems {items, busy, budget} · skills… (see chat-skills.ts) · chats {chats} · browser {engine, profile, sessionName, headless} ·
  * error {message}.
  */
 
@@ -218,7 +221,12 @@ export async function serveChat(
   };
   /** The context inspector's items: what the next request sends, with token counts. */
   const sendContext = (): void => {
-    write({ type: 'contextItems', items: session.contextItems(), busy: session.chatBusy });
+    write({
+      type: 'contextItems',
+      items: session.contextItems(),
+      busy: session.chatBusy,
+      budget: session.contextBudget,
+    });
   };
   /**
    * The ranked list everyone uses (the /models pool) and its mode, per-role lists, and which
@@ -387,6 +395,32 @@ export async function serveChat(
       case 'contextReset':
         session.changeContext({ op: 'reset' });
         sendContext();
+        return;
+      case 'contextAdd':
+        session.changeContext({ op: 'add', text: text(c, 'text') });
+        sendContext();
+        return;
+      case 'contextPin':
+      case 'contextRestore':
+        session.changeContext({
+          op: c.type === 'contextPin' ? 'pin' : 'restore',
+          id: text(c, 'id'),
+        });
+        sendContext();
+        return;
+      case 'skills':
+      case 'skillsSearch':
+      case 'skillsPreview':
+      case 'skillsInstall':
+      case 'skillsUpdate':
+      case 'skillsRemove':
+      case 'skillsToggle':
+      case 'skillsMarketAdd':
+        run(
+          import('./chat-skills.js').then(async ({ handleSkills }) => {
+            write(await handleSkills(io, c));
+          }),
+        );
         return;
       case 'browser':
         run(sendBrowser());

@@ -1,50 +1,36 @@
-import { rm } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import type { Command } from 'commander';
-import { loadConfig } from '../../config/load.js';
-import { resolvePaths } from '../../core/paths.js';
 import { addSkills, isGitUrl } from '../../integrations/install.js';
-import { listSkillsWithSource, skillDirs, type SkillRoots } from '../../instructions/skills.js';
+import { listSkillsWithSource, skillDirs } from '../../instructions/skills.js';
+import { installedSkills, removeSkill, skillRoots, userSkillsDir } from '../chat-skills.js';
+import { registerMarket } from './skills-market.js';
 import { EXIT } from '../exit-codes.js';
 import { println, type CliIO } from '../io.js';
 import type { CommandRegistrar } from './extra/types.js';
 
-const SOURCE_LABEL = {
-  'claude-user': 'Claude Code',
-  config: '[skills] dirs',
-  user: 'omnexx user',
-  'claude-repo': 'repo .claude',
-  repo: 'repo .omnexx',
-} as const;
-
 export { findSkillFolders } from '../../integrations/install.js';
 
-async function roots(io: CliIO): Promise<SkillRoots> {
-  const { config } = await loadConfig({ cwd: io.cwd, env: io.env });
-  return {
-    repoRoot: io.cwd,
-    env: io.env,
-    dirs: config.skills.dirs,
-    importClaude: config.skills.import_claude,
-  };
-}
+const roots = skillRoots;
 
 export const register: CommandRegistrar = (program: Command, io: CliIO, setExit) => {
   const cmd = program.command('skills').description('List, add and import skills');
-  const userDir = () => join(resolvePaths(io.env).configHome, 'skills');
+  const userDir = () => userSkillsDir(io.env);
 
   cmd
     .command('list')
     .description('every skill omnexx can use, and where it comes from')
     .action(async () => {
       const r = await roots(io);
-      const skills = await listSkillsWithSource(r);
+      const skills = await installedSkills(io);
       if (!skills.length)
-        println(io.stdout, 'No skills yet. Add one: omnexx skills add <path|git-url>');
+        println(
+          io.stdout,
+          'No skills yet. Find some: omnexx skills search <words>, or omnexx skills add <path|url>',
+        );
       for (const s of skills)
         println(
           io.stdout,
-          `${s.name.padEnd(28)} ${SOURCE_LABEL[s.source].padEnd(14)} ${s.description.replace(/\s+/g, ' ').slice(0, 80)}`,
+          `${s.enabled ? 'on ' : 'off'} ${s.name.padEnd(28)} ${s.sourceLabel.padEnd(14)} ${String(s.tokens).padStart(4)} tok  ${s.description.replace(/\s+/g, ' ').slice(0, 70)}`,
         );
       println(
         io.stdout,
@@ -80,18 +66,13 @@ export const register: CommandRegistrar = (program: Command, io: CliIO, setExit)
     .command('remove <name>')
     .description('remove a skill you added (other sources are left alone)')
     .action(async (name: string) => {
-      const skill = (await listSkillsWithSource(await roots(io))).find((s) => s.name === name);
-      if (!skill) {
-        println(io.stderr, `No skill named "${name}".`);
+      try {
+        await removeSkill(io, name);
+      } catch (err) {
+        println(io.stderr, `${err instanceof Error ? err.message : String(err)}.`);
         setExit(EXIT.error);
         return;
       }
-      if (skill.source !== 'user') {
-        println(io.stderr, `"${name}" comes from ${SOURCE_LABEL[skill.source]}; remove it there.`);
-        setExit(EXIT.error);
-        return;
-      }
-      await rm(join(skill.path, '..'), { recursive: true, force: true });
       println(io.stdout, `Removed ${name}.`);
     });
 
@@ -115,4 +96,5 @@ export const register: CommandRegistrar = (program: Command, io: CliIO, setExit)
           : 'No Claude Code skills found in ~/.claude/skills or .claude/skills.',
       );
     });
+  registerMarket(cmd, io, setExit);
 };
