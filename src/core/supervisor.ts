@@ -638,6 +638,9 @@ class Supervisor {
     // audit work and must not inherit its cycle budget.
     r.state.auditWorkFrom = undefined;
     if (!cfg.audit || r.state.auditRounds >= maxRounds) return false;
+    // The fast path's loop session already reviewed the whole diff against the goal and fixed
+    // what it found in the same conversation; a second look would only plan polish for fresh workers.
+    if (r.state.fastPath === 'tried' && r.state.loopReviewed) return false;
     if (this.goalMetAt && this.goalMetAt === (await this.head())) return false;
     const result = await this.audit();
     const round = r.state.auditRounds + 1;

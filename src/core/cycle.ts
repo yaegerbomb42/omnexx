@@ -14,7 +14,9 @@ import {
 } from '../agent/compaction.js';
 import { buildCycleContext } from '../agent/context.js';
 import { renderCodemap, type Codemap } from '../agent/codemap.js';
-import { runAgentLoop } from '../agent/loop.js';
+import { runAgentLoop, type LoopDeps } from '../agent/loop.js';
+import type { ResolvedModel } from '../providers/pricing.js';
+import { actAsThinkLoop, renderGateFailures, usesThinkLoop } from './think-loop-run.js';
 import { WORKER_SYSTEM } from '../agent/prompts.js';
 import { StateError } from '../errors.js';
 import { commitCheckpoint } from '../git/checkpoint.js';
@@ -38,7 +40,7 @@ import type { ToolContext } from '../tools/types.js';
 import { antiCheat, type Violation as AntiCheatViolation } from '../verify/anticheat.js';
 import { blocking, renderFindings, reviewChange } from '../verify/review.js';
 import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
-import { runGates, toBaseline, type GateResult } from '../verify/gates.js';
+import { runGates, toBaseline } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
 import { readTextOr } from './atomic.js';
 import { applyRemember, renderNotes } from './notes.js';
@@ -333,9 +335,12 @@ async function applyAmend(run: Run, task: PlanNode): Promise<void> {
   });
   run.events.emit('amend.applied', { task: task.id, ok: res.exitCode === 0 });
   if (res.exitCode !== 0) return;
+  const reviewOnly = task.lastRejection?.startsWith('review:') ?? false;
   task.evidence = [
     ...task.evidence,
-    'Your previous attempt is already applied to the working tree (uncommitted): its tests passed. Keep it, and change only what the review findings above ask for.',
+    reviewOnly
+      ? 'Your previous attempt is already applied to the working tree (uncommitted): its tests passed. Keep it, and change only what the review findings above ask for.'
+      : 'Your previous attempt is already applied to the working tree (uncommitted). Keep what works and fix what the evidence above says failed.',
   ];
 }
 
@@ -395,7 +400,10 @@ export async function stepAct(run: Run): Promise<void> {
   memory.rescore();
   const assembled = memory.assemble();
 
-  const tools = await workerTools(run.config, { repoRoot: run.worktree, env: run.deps.env });
+  // One agent with the whole context: helper agents (`task`) only when `[context] subagents` is on.
+  const tools = (
+    await workerTools(run.config, { repoRoot: run.worktree, env: run.deps.env })
+  ).filter((t) => run.config.context.subagents || t.name !== 'task');
   const route = await run.router.pick(cycleRoute(task, run.budgetLeftFraction()));
   const ctx = buildCycleContext({
     systemPrompt: WORKER_SYSTEM,
@@ -420,9 +428,9 @@ export async function stepAct(run: Run): Promise<void> {
     tokens: contextBreakdown(ctx),
     memory: memory.stats(),
   });
-  const result = await runAgentLoop(ctx, {
+  const deps = (models: readonly ResolvedModel[]): LoopDeps => ({
     provider: run.deps.provider,
-    models: route.chain,
+    models,
     providerBlocked: (p) => run.providerBlocked(p),
     modelExhausted: (r) => run.modelExhausted(r),
     markExhausted: (r) => {
@@ -470,6 +478,15 @@ export async function stepAct(run: Run): Promise<void> {
       },
     },
   });
+  const loop = usesThinkLoop(run, task);
+  const result = loop
+    ? await actAsThinkLoop(run, task, {
+        ctx,
+        deps,
+        workChain: route.chain,
+        runChecks: () => runChecks(run, task, `${run.state.cycle}-loop`),
+      })
+    : await runAgentLoop(ctx, deps(route.chain));
   // The browser (and the page it holds) lives for one cycle; the next starts fresh.
   await closeSession(run.state.runId).catch(() => undefined);
   if (result.end === 'max_usd') run.state.budgetExhausted = true;
@@ -496,27 +513,11 @@ export async function stepAct(run: Run): Promise<void> {
     turns: result.turns,
     usd: result.usd,
     ...(result.stuck ? { stuck: result.stuck } : {}),
+    ...('reviewed' in result && result.reviewed ? { reviewed: true } : {}),
   };
+  if ('reviewed' in result && result.reviewed && task.id === FAST_TASK)
+    run.state.loopReviewed = true;
   await run.setPhase('verify');
-}
-
-function renderFailures(
-  results: readonly GateResult[],
-  verdicts: ReturnType<typeof judgeGate>[],
-): string {
-  const lines: string[] = [];
-  for (const [i, r] of results.entries()) {
-    const v = verdicts[i];
-    if (!v || v.pass) continue;
-    lines.push(`Gate ${r.name}: ${v.reason ?? 'failed'}`);
-    const fresh = new Set(v.newFailures);
-    for (const f of r.failures.filter((x) => fresh.size === 0 || fresh.has(x.id)).slice(0, 10)) {
-      lines.push(
-        `- ${f.id}${f.location ? ` (${f.location})` : ''}\n  ${f.message.split('\n').join('\n  ')}`,
-      );
-    }
-  }
-  return lines.join('\n');
 }
 
 /** VERIFY + JUDGE: gates against the baseline, anti-cheat, oscillation, task checks. Harness decides. */
@@ -592,7 +593,7 @@ export async function stepVerify(run: Run): Promise<void> {
     if (flaky.length) await recordFlaky(run, task, flaky);
     const verdicts = results.map((r) => judgeGate(r, run.state.baseline));
     for (const v of verdicts) if (!v.pass) reasons.push(`gate ${v.gate}: ${v.reason ?? 'failed'}`);
-    const failText = renderFailures(results, verdicts);
+    const failText = renderGateFailures(results, verdicts);
     if (failText) evidence.push(failText);
     testsPassed = results.reduce((n, r) => n + (r.tests?.passed ?? 0), 0) || undefined;
     const cheats = antiCheat({
@@ -627,7 +628,8 @@ export async function stepVerify(run: Run): Promise<void> {
     }
     // Gates passed: a separate model reviews the diff for what tests miss (stubs, hardcoded
     // outputs, unmet requirements). It fails open, so a reviewer outage never blocks work.
-    if (!reasons.length && run.config.review.enabled) {
+    // A loop session already had its one review, of the whole diff; findings were fixed in it.
+    if (!reasons.length && run.config.review.enabled && !act.reviewed) {
       const goal = (await run.store.readGoal()).text;
       const r = await reviewChange(run, task, goal, withoutVendored(patch));
       if (r) {
@@ -802,7 +804,10 @@ export async function stepRollback(run: Run): Promise<void> {
   if (p && run.plan) {
     const task = run.plan.nodes.find((n) => n.id === p.taskId);
     if (task) {
-      if (savedPatch && exact && reviewOnly) task.amendPatch = patch;
+      // A loop session that ended red keeps its work too: the next session fixes it forward.
+      const keep =
+        reviewOnly === true || (usesThinkLoop(run, task) && !p.reasons.includes('no changes'));
+      if (savedPatch && exact && keep) task.amendPatch = patch;
       else delete task.amendPatch;
     }
   }

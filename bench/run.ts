@@ -217,7 +217,10 @@ async function main(): Promise<void> {
 function summary(m: Omit<TaskRunResult['metrics'], 'resolved'>): string {
   const fresh = m.tokens_in + m.tokens_out;
   const calls = m.requests === undefined ? '' : `, ${String(m.requests)} calls`;
-  return `$${m.usd.toFixed(4)}, ${fmtK(fresh)} fresh + ${fmtK(m.cached)} cached tokens${calls}, ${(m.wall_ms / 1000).toFixed(0)}s`;
+  const outage = m.provider_outage_ms
+    ? ` (${(m.provider_outage_ms / 1000).toFixed(0)}s waiting on the provider)`
+    : '';
+  return `$${m.usd.toFixed(4)}, ${fmtK(fresh)} fresh + ${fmtK(m.cached)} cached tokens${calls}, ${(m.wall_ms / 1000).toFixed(0)}s${outage}`;
 }
 
 function makeRunner(name: string, o: RunnerOpts): AgentRunner {

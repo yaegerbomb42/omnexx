@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AgentRunner } from './base.ts';
 import { meterMetrics, type Meter } from '../meter-metrics.ts';
+import { providerOutageMs, type OutageEvent } from '../outage.ts';
 import type { AgentRunOutput, BenchmarkResult, TaskDef } from '../types.ts';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -108,8 +109,10 @@ export class OmnexxRunner extends AgentRunner {
     const metrics = this.opts.meter
       ? meterMetrics(this.opts.meter.totals(), wall_ms)
       : metricsFromState(state, wall_ms);
+    const outage = await readOutage(`${workDir}.run`);
     return {
       ...metrics,
+      ...(outage ? { provider_outage_ms: outage } : {}),
       interventions: timedOut ? 1 : 0,
       resultDir: state.worktree,
     };
@@ -207,6 +210,22 @@ export async function saveRunLog(home: string, dest: string): Promise<void> {
   const last = (await readdir(join(home, 'runs')).catch(() => [])).sort().at(-1);
   if (!last) return;
   await cp(join(home, 'runs', last), dest, { recursive: true });
+}
+
+/** Provider outage time from a saved run log's events; 0 when there is none. */
+async function readOutage(runDir: string): Promise<number> {
+  const text = await readFile(join(runDir, 'events.jsonl'), 'utf-8').catch(() => '');
+  const events = text
+    .split('\n')
+    .filter((l) => l.trim())
+    .flatMap((l) => {
+      try {
+        return [JSON.parse(l) as OutageEvent];
+      } catch {
+        return [];
+      }
+    });
+  return providerOutageMs(events);
 }
 
 async function latestState(home: string): Promise<RunState | undefined> {

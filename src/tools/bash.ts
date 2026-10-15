@@ -63,7 +63,7 @@ const schema = z.strictObject({
     .string()
     .optional()
     .describe(
-      'Default 2m. e.g. "10m" for a long build or suite (a bare number is milliseconds); capped by the run config',
+      'Default 2m. e.g. "10m" for a long build or suite (a bare number is milliseconds); capped at 10m',
     ),
 });
 
@@ -73,6 +73,11 @@ const DEV_SERVER_PEEK_MS = 20_000;
  * a stray `find /` once held a cycle for 7 minutes. Longer builds and suites pass `timeout`.
  */
 export const DEFAULT_BASH_TIMEOUT_MS = 2 * 60_000;
+/**
+ * The most a command may ask for. The run's command cap (30 min) is for gates; an agent's own
+ * command that needs longer is hung (bench hard10 task-04 sat 26 minutes on a script it gave "30m").
+ */
+export const MAX_BASH_TIMEOUT_MS = 10 * 60_000;
 const DEV_SERVERS: readonly RegExp[] = [
   /\b(?:npm|pnpm|yarn|bun) (?:run )?(?:dev|start|serve|preview|watch)\b/,
   /\bvite(?: dev| serve| preview)?(?:$|[\s&;])/,
@@ -159,7 +164,7 @@ export const bashTool: Tool<typeof schema> = {
         const ms = /^\d+$/.test(input.timeout.trim())
           ? Number(input.timeout)
           : parseDuration(input.timeout);
-        timeoutMs = Math.min(ms, ctx.maxCmdTimeoutMs);
+        timeoutMs = Math.min(ms, MAX_BASH_TIMEOUT_MS, ctx.maxCmdTimeoutMs);
       } catch {
         return fail(`invalid timeout "${input.timeout}"`);
       }

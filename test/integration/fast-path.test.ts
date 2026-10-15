@@ -148,7 +148,8 @@ describe('fast path: one pass on the whole goal before planning', () => {
       provider,
       config: {
         gates: [GATE],
-        plan: { mode: 'fast' },
+        // The per-cycle review and its amend are the plain pass's; a loop session reviews in place.
+        plan: { mode: 'fast', loop: 'off' },
         review: { enabled: true, audit: false, strict_checks: false },
       },
     });
@@ -164,5 +165,178 @@ describe('fast path: one pass on the whole goal before planning', () => {
     expect(events.some((e) => e.type === 'fast_path.fallback')).toBe(false);
     expect((await t.run.store.readState()).acceptedCommits).toBe(1);
     expect(reviews).toBe(2);
+  });
+});
+
+/** The harness's latest text to the model, when the last message is one (not tool results). */
+function lastHarnessText(req: CompletionRequest): string | undefined {
+  const last = req.messages.at(-1);
+  if (last?.role !== 'user') return undefined;
+  if (last.content.some((b) => b.type === 'tool_result')) return undefined;
+  const texts = last.content.flatMap((b) => (b.type === 'text' ? [b.text] : []));
+  return texts.length ? texts.join('\n') : undefined;
+}
+
+const FAILING_TEST =
+  "import { test } from 'node:test';\nimport assert from 'node:assert';\ntest('extra', () => assert.equal(1, 2));\n";
+const PASSING_TEST =
+  "import { test } from 'node:test';\nimport assert from 'node:assert';\ntest('extra', () => assert.equal(2, 2));\n";
+
+/**
+ * A worker for the loop: writes an analysis when asked to think, breaks a test while executing,
+ * fixes it when the harness sends the failure back, and addresses review findings.
+ */
+/** The conversation as the model saw it when asked to fix (requests are mutated after sending). */
+const fixSeen: string[] = [];
+
+const loopWorker: Script = (m) => {
+  const said = lastHarnessText(m.request) ?? '';
+  if (said.includes('checks fail') || said.includes('A review of your final diff'))
+    fixSeen.push(JSON.stringify(m.request.messages));
+  if (said.includes('# Think first'))
+    return say('ANALYSIS: add out/M1.T01.txt and test/extra.test.js');
+  if (said.includes('Now carry out your analysis'))
+    return {
+      tools: [
+        { name: 'write_file', input: { path: 'out/M1.T01.txt', content: 'x\n' } },
+        { name: 'write_file', input: { path: 'test/extra.test.js', content: FAILING_TEST } },
+      ],
+    };
+  if (said.includes('checks fail on the current tree'))
+    return call('write_file', { path: 'test/extra.test.js', content: PASSING_TEST });
+  if (said.includes('A review of your final diff'))
+    return call('write_file', { path: 'out/edge.txt', content: 'edge\n' });
+  return say('done');
+};
+
+async function superviseLoop(provider: Provider, review = false) {
+  const t = await startTestRun({
+    repo: await makeRepo(),
+    provider,
+    config: {
+      gates: [GATE],
+      plan: { mode: 'fast' },
+      review: { enabled: review, audit: review, strict_checks: false },
+    },
+  });
+  const out = await supervise(t.run.deps, t.run.state.runId, {
+    bootId: 'b',
+    heartbeatMs: 50,
+    controlPollMs: 20,
+    pausePollMs: 10,
+  });
+  return { t, out, events: await readEvents(t.run.store.eventsPath) };
+}
+
+const plannerAsked = (p: ScriptedProvider): boolean =>
+  p.requests.some((q) => q.system.some((b) => b.text.includes('You are the planner')));
+
+describe('think-first loop (the default for the fast path)', () => {
+  it('thinks first, keeps the analysis in the conversation, and fixes a failing gate forward', async () => {
+    const provider = new ScriptedProvider(scenario(planner([]), loopWorker));
+    const { t, out, events } = await superviseLoop(provider);
+    expect(out.status).toBe('finished');
+    const types = events.map((e) => e.type);
+    // The think phase comes before any edit.
+    expect(types.indexOf('loop.think')).toBeGreaterThan(-1);
+    expect(types.indexOf('loop.think')).toBeLessThan(
+      events.findIndex((e) => e.type === 'tool.call' && e.tool === 'write_file'),
+    );
+    expect(events.filter((e) => e.type === 'loop.check').map((e) => e.pass)).toEqual([false, true]);
+    // Fixed forward: no rollback, no fresh attempt, no planner.
+    expect(types).not.toContain('rollback');
+    expect(types).not.toContain('fast_path.fallback');
+    expect(events.filter((e) => e.type === 'cycle.start')).toHaveLength(1);
+    expect(plannerAsked(provider)).toBe(false);
+    // The fix turn still sees the analysis it wrote, verbatim.
+    const fix = fixSeen.find((x) => x.includes('checks fail on the current tree'));
+    expect(fix).toContain('ANALYSIS: add out/M1.T01.txt');
+    expect((await t.run.store.readState()).acceptedCommits).toBe(1);
+  });
+
+  it('turns the end review finding into one more turn in the same conversation, not a rollback', async () => {
+    let reviews = 0;
+    let audits = 0;
+    const scripted = new ScriptedProvider(scenario(planner([]), loopWorker));
+    const provider: Provider = {
+      name: 'anthropic',
+      complete(req: CompletionRequest): Promise<CompletionResponse> {
+        const reviewing = req.system.some((b) => b.text.includes('reviewing a change'));
+        const auditing = req.system.some((b) => b.text.includes('You audit the result'));
+        if (!reviewing && !auditing) return scripted.complete(req);
+        if (auditing) audits++;
+        else reviews++;
+        const findings =
+          reviewing && reviews === 1
+            ? [{ severity: 'blocker', problem: 'handle the edge case' }]
+            : [];
+        return Promise.resolve({
+          content: [{ type: 'tool_use', id: `r${reviews}`, name: 'answer', input: { findings } }],
+          stopReason: 'tool_use',
+          usage: emptyUsage(),
+          model: req.model,
+        });
+      },
+    };
+    const { t, out, events } = await superviseLoop(provider, true);
+    expect(out.status).toBe('finished');
+    expect(reviews).toBe(1);
+    // The session's review of the whole diff replaces the separate pre-finish audit.
+    expect(audits).toBe(0);
+    expect(events.map((e) => e.type)).not.toContain('rollback');
+    expect(events.filter((e) => e.type === 'loop.review')).toMatchObject([{ blocking: true }]);
+    expect((await t.run.store.readState()).acceptedCommits).toBe(1);
+    const fix = fixSeen.find((x) => x.includes('handle the edge case'));
+    expect(fix).toContain('ANALYSIS: add out/M1.T01.txt');
+  });
+
+  it('never offers or starts a helper agent on the default path', async () => {
+    const provider = new ScriptedProvider(scenario(planner([]), loopWorker));
+    const { events } = await superviseLoop(provider);
+    expect(provider.requests.length).toBeGreaterThan(0);
+    for (const q of provider.requests) expect(q.tools.map((x) => x.name)).not.toContain('task');
+    expect(events.some((e) => e.type === 'subagent.start')).toBe(false);
+  });
+
+  it('leaves long goals to the planner and its milestones', async () => {
+    const long = await runWith(
+      fileWorker,
+      { mode: 'auto', fast_max_goal_chars: 20 },
+      'x'.repeat(40),
+    );
+    expect(long.planned).toBeGreaterThan(0);
+    expect(long.events.some((e) => e.type === 'loop.think')).toBe(false);
+    expect(long.events.some((e) => e.type === 'task.done')).toBe(true);
+    // Planned tasks run sequentially, one agent each; the planner explores on its own.
+    expect(long.events.some((e) => e.type === 'subagent.start')).toBe(false);
+  });
+});
+
+describe('think-first loop: what the cycle would reject is caught inside the session', () => {
+  it('sends an anti-cheat violation back as a failure, so the agent fixes it instead of losing the session', async () => {
+    const worker: Script = (m) => {
+      const said = lastHarnessText(m.request) ?? '';
+      if (said.includes('# Think first')) return say('ANALYSIS: write the file');
+      if (said.includes('Now carry out your analysis'))
+        return {
+          tools: [
+            { name: 'write_file', input: { path: 'out/M1.T01.txt', content: 'x\n' } },
+            {
+              name: 'write_file',
+              input: { path: 'scratch/probe.js', content: '// eslint-disable-next-line\nlet x;\n' },
+            },
+          ],
+        };
+      if (said.includes('anti-cheat')) return call('bash', { command: 'rm -r scratch' });
+      return say('done');
+    };
+    const provider = new ScriptedProvider(scenario(planner([]), worker));
+    const { t, out, events } = await superviseLoop(provider);
+    expect(out.status).toBe('finished');
+    const checks = events.filter((e) => e.type === 'loop.check');
+    expect(checks.map((e) => e.pass)).toEqual([false, true]);
+    expect(String(checks[0]?.failures)).toContain('anti-cheat');
+    expect(events.map((e) => e.type)).not.toContain('rollback');
+    expect((await t.run.store.readState()).acceptedCommits).toBe(1);
   });
 });

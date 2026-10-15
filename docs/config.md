@@ -193,14 +193,18 @@ An in-cycle signal ends the cycle as `stuck` (events `stuck.in_cycle`, then `stu
 
 ## `[plan]`: how much planning a run gets
 
-| Key                   | Default  | Meaning                                                                                                                                         |
-| --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mode`                | `"auto"` | `auto`: short goals try the fast path first, long ones plan. `fast`: always try one pass first. `full`: always plan milestones and tasks first. |
-| `kind`                | `"auto"` | `writing`: prose (a book, a report, a research document) with no tests; `code`; `auto` detects writing goals ("write me a book about…")         |
-| `fast_attempts`       | `2`      | Fast-path cycles on the whole goal before the planner takes over from the code as it is                                                         |
-| `fast_max_goal_chars` | `2500`   | In `auto`, goals longer than this plan first                                                                                                    |
-| `helpers`             | unset    | Helpers the planner runs at once while exploring (0 = none). Unset uses `context.subagent_parallel`                                             |
-| `milestones`          | unset    | At most this many milestones in the first plan (the planner is told, and a bigger plan is rejected). Setting it makes `auto` plan first         |
+| Key                   | Default  | Meaning                                                                                                                                            |
+| --------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mode`                | `"auto"` | `auto`: short goals try the fast path first, long ones plan. `fast`: always try one pass first. `full`: always plan milestones and tasks first.    |
+| `kind`                | `"auto"` | `writing`: prose (a book, a report, a research document) with no tests; `code`; `auto` detects writing goals ("write me a book about…")            |
+| `fast_attempts`       | `2`      | Fast-path cycles on the whole goal before the planner takes over from the code as it is                                                            |
+| `fast_max_goal_chars` | `2500`   | In `auto`, goals longer than this plan first                                                                                                       |
+| `helpers`             | unset    | Helpers the planner runs at once while exploring (0 = none). Unset: none, unless `context.subagents` is on                                         |
+| `loop`                | `fast`   | Think-first loop session: think, execute, check, fix forward, re-think when stuck, one review at the end. `fast`, `all` (planned tasks too), `off` |
+| `loop_rounds`         | `6`      | Execute-and-check passes one loop session may take                                                                                                 |
+| `loop_rethinks`       | `2`      | Times a loop session may stop to re-think when stuck                                                                                               |
+| `loop_think_turns`    | `8`      | Turns a think step may explore before it must write its analysis                                                                                   |
+| `milestones`          | unset    | At most this many milestones in the first plan (the planner is told, and a bigger plan is rejected). Setting it makes `auto` plan first            |
 
 The fast path is one worker cycle with the whole goal as its task, done when every gate passes, reviewed and audited like any other cycle; it must change code to count. On the jimmy10 bench, planning first cost 3-5x a single pass on small goals. Flags: `omnexx run --plan fast|auto|full --plan-helpers N --plan-milestones N`. Autonomous runs (`--for`) always plan.
 
@@ -217,6 +221,7 @@ The fast path is one worker cycle with the whole goal as its task, done when eve
 | `keep_tool_results`     | `6` newest tool results never cleared                                     |
 | `compact_at`            | `100000` estimated context tokens: summarize older turns                  |
 | `compact_keep_turns`    | `4` recent assistant turns kept verbatim                                  |
+| `subagents`             | `false`: run agents get no `task` tool (one agent reads for itself)       |
 
 In-cycle context control runs before each turn and works on every provider. Past `clear_tool_results_at`, old large tool results become a one-line note telling the model to re-run the tool. If the context is still past `compact_at`, the cheap chain summarizes the older turns into a structured summary (done, in progress, files touched, last error, next step) that is appended to the cycle's first message; at least two older turns are needed, so it never re-compacts on consecutive turns. A failed or budget-refused summary leaves the context as is, and `max_tokens_per_cycle` still ends a cycle that outgrows both. Events: `context.cleared`, `context.compacted`, `context.compact_failed`. Keep `compact_at` under the smallest context window in your worker chain.
 

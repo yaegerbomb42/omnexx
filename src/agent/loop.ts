@@ -309,6 +309,11 @@ export async function runAgentLoop(
     tools: ToolSpec[];
     /** Earlier turns of an interactive chat, sent before `first`. */
     history?: readonly Message[];
+    /**
+     * The message compaction keeps at the top (it must be `history[0]`). Defaults to `first`;
+     * a think-loop session continues one conversation, so its opening context stays the anchor.
+     */
+    anchor?: Message;
   },
   deps: LoopDeps,
 ): Promise<LoopResult> {
@@ -347,7 +352,7 @@ export async function runAgentLoop(
     if (deps.compaction && turns > 0) {
       messages = await manageContext(
         messages,
-        ctx.first,
+        ctx.anchor ?? ctx.first,
         deps.compaction.settings,
         deps.compaction.summarize,
         ({ kind, ...rest }) => {
