@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.0
+
+- Built on omnexx 0.14.0: the think-first loop, the **Agent** card (effort, context, time and
+  token sliders), a ranked model list with Random / Rank priority / Fallback on quota, a provider
+  gallery with Test, **MCP servers** and **Skills** sections, and a fuller context inspector.
+
 ## 0.9.0
 
 - Built on omnexx 0.13.0: zero-config Ollama (a **Pull it now** button when no model fits), run
