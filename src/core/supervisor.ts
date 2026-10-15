@@ -17,6 +17,7 @@ import { readTextOr } from './atomic.js';
 import { auditResult, blocking, clipDiff, renderFindings } from '../verify/review.js';
 import { join } from 'node:path';
 import { rm } from 'node:fs/promises';
+import { settleSpecWork, specGate } from './spec-gate.js';
 import { FAST_TASK, fastPathSpent, fastPlan, tryFastPath } from './fast-path.js';
 import { resolveWriting } from './writing.js';
 import { EXIT } from '../cli/exit-codes.js';
@@ -850,6 +851,7 @@ class Supervisor {
     const r = this.run;
     await this.settleSplits();
     await this.auditOverBudget();
+    await settleSpecWork(r);
     for (const m of await settleMilestones(r)) {
       if (m.attempts >= MAX_MILESTONE_REPLANS) {
         m.status = 'parked';
@@ -907,6 +909,7 @@ class Supervisor {
       openMilestones.length === 0 &&
       (auto || plan.nodes.every((n) => n.status !== 'parked' || n.skipped))
     ) {
+      if (await specGate(r)) return this.select();
       if (await this.planAudit()) return this.select();
       if (await this.planBeyond()) return this.select();
       await this.finalVerify();
