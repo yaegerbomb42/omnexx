@@ -69,8 +69,11 @@ const PROBE = (expr) => `<script>(function(){
   }, 300); });
 })();</script>`;
 
-/** Chrome's stdout; on a timeout, whatever it printed before hanging. */
-function runChrome(chrome, args) {
+/**
+ * Chrome's stdout; on a timeout, whatever it printed before hanging. A cold headless Chrome
+ * sometimes hangs before printing anything (seen on CI runners), so that case is tried once more.
+ */
+function runChrome(chrome, args, retry = true) {
   try {
     return execFileSync(chrome, args, {
       encoding: 'utf-8',
@@ -80,6 +83,7 @@ function runChrome(chrome, args) {
     });
   } catch (err) {
     if (typeof err?.stdout === 'string' && err.stdout.includes('__probe')) return err.stdout;
+    if (retry && err?.code === 'ETIMEDOUT') return runChrome(chrome, args, false);
     throw err;
   }
 }
@@ -120,7 +124,13 @@ export function probe(page, width, expr) {
     return JSON.parse(Buffer.from(m[1], 'base64').toString('utf-8'));
   } finally {
     rmSync(probeFile, { force: true });
-    rmSync(profile, { recursive: true, force: true });
+    // Chrome can still be flushing its profile when it exits; retry, and never fail the probe
+    // over a leftover temp folder.
+    try {
+      rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch {
+      /* a leftover temp profile is harmless */
+    }
   }
 }
 
