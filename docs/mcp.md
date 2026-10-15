@@ -107,12 +107,40 @@ enabled = false                 # keep it configured but never start it
 
 Omnexx also automatically discovers and reads `.mcp.json` (Claude Code format) in the repository root. Any server defined in `omnexx.toml` takes precedence over `.mcp.json`.
 
-## Tool Exposure & Search Mode
+## Lazy mounting (default)
 
-- When $\le 20$ MCP tools are discovered across all configured servers, omnexx exposes each tool directly with the namespace `mcp__<server>__<tool>`.
-- When $> 20$ MCP tools are discovered, omnexx automatically switches to **Search Mode** to preserve prompt cache and keep the prompt prefix small. It exposes:
-  - `mcp_search(query)`: searches tools by name or description and returns schemas.
-  - `mcp_call(tool, args)`: invokes a specific MCP tool by its namespaced name.
+A tool's name, description and input schema are sent with every request, so 80 MCP tools cost
+~20–30k tokens per turn whether or not they are used. By default (`[mcp] mount = "lazy"`) the
+model sees two small tools instead:
+
+- `mcp(server)`: its description lists the installed servers, one line each (name, tool count,
+  the first tool names). Calling it **mounts** the server: the result holds that server's tool
+  names, descriptions and input schemas.
+- `mcp_call(server, tool, args)`: calls a tool of a mounted server. The args are checked against
+  the tool's schema first; a mismatch comes back with the problem and the schema.
+
+A mounted server stays mounted for the whole run or chat: the list is kept in the run's
+`mcp-mounted.json`, so it survives compaction and later cycles, and it records which servers a run
+used. After compaction the model can mount a server again to see its schemas again.
+
+**Why schemas go in the conversation and not the tool list.** Providers cache the prompt prefix in
+order: tools, then the system prompt, then the messages. Adding tools when a server is mounted, even
+at the end of the tool list, changes the tools block and so invalidates everything after it on
+Anthropic (where tools come first) and on OpenAI-compatible providers (whose automatic prefix cache
+also starts with the tools). With `mcp` and `mcp_call` the tool list is byte-identical for the whole
+session; a mounted server's schemas arrive once as a tool result in the tail and are cached from
+then on like any other turn.
+
+Measured on four fake servers of 20 realistic tools each (`test/unit/mcp/lazy-mount.test.ts`):
+~29k tool-schema tokens per request eager, ~450 lazy (98% less); a mounted server costs its
+schemas once (~7k for 20 tools), not on every request.
+
+**Eager.** `mount = "eager"`, or lazy mode when all MCP tools together cost fewer than
+`eager_under_tokens` (default 3000), sends the tools up front as before:
+
+- ≤ 20 tools: each one directly, named `mcp__<server>__<tool>`.
+- \> 20 tools: **search mode**, `mcp_search(query)` (returns matching tools with schemas) and
+  `mcp_call(tool, args)` (by its namespaced name).
 
 ## Security & Reliability
 

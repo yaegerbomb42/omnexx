@@ -41,6 +41,14 @@ export type McpServerConfig = z.infer<typeof mcpServerSchema>;
 export const mcp = z
   .strictObject({
     servers: z.record(z.string(), mcpServerSchema).default({}),
+    /**
+     * `lazy`: the model sees one small `mcp` tool listing the servers, mounts a server when it needs
+     * it and calls its tools through `mcp_call`, so tool schemas never sit in every request.
+     * `eager`: every MCP tool is sent on every request (the old behaviour).
+     */
+    mount: z.enum(['lazy', 'eager']).default('lazy'),
+    /** Lazy mounting turns itself off when all MCP tools together cost fewer tokens than this. */
+    eager_under_tokens: z.number().int().nonnegative().default(3000),
   })
   .prefault({});
 
