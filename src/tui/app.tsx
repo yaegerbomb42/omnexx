@@ -174,11 +174,11 @@ function StatusBar({ session, width }: { session: Session; width: number }) {
         </Text>
       )}
       <Text color={GRAY}>
-        {` · ${t.startedAt && t.lastAt ? fmtMs(t.lastAt - t.startedAt) : '0s'}${t.task ? ` · ${t.task}` : ''}`}
+        {` · ${t.startedAt && t.lastAt ? fmtMs(t.lastAt - t.startedAt) : '0s'}${t.task ? ` · ${t.task}` : ''}${session.estimate ? ` · ${session.estimate}` : ''}`}
       </Text>
     </Text>
   ) : (
-    <Text color={GRAY}>no run attached</Text>
+    <Text color={GRAY}>{session.estimate ?? 'no run attached'}</Text>
   );
   const right = statusRight(session);
   return (

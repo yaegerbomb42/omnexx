@@ -41,6 +41,8 @@ import type { ToolWhere } from '../tools/extra/types.js';
 import { helperRunner } from '../agent/subagent.js';
 import type { TodoItem } from '../tools/todo.js';
 import type { Tool, ToolContext } from '../tools/types.js';
+import { runHistoryFile } from '../core/run-history.js';
+import { ChatEstimate } from './chat-estimate.js';
 import { CHAT_FILE, listChats, readSavedChat, type ChatSummary } from './chat-history.js';
 import {
   estimateLatency,
@@ -120,6 +122,8 @@ export interface ChatView {
   todo: (items: TodoItem[]) => void;
   /** A model request went out (with an expected duration when there is history), or answered (null). */
   waiting?: (w: { startedAt: number; estimateMs: number | null } | null) => void;
+  /** Approved plan work: "est. ~3 min, …" when it starts, "~2 min left" as todos finish, null at the end. */
+  estimate?: (line: string | null) => void;
 }
 
 /** The line of a failed action's output worth showing: the error, not the `[exit 1, …]` header. */
@@ -165,6 +169,10 @@ export class CodeChat {
   private overrides: ContextOverrides = EMPTY_OVERRIDES;
   /** Recent response times per model, for the editor's countdown. */
   private latency: LatencyStats = {};
+  /** Estimates for work started by approving a plan; replaced in open() with a saving one. */
+  private estimator = new ChatEstimate(undefined, { model: () => this.model, repoFiles: 0 });
+  /** The agent's latest todo list (a plan's steps). */
+  private todos: TodoItem[] = [];
   /** The saved chat this one continues, if it was reopened from History. */
   private resumedFrom: string | undefined;
   /** Set by open(); where repo memory lives. */
@@ -262,10 +270,8 @@ export class CodeChat {
       (t) => !CHAT_DENIED.has(t.name),
     );
     const instructions = renderInstructions(await loadInstructions(jail.root, jail.root));
-    const codemap = renderCodemap(
-      await buildCodemap(jail.root),
-      config.context.repo_map_max_tokens,
-    );
+    const map = await buildCodemap(jail.root);
+    const codemap = renderCodemap(map, config.context.repo_map_max_tokens);
     // What earlier runs and chats learned about this repo; the remember tool adds to it.
     const known = await readRepoNotes(paths, jail.root);
     if (known.length) await store.writeNotes(known);
@@ -278,6 +284,10 @@ export class CodeChat {
     const chat = new CodeChat(config, deps.provider, tools, system, ctx, events, store, ref);
     chat.paths = paths;
     chat.latency = await loadLatency(latencyFile(paths));
+    chat.estimator = new ChatEstimate(runHistoryFile(paths), {
+      model: () => chat.model,
+      repoFiles: map.entries.length,
+    });
     // Chat gets helpers too (the task and agent tools), on the chat model and the chat's spend.
     ctx.subagent = chat.helpers({ repoRoot: jail.root, env: io.env }, clock);
     return chat;
@@ -473,9 +483,13 @@ export class CodeChat {
         v.line({ kind: 'think', text: gist });
         return;
       }
-      case 'todo.update':
-        v.todo(Array.isArray(e.items) ? (e.items as TodoItem[]) : []);
+      case 'todo.update': {
+        this.todos = Array.isArray(e.items) ? (e.items as TodoItem[]) : [];
+        v.todo(this.todos);
+        const left = this.estimator.progress(this.todos, Date.now());
+        if (left) v.estimate?.(left);
         return;
+      }
       case 'steer.applied':
         v.line({ kind: 'feed', text: 'read your new message' });
         return;
@@ -517,6 +531,9 @@ export class CodeChat {
     this.ctx.reads?.clear();
     const editsBefore = this.editOps;
     await this.compactIfNeeded();
+    const estimate = await this.estimator.start(Boolean(opts.plan), Date.now(), this.telemetry);
+    if (estimate) view.estimate?.(estimate);
+    let reply: { end: string; text: string };
     const abort = new AbortController();
     this.abort = abort;
     try {
@@ -591,6 +608,7 @@ export class CodeChat {
         },
       );
       this.history = result.messages;
+      reply = { end: result.end, text: result.finalText };
       view.stream('');
       if (result.finalText) view.line({ kind: 'out', text: result.finalText });
       if (result.end === 'stop-now')
@@ -602,6 +620,10 @@ export class CodeChat {
       view.waiting?.(null);
       this.contextUsed = this.baseTokens() + contextTokens(this.history);
     }
+    await this.estimator.finish(reply.end === 'done', Date.now(), this.telemetry);
+    view.estimate?.(null);
+    if (opts.plan && reply.end === 'done')
+      this.estimator.planned(reply.text.length, this.todos.length);
     if (this.ctx.edited.size && this.config.gates.length) await this.check(view);
     await this.rememberForRepo();
     await this.persist();

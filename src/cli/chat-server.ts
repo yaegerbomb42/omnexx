@@ -62,6 +62,8 @@ export interface ChatState {
   helpers: Helper[];
   /** A model request in flight: when it went out and how long it usually takes (null: unknown). */
   waiting: { startedAt: number; estimateMs: number | null } | null;
+  /** "est. ~3 min, ~40k tokens, ~$0.02" before work, "~2 min left" during it, or null. */
+  estimate: string | null;
   /** The latest browser frame's number and page; the image comes as a `browserFrame` message. */
   browser: { seq: number; url: string; action: string; at: number } | null;
 }
@@ -166,6 +168,7 @@ export async function serveChat(
       run: session.runId ? { id: session.runId, alive: session.runAlive, ...session.info } : null,
       helpers: session.helpers,
       waiting: session.waiting,
+      estimate: session.estimate,
       browser: session.browserFrame
         ? {
             seq: session.browserFrame.seq,
