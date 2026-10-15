@@ -18,22 +18,28 @@ const MAX_SUGGESTIONS = 3;
 
 async function walk(root: string): Promise<string[]> {
   const out: string[] = [];
-  const queue = [root];
-  while (queue.length && out.length < MAX_FILES) {
-    const dir = queue.shift() ?? root;
-    let entries;
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      continue; // unreadable directory: skip it
+  let level = [root];
+  while (level.length && out.length < MAX_FILES) {
+    const listed = await Promise.all(
+      level.map(async (dir) => {
+        try {
+          return { dir, entries: await readdir(dir, { withFileTypes: true }) };
+        } catch {
+          return { dir, entries: [] }; // unreadable directory: skip it
+        }
+      }),
+    );
+    const next: string[] = [];
+    for (const { dir, entries } of listed) {
+      for (const e of entries) {
+        const full = join(dir, e.name);
+        if (e.isDirectory() && !SKIP_DIRS.has(e.name)) next.push(full);
+        else if (e.isFile()) out.push(relative(root, full));
+      }
     }
-    for (const e of entries) {
-      if (e.isDirectory()) {
-        if (!SKIP_DIRS.has(e.name)) queue.push(join(dir, e.name));
-      } else if (e.isFile()) out.push(relative(root, join(dir, e.name)));
-    }
+    level = next;
   }
-  return out;
+  return out.slice(0, MAX_FILES);
 }
 
 function distance(a: string, b: string): number {
@@ -82,5 +88,6 @@ export async function openError(
   if (err instanceof OmnexxError) return err.message;
   const code = (err as NodeJS.ErrnoException).code ?? (err as Error).message;
   const near = code === 'ENOENT' ? await didYouMean(ctx.jail.root, path) : '';
-  return `cannot ${verb} ${path}: ${code}.${near}${hint ? ` ${hint}` : ''}`;
+  const suffix = hint ? ' ' + hint : '';
+  return `cannot ${verb} ${path}: ${code}.${near}${suffix}`;
 }

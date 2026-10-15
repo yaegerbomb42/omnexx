@@ -27,6 +27,11 @@ const schema = z.strictObject({
     .describe('Tag each line with a 2-char content hash, for replace_lines expected_hash'),
 });
 
+function clipLine(l: string): string {
+  if (l.length <= MAX_LINE_CHARS) return l;
+  return `${l.slice(0, MAX_LINE_CHARS)}… [line is ${l.length} chars; search for text in it]`;
+}
+
 export const readTool: Tool<typeof schema> = {
   name: 'read',
   description: `Read a file with line numbers, at most ${MAX_READ_LINES} lines per call. Files over ${MAX_READ_LINES} lines must be read by range; reading one without a range returns its outline.`,
@@ -55,7 +60,7 @@ export const readTool: Tool<typeof schema> = {
     for (let n = start; n <= end; n++) {
       const l = lines[n - 1] ?? '';
       const tag = input.anchors ? ` ${lineTag(l)}` : ' ';
-      const row = `${String(n).padStart(5)}${tag} ${l.length > MAX_LINE_CHARS ? `${l.slice(0, MAX_LINE_CHARS)}… [line is ${l.length} chars; search for text in it]` : l}`;
+      const row = `${String(n).padStart(5)}${tag} ${clipLine(l)}`;
       if (shown.length && size + row.length > MAX_READ_CHARS) {
         end = n - 1;
         break;

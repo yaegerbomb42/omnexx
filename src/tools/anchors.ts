@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 /** 32 unambiguous characters: two of them give 1024 tags, plenty next to a line number. */
 const ALPHABET = [
-  ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(97 + i)).filter(
+  ...Array.from({ length: 26 }, (_, i) => String.fromCodePoint(97 + i)).filter(
     (c) => c !== 'l' && c !== 'o',
   ),
   ...Array.from({ length: 8 }, (_, i) => String(i + 2)),
@@ -10,7 +10,7 @@ const ALPHABET = [
 
 /** A two-character content tag for one line (trailing whitespace ignored). */
 export function lineTag(line: string): string {
-  const d = createHash('sha1').update(line.trimEnd()).digest();
+  const d = createHash('sha256').update(line.trimEnd()).digest();
   return `${ALPHABET[(d[0] ?? 0) & 31]}${ALPHABET[(d[1] ?? 0) & 31]}`;
 }
 

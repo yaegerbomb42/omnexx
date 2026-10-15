@@ -28,6 +28,38 @@ function countOccurrences(hay: string, needle: string): number {
   return n;
 }
 
+type OneResult = { text: string; note?: string } | { error: string };
+
+/** One edit: an exact unique match, else a unique whitespace-insensitive one, else an error. */
+function applyOne(
+  text: string,
+  e: z.infer<typeof editSchema>,
+  index: number,
+  path: string,
+): OneResult {
+  const n = countOccurrences(text, e.old_str);
+  if (n === 1) return { text: text.replace(e.old_str, () => e.new_str) };
+  let lines: number[] = [];
+  let count = `${n} times`;
+  if (n > 1) lines = linesOf(text, e.old_str);
+  else {
+    const fuzzy = fuzzyReplace(text, e.old_str, e.new_str);
+    if (fuzzy.found === 1) {
+      const re = fuzzy.reindented ? ', new_str re-indented' : '';
+      const note = `edit ${index} matched lines ${fuzzy.start}-${fuzzy.end} ignoring whitespace${re}`;
+      return { text: fuzzy.text, note };
+    }
+    if (fuzzy.found === 'many') {
+      lines = fuzzy.lines;
+      count = `${lines.length} times ignoring whitespace`;
+    }
+  }
+  const where = lines.length ? ` (at lines ${lines.join(', ')})` : '';
+  return {
+    error: `edit ${index}: old_str found ${count} in ${path}${where}; it must match exactly once: add a line before or after that only the one you mean has. No changes were written.`,
+  };
+}
+
 /** Apply edits in order to an in-memory copy; nothing is written unless every edit applies. */
 async function applyEdits(
   path: string,
@@ -45,27 +77,10 @@ async function applyEdits(
   const before = text;
   const notes: string[] = [];
   for (const [i, e] of edits.entries()) {
-    const n = countOccurrences(text, e.old_str);
-    if (n === 1) {
-      text = text.replace(e.old_str, () => e.new_str);
-      continue;
-    }
-    const fuzzy = n === 0 ? fuzzyReplace(text, e.old_str, e.new_str) : undefined;
-    if (fuzzy?.found === 1) {
-      text = fuzzy.text;
-      const re = fuzzy.reindented ? ', new_str re-indented' : '';
-      notes.push(
-        `edit ${i + 1} matched lines ${fuzzy.start}-${fuzzy.end} ignoring whitespace${re}`,
-      );
-      continue;
-    }
-    const lines = n > 1 ? linesOf(text, e.old_str) : fuzzy?.found === 'many' ? fuzzy.lines : [];
-    const count =
-      n > 1 ? `${n} times` : lines.length ? `${lines.length} times ignoring whitespace` : '0 times';
-    const where = lines.length ? ` (at lines ${lines.join(', ')})` : '';
-    return fail(
-      `edit ${i + 1}: old_str found ${count} in ${path}${where}; it must match exactly once: add a line before or after that only the one you mean has. No changes were written.`,
-    );
+    const r = applyOne(text, e, i + 1, path);
+    if ('error' in r) return fail(r.error);
+    text = r.text;
+    if (r.note) notes.push(r.note);
   }
   await writeFile(abs, text);
   recordEdit(ctx, abs);

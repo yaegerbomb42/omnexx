@@ -88,11 +88,11 @@ export function formatterFor(root: string, abs: string): [string, string[]] | un
   return undefined;
 }
 
-const PY_CHECK = `import ast,sys
+const PY_CHECK = String.raw`import ast,sys
 try:
     ast.parse(sys.stdin.read())
 except SyntaxError as e:
-    print(f"{e.lineno or 0}\\t{e.msg}", file=sys.stderr); sys.exit(1)`;
+    print(f"{e.lineno or 0}\t{e.msg}", file=sys.stderr); sys.exit(1)`;
 
 async function pythonSyntax(root: string, text: string, ms: number, env: Record<string, string>) {
   const r = await run('python3', ['-c', PY_CHECK], root, ms, env, text);
