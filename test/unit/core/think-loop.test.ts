@@ -3,6 +3,7 @@ import type { LoopEnd, LoopResult } from '../../../src/agent/loop.js';
 import type { Message } from '../../../src/providers/types.js';
 import {
   continueWith,
+  DECIDE_PROMPT,
   EXECUTE_PROMPT,
   runThinkLoop,
   THINK_PROMPT,
@@ -72,7 +73,7 @@ const fail = (why: string, tree = 't-red'): CheckOutcome => ({
   tree,
 });
 const first: Message = { role: 'user', content: [{ type: 'text', text: 'Work on M1.T01' }] };
-const limits = { rounds: 6, rethinks: 2 };
+const limits = { rounds: 6, rethinks: 2, thinkTurns: 8 };
 
 describe('think-first loop session', () => {
   it('thinks first with the strong chain, and the analysis stays in the conversation it executes in', async () => {
@@ -168,7 +169,7 @@ describe('think-first loop session', () => {
       [pass('green-1'), fail('x'), fail('y')],
       ['- [blocker] finding'],
     );
-    const out = await runThinkLoop(first, io, { rounds: 3, rethinks: 0 });
+    const out = await runThinkLoop(first, io, { rounds: 3, rethinks: 0, thinkTurns: 8 });
     expect(restored).toEqual(['green-1']);
     expect(events).toContain('loop.restore_green');
     expect(out).toMatchObject({ green: true, rounds: 3 });
@@ -179,6 +180,41 @@ describe('think-first loop session', () => {
     const out = await runThinkLoop(first, io, limits);
     expect(calls).toHaveLength(2);
     expect(out.end).toBe('max_usd');
+  });
+});
+
+describe('think-first loop session: bounded thinking', () => {
+  it('caps the think step at thinkTurns, then asks for the analysis from what was read', async () => {
+    const { io, calls } = fakeIO(
+      [
+        { say: 'still reading', end: 'max_turns_per_cycle' },
+        { say: 'ANALYSIS now' },
+        { say: 'done' },
+      ],
+      [pass('t')],
+    );
+    const out = await runThinkLoop(first, io, limits);
+    expect(calls[0]?.seg.maxTurns).toBe(8);
+    expect(calls.map((c) => c.chain)).toEqual(['think', 'think', 'work']);
+    expect(text(calls[1]?.seg.first)).toBe(DECIDE_PROMPT);
+    expect(calls[1]?.seg.maxTurns).toBe(1);
+    // Execution runs without a think cap.
+    expect(calls[2]?.seg.maxTurns).toBeUndefined();
+    expect(out.analysis).toBe('ANALYSIS now');
+  });
+
+  it('caps a re-think the same way', async () => {
+    const { io, calls } = fakeIO(
+      [
+        { say: 'a' },
+        { say: 'b', end: 'stuck', stuck: { signal: 'no_edit', detail: 'x' } },
+        { say: 'c' },
+        { say: 'd' },
+      ],
+      [pass('t')],
+    );
+    await runThinkLoop(first, io, limits);
+    expect(calls[2]?.seg.maxTurns).toBe(8);
   });
 });
 

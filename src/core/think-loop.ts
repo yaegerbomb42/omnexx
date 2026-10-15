@@ -23,16 +23,19 @@ import type { Usage } from '../providers/types.js';
 
 export const THINK_PROMPT = `# Think first
 
-Before you change anything, understand the problem. Explore what you need (put independent reads in one turn: they run in parallel), then stop calling tools and write your analysis:
+Before you change anything, understand the problem. Read what you need in a few turns: put every independent read in one turn (they run in parallel), starting with the files the goal names and what they use. Don't run experiments or write scratch scripts yet. Then stop calling tools and write your analysis:
 1. Framing: what the problem really is, in your own words.
 2. Root causes and key invariants, and how the requirements interact (where one constrains another).
 3. The approach, and why it is right.
 4. Ordered steps.
 5. How you will verify each step (which tests or commands).
-Do not edit files in this phase. The analysis stays in this conversation while you carry it out.`;
+Where the goal names something (a field, function, file, message, format or value), use exactly that name and shape: don't rename, nest or "improve" it. Do not edit files in this phase. The analysis stays in this conversation while you carry it out.`;
+
+export const DECIDE_PROMPT =
+  "[harness] That's enough exploring. Write your analysis now, from what you have read (framing, root causes, approach, steps, verification). No tool calls in this step.";
 
 export const EXECUTE_PROMPT =
-  '[harness] Now carry out your analysis step by step, in this conversation. Keep a todo list. Run the relevant tests after each meaningful change and fix what fails. When everything is done and verified, stop calling tools and summarize what you changed.';
+  '[harness] Now carry out your analysis step by step, in this conversation. Run the relevant tests after each meaningful change and fix what fails. Delete any scratch files you create. When everything is done and verified, stop calling tools and summarize what you changed.';
 
 export const EXECUTE_REVISED_PROMPT =
   '[harness] Now carry out the revised analysis. Run the relevant tests as you go; when everything is done and verified, stop calling tools and summarize.';
@@ -53,6 +56,8 @@ export interface Segment {
   history: readonly Message[];
   first: Message;
   anchor: Message;
+  /** Turn cap for this segment (think steps), below the cycle's own. */
+  maxTurns?: number;
 }
 
 export interface CheckOutcome {
@@ -78,6 +83,8 @@ export interface SessionIO {
 export interface SessionLimits {
   rounds: number;
   rethinks: number;
+  /** Turns a think or re-think step may explore before it must write its analysis. */
+  thinkTurns: number;
 }
 
 export interface SessionResult extends LoopResult {
@@ -144,6 +151,7 @@ interface Step {
   chain: ChainKind;
   /** A think step's final text replaces the analysis. */
   thinking: boolean;
+  maxTurns?: number;
 }
 
 /** Run one task as a think-first loop session. `first` is the task's opening context. */
@@ -172,7 +180,11 @@ export async function runThinkLoop(
 
   const run = async (step: Step | undefined): Promise<LoopResult> => {
     const seg = step ? continueWith(messages, step.text) : { history: [], first: anchor };
-    const r = await io.segment({ ...seg, anchor }, step?.chain ?? 'think');
+    const maxTurns = step ? step.maxTurns : limits.thinkTurns;
+    const r = await io.segment(
+      { ...seg, anchor, ...(maxTurns === undefined ? {} : { maxTurns }) },
+      step?.chain ?? 'think',
+    );
     messages = r.messages;
     usage = addUsage(usage, r.usage);
     usd += r.usd;
@@ -208,8 +220,14 @@ export async function runThinkLoop(
     };
   };
 
-  const thought = await run(undefined);
-  io.emit('loop.think', { turns: thought.turns, chars: analysis.length, end: thought.end });
+  // Thinking that ran out of exploring turns writes its analysis from what it has read.
+  const decide = async (r: LoopResult): Promise<LoopResult> =>
+    r.end === 'max_turns_per_cycle'
+      ? run({ text: DECIDE_PROMPT, chain: 'think', thinking: true, maxTurns: 1 })
+      : r;
+
+  const thought = await decide(await run(undefined));
+  io.emit('loop.think', { turns, chars: analysis.length, end: thought.end });
   if (TERMINAL.has(thought.end)) return finish(thought.end);
 
   let next: Step = { text: EXECUTE_PROMPT, chain: 'work', thinking: false };
@@ -217,13 +235,20 @@ export async function runThinkLoop(
     if (rethinks >= limits.rethinks) return undefined;
     rethinks++;
     io.emit('loop.rethink', { why: why.slice(0, 300), rethink: rethinks });
-    return { text: rethinkPrompt(why), chain: 'think', thinking: true };
+    return {
+      text: rethinkPrompt(why),
+      chain: 'think',
+      thinking: true,
+      maxTurns: limits.thinkTurns,
+    };
   };
 
   while (rounds < limits.rounds) {
     const r = await run(next);
     if (TERMINAL.has(r.end)) return finish(r.end);
     if (next.thinking) {
+      const decided = await decide(r);
+      if (TERMINAL.has(decided.end)) return finish(decided.end);
       next = { text: EXECUTE_REVISED_PROMPT, chain: 'work', thinking: false };
       continue;
     }

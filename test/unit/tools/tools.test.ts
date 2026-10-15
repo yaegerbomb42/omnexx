@@ -225,6 +225,9 @@ describe('bash + read_log', () => {
     expect(r.content).toMatch(/timed out after 120s.*timeout/s);
     await bashTool.run({ command: 'npm test', timeout: '10m' }, ctx);
     expect(seen[1]).toBe(10 * 60_000);
+    // Bench hard10 task-04: a script given "30m" hung for 26 minutes. Ten minutes is the most.
+    await bashTool.run({ command: 'python3 verify.py', timeout: '30m' }, ctx);
+    expect(seen[2]).toBe(10 * 60_000);
   });
 
   it('refuses policy violations, logs tool.denied, and calls the safety hook only for allowed commands', async () => {

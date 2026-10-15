@@ -311,3 +311,32 @@ describe('think-first loop (the default for the fast path)', () => {
     expect(long.events.some((e) => e.type === 'subagent.start')).toBe(false);
   });
 });
+
+describe('think-first loop: what the cycle would reject is caught inside the session', () => {
+  it('sends an anti-cheat violation back as a failure, so the agent fixes it instead of losing the session', async () => {
+    const worker: Script = (m) => {
+      const said = lastHarnessText(m.request) ?? '';
+      if (said.includes('# Think first')) return say('ANALYSIS: write the file');
+      if (said.includes('Now carry out your analysis'))
+        return {
+          tools: [
+            { name: 'write_file', input: { path: 'out/M1.T01.txt', content: 'x\n' } },
+            {
+              name: 'write_file',
+              input: { path: 'scratch/probe.js', content: '// eslint-disable-next-line\nlet x;\n' },
+            },
+          ],
+        };
+      if (said.includes('anti-cheat')) return call('bash', { command: 'rm -r scratch' });
+      return say('done');
+    };
+    const provider = new ScriptedProvider(scenario(planner([]), worker));
+    const { t, out, events } = await superviseLoop(provider);
+    expect(out.status).toBe('finished');
+    const checks = events.filter((e) => e.type === 'loop.check');
+    expect(checks.map((e) => e.pass)).toEqual([false, true]);
+    expect(String(checks[0]?.failures)).toContain('anti-cheat');
+    expect(events.map((e) => e.type)).not.toContain('rollback');
+    expect((await t.run.store.readState()).acceptedCommits).toBe(1);
+  });
+});

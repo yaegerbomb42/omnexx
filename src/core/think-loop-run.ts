@@ -6,6 +6,7 @@ import { workingTreeDiff } from '../git/repo.js';
 import { rollbackTo } from '../git/rollback.js';
 import type { ResolvedModel } from '../providers/pricing.js';
 import type { SystemBlock, ToolSpec } from '../providers/types.js';
+import { antiCheat } from '../verify/anticheat.js';
 import { blocking, renderFindings, reviewChange } from '../verify/review.js';
 import { runGates, type GateResult } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
@@ -62,7 +63,7 @@ export interface ThinkLoopInputs {
 
 /** The checks one round ends with: every gate against the baseline, then the task's checks. */
 async function checkTree(run: Run, task: PlanNode, inputs: ThinkLoopInputs, round: number) {
-  const { changes, treeHash } = await workingTreeDiff(run.worktree, run.state.lastGreen);
+  const { changes, patch, treeHash } = await workingTreeDiff(run.worktree, run.state.lastGreen);
   const failures: string[] = [];
   const reasons: string[] = [];
   // The fast path's checks are the gates, which pass before any work: it must change something.
@@ -84,6 +85,21 @@ async function checkTree(run: Run, task: PlanNode, inputs: ThinkLoopInputs, roun
   for (const v of verdicts) if (!v.pass) reasons.push(`gate ${v.gate}: ${v.reason ?? 'failed'}`);
   const gateText = renderGateFailures(results, verdicts);
   if (gateText) failures.push(gateText);
+  // The cycle's verify rejects these whatever the tests say: catch them here, while the agent
+  // can still fix them (bench hard10 task-04 lost a green session to a `# noqa` in a scratch file).
+  for (const v of antiCheat({
+    changes,
+    patch,
+    protectedPatterns: run.config.protected,
+    allow: task.allow,
+    baseline: run.state.baseline,
+    results,
+  })) {
+    reasons.push(`anti-cheat ${v.rule}`);
+    failures.push(
+      `Would be rejected by anti-cheat (${v.rule}): ${v.detail}. Undo that; fix the cause instead.`,
+    );
+  }
   for (const c of await inputs.runChecks())
     if (!c.pass) {
       reasons.push(`check ${c.command}`);
@@ -139,7 +155,17 @@ export async function actAsThinkLoop(
   const io: SessionIO = {
     segment: (s, chain) => {
       // Thinking reads without editing by design: the no-edit stuck watch would cut it short.
-      const { watch, ...rest } = inputs.deps(chains[chain]);
+      const { watch, ...base } = inputs.deps(chains[chain]);
+      const rest =
+        s.maxTurns === undefined
+          ? base
+          : {
+              ...base,
+              budget: {
+                ...base.budget,
+                max_turns_per_cycle: Math.min(s.maxTurns, base.budget.max_turns_per_cycle),
+              },
+            };
       return runAgentLoop(
         { ...inputs.ctx, history: s.history, first: s.first, anchor: s.anchor },
         chain === 'think' || !watch ? rest : { ...rest, watch },
@@ -157,5 +183,6 @@ export async function actAsThinkLoop(
   return runThinkLoop(inputs.ctx.first, io, {
     rounds: run.config.plan.loop_rounds,
     rethinks: run.config.plan.loop_rethinks,
+    thinkTurns: run.config.plan.loop_think_turns,
   });
 }

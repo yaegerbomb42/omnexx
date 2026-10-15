@@ -203,6 +203,7 @@ An in-cycle signal ends the cycle as `stuck` (events `stuck.in_cycle`, then `stu
 | `loop`                | `fast`   | Think-first loop session: think, execute, check, fix forward, re-think when stuck, one review at the end. `fast`, `all` (planned tasks too), `off` |
 | `loop_rounds`         | `6`      | Execute-and-check passes one loop session may take                                                                                                 |
 | `loop_rethinks`       | `2`      | Times a loop session may stop to re-think when stuck                                                                                               |
+| `loop_think_turns`    | `8`      | Turns a think step may explore before it must write its analysis                                                                                   |
 | `milestones`          | unset    | At most this many milestones in the first plan (the planner is told, and a bigger plan is rejected). Setting it makes `auto` plan first            |
 
 The fast path is one worker cycle with the whole goal as its task, done when every gate passes, reviewed and audited like any other cycle; it must change code to count. On the jimmy10 bench, planning first cost 3-5x a single pass on small goals. Flags: `omnexx run --plan fast|auto|full --plan-helpers N --plan-milestones N`. Autonomous runs (`--for`) always plan.

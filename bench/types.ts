@@ -17,6 +17,8 @@ export interface BenchmarkResult {
   interventions: number;
   /** Model calls made, when a metering proxy counted them. */
   requests?: number;
+  /** Wall time spent waiting on a failing or stalled provider (see bench/outage.ts). */
+  provider_outage_ms?: number;
 }
 
 /** What a runner returns: metrics (resolved is overwritten by the hidden check) and where the work is. */
