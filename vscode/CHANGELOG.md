@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.0
+
+- Built on omnexx 0.15.0: leaner search, cleaner command output, lazy MCP, smarter edits and
+  recovery; New chat keeps the previous conversation in History.
+
 ## 0.10.0
 
 - Built on omnexx 0.14.0: the think-first loop, the **Agent** card (effort, context, time and
