@@ -11,7 +11,8 @@
     "modelPicker.ts",
     "crew.ts",
     "roles.ts",
-    "contextPage.ts"
+    "contextPage.ts",
+    "mcp.ts"
   ],
   "exclude": []
 }

@@ -29,6 +29,8 @@ export const mcpServerSchema = z
     oauth_client_id: z.string().optional(),
     /** Space-separated scopes to ask for at sign-in. */
     oauth_scope: z.string().optional(),
+    /** `false` keeps the server configured but never started (toggle with `omnexx mcp disable`). */
+    enabled: z.boolean().optional(),
   })
   .refine((data) => Boolean(data.command ?? data.url), {
     message: 'Either "command" or "url" must be configured for an MCP server',

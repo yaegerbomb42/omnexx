@@ -5,6 +5,7 @@
  */
 import * as modelPicker from './modelPicker.js';
 import * as roles from './roles.js';
+import * as mcp from './mcp.js';
 import { badge } from './modelPicker.js';
 import { escapeHtml } from './render.js';
 
@@ -197,6 +198,7 @@ function draw(): void {
   </div>
   <p class="hint">How new chats start. Auto-approve lets omnexx go outside the repo and run guarded commands without asking; hard-blocked commands stay blocked.</p>
 </section>
+<section class="set-section"><h3>MCP servers</h3><div id="mcp-box">${mcp.html()}</div></section>
 <section class="set-section"><h3>Browser</h3><div id="browser-box">${browserHtml()}</div></section>
 <section class="set-section"><h3>Advanced</h3>
   <div id="engine-box" class="engine">${engineHtml()}</div>
@@ -297,6 +299,7 @@ export function open(post: Post): void {
   post({ type: 'engineInfo' });
   post({ type: 'browser' });
   roles.request(post);
+  mcp.request(post);
 }
 
 export function close(): void {
@@ -307,6 +310,7 @@ export function close(): void {
 /** Messages from the extension that belong to the settings page; true when handled. */
 export function onMessage(m: { type: string } & Record<string, unknown>): boolean {
   if (roles.onMessage(m)) return true;
+  if (mcp.onMessage(m)) return true;
   if (m.type === 'providerTest') {
     const name = typeof m.name === 'string' ? m.name : '';
     tests = {
@@ -393,11 +397,13 @@ export function setCurrentModel(model: string | null): void {
 export function wire(post: Post): void {
   postRef = post;
   roles.wireDrag(q('settings', HTMLElement));
+  mcp.wire(q('settings', HTMLElement), post);
   const page = q('settings', HTMLElement);
   page.addEventListener('click', (e) => {
     const t = e.target instanceof Element ? e.target : null;
     if (!t) return;
     if (roles.click(t, post)) return;
+    if (mcp.click(t, post)) return;
     const tileName = t.closest<HTMLElement>('[data-provider]')?.dataset.provider;
     if (tileName) {
       chosen = tileName;
@@ -469,6 +475,7 @@ export function wire(post: Post): void {
     if (e.target instanceof Element && e.target.closest('#browser-box')) saveBrowser(post, {});
   });
   page.addEventListener('keydown', (e) => {
+    if (mcp.keydown(e, post)) return;
     if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
       if (e.target.closest('#browser-box')) e.target.blur();
       else save(post);

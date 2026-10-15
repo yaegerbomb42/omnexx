@@ -119,7 +119,10 @@ export const SLASH: readonly SlashCommand[] = [
     name: 'apps',
     help: 'connect apps: /apps lists them, /apps notion signs in, /apps github --set Authorization=<token>',
   },
-  { name: 'mcp', help: 'MCP servers: /mcp add <name>, /mcp search <q>, /mcp import' },
+  {
+    name: 'mcp',
+    help: 'MCP servers with status and tool cost; /mcp gallery, /mcp add <name>, /mcp disable <name>, /mcp import',
+  },
   { name: 'cards', help: 'agent cards: local helpers and remote A2A agents; /cards add <url>' },
   { name: 'compact', help: 'summarize the conversation to free up context' },
   { name: 'clear', help: 'start a fresh conversation' },

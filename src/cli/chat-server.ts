@@ -19,7 +19,7 @@ import { println, type CliIO } from './io.js';
  * settings · addProvider {provider?, key?, url?} · removeProvider {name} · testProvider {name} ·
  * roles · setRoles {roles} · contextFiles · setSectionMode {id, mode} · contextList ·
  * contextUpdate {id, text} · contextDelete {id} · contextReset · chats · resumeChat {id} · browser ·
- * setBrowser {engine, profile?, sessionName?, headless}.
+ * setBrowser {engine, profile?, sessionName?, headless} · mcp {op, …} (see chat-mcp.ts).
  * Out: ready {version} · state (below; `entries` holds only lines not sent before) · models
  * {items, unreachable, current} · settings {catalog, connected} · providerTest {name, ok, models,
  * detail} · contextItems {items, busy} · chats {chats} · browser {engine, profile, sessionName, headless} ·
@@ -374,6 +374,22 @@ export async function serveChat(
         return;
       case 'roles':
         run(sendRoles());
+        return;
+      case 'mcp':
+        run(
+          import('./chat-mcp.js').then(({ handleMcp }) =>
+            handleMcp(
+              {
+                io,
+                write,
+                note: (t) => {
+                  session.push('system', t);
+                },
+              },
+              c,
+            ),
+          ),
+        );
         return;
       case 'setRoles':
         run(
