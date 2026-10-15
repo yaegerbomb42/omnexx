@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.16.0
+
+- **`read_symbol`**: one call returns a definition, the types in its signature (from any file)
+  and its callers and callees, instead of several searches and reads. Uses the TypeScript
+  language service when the repo has it, a fast fallback for TS/JS, Python, Go and Rust.
+- **Verified repo facts**: build, test, lint and typecheck commands that actually passed are
+  remembered per repo, tied to hashes of package.json, lockfiles and similar, marked unverified
+  when those change, and given to the agent in a short block. `omnexx facts`, `/facts`.
+- **Checks start early**: after the last edit, the checks run in the background while the model
+  is still writing; the verify step reuses the result when the code is unchanged.
+
 ## 0.15.0
 
 - **Leaner search**: results grouped by file (path once), context only for a few matches, and

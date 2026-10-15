@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.0
+
+- Built on omnexx 0.16.0: `read_symbol`, verified repo facts, and checks that start while the
+  model is still writing.
+
 ## 0.11.0
 
 - Built on omnexx 0.15.0: leaner search, cleaner command output, lazy MCP, smarter edits and
