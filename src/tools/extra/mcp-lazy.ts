@@ -4,6 +4,7 @@ import type { McpCallResult, McpClientManager, McpToolInfo } from '../../mcp/cli
 import {
   MOUNTED_FILE,
   addMounted,
+  byCodePoint,
   argsProblem,
   readMounted,
   renderSchemas,
@@ -53,7 +54,7 @@ function createMountTool(byServer: ReadonlyMap<string, McpToolInfo[]>): Tool<typ
     async run(input, ctx) {
       const tools = byServer.get(input.server);
       if (!tools) {
-        const installed = [...byServer.keys()].sort().join(', ');
+        const installed = [...byServer.keys()].sort(byCodePoint).join(', ');
         return fail(`No MCP server "${input.server}". Installed: ${installed}`);
       }
       try {

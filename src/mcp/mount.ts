@@ -21,6 +21,9 @@ export const MOUNTED_FILE = 'mcp-mounted.json';
 /** Tool names shown per server in the `mcp` directory before eliding the rest. */
 const DIRECTORY_TOOL_NAMES = 6;
 
+/** Code-point order: the same on every machine and locale, so the cached prefix is stable. */
+export const byCodePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 /** Tokens every exposed MCP tool definition would cost in each request, schemas included. */
 export function mcpToolTokens(tools: readonly McpToolInfo[]): number {
   return tools.reduce(
@@ -52,7 +55,7 @@ export function toolsByServer(tools: readonly McpToolInfo[]): ReadonlyMap<string
 /** One line per server: name, tool count and the first few tool names. Sorted for a stable prefix. */
 export function serverDirectory(byServer: ReadonlyMap<string, McpToolInfo[]>): string {
   return [...byServer.keys()]
-    .sort()
+    .sort(byCodePoint)
     .map((server) => {
       const tools = byServer.get(server) ?? [];
       const names = tools.slice(0, DIRECTORY_TOOL_NAMES).map((t) => t.name);
@@ -85,7 +88,7 @@ export async function readMounted(path: string): Promise<readonly string[]> {
 export async function addMounted(path: string, server: string): Promise<readonly string[]> {
   const current = await readMounted(path);
   if (current.includes(server)) return current;
-  const next = [...current, server].sort();
+  const next = [...current, server].sort(byCodePoint);
   await writeJsonAtomic(path, next);
   return next;
 }
