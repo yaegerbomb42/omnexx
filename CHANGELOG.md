@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.15.0
+
+- **Leaner search**: results grouped by file (path once), context only for a few matches, and
+  an overview of files and counts for wide searches; 30–90% fewer tokens per search.
+- **Cleaner command output**: no ANSI codes or spinner frames; passing tests, repeated lines
+  and dependency stack frames collapsed before trimming.
+- **Lazy MCP**: one small `mcp` tool lists your servers and loads a server's tools when needed,
+  so MCP tool definitions cost ~450 tokens per request instead of thousands, without breaking
+  the prompt cache.
+- **Smarter edits**: `read` can tag lines with 2-character hashes and `replace_lines` edits by
+  them; `str_replace` tolerates whitespace drift; the project's formatter runs after an edit;
+  new type and syntax errors come back in the edit result; "did you mean …?" for wrong paths.
+- **Recovery**: a doom-loop breaker rewinds to the best state when fixes oscillate or keep
+  making things worse, with a short note on what not to repeat; failures are sorted into
+  pre-existing, flaky, environment and real, and real ones come back as a compact packet; fixes
+  are remembered per repo.
+- **Fix**: New chat no longer overwrites the previous conversation in History.
+
 ## 0.14.0
 
 - **Think-first loop**: small and medium goals run as one conversation that first analyses the
