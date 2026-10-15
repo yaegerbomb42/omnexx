@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.14.0
+
+- **Think-first loop**: small and medium goals run as one conversation that first analyses the
+  problem (framing, root causes, steps, how to verify), then works and fixes forward with the
+  checks after each pass, re-thinks when stuck, and gets one review at the end. Helper subagents
+  are off by default: one agent with the whole context.
+- **Agent settings** (`/settings`, the VS Code **Agent** card): effort per task 1–10 (quick MVP to
+  hours of work), effort per turn 1–10 (reasoning depth), context 5k–500k tokens, time wanted and
+  max tokens per turn; offered at launch until you choose "keep, don't ask again".
+- **Ranked models**: one list, click or drag to add and reorder, with Random, Rank priority or
+  Fallback on quota; per-role lists under Advanced. `/models` in the terminal.
+- **43 providers** in one catalog, and custom endpoints from just a URL and key (the API style,
+  `/v1` and models are detected, with clear errors). `/provider`, `omnexx providers catalog`.
+- **MCP made easy**: add from a gallery, the registry, a command, a URL (browser sign-in), pasted
+  JSON or an import from Claude/Cursor/VS Code/Windsurf; status, tools and token cost per server,
+  on/off and per-tool allow-lists. `/mcp`, `omnexx mcp gallery|enable|disable|allow|logs`.
+- **Context and skills**: see and edit everything sent (notes, pins, hide), with a budget bar;
+  every skill in one list with on/off, plus marketplaces (Anthropic's skills, any GitHub repo or
+  Claude plugin marketplace) to preview and install. `/context`, `/skills`.
+- Chat answers greetings briefly and asks for approval for actions outside the repo instead of
+  refusing them.
+
 ## 0.13.0
 
 - **Zero-config Ollama**: on first run omnexx finds your local Ollama, picks the best installed
