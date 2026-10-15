@@ -88,17 +88,21 @@ describe('provider catalog', () => {
       env: await isolatedEnv(),
       cwd: await tempDir(),
       isTTY: false,
-      fetch: (input: string | URL | Request) =>
-        Promise.resolve(
-          String(input instanceof Request ? input.url : input).endsWith('/api/tags')
-            ? Response.json({ models: [{ name: 'qwen2.5-coder:7b' }] })
-            : Response.json({ data: [{ id: 'qwen2.5-coder:7b' }] }),
-        ),
+      fetch: (input: string | URL | Request) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.endsWith('/api/tags'))
+          return Promise.resolve(Response.json({ models: [{ name: 'qwen2.5-coder:7b' }] }));
+        if (url.endsWith('/api/show'))
+          return Promise.resolve(Response.json({ capabilities: ['completion', 'tools'] }));
+        // No tuned copy: omnexx falls back to the pulled model.
+        if (url.endsWith('/api/create')) return Promise.resolve(new Response('', { status: 500 }));
+        return Promise.resolve(Response.json({ data: [{ id: 'qwen2.5-coder:7b' }] }));
+      },
     } as CliIO;
     const s = new Session(io, () => Promise.resolve(0));
     await s.greet(false);
     expect(s.entries.map((e) => e.text).join('\n')).toContain(
-      'found Ollama running locally: chatting with ollama:qwen2.5-coder:7b',
+      "using Ollama's qwen2.5-coder:7b (local, free, tools)",
     );
     expect(s.chatModelName).toBe('ollama:qwen2.5-coder:7b');
   });

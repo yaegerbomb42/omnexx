@@ -45,6 +45,8 @@ export interface ChatState {
   todos: TodoItem[];
   /** A question waiting for allow / deny, or null. */
   pending: string | null;
+  /** Button names when the question is an offer (Pull it now / Not now) rather than a guard. */
+  pendingLabels: { yes: string; no: string } | null;
   mode: Mode;
   busy: boolean;
   paused: boolean;
@@ -148,6 +150,7 @@ export async function serveChat(
       live: session.live,
       todos: session.todos,
       pending: session.pending?.question ?? null,
+      pendingLabels: session.pending?.labels ?? null,
       mode: session.mode,
       busy: session.busy !== undefined || session.chatBusy,
       paused: session.chatPaused,

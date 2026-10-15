@@ -121,13 +121,26 @@ Optional: an advisory **fast judge** (Nimble on Ollama, usually on your Mac over
 
 ## Free and local with Ollama
 
+If Ollama is running, `omnexx` (or `omnexx --ollama`, or the VS Code panel) just works. With no
+provider set up, it:
+
+- finds Ollama on `localhost:11434` (or `OLLAMA_HOST`) and lists the models you've pulled;
+- keeps only models that can call tools (`/api/show` capabilities), skips `:cloud` models, and
+  ranks coding models first (qwen3-coder, devstral, gpt-oss, qwen3.x, qwen2.5-coder, ...), then
+  bigger, then longer context;
+- makes a copy with a usable context window (`omnexx-<model>`, `num_ctx` 32k, or 16k under 16 GB
+  of RAM, never more than the model supports), since Ollama's default window is too small;
+- saves it as the chat, planner, worker and cheap model, and says so in one line:
+  `using Ollama's qwen3-coder:30b (local, free, tools, 32k context) for chat, planning and work`.
+
+No usable model yet? It suggests one for your machine (`ollama pull qwen3-coder`, or
+`qwen2.5-coder:7b` under 32 GB) and offers to pull it: `y` in the terminal, **Pull it now** in
+VS Code. Ollama not running? It says how to install (https://ollama.com/download) or start it.
+
 ```bash
-ollama pull qwen2.5-coder     # or any model you like
-npx omnexx --ollama           # finds Ollama on localhost:11434, picks a coding model, opens the chat
+npx omnexx --ollama           # set up as above, then open the chat
 npx omnexx --ollama llama3.3  # or name the model
 ```
-
-No key and no config: with no provider set up, omnexx also connects a running Ollama by itself.
 
 ## From the plain terminal
 

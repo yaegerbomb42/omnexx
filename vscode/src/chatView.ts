@@ -378,11 +378,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 <section id="ctxpage" class="settings" hidden aria-label="Context files"></section>
 <section id="inspector" class="settings" hidden aria-label="Context inspector"></section>
 <section id="ask" class="ask" hidden role="alertdialog" aria-labelledby="ask-text">
-  <div class="ask-title">Approval needed</div>
+  <div id="ask-title" class="ask-title">Approval needed</div>
   <div id="ask-text"></div>
   <div class="ask-buttons">
-    <button class="primary" data-action="allow">Allow</button>
-    <button class="secondary" data-action="deny">Deny</button>
+    <button id="ask-yes" class="primary" data-action="allow">Allow</button>
+    <button id="ask-no" class="secondary" data-action="deny">Deny</button>
   </div>
 </section>
 <footer class="composer">
