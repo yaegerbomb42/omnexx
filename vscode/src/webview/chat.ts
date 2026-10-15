@@ -37,6 +37,8 @@ interface State {
   live: string;
   todos: TodoItem[];
   pending: string | null;
+  /** Set for offers such as pulling an Ollama model: the button names. */
+  pendingLabels?: { yes: string; no: string } | null;
   mode: 'chat' | 'plan' | 'run';
   busy: boolean;
   paused: boolean;
@@ -274,8 +276,10 @@ function drawControls(s: State): void {
   stopBtn.disabled = !s.busy;
   input.placeholder = placeholderFor(s);
   ask.hidden = s.pending === null;
-  if (s.pending !== null)
+  if (s.pending !== null) {
     el('ask-text', HTMLElement).innerHTML = renderMarkdown(cleanQuestion(s.pending));
+    labelAsk(s.pendingLabels ?? null);
+  }
 }
 
 function apply(s: State): void {
@@ -416,3 +420,10 @@ setInterval(() => {
 }, CLOCK_TICK_MS);
 post({ type: 'ready' });
 input.focus();
+
+/** An offer (pull a model) names its own buttons; guard questions keep Allow / Deny. */
+function labelAsk(labels: { yes: string; no: string } | null): void {
+  el('ask-title', HTMLElement).textContent = labels ? 'Set up a local model' : 'Approval needed';
+  el('ask-yes', HTMLElement).textContent = labels?.yes ?? 'Allow';
+  el('ask-no', HTMLElement).textContent = labels?.no ?? 'Deny';
+}

@@ -199,6 +199,8 @@ function placeholderFor(session: Session): string {
     return `what should it work on for ${timeLabel(session.autoSetup.time)}? enter on empty: keep improving the repo`;
   if (session.awaiting === 'key') return 'paste the API key, then enter';
   if (session.awaiting === 'url') return '<url> [key] [--name alias]';
+  if (session.pending?.labels)
+    return `y: ${session.pending.labels.yes.toLowerCase()}, n: ${session.pending.labels.no.toLowerCase()}`;
   if (session.pending) return 'y to allow, anything else to refuse';
   if (session.mode === 'plan')
     return session.busy
@@ -307,6 +309,11 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
   useInput((ch, key) => {
     if (key.ctrl && ch === 'c') {
       exit();
+      return;
+    }
+    // An offer (pull a model) answers on one key; guard questions still need enter.
+    if (session.pending?.labels && !input && (ch === 'y' || ch === 'n')) {
+      void session.submit(ch);
       return;
     }
     if (session.autoSetup?.step === 'time') {

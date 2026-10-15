@@ -38,9 +38,10 @@ describe('Ollama quickstart', () => {
     expect(await ollamaModels(fakeOllama(undefined))).toBeUndefined();
   });
 
-  it('prefers a coding model, honours a named one, with or without :latest', () => {
+  it('prefers a coding model, skips cloud models, honours a named one, with or without :latest', () => {
     const pulled = ['llama3.3:latest', 'qwen2.5-coder:7b', 'gpt-oss:20b'];
-    expect(pickOllamaModel(pulled)).toBe('qwen2.5-coder:7b');
+    expect(pickOllamaModel(pulled)).toBe('gpt-oss:20b');
+    expect(pickOllamaModel(['qwen3-coder:480b-cloud', 'llama3.3:latest'])).toBe('llama3.3:latest');
     expect(pickOllamaModel(pulled, 'llama3.3')).toBe('llama3.3:latest');
     expect(pickOllamaModel(pulled, 'mistral')).toBeUndefined();
     expect(pickOllamaModel(['phi4:latest'])).toBe('phi4:latest');

@@ -31,6 +31,9 @@ Open it from the omnexx icon in the activity bar, or press `Cmd+Alt+O` (`Ctrl+Al
 - **Models and providers**: click the model name to switch, or add an API key or any
   OpenAI-compatible endpoint (Ollama, LM Studio, OpenRouter…). The gear has the rest: project
   and user settings, the approval default, and restart.
+- **Ollama, zero config**: with no provider set up, the first open picks the best tool-capable
+  model in your local Ollama, gives it a 32k context and uses it for every role. With none
+  pulled, a **Pull it now** button fetches a good small coding model.
 - File paths in replies open in the editor.
 
 The panel drives `omnexx chat-server`, the same session as the terminal UI, so the

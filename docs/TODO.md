@@ -45,6 +45,11 @@ SonarCloud findings from the #20 integration merge are still open.
   distance; same model and path when there are 3+), a range when there are fewer than 3 or the
   quartiles are far apart, "no history yet" otherwise; then "~2 min left" as tasks finish.
   `src/core/run-estimate.ts`, `run-history.ts`, `run-estimate-io.ts`, `src/tui/chat-estimate.ts`.
+- **2026-10-14, branch `feat/ollama-zero-config`:** zero-config Ollama. With no provider set up,
+  `omnexx`, `omnexx --ollama` and the VS Code panel detect Ollama (`OLLAMA_HOST` aware), keep
+  tool-capable local models (`/api/show`), rank coding models first, create an `omnexx-<model>`
+  copy with `num_ctx` 32k (16k on small machines), and save it for every role. With nothing
+  usable pulled they offer a one-key / one-button pull. Tests use a scripted fetch.
 - **2026-10-13 (single agent), branch `feat/autonomy-2`:** efficiency work driven by a
   head-to-head bench (same model, DeepSeek-V4.1-Flash, for every harness; tokens counted by
   one metering proxy, `bench --endpoint <PREFIX>`). Cline and OpenHands runners added. Fixes:

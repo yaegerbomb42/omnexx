@@ -143,6 +143,15 @@ export const MORE_SLASH = [
   'doctor',
 ];
 
+/** Button names for a yes/no offer, e.g. Pull it now / Not now. */
+export interface PendingLabels {
+  yes: string;
+  no: string;
+}
+
+/** Pull progress shows every this many percent. */
+const PULL_PROGRESS_STEP = 10;
+
 export type Mode = 'chat' | 'plan' | 'run';
 
 /** `/autonomous 8h` with no goal. */
@@ -182,7 +191,8 @@ export class Session {
   /** What plain text does: start or steer a long run, or code turn by turn. */
   mode: Mode = 'chat';
   /** A y/n question from chat mode waiting on the person (permission to go past a guard). */
-  pending: { question: string; resolve: (yes: boolean) => void } | undefined;
+  pending:
+    { question: string; resolve: (yes: boolean) => void; labels?: PendingLabels } | undefined;
   private code: CodeChat | undefined;
   /** The model request in flight, with its expected duration (for the editor's countdown). */
   waiting: { startedAt: number; estimateMs: number | null } | null = null;
@@ -242,22 +252,51 @@ export class Session {
     this.changed();
   }
 
-  /** No provider yet but Ollama is running locally: connect it, so the first chat just works. */
-  private async autoOllama(): Promise<boolean> {
-    const { ollamaModels, pickOllamaModel } = await import('../cli/ollama.js');
-    const model = pickOllamaModel((await ollamaModels(this.io.fetch ?? fetch)) ?? []);
-    if (!model) return false;
-    try {
-      await connect(this.io, 'ollama');
-    } catch {
-      return false;
+  /**
+   * No provider yet: set up a local Ollama if there is one (best tool-capable model, bigger
+   * context, saved for every role). When none of its models fit, offer to pull one. Returns
+   * whether a model is ready, and the install hint when Ollama isn't there.
+   */
+  private async autoOllama(): Promise<{ ready: boolean; hint?: string }> {
+    const { setupOllama } = await import('../cli/ollama-setup.js');
+    const setup = await setupOllama(this.io, { saveRoles: true }).catch(() => undefined);
+    if (!setup) return { ready: false };
+    if (setup.kind === 'down') return { ready: false, hint: setup.line };
+    if (setup.kind === 'ready') {
+      this.chatModel ??= setup.ref;
+      this.push('system', setup.line);
+      return { ready: true };
     }
-    this.chatModel ??= `ollama:${model}`;
-    this.push(
-      'system',
-      `found Ollama running locally: chatting with ollama:${model} (free). /model to switch`,
-    );
-    return true;
+    this.push('system', setup.line);
+    void this.offerPull(setup.pull.model, setup.pull.size);
+    return { ready: false };
+  }
+
+  /** Ask once to pull `model`; on yes, pull it with progress and set it up. */
+  private async offerPull(model: string, size: string): Promise<void> {
+    const yes = await this.offer(`pull ${model} (${size}) into Ollama now?`, {
+      yes: 'Pull it now',
+      no: 'Not now',
+    });
+    if (!yes) {
+      this.push('system', `later: \`ollama pull ${model}\`, then reopen omnexx`);
+      return;
+    }
+    const { pullOllamaModel, setupOllama } = await import('../cli/ollama-setup.js');
+    let shown = -PULL_PROGRESS_STEP;
+    try {
+      this.push('system', `pulling ${model}…`);
+      await pullOllamaModel(this.io, model, ({ percent }) => {
+        if (percent === undefined || percent < shown + PULL_PROGRESS_STEP) return;
+        shown = percent;
+        this.push('system', `  ${model}: ${percent}%`);
+      });
+      const setup = await setupOllama(this.io, { saveRoles: true });
+      if (setup.kind === 'ready') this.chatModel = setup.ref;
+      this.push('system', setup.line);
+    } catch (err) {
+      this.push('err', describeError(err));
+    }
   }
 
   /** First-run hint: with no provider set up, say how to add one before anything else. */
@@ -267,7 +306,8 @@ export class Session {
     }));
     if (config?.policy.auto_approve) this.autoApprove = true;
     let ready = await hasProvider(this.io).catch(() => true);
-    if (!ready) ready = await this.autoOllama();
+    let ollamaHint: string | undefined;
+    if (!ready) ({ ready, hint: ollamaHint } = await this.autoOllama());
     if (ready && !firstRun) return;
     const found = await envKeys(this.io).catch(() => [] as EnvKey[]);
     const model = ready
@@ -282,6 +322,7 @@ export class Session {
           '     paste an API key  OpenAI, Gemini, xAI, Groq, OpenRouter, Mistral, NVIDIA, … are recognised',
           '     /connect ollama   a free local model (also lmstudio, vllm, llamacpp, jan)',
           '     /model            browse providers, or add any OpenAI-compatible URL',
+          ...(ollamaHint ? ['', ollamaHint] : []),
         ];
     this.push(
       'system',
@@ -482,7 +523,13 @@ export class Session {
     if (pending) {
       const yes = /^y(es)?$/i.test(text);
       this.pending = undefined;
-      this.push('system', `${yes ? 'allowed' : 'refused'}: ${pending.question}`);
+      const labels = pending.labels;
+      this.push(
+        'system',
+        labels
+          ? (yes ? labels.yes : labels.no).toLowerCase()
+          : `${yes ? 'allowed' : 'refused'}: ${pending.question}`,
+      );
       pending.resolve(yes);
       return;
     }
@@ -617,6 +664,14 @@ export class Session {
     }
     return new Promise((resolve) => {
       this.pending = { question, resolve };
+      this.changed();
+    });
+  }
+
+  /** Like ask, but never auto-approved (downloads, not guard questions); `labels` name the buttons. */
+  offer(question: string, labels: PendingLabels): Promise<boolean> {
+    return new Promise((resolve) => {
+      this.pending = { question, resolve, labels };
       this.changed();
     });
   }

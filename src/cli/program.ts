@@ -64,7 +64,7 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
   program.option('-m, --model <model>', 'with -p: the model to use (provider:model)');
   program.option(
     '--ollama [model]',
-    'use your local Ollama (connects it; picks a coding model unless you name one)',
+    'use your local Ollama (picks and tunes the best tool-capable model unless you name one)',
   );
   program.action(
     async (opts: {
@@ -75,8 +75,11 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
       ollama?: string | boolean;
     }) => {
       if (opts.ollama !== undefined) {
-        const { useOllama } = await import('./ollama.js');
-        opts.model = await useOllama(io, typeof opts.ollama === 'string' ? opts.ollama : undefined);
+        const { startWithOllama } = await import('./ollama-start.js');
+        opts.model = await startWithOllama(
+          io,
+          typeof opts.ollama === 'string' ? opts.ollama : undefined,
+        );
       }
       if (opts.print !== undefined) {
         const { printCommand } = await import('./print.js');
