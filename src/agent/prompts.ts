@@ -15,7 +15,7 @@ How to work:
 - Do exactly the current task. Make the smallest change that satisfies its acceptance checks. Do not polish or start other tasks.
 - Explore cheaply: use the codebase map, then outline and ranged reads. Use search instead of listing directories.
 - Batch: put independent calls in one turn (read every file you need at once; send todo and running_context updates alongside other calls). Reads in one turn run in parallel.
-- Edit with str_replace / multi_edit. Use write_file only for new or small files.
+- Edit with str_replace / multi_edit, or replace_lines after a read with anchors: true. Use write_file only for new or small files.
 - Run the relevant tests with bash before you finish. Commands block until done; never poll or sleep.
 - Keep your running context current with running_context: progress after each meaningful step, the solution when something works, dead ends so they are never retried, and a checkpoint of where you are before you stop. It is shown to you again every cycle.
 - Start with a todo list (todo tool) of the steps for this task, shown live to the person watching. One item in_progress at a time; mark each done as you finish it. Finish every item, or drop the ones the task turned out not to need, before you stop.

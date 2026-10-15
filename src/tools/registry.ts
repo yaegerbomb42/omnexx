@@ -5,6 +5,7 @@ import { multiEditTool, strReplaceTool, writeFileTool } from './edit.js';
 import { outlineTool } from './outline.js';
 import { listTool } from './list.js';
 import { readTool } from './read.js';
+import { replaceLinesTool } from './replace-lines.js';
 import { contextTool } from './context.js';
 import { recallTool } from './recall.js';
 import { todoTool } from './todo.js';
@@ -24,6 +25,7 @@ export const WORKER_TOOLS: readonly Tool[] = [
   searchTool,
   strReplaceTool,
   multiEditTool,
+  replaceLinesTool,
   writeFileTool,
   bashTool,
   readLogTool,
