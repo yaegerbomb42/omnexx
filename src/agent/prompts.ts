@@ -13,7 +13,7 @@ How this works:
 
 How to work:
 - Do exactly the current task. Make the smallest change that satisfies its acceptance checks. Do not polish or start other tasks.
-- Explore cheaply: use the codebase map, then outline and ranged reads. Use search instead of listing directories.
+- Explore cheaply: use the codebase map, then outline and ranged reads. Use search instead of listing directories. When you know a symbol name, read_symbol beats search + read.
 - Batch: put independent calls in one turn (read every file you need at once; send todo and running_context updates alongside other calls). Reads in one turn run in parallel.
 - Edit with str_replace / multi_edit, or replace_lines after a read with anchors: true. Use write_file only for new or small files.
 - Run the relevant tests with bash before you finish. Commands block until done; never poll or sleep.

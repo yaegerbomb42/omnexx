@@ -309,6 +309,7 @@ describe('registry', () => {
       'outline',
       'read',
       'read_log',
+      'read_symbol',
       'recall',
       'remember',
       'running_context',
