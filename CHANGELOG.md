@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Run estimates**: before a run (and when chat starts work on an approved plan), "est. ~3 min,
+  ~40k tokens, ~$0.02" from the most similar past runs, a range when unsure, "no history yet"
+  without any; then "~2 min left" as tasks finish. In `omnexx run`, the terminal chat's status
+  bar and the VS Code panel.
+
 ## 0.12.0
 
 - **Chat proposes a plan** for vague or larger requests ("I looked at X. Plan: 1) … Go ahead?")

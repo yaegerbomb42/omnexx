@@ -59,6 +59,8 @@ export interface FeedOptions {
   footer?: boolean;
   intervalMs?: number;
   now?: () => number;
+  /** An extra line after an event (e.g. "~2 min left" as plan nodes finish), or undefined. */
+  after?: (e: OmnexxEvent) => Promise<string | undefined>;
 }
 
 /** One-line status: elapsed · cycle · task · model · tokens · cache · $ · commits. */
@@ -119,6 +121,8 @@ export class LiveFeed {
         fold(this.telemetry, e);
         const line = humanize(e, { brand: this.opts.brand, verbosity: this.opts.verbosity });
         if (line) this.opts.out.write(`${line}\n`);
+        const extra = await this.opts.after?.(e);
+        if (extra) this.opts.out.write(`${extra}\n`);
       }
       if (this.opts.footer) {
         const now = (this.opts.now ?? Date.now)();

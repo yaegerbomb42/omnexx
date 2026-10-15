@@ -324,3 +324,12 @@ export function etaText(
   if (left > 0) return `est. ${String(left)}s`;
   return `taking longer… ${String(Math.round((elapsed - waiting.estimateMs) / 1000))}s`;
 }
+
+/**
+ * The run estimate under the working line ("est. ~3 min, ~40k tokens, ~$0.02", then "~2 min
+ * left"), in the countdown's own style; nothing without one.
+ */
+export function estimateHtml(estimate: string | null | undefined): string {
+  if (!estimate) return '';
+  return `<div class="working"><span class="eta">${escapeHtml(estimate)}</span></div>`;
+}

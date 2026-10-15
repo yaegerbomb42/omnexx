@@ -60,6 +60,7 @@ import {
   type Plan,
 } from './plan.js';
 import { writeReport } from './report.js';
+import { recordFinishedRun, repoFileCount, sampleForRun, workerRef } from './run-estimate-io.js';
 import type { RunStatus } from './run-store.js';
 import { Run, type RunDeps } from './run.js';
 
@@ -1130,6 +1131,7 @@ export async function supervise(
     cycles: run.state.cycle,
   });
   await writeReport(run.store, run.state, run.plan, deps.clock.now());
+  await rememberRunTook(run, deps, outcome.status);
   const prUrl = deps.config.git.open_pr ? await openPullRequest(run) : undefined;
   const kind: NotifyKind =
     outcome.status === 'needs-human'
@@ -1172,4 +1174,16 @@ async function notifierSafe(fn: () => Promise<void>): Promise<void> {
 export function autonomousFocus(extra: readonly string[], round: number): string {
   const areas = [...extra, ...BEYOND_RUBRIC];
   return areas[(round - 1) % areas.length] ?? '';
+}
+
+/** Add this run to the history the next run's estimate comes from. */
+async function rememberRunTook(run: Run, deps: RunDeps, status: string): Promise<void> {
+  const goal = await run.store.readGoal().catch(() => ({ text: '' }));
+  const sample = sampleForRun(run.state, run.plan, {
+    model: workerRef(deps.config),
+    goalChars: goal.text.trim().length,
+    repoFiles: await repoFileCount(run.worktree),
+    at: deps.clock.now(),
+  });
+  await recordFinishedRun(deps.paths, sample, status);
 }

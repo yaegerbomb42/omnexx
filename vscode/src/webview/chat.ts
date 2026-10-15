@@ -14,6 +14,7 @@ import {
   formatClock,
   formatTokens,
   formatUsd,
+  estimateHtml,
   etaText,
   logRole,
   renderMarkdown,
@@ -49,6 +50,7 @@ interface State {
   usage: (Usage & { startedAt: number | null }) | null;
   helpers?: crew.Helper[];
   waiting?: { startedAt: number; estimateMs: number | null } | null;
+  estimate?: string | null;
 }
 
 type Incoming =
@@ -162,6 +164,7 @@ function drawConversation(): void {
       `<div class="working">${ICON.spinner}<span>${escapeHtml(doing)}</span><span id="eta" class="eta">${etaText(state.waiting, Date.now())}</span>${state.paused ? '<span class="tag">paused</span>' : ''}</div>`,
     );
   }
+  html.push(estimateHtml(state?.estimate));
   conversation.innerHTML = html.join('');
   if (stick.conversation) conversation.scrollTop = conversation.scrollHeight;
 }

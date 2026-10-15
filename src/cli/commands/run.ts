@@ -9,6 +9,8 @@ import { writeJsonAtomic } from '../../core/atomic.js';
 import { createRun } from '../../core/create.js';
 import { compactPlanView } from '../../core/plan.js';
 import { Run } from '../../core/run.js';
+import { formatEstimate } from '../../core/run-estimate.js';
+import { estimateForRun, PROGRESS_EVENTS, remainingForRun } from '../../core/run-estimate-io.js';
 import { UsageError } from '../../errors.js';
 import { parseDuration } from '../../config/duration.js';
 import type { ConfigInput } from '../../config/schema.js';
@@ -210,6 +212,8 @@ export async function runCommand(
     ...(flags.from ? { from: flags.from } : {}),
   });
   await writeJsonAtomic(store.file(RUN_FLAGS_FILE), overrides);
+  const estimate = await estimateForRun(paths, config, io.cwd, goal);
+  println(io.stderr, formatEstimate(estimate));
   if (flags.detach) {
     const pid = spawnDetached(
       io.entry ?? selfEntry(),
@@ -229,12 +233,17 @@ export async function runCommand(
     io.stderr,
     `${b.green('omnexx')} run ${b.cyan(store.runId)} on ${(await store.readState()).branch}`,
   );
+  const startedAt = clock.now();
   // The live feed tails the run's own event log, so it shows exactly what `logs -f` would.
   const feed = new LiveFeed(new EventTail(store.eventsPath), {
     out: io.stderr,
     brand: b,
     verbosity: verbosityFrom(flags),
     footer: io.isTTY,
+    after: (e) =>
+      PROGRESS_EVENTS.has(e.type)
+        ? remainingForRun(store, estimate, e.ts - startedAt).then((l) => l && b.dim(l))
+        : Promise.resolve(undefined),
   });
   feed.start();
   try {

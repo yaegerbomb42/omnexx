@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addEntries,
+  estimateHtml,
   etaText,
   cacheHitPercent,
   cleanQuestion,
@@ -190,5 +191,15 @@ describe('etaText', () => {
     expect(etaText(w, 3_500)).toBe('est. 3s');
     expect(etaText(w, 13_000)).toBe('taking longer… 7s');
     expect(etaText({ startedAt: 0, estimateMs: null }, 12_000)).toBe('12s');
+  });
+});
+
+describe('estimateHtml', () => {
+  it('shows the run estimate in the countdown style, escaped, or nothing', () => {
+    expect(estimateHtml(null)).toBe('');
+    expect(estimateHtml(undefined)).toBe('');
+    expect(estimateHtml('est. ~3 min, ~40k tokens, <$0.01')).toBe(
+      '<div class="working"><span class="eta">est. ~3 min, ~40k tokens, &lt;$0.01</span></div>',
+    );
   });
 });
