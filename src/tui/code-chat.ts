@@ -609,7 +609,8 @@ export class CodeChat {
           },
           onResponse: ({ model, inputTokens, ms }) => {
             view.waiting?.(null);
-            this.served = model;
+            const m = this.models.find((x) => `${x.provider}:${x.id}` === model);
+            this.served = m ? `${m.provider}:${m.alias}` : model;
             this.latency = recordLatency(this.latency, model, { ms, tokens: inputTokens });
             if (this.paths)
               void saveLatency(latencyFile(this.paths), this.latency).catch(() => undefined);
