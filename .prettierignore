@@ -9,4 +9,5 @@ test/.build
 .claude/
 vscode/out
 bench/suites/*/*/solution/
-bench/suites/*/*/repo/vendor/
+bench/suites/*/*/repo/
+bench/suites/*/*/hidden/

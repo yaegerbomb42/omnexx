@@ -23,5 +23,6 @@
     "noEmit": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts"],
+  "exclude": ["suites/*/*/repo", "suites/*/*/hidden", "suites/*/*/solution", "results"]
 }

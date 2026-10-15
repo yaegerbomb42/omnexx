@@ -11,7 +11,9 @@ export default tseslint.config(
       'node_modules/**',
       'test/fixtures/**',
       'bench/suites/*/*/solution/**',
+      // Task fixtures: starting repos (buggy on purpose) and hidden checks.
       'bench/suites/*/*/repo/**',
+      'bench/suites/*/*/hidden/**',
       'bench/suites/*/lib/**',
       'bench/results/**',
       'test/.build/**',
