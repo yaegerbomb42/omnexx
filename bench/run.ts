@@ -1,6 +1,6 @@
 import { program } from 'commander';
 import { join, resolve } from 'node:path';
-import { getJimmy10Suite } from './suites/index.ts';
+import { getJimmy10Suite, getWeb5Suite } from './suites/index.ts';
 import { OmnexxRunner } from './runners/omnexx.ts';
 import { ClaudeCodeRunner } from './runners/claude-code.ts';
 import { CodexRunner } from './runners/codex.ts';
@@ -15,6 +15,7 @@ import type { AgentRunner } from './runners/base.ts';
 
 const SUITES: Record<string, () => Suite> = {
   jimmy10: getJimmy10Suite,
+  web5: getWeb5Suite,
 };
 
 interface RunnerOpts {

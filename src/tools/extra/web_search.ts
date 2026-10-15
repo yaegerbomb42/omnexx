@@ -3,12 +3,44 @@ import type { ToolSource } from './types.js';
 import { fail, ok, type Tool, type ToolContext, type ToolOutput } from '../types.js';
 import type { OmnexxConfig } from '../../config/schema.js';
 import type { SearchBackend, WebConfig } from '../../config/sections/web.js';
+import { parseDuration } from '../../config/duration.js';
+import { fetchWithRetry } from './web_http.js';
+
+const DEFAULT_SEARCH_TIMEOUT_MS = 15_000;
+/** Queries remembered per run; the oldest go first. */
+const MAX_CACHED_QUERIES = 50;
+/** Snippets are hints, not content: web_fetch reads the page. */
+const MAX_SNIPPET_CHARS = 300;
 
 let activeWebConfig: WebConfig | undefined;
+/** Formatted results per backend + query + count, for this run. */
+const searchCache = new Map<string, string>();
 
 export function setWebSearchConfig(config?: Partial<WebConfig>): void {
   activeWebConfig = config as WebConfig | undefined;
 }
+
+export function clearWebSearchCache(): void {
+  searchCache.clear();
+}
+
+function searchTimeoutMs(): number {
+  try {
+    return parseDuration(activeWebConfig?.search_timeout ?? '15s');
+  } catch {
+    return DEFAULT_SEARCH_TIMEOUT_MS;
+  }
+}
+
+/** Search APIs get a timeout per attempt and retries on 429/5xx/network errors. */
+function searchFetch(url: string, init: RequestInit): Promise<Response> {
+  return fetchWithRetry(url, init, { timeoutMs: searchTimeoutMs() });
+}
+
+const clipSnippet = (s: string): string => {
+  const flat = s.replace(/\s+/g, ' ').trim();
+  return flat.length > MAX_SNIPPET_CHARS ? `${flat.slice(0, MAX_SNIPPET_CHARS)}…` : flat;
+};
 
 const schema = z.strictObject({
   query: z.string().describe('Search query string'),
@@ -35,7 +67,7 @@ async function searchBrave(
   url.searchParams.set('q', query);
   url.searchParams.set('count', String(count));
 
-  const res = await fetch(url.toString(), {
+  const res = await searchFetch(url.toString(), {
     headers: {
       Accept: 'application/json',
       'X-Subscription-Token': apiKey,
@@ -67,7 +99,7 @@ async function searchTavily(
   count: number,
   apiKey: string,
 ): Promise<SearchResultItem[]> {
-  const res = await fetch('https://api.tavily.com/search', {
+  const res = await searchFetch('https://api.tavily.com/search', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -104,7 +136,7 @@ async function searchExa(
   count: number,
   apiKey: string,
 ): Promise<SearchResultItem[]> {
-  const res = await fetch('https://api.exa.ai/search', {
+  const res = await searchFetch('https://api.exa.ai/search', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -145,7 +177,7 @@ async function searchSearxng(
   url.searchParams.set('q', query);
   url.searchParams.set('format', 'json');
 
-  const res = await fetch(url.toString(), {
+  const res = await searchFetch(url.toString(), {
     headers: { Accept: 'application/json' },
   });
 
@@ -188,7 +220,7 @@ export function resolveSearchKey(backend: SearchBackend, keyEnv?: string): strin
 export const webSearchTool: Tool<typeof schema> = {
   name: 'web_search',
   description:
-    'Search the web using configured search backend (brave, tavily, searxng, exa). Returns titles, URLs, and snippets.',
+    'Search the web (configured backend). Returns titles, URLs and short snippets; read a result with web_fetch. Cached per run.',
   schema,
   readOnly: true,
   async run(input, ctx: ToolContext): Promise<ToolOutput> {
@@ -199,6 +231,10 @@ export const webSearchTool: Tool<typeof schema> = {
 
     const count = input.n ?? 5;
     const key = resolveSearchKey(backend, activeWebConfig?.search_key_env);
+
+    const cacheKey = `${backend}\n${count}\n${input.query}`;
+    const cached = searchCache.get(cacheKey);
+    if (cached !== undefined) return ok(cached);
 
     try {
       let items: SearchResultItem[] = [];
@@ -235,11 +271,19 @@ export const webSearchTool: Tool<typeof schema> = {
         return ok(`No search results found for: ${input.query}`);
       }
 
-      const formatted = items
-        .map((item, idx) => `${idx + 1}. [${item.title}](${item.url})\n   ${item.snippet}`)
-        .join('\n\n');
-
-      return ok(ctx.redactor.text(formatted));
+      const formatted = ctx.redactor.text(
+        items
+          .slice(0, count)
+          .map(
+            (item, idx) =>
+              `${idx + 1}. [${item.title}](${item.url})\n   ${clipSnippet(item.snippet)}`,
+          )
+          .join('\n\n'),
+      );
+      searchCache.set(cacheKey, formatted);
+      const oldest = searchCache.keys().next().value;
+      if (searchCache.size > MAX_CACHED_QUERIES && oldest !== undefined) searchCache.delete(oldest);
+      return ok(formatted);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return fail(`Search failed: ${ctx.redactor.text(msg)}`);

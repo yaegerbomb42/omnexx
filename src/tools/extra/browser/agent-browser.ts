@@ -10,6 +10,13 @@ import type {
   BrowserLaunch,
 } from './types.js';
 import { describeWaitTarget, pollUntil } from './wait.js';
+import { parseSemantic } from './selector.js';
+
+type FindAction = 'click' | 'fill' | 'type' | 'hover' | 'check' | 'uncheck' | 'text';
+
+/** Network-idle: no new request for this long after the document loaded. */
+const QUIET_MS = 500;
+const QUIET_POLL_MS = 250;
 
 interface JsonResponse<T> {
   success: boolean;
@@ -121,16 +128,39 @@ export class AgentBrowserBackend implements BrowserBackend {
     return s;
   }
 
+  /**
+   * The command for an element action: `find` for semantic targets (text=, label=, role=...),
+   * which agent-browser's selectors don't understand, else the plain command.
+   */
+  private act(action: FindAction, ref: string, text?: string): string[] {
+    const sem = parseSemantic(ref);
+    const extra = text === undefined ? [] : [text];
+    if (!sem) {
+      const cmd = action === 'text' ? ['get', 'text'] : [action];
+      return [...cmd, this.formatTarget(ref), ...extra];
+    }
+    if (sem.by === 'role')
+      return [
+        'find',
+        'role',
+        sem.role,
+        action,
+        ...extra,
+        ...(sem.name ? ['--name', sem.name] : []),
+      ];
+    return ['find', sem.by, sem.value, action, ...extra];
+  }
+
   async click(ref: string): Promise<void> {
-    await this.json(['click', this.formatTarget(ref)]);
+    await this.json(this.act('click', ref));
   }
 
   async type(ref: string, text: string): Promise<void> {
-    await this.json(['type', this.formatTarget(ref), text]);
+    await this.json(this.act('type', ref, text));
   }
 
   async fill(ref: string, text: string): Promise<void> {
-    await this.json(['fill', this.formatTarget(ref), text]);
+    await this.json(this.act('fill', ref, text));
   }
 
   async select(ref: string, value: string): Promise<void> {
@@ -138,7 +168,7 @@ export class AgentBrowserBackend implements BrowserBackend {
   }
 
   async setChecked(ref: string, checked: boolean): Promise<void> {
-    await this.json([checked ? 'check' : 'uncheck', this.formatTarget(ref)]);
+    await this.json(this.act(checked ? 'check' : 'uncheck', ref));
   }
 
   async upload(ref: string, file: string): Promise<void> {
@@ -146,7 +176,7 @@ export class AgentBrowserBackend implements BrowserBackend {
   }
 
   async hover(ref: string): Promise<void> {
-    await this.json(['hover', this.formatTarget(ref)]);
+    await this.json(this.act('hover', ref));
   }
 
   async press(key: string): Promise<void> {
@@ -162,6 +192,12 @@ export class AgentBrowserBackend implements BrowserBackend {
     if ('text' in target) {
       const expr = `document.body.innerText.includes(${JSON.stringify(target.text)})`;
       check = async () => (await this.evaluate(expr)) === true;
+    } else if (parseSemantic(target.selector)) {
+      const args = this.act('text', target.selector);
+      check = async () => {
+        await this.json(args);
+        return true;
+      };
     } else {
       const sel = this.formatTarget(target.selector);
       check = sel.startsWith('@')
@@ -172,16 +208,38 @@ export class AgentBrowserBackend implements BrowserBackend {
     await pollUntil(check, timeoutMs, describeWaitTarget(target));
   }
 
+  /** The document loaded, then the network went quiet (no new request for QUIET_MS). */
   async waitForLoad(timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
     await pollUntil(
       async () => (await this.evaluate('document.readyState')) === 'complete',
       timeoutMs,
       'the page to finish loading',
     );
+    let seen = -1;
+    let since = Date.now();
+    await pollUntil(
+      async () => {
+        const count = (await this.network()).length;
+        if (count !== seen) {
+          seen = count;
+          since = Date.now();
+          return false;
+        }
+        return Date.now() - since >= QUIET_MS;
+      },
+      Math.max(0, deadline - Date.now()),
+      'the network to go idle',
+      QUIET_POLL_MS,
+    );
+  }
+
+  async setViewport(width: number, height: number): Promise<void> {
+    await this.json(['set', 'viewport', String(width), String(height)]);
   }
 
   async getText(ref: string): Promise<string> {
-    return (await this.json<{ text?: string }>(['get', 'text', this.formatTarget(ref)])).text ?? '';
+    return (await this.json<{ text?: string }>(this.act('text', ref))).text ?? '';
   }
 
   async getUrl(): Promise<string> {

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>tallyhq 3 API reference</title>
+    <style>
+      body {
+        font-family: sans-serif;
+      }
+      nav,
+      .ad {
+        background: #eee;
+      }
+    </style>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+    </script>
+  </head>
+  <body>
+    <nav>
+      <a href="/">Home</a> | <a href="/blog">Blog</a> | <a href="/pricing">Pricing</a> |
+      <a href="/community">Community</a> | <a href="/login">Sign in</a>
+    </nav>
+    <div class="ad">Try tallyhq Cloud free for 30 days! Unlimited ledgers, SSO, audit trails.</div>
+    <main>
+      <article>
+        <h1>tallyhq 3 API reference</h1>
+        <p>tallyhq keeps exact decimal totals: no floating point anywhere.</p>
+        <h2>Breaking changes in v3</h2>
+        <ul>
+          <li>The top-level <code>add(a, b)</code> helper was removed. Use a tally.</li>
+          <li>
+            Amounts must be <strong>decimal strings</strong> such as <code>"19.99"</code>. Numbers
+            throw a <code>TypeError</code>.
+          </li>
+          <li><code>total()</code> now returns an object, not a string.</li>
+        </ul>
+        <h2>createTally(options)</h2>
+        <p>Creates a running tally. Options:</p>
+        <table>
+          <tr>
+            <th>Option</th>
+            <th>Default</th>
+            <th>Meaning</th>
+          </tr>
+          <tr>
+            <td><code>places</code></td>
+            <td>2</td>
+            <td>Decimal places of the total.</td>
+          </tr>
+          <tr>
+            <td><code>mode</code></td>
+            <td><code>"up"</code></td>
+            <td>
+              Rounding: <code>"up"</code> (half away from zero), <code>"even"</code> (half to even,
+              banker's rounding), or <code>"down"</code> (truncate).
+            </td>
+          </tr>
+        </table>
+        <p>Rounding applies once, to the total, never to each amount.</p>
+        <h2>tally.add(amount)</h2>
+        <p>Adds a decimal string. Returns the tally, so calls chain.</p>
+        <h2>tally.total()</h2>
+        <p>
+          Returns <code>{ value, count }</code>: <code>value</code> is the rounded total as a string
+          with exactly <code>places</code> decimals, <code>count</code> how many amounts were added.
+        </p>
+        <pre><code>import { createTally } from 'tallyhq';
+const t = createTally({ mode: 'even' });
+t.add('0.125').add('1.000');
+t.total(); // { value: '1.12', count: 2 }</code></pre>
+      </article>
+    </main>
+    <footer>© tallyhq Inc. | Privacy | Terms | Cookie settings | Status | Careers</footer>
+  </body>
+</html>

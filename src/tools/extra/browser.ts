@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import type { OmnexxConfig } from '../../config/schema.js';
 import { checkBrowserToolPolicy } from '../../security/policy-extra.js';
@@ -9,6 +10,7 @@ import { detectBrowserBackend } from './browser/detector.js';
 import { BrowserSessionManager, type BrowserManagerOptions } from './browser/manager.js';
 import { isUrlAllowed } from './browser/security.js';
 import { trimSnapshot } from './browser/snapshot.js';
+import { asLayoutReport, formatPageCheck, LAYOUT_PROBE } from './browser/page-check.js';
 import type { BrowserBackend } from './browser/types.js';
 
 const ACTIONS = [
@@ -35,17 +37,27 @@ const ACTIONS = [
   'close_tab',
   'screenshot',
   'console',
+  'check_page',
   'close',
 ] as const;
 
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 3840;
+/** Viewport height used when `check` sets a width. */
+const CHECK_HEIGHT = 900;
+const TIMEOUT = /timeout \d+ ?ms exceeded|timed out after/i;
+
 const browserActionSchema = z.strictObject({
   action: z.enum(ACTIONS).describe('The browser action to perform'),
-  url: z.string().optional().describe('URL to navigate to (for open and new_tab)'),
+  url: z
+    .string()
+    .optional()
+    .describe('URL for open/new_tab; for check_page also a repo HTML file path'),
   ref: z
     .string()
     .optional()
     .describe(
-      'Element reference from the latest snapshot (e.g. "@e1") or a CSS selector, for click/type/fill/hover/select/check/uncheck/upload/get_text/wait_for',
+      'Element: snapshot ref ("@e1"), CSS selector, text=Save, label=Email, placeholder=Search, or role=button[name="Save"]',
     ),
   text: z
     .string()
@@ -70,6 +82,13 @@ const browserActionSchema = z.strictObject({
     .max(60_000)
     .optional()
     .describe('How long wait_for waits (default 10000)'),
+  width: z
+    .number()
+    .int()
+    .min(MIN_WIDTH)
+    .max(MAX_WIDTH)
+    .optional()
+    .describe('check_page: viewport width in px, e.g. 375 for a phone'),
 });
 
 export type BrowserActionInput = z.infer<typeof browserActionSchema>;
@@ -184,6 +203,24 @@ function pngSize(buf: Buffer): string {
   return `${buf.readUInt32BE(16)}x${buf.readUInt32BE(20)}`;
 }
 
+/** Saves a screenshot under the run's logs, never the repo, so it can't end up in a commit. */
+async function saveScreenshot(
+  ctx: ToolContext,
+  backend: BrowserBackend,
+): Promise<{ file: string; info: string }> {
+  const shot = await backend.screenshot();
+  const dir = join(ctx.store.logsDir, 'browser');
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const ext = shot.mimeType === 'image/jpeg' ? 'jpg' : 'png';
+  const file = join(dir, `screenshot-${ctx.cycle}-${Date.now()}.${ext}`);
+  const buf = Buffer.from(shot.base64, 'base64');
+  await writeFile(file, buf, { mode: 0o600 });
+  return {
+    file,
+    info: `${ext === 'png' ? pngSize(buf) : 'jpeg'}, ${Math.round(buf.length / 1024)} KB`,
+  };
+}
+
 const unsupported = (backend: BrowserBackend, action: string): ToolOutput =>
   fail(
     `action "${action}" is not supported by the ${backend.name} browser backend; use snapshot and the core actions (open, click, type, press) instead`,
@@ -235,6 +272,18 @@ async function liveFrame(
   } catch {
     // The page may be closing or mid-navigation; the next action takes another frame.
   }
+}
+
+/** A timed-out element action, explained, with a small snapshot to pick a better target from. */
+async function timeoutHelp(
+  session: BrowserSessionManager,
+  input: BrowserActionInput,
+  msg: string,
+): Promise<string> {
+  const backend = await session.getBackend().catch(() => null);
+  const snap = backend ? await backend.snapshot().catch(() => '') : '';
+  const shown = snap ? `\n\nCurrent snapshot:\n${trimSnapshot(snap, RETRY_SNAPSHOT_TOKENS)}` : '';
+  return `browser ${input.action} failed: no visible, enabled element matched ${input.ref ?? ''} in time (${msg.split('\n')[0] ?? msg}). Pick a ref from the snapshot below, try text=/role= targets, or wait_for the element first.${shown}`;
 }
 
 export function createBrowserTool(
@@ -501,18 +550,50 @@ export function createBrowserTool(
 
       case 'screenshot': {
         const backend = await session.getBackend();
-        const shot = await backend.screenshot();
-        // Under the run's logs, never the repo: screenshots must not end up in a commit.
-        const dir = join(ctx.store.logsDir, 'browser');
-        await mkdir(dir, { recursive: true, mode: 0o700 });
-        const ext = shot.mimeType === 'image/jpeg' ? 'jpg' : 'png';
-        const file = join(dir, `screenshot-${ctx.cycle}-${Date.now()}.${ext}`);
-        const buf = Buffer.from(shot.base64, 'base64');
-        await writeFile(file, buf, { mode: 0o600 });
+        const { file, info } = await saveScreenshot(ctx, backend);
         const url = backend.getUrl ? await backend.getUrl().catch(() => '') : '';
         emit({ path: file });
         return ok(
-          `Screenshot saved to ${file} (${ext === 'png' ? pngSize(buf) : 'jpeg'}, ${Math.round(buf.length / 1024)} KB${url ? `, of ${url}` : ''}). It is outside the repo; use snapshot or get_text to read what the page says.`,
+          `Screenshot saved to ${file} (${info}${url ? `, of ${url}` : ''}). It is outside the repo; use snapshot or get_text to read what the page says.`,
+        );
+      }
+
+      case 'check_page': {
+        const backend = await session.getBackend();
+        let target = input.url;
+        if (target !== undefined && !/^[a-z][a-z0-9+.-]*:/i.test(target)) {
+          // A repo file: only inside the jail, so the page can't be pointed at anything else.
+          target = pathToFileURL(await resolvePath(ctx, target, 'read')).href;
+        } else if (target !== undefined) {
+          const url = checkUrl(target);
+          if (typeof url !== 'string') return url;
+          await session.ensureDevServerForUrl(url);
+        }
+        if (input.width !== undefined) {
+          if (!backend.setViewport) return unsupported(backend, 'check_page with width');
+          await backend.setViewport(input.width, CHECK_HEIGHT);
+        }
+        // Only what this load logs counts; earlier pages' messages stay out of the report.
+        const consoleBefore = target ? (await backend.console()).length : 0;
+        const netBefore = target && backend.network ? (await backend.network()).length : 0;
+        if (target) {
+          await backend.open(target);
+          await settle(backend);
+        }
+        const { file, info } = await saveScreenshot(ctx, backend);
+        const layout = backend.evaluate
+          ? asLayoutReport(await backend.evaluate(LAYOUT_PROBE).catch(() => null))
+          : null;
+        const url = target ?? (backend.getUrl ? await backend.getUrl().catch(() => '') : '');
+        emit({ url, path: file });
+        return ok(
+          formatPageCheck({
+            url,
+            screenshot: `${file} (${info})`,
+            console: (await backend.console()).slice(consoleBefore),
+            requests: backend.network ? (await backend.network()).slice(netBefore) : [],
+            layout,
+          }),
         );
       }
 
@@ -538,7 +619,8 @@ export function createBrowserTool(
 
   return {
     name: 'browser',
-    description: `Control a headless browser to inspect, interact with, and verify web applications. Actions: ${ACTIONS.join(', ')}. Use refs from the latest snapshot; use wait_for after actions that load content. Refuses URLs outside the browser.allow allowlist.`,
+    description:
+      'Headless browser to inspect, drive and verify web apps. Use refs from the latest snapshot or text=/role= targets; wait_for after actions that load content. check_page opens a URL or repo HTML file and reports screenshot, console errors, failed requests and layout problems (overflow, overlap, broken images): use it to verify UI changes. Only URLs in browser.allow.',
     schema: browserActionSchema,
     readOnly: false,
     async run(input: BrowserActionInput, ctx: ToolContext): Promise<ToolOutput> {
@@ -556,6 +638,7 @@ export function createBrowserTool(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (err instanceof UsageError || err instanceof StaleRefError) return fail(msg);
+        if (input.ref && TIMEOUT.test(msg)) return fail(await timeoutHelp(session, input, msg));
         if (FATAL.test(msg)) {
           await closeSession(ctx.store.runId);
           return fail(

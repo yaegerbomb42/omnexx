@@ -59,6 +59,8 @@ export interface BrowserBackend {
   hover?(ref: string): Promise<void>;
   getText?(ref: string): Promise<string>;
   getUrl?(): Promise<string>;
+  /** Resizes the viewport, e.g. to check a page at phone width. */
+  setViewport?(width: number, height: number): Promise<void>;
   /** Evaluates a JS expression in the page and returns its JSON-serializable result. */
   evaluate?(expression: string): Promise<unknown>;
   network?(): Promise<BrowserRequest[]>;

@@ -16,14 +16,18 @@ const NPM_CACHE = join(tmpdir(), 'omnexx-bench-npm-cache');
  * and `check.sh` (the hidden acceptance check). Only setup's output is visible to the agent.
  */
 export class Jimmy10Suite implements Suite {
-  readonly name = 'jimmy10';
+  /** Other script suites (web5) reuse this runner with their own name and task folder. */
+  constructor(
+    readonly name = 'jimmy10',
+    private readonly root = SUITE_ROOT,
+  ) {}
 
   async loadTasks(): Promise<TaskDef[]> {
-    const entries = await readdir(SUITE_ROOT, { withFileTypes: true });
+    const entries = await readdir(this.root, { withFileTypes: true });
     const tasks: TaskDef[] = [];
     for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-      if (!e.isDirectory() || !existsSync(join(SUITE_ROOT, e.name, 'check.sh'))) continue;
-      const goal = await readFile(join(SUITE_ROOT, e.name, 'goal.md'), 'utf-8').catch(() => '');
+      if (!e.isDirectory() || !existsSync(join(this.root, e.name, 'check.sh'))) continue;
+      const goal = await readFile(join(this.root, e.name, 'goal.md'), 'utf-8').catch(() => '');
       const title = /^#\s*(?:Task:\s*)?(.+)$/m.exec(goal)?.[1]?.trim() ?? e.name;
       tasks.push({ id: e.name, path: e.name, description: title });
     }
@@ -33,7 +37,7 @@ export class Jimmy10Suite implements Suite {
   async setupTask(task: TaskDef, workDir: string): Promise<void> {
     await rm(workDir, { recursive: true, force: true });
     await mkdir(workDir, { recursive: true });
-    const setup = join(SUITE_ROOT, task.path, 'setup.sh');
+    const setup = join(this.root, task.path, 'setup.sh');
     if (existsSync(setup)) {
       const code = await runBash(setup, workDir);
       if (code !== 0) throw new Error(`setup.sh for ${task.id} exited ${code}`);
@@ -46,14 +50,14 @@ export class Jimmy10Suite implements Suite {
 
   async getGoal(task: TaskDef): Promise<string> {
     try {
-      return await readFile(join(SUITE_ROOT, task.path, 'goal.md'), 'utf-8');
+      return await readFile(join(this.root, task.path, 'goal.md'), 'utf-8');
     } catch {
       return `Task: ${task.description}`;
     }
   }
 
   async checkTask(task: TaskDef, workDir: string): Promise<boolean> {
-    const check = join(SUITE_ROOT, task.path, 'check.sh');
+    const check = join(this.root, task.path, 'check.sh');
     if (!existsSync(check)) return false;
     return (await runBash(check, workDir)) === 0;
   }

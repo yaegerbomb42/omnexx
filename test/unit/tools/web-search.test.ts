@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { mockServer, json } from '../../support/mock-http.js';
 import { toolContext } from '../../support/tool-context.js';
-import { webSearchTool, setWebSearchConfig } from '../../../src/tools/extra/web_search.js';
+import {
+  webSearchTool,
+  setWebSearchConfig,
+  clearWebSearchCache,
+} from '../../../src/tools/extra/web_search.js';
 import {
   braveResponseFixture,
   tavilyResponseFixture,
@@ -11,6 +15,7 @@ import {
 
 describe('web_search tool', () => {
   beforeEach(() => {
+    clearWebSearchCache();
     delete process.env.BRAVE_API_KEY;
     delete process.env.TAVILY_API_KEY;
     delete process.env.EXA_API_KEY;
@@ -163,5 +168,37 @@ describe('web_search tool', () => {
     expect(result.isError).toBeFalsy();
     expect(result.content).toContain('SearXNG Metasearch Engine');
     expect(result.content).toContain('https://searx.space');
+  });
+
+  it('retries a 429, clips long snippets, and caches the query for the run', async () => {
+    clearWebSearchCache();
+    let hits = 0;
+    const { url } = await mockServer((_req, res) => {
+      hits++;
+      if (hits === 1) {
+        json(res, 429, {});
+        return;
+      }
+      json(res, 200, {
+        results: [{ title: 'Long', url: 'https://example.test/long', content: 'x '.repeat(1000) }],
+      });
+    });
+    setWebSearchConfig({
+      allow: ['*'],
+      deny: [],
+      fetch_timeout: '15s',
+      max_fetch_bytes: 5 * 1024 * 1024,
+      search: 'searxng',
+      search_url: url,
+      search_timeout: '5s',
+    });
+    const ctx = await toolContext(process.cwd());
+    const first = await webSearchTool.run({ query: 'cache me' }, ctx);
+    expect(first.isError).toBeFalsy();
+    expect(first.content).toContain('[Long](https://example.test/long)');
+    expect(first.content.length).toBeLessThan(400);
+    const again = await webSearchTool.run({ query: 'cache me' }, ctx);
+    expect(again.content).toBe(first.content);
+    expect(hits).toBe(2);
   });
 });

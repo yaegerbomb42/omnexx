@@ -7,16 +7,21 @@ import type {
   WaitTarget,
   BrowserLaunch,
 } from './types.js';
+import { parseSemantic } from './selector.js';
+
+interface Timeout {
+  timeout: number;
+}
 
 interface PlaywrightLocator {
-  click(): Promise<void>;
-  fill(text: string): Promise<void>;
-  pressSequentially(text: string): Promise<void>;
-  selectOption(value: string | { label: string }): Promise<string[]>;
-  setChecked(checked: boolean): Promise<void>;
-  setInputFiles(file: string): Promise<void>;
-  hover(): Promise<void>;
-  innerText(): Promise<string>;
+  click(o: Timeout): Promise<void>;
+  fill(text: string, o: Timeout): Promise<void>;
+  pressSequentially(text: string, o: Timeout): Promise<void>;
+  selectOption(value: string | { label: string }, o: Timeout): Promise<string[]>;
+  setChecked(checked: boolean, o: Timeout): Promise<void>;
+  setInputFiles(file: string, o: Timeout): Promise<void>;
+  hover(o: Timeout): Promise<void>;
+  innerText(o: Timeout): Promise<string>;
   first(): PlaywrightLocator;
   waitFor(options: { state: 'visible'; timeout: number }): Promise<void>;
 }
@@ -31,6 +36,10 @@ interface PlaywrightPage {
   goto(url: string, options?: { timeout?: number }): Promise<unknown>;
   locator(selector: string): PlaywrightLocator;
   getByText(text: string): PlaywrightLocator;
+  getByLabel(text: string): PlaywrightLocator;
+  getByPlaceholder(text: string): PlaywrightLocator;
+  getByRole(role: string, options?: { name: string }): PlaywrightLocator;
+  setViewportSize(size: { width: number; height: number }): Promise<void>;
   keyboard: {
     press(key: string): Promise<void>;
   };
@@ -87,6 +96,11 @@ interface CamoufoxModule {
 
 const CAMOUFOX_HELP =
   'Camoufox needs playwright-core, camoufox-js and its browser: `npm i -g playwright-core camoufox-js && npx camoufox-js fetch` (or set browser.engine = "chromium").';
+
+/** Every element action fails after this instead of Playwright's 30 s default. */
+const ACTION_TIMEOUT_MS = 10_000;
+const T: Timeout = { timeout: ACTION_TIMEOUT_MS };
+const NAV_TIMEOUT_MS = 30_000;
 
 /** Recent requests kept for `network`; older ones are dropped. */
 const MAX_REQUESTS = 200;
@@ -220,14 +234,28 @@ export class PlaywrightBackend implements BrowserBackend {
     return ref.startsWith('@') ? `[data-ref="${ref.slice(1)}"], #${ref.slice(1)}` : ref;
   }
 
+  private locate(page: PlaywrightPage, ref: string): PlaywrightLocator {
+    const sem = parseSemantic(ref);
+    if (!sem) return page.locator(this.toSelector(ref)).first();
+    switch (sem.by) {
+      case 'text':
+        return page.getByText(sem.value).first();
+      case 'label':
+        return page.getByLabel(sem.value).first();
+      case 'placeholder':
+        return page.getByPlaceholder(sem.value).first();
+      case 'role':
+        return page.getByRole(sem.role, sem.name ? { name: sem.name } : undefined).first();
+    }
+  }
+
   private async loc(ref: string): Promise<PlaywrightLocator> {
-    const page = await this.ensurePage();
-    return page.locator(this.toSelector(ref)).first();
+    return this.locate(await this.ensurePage(), ref);
   }
 
   async open(url: string): Promise<void> {
     const page = await this.ensurePage();
-    await page.goto(url, { timeout: 30_000 });
+    await page.goto(url, { timeout: NAV_TIMEOUT_MS });
   }
 
   async snapshot(): Promise<string> {
@@ -269,37 +297,37 @@ export class PlaywrightBackend implements BrowserBackend {
   }
 
   async click(ref: string): Promise<void> {
-    await (await this.loc(ref)).click();
+    await (await this.loc(ref)).click(T);
   }
 
   async type(ref: string, text: string): Promise<void> {
-    await (await this.loc(ref)).pressSequentially(text);
+    await (await this.loc(ref)).pressSequentially(text, T);
   }
 
   async fill(ref: string, text: string): Promise<void> {
-    await (await this.loc(ref)).fill(text);
+    await (await this.loc(ref)).fill(text, T);
   }
 
   async select(ref: string, value: string): Promise<void> {
     const l = await this.loc(ref);
     // A value that matches no option is treated as the option's visible label.
     try {
-      await l.selectOption(value);
+      await l.selectOption(value, T);
     } catch {
-      await l.selectOption({ label: value });
+      await l.selectOption({ label: value }, T);
     }
   }
 
   async setChecked(ref: string, checked: boolean): Promise<void> {
-    await (await this.loc(ref)).setChecked(checked);
+    await (await this.loc(ref)).setChecked(checked, T);
   }
 
   async upload(ref: string, file: string): Promise<void> {
-    await (await this.loc(ref)).setInputFiles(file);
+    await (await this.loc(ref)).setInputFiles(file, T);
   }
 
   async hover(ref: string): Promise<void> {
-    await (await this.loc(ref)).hover();
+    await (await this.loc(ref)).hover(T);
   }
 
   async press(key: string): Promise<void> {
@@ -322,9 +350,7 @@ export class PlaywrightBackend implements BrowserBackend {
   async waitFor(target: WaitTarget, timeoutMs: number): Promise<void> {
     const page = await this.ensurePage();
     const l =
-      'text' in target
-        ? page.getByText(target.text).first()
-        : page.locator(this.toSelector(target.selector)).first();
+      'text' in target ? page.getByText(target.text).first() : this.locate(page, target.selector);
     await l.waitFor({ state: 'visible', timeout: timeoutMs });
   }
 
@@ -334,7 +360,11 @@ export class PlaywrightBackend implements BrowserBackend {
   }
 
   async getText(ref: string): Promise<string> {
-    return (await this.loc(ref)).innerText();
+    return (await this.loc(ref)).innerText(T);
+  }
+
+  async setViewport(width: number, height: number): Promise<void> {
+    await (await this.ensurePage()).setViewportSize({ width, height });
   }
 
   async getUrl(): Promise<string> {
@@ -381,7 +411,7 @@ export class PlaywrightBackend implements BrowserBackend {
     const p = await this.context.newPage();
     this.track(p);
     this.page = p;
-    await p.goto(url, { timeout: 30_000 });
+    await p.goto(url, { timeout: NAV_TIMEOUT_MS });
   }
 
   async closeTab(id?: string): Promise<void> {
