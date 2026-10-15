@@ -24,6 +24,10 @@ export interface AnthropicOptions {
   timeoutMs: number;
   /** Injectable for tests (a loopback mock); defaults to the global fetch. */
   fetch?: typeof fetch;
+  /** Extra headers on every request (Anthropic-compatible gateways). */
+  headers?: Readonly<Record<string, string>> | undefined;
+  /** Send the key as a bearer token instead of x-api-key (some gateways want that). */
+  bearer?: boolean;
 }
 
 /**
@@ -38,7 +42,8 @@ export class AnthropicProvider implements Provider {
 
   constructor(private readonly opts: AnthropicOptions) {
     this.client = new Anthropic({
-      apiKey: opts.apiKey,
+      ...(opts.bearer ? { apiKey: null, authToken: opts.apiKey } : { apiKey: opts.apiKey }),
+      ...(opts.headers ? { defaultHeaders: { ...opts.headers } } : {}),
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
       maxRetries: 0,
       timeout: opts.timeoutMs,

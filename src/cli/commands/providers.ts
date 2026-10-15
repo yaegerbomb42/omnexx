@@ -7,17 +7,32 @@ import { loadConfig } from '../../config/load.js';
 import { parseDuration } from '../../config/duration.js';
 import { resolvePaths, userConfigFile } from '../../core/paths.js';
 import { UsageError } from '../../errors.js';
+import {
+  endpointAuth,
+  kindForFlavor,
+  PROVIDER_CATALOG,
+  type CatalogEntry,
+} from '../../providers/catalog.js';
 import { makeEndpointProvider } from '../../providers/make.js';
+import type { EndpointConfig } from '../../config/schema.js';
+import type { EndpointAuth } from '../../providers/auth-headers.js';
 import type { CommandRegistrar } from './extra/types.js';
+import type { SmartAddOptions } from './providers-add.js';
 import { println, readLine, type CliIO } from '../io.js';
 import { EXIT } from '../exit-codes.js';
+
+type EndpointKind = EndpointConfig['kind'];
 
 /** Preset templates: suggestions only, written into user config on `add`. */
 export interface ProviderTemplate {
   baseUrl: string;
   keyEnv: string | undefined;
   free: boolean;
-  kind: 'openai' | 'responses' | 'gemini';
+  kind: EndpointKind;
+  /** How the key is sent; unset is a bearer token. */
+  auth?: EndpointAuth;
+  /** Extra headers sent with every request (never secrets: they are written to config). */
+  headers?: Record<string, string>;
   /** Display name. */
   label?: string;
   /** How its API keys start, so a pasted key is recognised. */
@@ -28,91 +43,44 @@ export interface ProviderTemplate {
   local?: boolean;
 }
 
-type Row = [
-  name: string,
-  label: string,
-  baseUrl: string,
-  keyEnv: string | undefined,
-  keyPrefix: string | undefined,
-  signup: string | undefined,
-];
-
 /**
- * Every provider omnexx knows by name (checked 2026-10). All speak the OpenAI Chat Completions
- * API except Gemini (native). Anthropic is built in and not listed here. Any other
- * OpenAI-compatible service works by URL: `/connect https://host/v1 KEY`.
- * One per line: name | label | base URL | key env var | key prefix | signup ('-' = none).
+ * Presets derived from the provider catalog (src/providers/catalog.ts): every entry whose base
+ * URL needs no extra values. Anthropic is built in and templated entries (Azure, Bedrock, Vertex,
+ * Cloudflare) go through the settings form or `omnexx providers add <id> --field k=v`.
  */
-const HOSTED: Row[] = [
-  'openai | OpenAI | https://api.openai.com/v1 | OPENAI_API_KEY | sk- | https://platform.openai.com/api-keys',
-  'gemini | Google Gemini | https://generativelanguage.googleapis.com | GEMINI_API_KEY | AIza | https://aistudio.google.com/apikey',
-  'xai | xAI (Grok) | https://api.x.ai/v1 | XAI_API_KEY | xai- | https://console.x.ai',
-  'mistral | Mistral | https://api.mistral.ai/v1 | MISTRAL_API_KEY | - | https://console.mistral.ai/api-keys',
-  'deepseek | DeepSeek | https://api.deepseek.com/v1 | DEEPSEEK_API_KEY | - | https://platform.deepseek.com/api_keys',
-  'groq | Groq | https://api.groq.com/openai/v1 | GROQ_API_KEY | gsk_ | https://console.groq.com/keys',
-  'cerebras | Cerebras | https://api.cerebras.ai/v1 | CEREBRAS_API_KEY | csk- | https://cloud.cerebras.ai',
-  'openrouter | OpenRouter (hundreds of models) | https://openrouter.ai/api/v1 | OPENROUTER_API_KEY | sk-or- | https://openrouter.ai/keys',
-  'together | Together AI | https://api.together.xyz/v1 | TOGETHER_API_KEY | - | https://api.together.ai/settings/api-keys',
-  'fireworks | Fireworks | https://api.fireworks.ai/inference/v1 | FIREWORKS_API_KEY | fw_ | https://fireworks.ai/account/api-keys',
-  'nvidia | NVIDIA NIM | https://integrate.api.nvidia.com/v1 | NVIDIA_API_KEY | nvapi- | https://build.nvidia.com',
-  'moonshot | Moonshot (Kimi) | https://api.moonshot.ai/v1 | MOONSHOT_API_KEY | - | https://platform.moonshot.ai/console/api-keys',
-  'zai | Z.ai (GLM) | https://api.z.ai/api/paas/v4 | ZAI_API_KEY | - | https://z.ai/manage-apikey/apikey-list',
-  'dashscope | Alibaba Cloud (Qwen) | https://dashscope-intl.aliyuncs.com/compatible-mode/v1 | DASHSCOPE_API_KEY | - | https://modelstudio.console.alibabacloud.com',
-  'siliconflow | SiliconFlow | https://api.siliconflow.com/v1 | SILICONFLOW_API_KEY | - | https://cloud.siliconflow.com/account/ak',
-  'deepinfra | DeepInfra | https://api.deepinfra.com/v1/openai | DEEPINFRA_API_KEY | - | https://deepinfra.com/dash/api_keys',
-  'huggingface | Hugging Face Inference | https://router.huggingface.co/v1 | HF_TOKEN | hf_ | https://huggingface.co/settings/tokens',
-  'perplexity | Perplexity | https://api.perplexity.ai | PERPLEXITY_API_KEY | pplx- | https://www.perplexity.ai/settings/api',
-  'cohere | Cohere | https://api.cohere.ai/compatibility/v1 | COHERE_API_KEY | - | https://dashboard.cohere.com/api-keys',
-  'vercel | Vercel AI Gateway | https://ai-gateway.vercel.sh/v1 | AI_GATEWAY_API_KEY | - | https://vercel.com/ai-gateway',
-  'github | GitHub Models | https://models.github.ai/inference | GITHUB_TOKEN | - | https://github.com/settings/tokens',
-  'novita | Novita AI | https://api.novita.ai/v3/openai | NOVITA_API_KEY | - | https://novita.ai/settings/key-management',
-  'hyperbolic | Hyperbolic | https://api.hyperbolic.xyz/v1 | HYPERBOLIC_API_KEY | - | https://app.hyperbolic.xyz/settings',
-  'sambanova | SambaNova | https://api.sambanova.ai/v1 | SAMBANOVA_API_KEY | - | https://cloud.sambanova.ai/apis',
-]
-  .map((line) => line.split(' | ').map((f) => (f === '-' ? undefined : f)))
-  .map(([name = '', label = '', baseUrl = '', keyEnv, keyPrefix, signup]) => [
-    name,
-    label,
-    baseUrl,
-    keyEnv,
-    keyPrefix,
-    signup,
-  ]);
-
-const LOCAL: [string, string, string][] = [
-  ['ollama', 'Ollama', 'http://localhost:11434/v1'],
-  ['lmstudio', 'LM Studio', 'http://localhost:1234/v1'],
-  ['vllm', 'vLLM', 'http://localhost:8000/v1'],
-  ['llamacpp', 'llama.cpp server', 'http://localhost:8080/v1'],
-  ['litellm', 'LiteLLM proxy', 'http://localhost:4000/v1'],
-  ['jan', 'Jan', 'http://localhost:1337/v1'],
-];
-
 export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = Object.fromEntries([
-  ...HOSTED.map(([name, label, baseUrl, keyEnv, keyPrefix, signup]): [string, ProviderTemplate] => [
-    name,
-    {
-      label,
-      baseUrl,
-      keyEnv,
-      free: false,
-      kind: name === 'gemini' ? 'gemini' : 'openai',
-      ...(keyPrefix ? { keyPrefix } : {}),
-      ...(signup ? { signup } : {}),
-    },
-  ]),
-  ...LOCAL.map(([name, label, baseUrl]): [string, ProviderTemplate] => [
-    name,
-    { label, baseUrl, keyEnv: undefined, free: true, kind: 'openai', local: true },
-  ]),
+  ...PROVIDER_CATALOG.filter((e) => e.id !== 'anthropic' && e.fields.length === 0).map(
+    (e): [string, ProviderTemplate] => [e.id, templateFromEntry(e, e.baseUrl)],
+  ),
   [
     'custom',
     { baseUrl: 'http://localhost:8000/v1', keyEnv: undefined, free: false, kind: 'openai' },
   ],
 ]);
 
+/** A config template for a catalog entry at a (filled-in) base URL. */
+export function templateFromEntry(e: CatalogEntry, baseUrl: string): ProviderTemplate {
+  const auth = endpointAuth(e.auth);
+  return {
+    label: e.name,
+    baseUrl,
+    keyEnv: e.keyEnvs[0],
+    free: e.local,
+    kind: kindForFlavor(e.flavor),
+    ...(auth ? { auth } : {}),
+    ...(e.keyPrefix ? { keyPrefix: e.keyPrefix } : {}),
+    ...(e.signup ? { signup: e.signup } : {}),
+    ...(e.local ? { local: true } : {}),
+  };
+}
+
 export function templateFor(name: string): ProviderTemplate | undefined {
   return PROVIDER_TEMPLATES[name.toLowerCase()];
+}
+
+/** Commander collector for repeatable options. */
+function collect(value: string, previous: string[] = []): string[] {
+  return [...previous, value];
 }
 
 export async function appendEndpointBlock(
@@ -127,6 +95,8 @@ export async function appendEndpointBlock(
           kind: t.kind,
           base_url: t.baseUrl,
           ...(t.keyEnv ? { api_key_env: t.keyEnv } : {}),
+          ...(t.auth ? { auth: t.auth } : {}),
+          ...(t.headers && Object.keys(t.headers).length ? { headers: t.headers } : {}),
           ...(t.free ? { free: true } : {}),
         },
       },
@@ -165,12 +135,21 @@ async function testEndpoint(
   name: string,
   baseUrl: string,
   apiKey: string | undefined,
-  kind: 'openai' | 'responses' | 'gemini',
+  kind: EndpointKind,
+  extra: { auth?: EndpointAuth | undefined; headers?: Record<string, string> | undefined } = {},
 ): Promise<{ ok: boolean; detail: string }> {
   const { config } = await loadConfig({ cwd: io.cwd, env: io.env });
   const ep = config.providers.endpoints[name];
   const timeoutMs = ep ? parseDuration(ep.request_timeout) : 10_000;
-  const opts = { name, baseUrl, apiKey, timeoutMs, ...(io.fetch ? { fetch: io.fetch } : {}) };
+  const opts = {
+    name,
+    baseUrl,
+    apiKey,
+    timeoutMs,
+    ...(extra.auth ? { auth: extra.auth } : {}),
+    ...(extra.headers ? { headers: extra.headers } : {}),
+    ...(io.fetch ? { fetch: io.fetch } : {}),
+  };
   const provider = makeEndpointProvider(kind, opts);
   try {
     // 1-token test call: tiny maxTokens, no tools.
@@ -295,13 +274,10 @@ export async function providersTest(io: CliIO, name: string): Promise<number> {
       '`omnexx providers list` shows configured providers',
     );
   const key = await findProviderKey(resolvePaths(io.env), io.env, lower, ep.api_key_env);
-  const t = await testEndpoint(
-    io,
-    lower,
-    ep.base_url,
-    key?.key,
-    (ep as { kind?: 'openai' | 'responses' }).kind ?? 'openai',
-  );
+  const t = await testEndpoint(io, lower, ep.base_url, key?.key, ep.kind, {
+    auth: ep.auth,
+    headers: ep.headers,
+  });
   println(io.stdout, t.ok ? `ok: ${t.detail}` : `failed: ${t.detail}`);
   return t.ok ? EXIT.ok : EXIT.error;
 }
@@ -319,12 +295,28 @@ export const register: CommandRegistrar = (
     .option('--free', 'no key needed (local models)')
     .option('--kind <kind>', 'openai|responses')
     .option('--no-test', 'skip the 1-token test call')
+    .option('--key <key>', 'API key (stored 0600; probes the endpoint and detects its API)')
+    .option('--field <name=value>', 'a value the base URL needs, e.g. resource=my-azure', collect)
+    .option('--header <name:value>', 'an extra request header', collect)
+    .option('--flavor <flavor>', 'openai-chat|openai-responses|anthropic|gemini (default: detect)')
     .action(
       async (
         name: string | undefined,
-        opts: { baseUrl?: string; keyEnv?: string; free?: boolean; kind?: string; test?: boolean },
+        opts: {
+          baseUrl?: string;
+          keyEnv?: string;
+          free?: boolean;
+          kind?: string;
+          test?: boolean;
+        } & SmartAddOptions,
       ) => {
         const n = name ?? 'custom';
+        // Loaded lazily: providers-add → provider-setup → connect imports this module.
+        const smart = await import('./providers-add.js');
+        if (smart.wantsSmartAdd(n, opts) || (n === 'custom' && !opts.baseUrl && io.isTTY)) {
+          setExit(await smart.providersAddSmart(io, n, opts));
+          return;
+        }
         const kind = opts.kind === 'responses' ? 'responses' : 'openai';
         setExit(
           await providersAdd(io, n, {
@@ -337,6 +329,11 @@ export const register: CommandRegistrar = (
         );
       },
     );
+  p.command('catalog')
+    .description('every provider omnexx knows by name')
+    .action(async () => {
+      setExit((await import('./providers-add.js')).providersCatalog(io));
+    });
   p.command('list')
     .description('list configured providers')
     .action(async () => {

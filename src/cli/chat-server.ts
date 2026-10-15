@@ -6,6 +6,7 @@ import { describeError } from '../errors.js';
 import type { Telemetry } from '../telemetry/aggregate.js';
 import type { TodoItem } from '../tools/todo.js';
 import type { Entry, Helper, Mode, RunCli } from '../tui/session.js';
+import { providerExtras } from './provider-messages.js';
 import { println, type CliIO } from './io.js';
 
 /**
@@ -16,7 +17,8 @@ import { println, type CliIO } from './io.js';
  * In (one JSON object per line): send {text} · answer {yes} · stop · pause · resume · mode {mode} ·
  * yolo {on} ·
  * model {ref} · models · connect {value, name?} · undo · clear · compact · sync (resend all) ·
- * settings · addProvider {provider?, key?, url?} · removeProvider {name} · testProvider {name} ·
+ * settings · addProvider {provider?, key?, url?, fields?, headers?, flavor?} ·
+ * probeProvider {provider?, url?, key?, fields?, headers?, flavor?} · removeProvider {name} · testProvider {name} ·
  * roles · setRoles {roles} · contextFiles · setSectionMode {id, mode} · contextList ·
  * contextUpdate {id, text} · contextDelete {id} · contextReset · chats · resumeChat {id} · browser ·
  * setBrowser {engine, profile?, sessionName?, headless} · mcp {op, …} (see chat-mcp.ts).
@@ -302,12 +304,30 @@ export async function serveChat(
                 provider: str('provider'),
                 key: str('key'),
                 url: str('url'),
+                ...providerExtras(c),
               }),
             );
           }),
         );
         return;
       }
+      case 'probeProvider':
+        run(
+          import('./provider-setup.js').then(async ({ probeProvider }) => {
+            const str = (k: string): string | undefined => {
+              const v = c[k];
+              return typeof v === 'string' ? v : undefined;
+            };
+            const r = await probeProvider(io, {
+              provider: str('provider'),
+              url: str('url'),
+              key: str('key'),
+              ...providerExtras(c),
+            });
+            write({ type: 'providerProbe', ...r, models: r.models.slice(0, 50) });
+          }),
+        );
+        return;
       case 'testProvider':
         run(
           import('./chat-settings.js').then(async ({ testProvider }) => {

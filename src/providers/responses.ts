@@ -1,4 +1,5 @@
 import { ProviderError } from '../errors.js';
+import { authHeaders, type EndpointAuth } from './auth-headers.js';
 import type {
   CompletionRequest,
   CompletionResponse,
@@ -13,6 +14,8 @@ export interface ResponsesOptions {
   apiKey: string | undefined;
   timeoutMs: number;
   fetch?: typeof fetch;
+  auth?: EndpointAuth | undefined;
+  headers?: Readonly<Record<string, string>> | undefined;
 }
 
 interface ResponsesOutputItem {
@@ -118,7 +121,7 @@ export class ResponsesProvider implements Provider {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          ...(this.opts.apiKey ? { authorization: `Bearer ${this.opts.apiKey}` } : {}),
+          ...authHeaders(this.opts.apiKey, this.opts.auth, this.opts.headers),
         },
         body: JSON.stringify(body),
         signal: AbortSignal.any(signals),

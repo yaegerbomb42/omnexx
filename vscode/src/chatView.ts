@@ -25,6 +25,7 @@ const FORWARD = new Set([
   'addProvider',
   'removeProvider',
   'testProvider',
+  'probeProvider',
   'roles',
   'setRoles',
   'contextFiles',

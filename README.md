@@ -83,7 +83,7 @@ tests, typecheck and lint, and keeps going. Close the terminal any time; `omnexx
 
 At the `omnexx` prompt:
 
-- **Paste an API key**, on its own or in a sentence ("here's my mistral key …"). 25 hosted
+- **Paste an API key**, on its own or in a sentence ("here's my mistral key …"). 35+ hosted
   providers are known by name; the key is saved to a 0600 file, never shown and never sent to a
   model. `omnexx providers list` shows them all.
 - **`/connect env`**: use the keys already in your environment (only the variable name is saved).
@@ -91,6 +91,20 @@ At the `omnexx` prompt:
   Each runs until its quota is out, then the next takes over.
 - **`/connect ollama`** (or `lmstudio`, `vllm`, `litellm`): a local model, no key.
 - **`/connect https://host/v1 KEY`**: any OpenAI-compatible endpoint.
+- **`/provider https://host KEY`**: any OpenAI- _or_ Anthropic-compatible endpoint; the API, a
+  missing `/v1` and the model list are detected, and failures say why ("401: key rejected").
+  `/provider azure KEY resource=my-res` for providers whose URL needs values.
+
+| Kind                | Providers                                                                                                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Labs                | Anthropic, OpenAI, Google Gemini, xAI Grok, Mistral, DeepSeek, Moonshot Kimi, Z.ai / Zhipu GLM, Qwen (DashScope), MiniMax, Cohere, Perplexity                            |
+| Clouds              | Azure OpenAI, Azure AI Foundry, Amazon Bedrock, Google Vertex AI, Cloudflare Workers AI, NVIDIA NIM, Scaleway, Nebius                                                    |
+| Inference & routers | Groq, Cerebras, SambaNova, Together, Fireworks, DeepInfra, Novita, Hyperbolic, SiliconFlow, Hugging Face, OpenRouter, Vercel AI Gateway, Requesty, Venice, GitHub Models |
+| Local               | Ollama, LM Studio, llama.cpp, vLLM, LiteLLM, Jan, LocalAI                                                                                                                |
+
+Base URLs, key variables and the probe are in [docs/providers.md](docs/providers.md);
+`omnexx providers catalog` lists them in the terminal.
+
 - **`/chat`**: talk to a connected model directly and ask it to set up more ("add my groq key").
   Pasted keys only ever reach it as placeholders.
 

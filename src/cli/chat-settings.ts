@@ -8,6 +8,8 @@ import { UsageError } from '../errors.js';
 import { setTable, type TomlValue } from '../integrations/toml-edit.js';
 import { PROVIDER_TEMPLATES, removeEndpointBlock } from './commands/providers.js';
 import { connect, describeConnect } from './connect.js';
+import { needsSetup, setupProvider } from './provider-setup.js';
+import { PROVIDER_CATALOG, type ApiFlavor, type CatalogField } from '../providers/catalog.js';
 import type { CliIO } from './io.js';
 
 /**
@@ -25,6 +27,13 @@ export interface CatalogProvider {
   signup?: string;
   /** How its keys start, for a placeholder. */
   keyPrefix?: string;
+  /** Values its base URL needs (Azure resource, AWS region, …), shown as form fields. */
+  fields?: readonly CatalogField[];
+  flavor?: ApiFlavor;
+  freeTier?: boolean;
+  keyEnvs?: readonly string[];
+  docs?: string;
+  note?: string;
 }
 
 export interface ConnectedProvider {
@@ -44,29 +53,30 @@ export interface ProviderSettings {
   connected: ConnectedProvider[];
 }
 
-const ANTHROPIC: CatalogProvider = {
+const ANTHROPIC = {
   name: 'anthropic',
   label: 'Anthropic (Claude)',
   baseUrl: 'https://api.anthropic.com',
-  local: false,
-  signup: 'https://console.anthropic.com/settings/keys',
-  keyPrefix: 'sk-ant-',
 };
 
 const NAME = /^[a-z][a-z0-9_-]{0,39}$/;
 
+/** Every catalog provider, for the settings gallery (src/providers/catalog.ts). */
 export function providerCatalog(): CatalogProvider[] {
-  const listed = Object.entries(PROVIDER_TEMPLATES)
-    .filter(([name]) => name !== 'custom')
-    .map(([name, t]) => ({
-      name,
-      label: t.label ?? name,
-      baseUrl: t.baseUrl,
-      local: t.local === true,
-      ...(t.signup ? { signup: t.signup } : {}),
-      ...(t.keyPrefix ? { keyPrefix: t.keyPrefix } : {}),
-    }));
-  return [ANTHROPIC, ...listed];
+  return PROVIDER_CATALOG.map((e) => ({
+    name: e.id,
+    label: e.name,
+    baseUrl: e.baseUrl,
+    local: e.local,
+    flavor: e.flavor,
+    freeTier: e.freeTier,
+    keyEnvs: e.keyEnvs,
+    ...(e.fields.length ? { fields: e.fields } : {}),
+    ...(e.signup ? { signup: e.signup } : {}),
+    ...(e.keyPrefix ? { keyPrefix: e.keyPrefix } : {}),
+    ...(e.docs ? { docs: e.docs } : {}),
+    ...(e.note ? { note: e.note } : {}),
+  }));
 }
 
 export async function providerSettings(io: CliIO): Promise<ProviderSettings> {
@@ -109,6 +119,10 @@ export interface AddProvider {
   key?: string | undefined;
   /** For a custom or local OpenAI-compatible server. */
   url?: string | undefined;
+  /** Templated base URL values, extra headers, a forced flavor: see provider-setup.ts. */
+  fields?: Record<string, string> | undefined;
+  headers?: Record<string, string> | undefined;
+  flavor?: ApiFlavor | undefined;
 }
 
 /** Connect a provider from the settings form; returns what to tell the person. */
@@ -124,6 +138,8 @@ export async function addProvider(io: CliIO, a: AddProvider): Promise<string> {
       'lowercase letters, digits, _ and -',
     );
   if (!url && !provider && !key) throw new UsageError('pick a provider or enter a URL');
+  if (needsSetup({ ...a, url, provider }))
+    return (await setupProvider(io, { ...a, url, provider, key })).message;
   // A catalog provider is connected by name; a URL gets the name it was given, if any.
   const target = url ?? provider ?? key ?? '';
   const r = await connect(io, target, url ? key : target === key ? undefined : key, {
@@ -176,19 +192,31 @@ export async function testProvider(io: CliIO, name: string): Promise<ProviderTes
   const ep = config.providers.endpoints[lower];
   if (!ep) return { name: lower, ok: false, models: 0, detail: 'not set up' };
   const key = (await findProviderKey(paths, io.env, lower, ep.api_key_env))?.key;
+  if (!key && !ep.free && ep.auth !== 'none')
+    return { name: lower, ok: false, models: 0, detail: 'no key set' };
   const { discoverModels } = await import('../providers/discovery.js');
-  const models = await discoverModels(
-    { baseUrl: ep.base_url, ...(key ? { apiKey: key } : {}) },
-    { timeoutMs: TEST_TIMEOUT_MS, ...(io.fetch ? { fetch: io.fetch } : {}) },
-  );
+  const { authHeaders } = await import('../providers/auth-headers.js');
+  const models =
+    ep.kind === 'openai' || ep.kind === 'responses'
+      ? await discoverModels(
+          { baseUrl: ep.base_url, headers: authHeaders(key, ep.auth, ep.headers) },
+          { timeoutMs: TEST_TIMEOUT_MS, ...(io.fetch ? { fetch: io.fetch } : {}) },
+        )
+      : [];
   if (models.length)
     return { name: lower, ok: true, models: models.length, detail: `${models.length} models` };
-  return {
-    name: lower,
-    ok: false,
-    models: 0,
-    detail: key || ep.free ? "couldn't reach it or it listed no models" : 'no key set',
-  };
+  // No list: probe to say why in words a person can act on ("401: key rejected", "404: …/v1").
+  const { probeEndpoint } = await import('../providers/probe.js');
+  const probe = await probeEndpoint({
+    baseUrl: ep.base_url,
+    apiKey: key,
+    auth: ep.auth,
+    headers: ep.headers,
+    flavor: ep.kind === 'anthropic' || ep.kind === 'gemini' ? ep.kind : undefined,
+    timeoutMs: TEST_TIMEOUT_MS,
+    ...(io.fetch ? { fetch: io.fetch } : {}),
+  });
+  return { name: lower, ok: probe.ok, models: probe.models.length, detail: probe.detail };
 }
 
 /** The browser tool's engine, profile and session, as the settings page shows and saves them. */
