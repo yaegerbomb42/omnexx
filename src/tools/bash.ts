@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { parseDuration } from '../config/duration.js';
 import { runShell } from '../core/exec.js';
 import { checkCommand } from '../security/command-policy.js';
+import { compressOutput } from './output-compress.js';
 import { testSummary } from './output-summary.js';
 import { fail, ok, type Tool } from './types.js';
 
@@ -184,7 +185,8 @@ export const bashTool: Tool<typeof schema> = {
     const peeked = devServer && r.timedOut;
     const status = commandStatus(r, timeoutMs, peeked);
     const body =
-      trimOutput(r.output, id) + (await missingScriptHint(r.output, input.command, ctx.jail.root));
+      trimOutput(compressOutput(r.output), id) +
+      (await missingScriptHint(r.output, input.command, ctx.jail.root));
     const text = `[${status}, ${Math.round(r.durationMs)}ms, log ${id}]\n${body}`;
     return peeked || (r.exitCode === 0 && !r.timedOut) ? ok(text) : fail(text);
   },
