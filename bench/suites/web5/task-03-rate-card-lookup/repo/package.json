@@ -1,0 +1,8 @@
+{
+  "name": "web5-task-03",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

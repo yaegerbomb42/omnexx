@@ -2,12 +2,24 @@ import { z } from 'zod';
 import type { ToolSource } from './types.js';
 import { fail, ok, type Tool, type ToolContext, type ToolOutput } from '../types.js';
 import type { OmnexxConfig } from '../../config/schema.js';
+import { parseDuration } from '../../config/duration.js';
 import { matchesAny } from '../../security/glob.js';
 import { CHARS_PER_TOKEN } from '../../core/tokens.js';
 import { htmlToMarkdown, isRobotsDisallowed } from './web_extractor.js';
+import { fetchWithRetry, readCapped } from './web_http.js';
 import type { WebConfig } from '../../config/sections/web.js';
 
-const DEFAULT_FETCH_MAX_TOKENS = 8000;
+/** Tokens per page of output; longer pages continue with `page: 2`, and so on. */
+const DEFAULT_PAGE_TOKENS = 6000;
+const DEFAULT_TIMEOUT_MS = 15_000;
+const ROBOTS_TIMEOUT_MS = 5_000;
+const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
+/** Pages kept per run; the oldest go first. */
+const MAX_CACHED_PAGES = 50;
+/** A page break may land this far before the cap to end on a paragraph. */
+const BREAK_SLACK = 0.3;
+
+/** Converted (and redacted) text per URL for this run: later pages never refetch. */
 const runCache = new Map<string, string>();
 let activeWebConfig: WebConfig | undefined;
 
@@ -20,13 +32,9 @@ export function clearWebFetchCache(): void {
 }
 
 const schema = z.strictObject({
-  url: z.url().describe('The HTTP or HTTPS URL to fetch and convert to markdown'),
-  maxTokens: z
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .describe('Maximum tokens to return (default: 8000)'),
+  url: z.url().describe('http(s) URL'),
+  page: z.number().int().positive().optional().describe('Page of a long result (default 1)'),
+  maxTokens: z.number().int().positive().optional().describe('Tokens per page (default 6000)'),
 });
 
 function isHostAllowed(
@@ -43,10 +51,91 @@ function isHostAllowed(
   return Boolean(matchesAny(hostname, allowList));
 }
 
+/** Splits text into pages of at most `maxChars`, preferring paragraph then line breaks. */
+export function paginate(text: string, maxChars: number): string[] {
+  const pages: string[] = [];
+  let rest = text;
+  while (rest.length > maxChars) {
+    const window = rest.slice(0, maxChars);
+    const floor = Math.floor(maxChars * (1 - BREAK_SLACK));
+    const para = window.lastIndexOf('\n\n');
+    const line = window.lastIndexOf('\n');
+    const cut = para >= floor ? para : line >= floor ? line : maxChars;
+    pages.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  return [...pages, rest];
+}
+
+function remember(url: string, text: string): void {
+  runCache.set(url, text);
+  const oldest = runCache.keys().next().value;
+  if (runCache.size > MAX_CACHED_PAGES && oldest !== undefined) runCache.delete(oldest);
+}
+
+function timeoutMs(): number {
+  try {
+    return parseDuration(activeWebConfig?.fetch_timeout ?? '15s');
+  } catch {
+    return DEFAULT_TIMEOUT_MS;
+  }
+}
+
+async function robotsAllows(url: URL): Promise<boolean> {
+  try {
+    const res = await fetchWithRetry(
+      `${url.origin}/robots.txt`,
+      { headers: { 'User-Agent': 'omnexx' } },
+      { timeoutMs: ROBOTS_TIMEOUT_MS, retries: 0 },
+    );
+    if (!res.ok) return true;
+    return !isRobotsDisallowed(await res.text(), url.pathname);
+  } catch {
+    // No robots.txt reachable: nothing forbids the fetch.
+    return true;
+  }
+}
+
+const isHtml = (contentType: string, text: string): boolean =>
+  contentType.includes('html') || /<html|<!doctype html/i.test(text.slice(0, 2000));
+
+/** Fetches and converts the page; a string is the text, a ToolOutput a failure to report. */
+async function load(url: URL, ctx: ToolContext): Promise<string | ToolOutput> {
+  const maxBytes = activeWebConfig?.max_fetch_bytes ?? DEFAULT_MAX_BYTES;
+  const capMb = Math.round(maxBytes / (1024 * 1024));
+  const res = await fetchWithRetry(
+    url.href,
+    {
+      headers: {
+        'User-Agent': 'omnexx (compatible; bot)',
+        Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
+      },
+    },
+    { timeoutMs: timeoutMs() },
+  );
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => undefined);
+    return fail(`HTTP error: ${res.status} ${res.statusText}`);
+  }
+  const contentLength = Number(res.headers.get('content-length') ?? 0);
+  if (contentLength > maxBytes) {
+    await res.body?.cancel().catch(() => undefined);
+    return fail(
+      `Content length (${contentLength} bytes) exceeds maximum limit of ${capMb} MB; find a smaller page or a raw/text version`,
+    );
+  }
+  const body = await readCapped(res, maxBytes);
+  const text = isHtml(res.headers.get('content-type') ?? '', body.text)
+    ? htmlToMarkdown(body.text)
+    : body.text;
+  const note = body.truncated ? `\n\n[download stopped at the ${capMb} MB cap]` : '';
+  return ctx.redactor.text(text + note);
+}
+
 export const webFetchTool: Tool<typeof schema> = {
   name: 'web_fetch',
   description:
-    'Fetch content from a web page via HTTP GET, convert HTML to clean markdown text, and return up to maxTokens. Honours robots.txt, respects host allow/deny config, and caches per run.',
+    'GET a web page as clean markdown (main content only; nav, ads and scripts removed). Long pages are split: pass page: N to continue. Cached per run.',
   schema,
   readOnly: true,
   async run(input, ctx: ToolContext): Promise<ToolOutput> {
@@ -71,95 +160,36 @@ export const webFetchTool: Tool<typeof schema> = {
       return fail(`Host "${parsedUrl.hostname}" is not allowed by policy.`);
     }
 
-    const cached = runCache.get(rawUrl);
-    if (cached !== undefined) {
-      return ok(cached);
+    let text = runCache.get(rawUrl);
+    if (text === undefined) {
+      if (!(await robotsAllows(parsedUrl))) {
+        return fail(
+          `Access to "${parsedUrl.pathname}" is disallowed by robots.txt on ${parsedUrl.hostname}`,
+        );
+      }
+      try {
+        const loaded = await load(parsedUrl, ctx);
+        if (typeof loaded !== 'string') return loaded;
+        text = loaded;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return fail(`Failed to fetch ${rawUrl}: ${ctx.redactor.text(msg)}`);
+      }
+      remember(rawUrl, text);
     }
 
-    const timeoutMs = 15_000;
-    const maxBytes = activeWebConfig?.max_fetch_bytes ?? 5 * 1024 * 1024; // 5 MB cap
-
-    // Check robots.txt
-    try {
-      const robotsUrl = `${parsedUrl.origin}/robots.txt`;
-      const robotsController = new AbortController();
-      const rTimeout = setTimeout(() => {
-        robotsController.abort();
-      }, 5_000);
-      const robotsRes = await fetch(robotsUrl, {
-        signal: robotsController.signal,
-        headers: { 'User-Agent': 'omnexx' },
-      }).catch(() => null);
-      clearTimeout(rTimeout);
-
-      if (robotsRes?.ok) {
-        const robotsText = await robotsRes.text();
-        if (isRobotsDisallowed(robotsText, parsedUrl.pathname)) {
-          return fail(
-            `Access to "${parsedUrl.pathname}" is disallowed by robots.txt on ${parsedUrl.hostname}`,
-          );
-        }
-      }
-    } catch {
-      // If fetching robots.txt errors out, continue with standard fetch
+    const pageTokens = input.maxTokens ?? DEFAULT_PAGE_TOKENS;
+    const pages = paginate(text, pageTokens * CHARS_PER_TOKEN);
+    const page = input.page ?? 1;
+    if (page > pages.length) {
+      return fail(`page ${page} does not exist: ${rawUrl} has ${pages.length} page(s)`);
     }
-
-    // Fetch the actual page
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      controller.abort();
-    }, timeoutMs);
-
-    try {
-      const res = await fetch(rawUrl, {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'omnexx (compatible; bot)',
-          Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
-        },
-      });
-
-      if (!res.ok) {
-        return fail(`HTTP error: ${res.status} ${res.statusText}`);
-      }
-
-      const contentLength = res.headers.get('content-length');
-      if (contentLength && parseInt(contentLength, 10) > maxBytes) {
-        return fail(`Content length (${contentLength} bytes) exceeds maximum limit of 5 MB`);
-      }
-
-      const text = await res.text();
-      if (text.length > maxBytes) {
-        return fail(`Response body size (${text.length} bytes) exceeds maximum limit of 5 MB`);
-      }
-
-      const contentType = res.headers.get('content-type') ?? '';
-      let markdown: string;
-      if (
-        contentType.includes('text/html') ||
-        text.includes('<html') ||
-        text.includes('<!DOCTYPE')
-      ) {
-        markdown = htmlToMarkdown(text);
-      } else {
-        markdown = text;
-      }
-
-      const maxTokens = input.maxTokens ?? DEFAULT_FETCH_MAX_TOKENS;
-      const maxChars = maxTokens * CHARS_PER_TOKEN;
-      if (markdown.length > maxChars) {
-        markdown = markdown.slice(0, maxChars) + '\n\n… [Content truncated to token cap]';
-      }
-
-      const redacted = ctx.redactor.text(markdown);
-      runCache.set(rawUrl, redacted);
-      return ok(redacted);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return fail(`Failed to fetch ${rawUrl}: ${ctx.redactor.text(msg)}`);
-    } finally {
-      clearTimeout(timer);
-    }
+    if (pages.length === 1) return ok(pages[0] ?? '');
+    const more =
+      page < pages.length
+        ? `call web_fetch again with page: ${page + 1} for more`
+        : 'end of document';
+    return ok(`${pages[page - 1] ?? ''}\n\n[page ${page} of ${pages.length}; ${more}]`);
   },
 };
 

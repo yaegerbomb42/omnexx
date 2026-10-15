@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Migrating to datekit v2</title>
+    <style>
+      nav,
+      .sidebar,
+      .cookie {
+        font-size: small;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="cookie">
+      We use cookies to improve the docs. <button>Accept all</button> <button>Reject</button>
+    </div>
+    <nav>
+      <a href="/">Docs</a> <a href="/migrate-v2.html">Migrating to v2</a>
+      <a href="/changelog">Changelog</a>
+    </nav>
+    <div class="sidebar">
+      <ul>
+        <li>Getting started</li>
+        <li>Parsing</li>
+        <li>Formatting</li>
+        <li>Arithmetic</li>
+        <li>Time zones (not supported)</li>
+      </ul>
+    </div>
+    <main>
+      <article>
+        <h1>Migrating to datekit v2</h1>
+        <p>v2 replaces the free functions with an immutable <code>DateKit</code> class.</p>
+        <h2>Parsing</h2>
+        <p>
+          <code>parse(str, pattern)</code> is gone. Use <code>DateKit.from(str, { pattern })</code>.
+          It throws a <code>RangeError</code> when the string doesn't match or the date doesn't
+          exist (e.g. 31/02).
+        </p>
+        <h2>Pattern tokens</h2>
+        <p>
+          Tokens follow Unicode: <code>YYYY</code> is now <code>yyyy</code> and <code>DD</code> is
+          now <code>dd</code>. <code>MM</code> is unchanged. Old tokens throw.
+        </p>
+        <h2>Formatting</h2>
+        <p>
+          <code>format(date, pattern)</code> is now the method <code>kit.format(pattern)</code>.
+        </p>
+        <h2>Arithmetic</h2>
+        <p>
+          <code>addDays(date, n)</code> is now <code>kit.plus({ days: n })</code>, which returns a
+          new <code>DateKit</code>.
+        </p>
+        <pre><code>// v1
+format(addDays(parse('05/03/2026', 'DD/MM/YYYY'), 1), 'YYYY-MM-DD');
+// v2
+DateKit.from('05/03/2026', { pattern: 'dd/MM/yyyy' }).plus({ days: 1 }).format('yyyy-MM-dd');</code></pre>
+      </article>
+    </main>
+    <footer>datekit is MIT licensed. Edit this page on GitHub.</footer>
+  </body>
+</html>

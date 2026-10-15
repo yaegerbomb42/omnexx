@@ -37,6 +37,16 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-14 (web agent), branch `feat/web-hardening`:** `web5` bench suite (offline docs
+  sites served from 127.0.0.1 via `.docs/serve.sh`; unfamiliar library API, layout overflow and
+  console-error pages checked in headless Chrome, rate-card lookup, v2 migration; reference
+  solutions validated in `test/unit/bench/web5.test.ts`). `web_fetch`: markdown with
+  headings/code/tables/links, nav/ads/cookie banners stripped, `page: N` continuation, per-run
+  cache, retries with per-attempt timeouts, streamed size cap. `web_search`: retries, timeout,
+  cache, clipped snippets. Browser: `text=`/`label=`/`placeholder=`/`role=` targets on both
+  backends, 10 s Playwright action timeouts with a snapshot on timeout, network-idle settle on
+  agent-browser, and `check_page` (screenshot, console errors, failed requests, overflow,
+  overlap, broken images; `width` for phone checks). No live web5 run yet (free models only).
 - **2026-10-14, branch `feat/run-estimates`:** run estimates. Each finished run (and chat work
   started by approving a plan) adds a sample to `run-history.json` next to `latency.json`: goal
   length, fast path vs planned, plan nodes, repo files, wall time, fresh/cached tokens, cost,

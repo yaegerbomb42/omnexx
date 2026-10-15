@@ -1,0 +1,35 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+}
+.hero {
+  padding: 16px;
+  background: #234;
+  color: #fff;
+}
+.hero img {
+  width: 100%;
+  max-width: 960px;
+  height: auto;
+  display: block;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 320px));
+  gap: 16px;
+  padding: 16px;
+}
+@media (max-width: 700px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+.card {
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 12px;
+}
+.promo {
+  padding: 16px;
+  overflow-wrap: anywhere;
+}
