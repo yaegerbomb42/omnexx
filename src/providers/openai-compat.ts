@@ -1,4 +1,5 @@
 import { ProviderError } from '../errors.js';
+import { authHeaders, type EndpointAuth } from './auth-headers.js';
 import type {
   CompletionRequest,
   CompletionResponse,
@@ -13,6 +14,10 @@ export interface OpenAICompatOptions {
   apiKey: string | undefined;
   timeoutMs: number;
   fetch?: typeof fetch;
+  /** How the key is sent; unset is a bearer token. */
+  auth?: EndpointAuth | undefined;
+  /** Extra headers on every request. */
+  headers?: Readonly<Record<string, string>> | undefined;
 }
 
 type ChatPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
@@ -202,7 +207,7 @@ export class OpenAICompatProvider implements Provider {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            ...(this.opts.apiKey ? { authorization: `Bearer ${this.opts.apiKey}` } : {}),
+            ...authHeaders(this.opts.apiKey, this.opts.auth, this.opts.headers),
           },
           body: JSON.stringify(body),
           signal: AbortSignal.any(signals),

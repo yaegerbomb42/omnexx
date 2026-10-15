@@ -89,6 +89,8 @@ export async function resolveRunDeps(
       baseUrl: ep.base_url,
       apiKey,
       timeoutMs: parseDuration(ep.request_timeout),
+      ...(ep.auth ? { auth: ep.auth } : {}),
+      ...(ep.headers ? { headers: ep.headers } : {}),
       ...(io.fetch ? { fetch: io.fetch } : {}),
     };
     const extra = (ep.api_key_envs ?? []).flatMap((n) => {

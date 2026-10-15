@@ -963,6 +963,22 @@ select.field {
   color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
 }
 
+textarea.field {
+  resize: vertical;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.probe-result:empty {
+  display: none;
+}
+
+.probe-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
 .hint {
   margin: 0;
   font-size: var(--fs-sm);

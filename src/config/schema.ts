@@ -120,11 +120,16 @@ const providerBudget = {
 
 /**
  * A model endpoint. `openai` is Chat Completions (OpenAI, OpenRouter, LiteLLM, Ollama, vLLM);
- * `responses` is the OpenAI Responses API; `gemini` is Google's native API.
+ * `responses` is the OpenAI Responses API; `gemini` is Google's native API; `anthropic` is the
+ * Anthropic Messages API (Anthropic-compatible gateways).
  */
 export const endpointSchema = z.strictObject({
-  kind: z.enum(['openai', 'responses', 'gemini']).default('openai'),
+  kind: z.enum(['openai', 'responses', 'gemini', 'anthropic']).default('openai'),
   base_url: z.url(),
+  /** How the key is sent: a bearer token (default), an `api-key` header (Azure), or not at all. */
+  auth: z.enum(['bearer', 'api-key', 'none']).optional(),
+  /** Extra request headers (not secrets: config files are plain text). */
+  headers: z.record(z.string().regex(/^[A-Za-z0-9-]{1,64}$/), z.string().max(1000)).optional(),
   /** Name of the env var holding the key (never the key itself). Optional for local endpoints. */
   api_key_env: z
     .string()

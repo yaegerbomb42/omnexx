@@ -52,14 +52,21 @@ async function getJson(
  * errors all yield an empty list.
  */
 export async function discoverModels(
-  endpoint: { baseUrl: string; apiKey?: string; kind?: 'openai' | 'ollama' },
+  endpoint: {
+    baseUrl: string;
+    apiKey?: string;
+    kind?: 'openai' | 'ollama';
+    /** Request headers to send instead of a bearer key (Azure `api-key`, extra headers). */
+    headers?: Record<string, string>;
+    /** The model-list URL when it isn't `{base}/models` (from the provider catalog). */
+    modelsUrl?: string;
+  },
   opts: DiscoveryOptions = {},
 ): Promise<DiscoveredModel[]> {
   const fetchFn = opts.fetch ?? fetch;
   const timeoutMs = opts.timeoutMs ?? 5_000;
-  const headers: Record<string, string> = endpoint.apiKey
-    ? { authorization: `Bearer ${endpoint.apiKey}` }
-    : {};
+  const headers: Record<string, string> =
+    endpoint.headers ?? (endpoint.apiKey ? { authorization: `Bearer ${endpoint.apiKey}` } : {});
   if (endpoint.kind === 'ollama') {
     const body = (await getJson(
       fetchFn,
@@ -74,7 +81,8 @@ export async function discoverModels(
         : [],
     );
   }
-  const openai = (await getJson(fetchFn, modelsUrl(endpoint.baseUrl), headers, timeoutMs)) as
+  const listUrl = endpoint.modelsUrl ?? modelsUrl(endpoint.baseUrl);
+  const openai = (await getJson(fetchFn, listUrl, headers, timeoutMs)) as
     OpenAIModelList | undefined;
   // Some Ollama-shaped servers answer /v1/models with `{ data: [...] }` too; accept both.
   if (openai && !Array.isArray(openai.data)) {

@@ -141,6 +141,7 @@ export const MORE_SLASH = [
   'detach',
   'steer',
   'connect',
+  'provider',
   'setup',
   'init',
   'doctor',
@@ -1337,6 +1338,11 @@ export class Session {
         const rest = at >= 0 ? args.filter((_, i) => i !== at && i !== at + 1) : args;
         if (!rest[0]) throw new Error('usage: /connect <name|url|key> [key] [--name <alias>]');
         await this.connect(rest[0], rest[1], alias);
+        return;
+      }
+      case 'provider': {
+        const { runProviderCommand } = await import('./provider-command.js');
+        this.push('system', await runProviderCommand(this.io, args));
         return;
       }
       case 'chat':

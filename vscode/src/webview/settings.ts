@@ -8,6 +8,7 @@ import * as roles from './roles.js';
 import * as mcp from './mcp.js';
 import { badge } from './modelPicker.js';
 import { escapeHtml } from './render.js';
+import * as providerForm from './providerForm.js';
 
 export interface CatalogProvider {
   name: string;
@@ -16,6 +17,10 @@ export interface CatalogProvider {
   local: boolean;
   signup?: string;
   keyPrefix?: string;
+  fields?: providerForm.CatalogField[];
+  note?: string;
+  docs?: string;
+  freeTier?: boolean;
 }
 
 export interface ConnectedProvider {
@@ -171,8 +176,10 @@ function tilesHtml(): string {
     `<button class="ptile${chosen === name ? ' on' : ''}" data-provider="${escapeHtml(name)}" aria-pressed="${String(chosen === name)}" title="${escapeHtml(label)}">${badge(name === CUSTOM ? 'url' : name)}<span class="t-label">${escapeHtml(label.replace(/\s*\(.*\)$/, ''))}</span><span class="t-sub">${escapeHtml(sub)}</span></button>`;
   const hosted = catalog.filter((c) => !c.local && fits(c));
   const local = catalog.filter((c) => c.local && fits(c));
-  const custom = words.length === 0 || 'custom url openai compatible'.includes(words.join(' '));
-  return `${hosted.length ? `<div class="t-group">Hosted</div><div class="tiles">${hosted.map((c) => tile(c.name, c.label, c.keyPrefix ? `${c.keyPrefix}…` : 'API key')).join('')}</div>` : ''}${local.length ? `<div class="t-group">On your machine</div><div class="tiles">${local.map((c) => tile(c.name, c.label, 'no key')).join('')}</div>` : ''}${custom ? `<div class="t-group">Other</div><div class="tiles">${tile(CUSTOM, 'Custom URL', 'OpenAI-compatible')}</div>` : ''}${!hosted.length && !local.length && !custom ? '<p class="hint">No provider matches.</p>' : ''}`;
+  const custom =
+    words.length === 0 ||
+    words.every((w) => 'custom url openai anthropic compatible endpoint proxy'.includes(w));
+  return `${hosted.length ? `<div class="t-group">Hosted</div><div class="tiles">${hosted.map((c) => tile(c.name, c.label, c.fields?.length ? 'needs setup' : c.freeTier ? 'free tier' : c.keyPrefix ? `${c.keyPrefix}…` : 'API key')).join('')}</div>` : ''}${local.length ? `<div class="t-group">On your machine</div><div class="tiles">${local.map((c) => tile(c.name, c.label, 'no key')).join('')}</div>` : ''}${custom ? `<div class="t-group">Other</div><div class="tiles">${tile(CUSTOM, 'Custom endpoint', 'OpenAI / Anthropic API')}</div>` : ''}${!hosted.length && !local.length && !custom ? '<p class="hint">No provider matches.</p>' : ''}`;
 }
 
 function draw(): void {
@@ -187,9 +194,10 @@ function draw(): void {
   <div id="tile-box" class="tile-box">${tilesHtml()}</div>
   <div id="add-url-row"><label for="add-url">Base URL</label><input id="add-url" class="field" type="url" placeholder="http://localhost:8000/v1" spellcheck="false"></div>
   <div id="add-name-row"><label for="add-name">Name</label><input id="add-name" class="field" type="text" placeholder="mybox" spellcheck="false"></div>
+  <div id="add-extra"></div>
   <div id="add-key-row"><label for="add-key">API key</label><input id="add-key" class="field" type="password" autocomplete="off" spellcheck="false"><a id="add-signup" class="signup" href="#">Get a key ↗</a></div>
   <p class="hint">Keys are stored in a private file on this machine (0600) and only ever shown masked.</p>
-  <div class="row-end"><span id="add-status" class="status" role="status"></span><button id="add-save" class="primary">Connect</button></div>
+  <div class="row-end"><span id="add-status" class="status" role="status"></span><button id="add-probe" class="ghost" title="Check the URL and key without saving">Test</button><button id="add-save" class="primary">Connect</button></div>
 </section>
 <section class="set-section"><h3>Approvals</h3>
   <div class="seg wide" role="group" aria-label="Approval default">
@@ -229,6 +237,7 @@ function syncForm(): void {
   else if (!custom) url.value = '';
   const key = q('add-key', HTMLInputElement);
   key.placeholder = p?.keyPrefix ? `${p.keyPrefix}…` : custom ? 'optional' : 'paste your key';
+  q('add-extra', HTMLElement).innerHTML = providerForm.extrasHtml(p, custom);
   const signup = q('add-signup', HTMLAnchorElement);
   signup.hidden = !p?.signup;
   signup.href = p?.signup ?? '#';
@@ -262,6 +271,12 @@ function save(post: Post): void {
     drawStatus();
     return;
   }
+  const extras = providerForm.readExtras(p, custom);
+  if (typeof extras === 'string') {
+    status = { text: extras, kind: 'error' };
+    drawStatus();
+    return;
+  }
   saving = true;
   status = { text: 'Connecting and listing models…', kind: 'busy' };
   drawStatus();
@@ -270,8 +285,35 @@ function save(post: Post): void {
     ...(custom ? { url, ...(name ? { provider: name } : {}) } : { provider: p?.name }),
     ...(p?.local ? { url } : {}),
     ...(key ? { key } : {}),
+    ...extras,
   });
   q('add-key', HTMLInputElement).value = '';
+}
+
+function setProbeBox(html: string): void {
+  const box = document.getElementById('add-probe-result');
+  if (box) box.innerHTML = html;
+}
+
+/** The Test button: probe what the form holds without saving anything. */
+function probe(post: Post): void {
+  const custom = chosen === CUSTOM;
+  const p = selectedProvider();
+  const extras = providerForm.readExtras(p, custom);
+  if (typeof extras === 'string') {
+    status = { text: extras, kind: 'error' };
+    drawStatus();
+    return;
+  }
+  const url = q('add-url', HTMLInputElement).value.trim();
+  const key = q('add-key', HTMLInputElement).value.trim();
+  setProbeBox(providerForm.startProbe());
+  post({
+    type: 'probeProvider',
+    ...(custom || p?.local ? { url } : { provider: p?.name }),
+    ...(key ? { key } : {}),
+    ...extras,
+  });
 }
 
 export function isOpen(): boolean {
@@ -311,6 +353,18 @@ export function close(): void {
 export function onMessage(m: { type: string } & Record<string, unknown>): boolean {
   if (roles.onMessage(m)) return true;
   if (mcp.onMessage(m)) return true;
+  if (m.type === 'providerProbe') {
+    setProbeBox(providerForm.onProbe(m));
+    return true;
+  }
+  const probeError =
+    m.type === 'error' && typeof m.message === 'string'
+      ? providerForm.probeFailed(m.message)
+      : undefined;
+  if (probeError !== undefined) {
+    setProbeBox(probeError);
+    return true;
+  }
   if (m.type === 'providerTest') {
     const name = typeof m.name === 'string' ? m.name : '';
     tests = {
@@ -407,6 +461,7 @@ export function wire(post: Post): void {
     const tileName = t.closest<HTMLElement>('[data-provider]')?.dataset.provider;
     if (tileName) {
       chosen = tileName;
+      providerForm.reset();
       formTouched = true;
       status = undefined;
       q('tile-box', HTMLElement).innerHTML = tilesHtml();
@@ -425,6 +480,7 @@ export function wire(post: Post): void {
     }
     if (t.closest('[data-settings-close]')) close();
     else if (t.closest('#add-save')) save(post);
+    else if (t.closest('#add-probe')) probe(post);
     else if (t.closest('#add-signup')) {
       e.preventDefault();
       const href = q('add-signup', HTMLAnchorElement).href;
@@ -468,6 +524,12 @@ export function wire(post: Post): void {
       q('tile-box', HTMLElement).innerHTML = tilesHtml();
       return;
     }
+    if (
+      e.target instanceof HTMLInputElement ||
+      e.target instanceof HTMLTextAreaElement ||
+      e.target instanceof HTMLSelectElement
+    )
+      providerForm.remember(e.target);
     if (e.target instanceof Element && e.target.closest('.add')) formTouched = true;
   });
   // The browser text fields save when the person leaves them (or presses Enter).

@@ -13,6 +13,7 @@ export interface GeminiOptions {
   baseUrl?: string;
   timeoutMs: number;
   fetch?: typeof fetch;
+  headers?: Readonly<Record<string, string>> | undefined;
 }
 
 interface GeminiPart {
@@ -107,6 +108,7 @@ export class GeminiProvider implements Provider {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
+          ...(this.opts.headers ?? {}),
           ...(this.opts.apiKey ? { 'x-goog-api-key': this.opts.apiKey } : {}),
         },
         body: JSON.stringify(body),
