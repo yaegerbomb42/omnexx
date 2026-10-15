@@ -134,7 +134,7 @@ function serverHtml(s: Server): string {
   <div class="mcp-row">
     <span class="mcp-dot ${state}" title="${escapeHtml(dotTitle(s))}" aria-label="${escapeHtml(dotTitle(s))}"></span>
     <div class="p-main"><div class="p-name">${n}</div><div class="p-url" title="${escapeHtml(s.target)}">${escapeHtml(s.target)}</div><div class="p-tags">${tags}</div>${error}</div>
-    <label class="mcp-switch" title="${s.enabled ? 'Disable' : 'Enable'} ${n}"><input type="checkbox" data-mcp-enable="${n}" ${s.enabled ? 'checked' : ''} ${busy === s.name ? 'disabled' : ''}><span></span></label>
+    <label class="mcp-switch" title="${s.enabled ? 'Disable' : 'Enable'} ${n}"><input type="checkbox" aria-label="Use ${n}" data-mcp-enable="${n}" ${s.enabled ? 'checked' : ''} ${busy === s.name ? 'disabled' : ''}><span></span></label>
   </div>
   <div class="p-actions mcp-actions">${actions}</div>
   ${toolsOpen === s.name ? toolsHtml(s) : ''}
