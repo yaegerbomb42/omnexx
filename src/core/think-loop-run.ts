@@ -15,6 +15,7 @@ import { mergeNotes } from './repo-memory.js';
 import type { PlanNode } from './plan.js';
 import type { Run } from './run.js';
 import { checkTree, type CheckSession, type TaskCheck } from './think-loop-check.js';
+import { speculativeChecks, withSpeculation } from './think-loop-speculative.js';
 import { runThinkLoop, type ChainKind, type SessionIO, type SessionResult } from './think-loop.js';
 
 /** Whether this task runs as a think-loop session under `[plan] loop`. */
@@ -110,11 +111,16 @@ export async function actAsThinkLoop(
     work: inputs.workChain,
   };
   let round = 0;
-  const session: CheckSession = { quarantined: new Set(), persistent: new Set() };
+  const speculative = speculativeChecks(run, task);
+  const session: CheckSession = {
+    quarantined: new Set(),
+    persistent: new Set(),
+    ...(speculative ? { speculative } : {}),
+  };
   const io: SessionIO = {
     segment: (s, chain) => {
       // Thinking reads without editing by design: the no-edit stuck watch would cut it short.
-      const { watch, ...base } = inputs.deps(chains[chain]);
+      const { watch, ...base } = withSpeculation(inputs.deps(chains[chain]), speculative);
       const rest =
         s.maxTurns === undefined
           ? base
@@ -140,10 +146,14 @@ export async function actAsThinkLoop(
       run.events.emit(type, { task: task.id, ...data });
     },
   };
-  return runThinkLoop(inputs.ctx.first, io, {
-    rounds: run.config.plan.loop_rounds,
-    rethinks: run.config.plan.loop_rethinks,
-    thinkTurns: run.config.plan.loop_think_turns,
-    rewinds: run.config.plan.loop_rewinds,
-  });
+  try {
+    return await runThinkLoop(inputs.ctx.first, io, {
+      rounds: run.config.plan.loop_rounds,
+      rethinks: run.config.plan.loop_rethinks,
+      thinkTurns: run.config.plan.loop_think_turns,
+      rewinds: run.config.plan.loop_rewinds,
+    });
+  } finally {
+    await speculative?.stop();
+  }
 }
