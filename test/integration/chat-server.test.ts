@@ -273,6 +273,12 @@ describe('omnexx chat-server (the VS Code chat panel protocol)', () => {
 
     // History: the chat is listed by what was asked first, and reopening it shows its transcript.
     t.send({ type: 'clear' });
+    // Wait for the clear to land (and the old chat to be saved) before listing, or a slow
+    // machine can list and reopen before it has.
+    await t.until(
+      () => (t.states().at(-1)?.entries.length === 0 ? true : undefined),
+      'cleared chat',
+    );
     t.send({ type: 'chats' });
     const listed = await t.until(
       () => t.out.findLast((o) => o.type === 'chats' && (o.chats as unknown[]).length > 0),
