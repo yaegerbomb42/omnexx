@@ -89,12 +89,14 @@ async function runBash(
   // environment happened to list first, and still finds node and npm on every machine.
   const env = {
     ...process.env,
-    PATH: [dirname(process.execPath), '/usr/local/bin', '/usr/bin', '/bin'].join(':'),
+    PATH: [dirname(process.execPath), '/usr/local/bin', '/usr/bin', '/bin'].join(':'), // NOSONAR
     npm_config_cache: NPM_CACHE,
   };
   // Own process group, so a timeout kills the test runner the script started too: a task
   // whose bug is a hang (task-06) otherwise keeps the hidden check alive forever.
-  const child = spawn('bash', args, { cwd, env, stdio: 'ignore', detached: true });
+  // The PATH above is fixed on purpose: node's own folder (whichever node runs the bench) and
+  // the system folders, nothing from the caller's environment.
+  const child = spawn('bash', args, { cwd, env, stdio: 'ignore', detached: true }); // NOSONAR
   const timer = setTimeout(() => {
     try {
       if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
