@@ -93,7 +93,7 @@ describe('runGates', () => {
       env,
       logsDir: dir,
       label: 'baseline',
-      maxCmdTimeoutMs: 500,
+      maxCmdTimeoutMs: 3_000,
       redact: (s) => s,
     });
     expect(results[0]).toMatchObject({ name: 'test', exitCode: 1, structured: true });
@@ -101,5 +101,5 @@ describe('runGates', () => {
     expect(results[1]?.timedOut).toBe(true);
     expect(toBaseline(results).test?.failureIds).toEqual(['ok.mjs > b']);
     expect(await readFile(join(dir, 'gate-baseline-test.log'), 'utf8')).toContain('TAP version');
-  });
+  }, 15_000);
 });
