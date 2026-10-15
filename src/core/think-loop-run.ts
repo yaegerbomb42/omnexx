@@ -6,23 +6,16 @@ import { workingTreeDiff } from '../git/repo.js';
 import { rollbackTo } from '../git/rollback.js';
 import type { ResolvedModel } from '../providers/pricing.js';
 import type { SystemBlock, ToolSpec } from '../providers/types.js';
-import { antiCheat } from '../verify/anticheat.js';
 import { blocking, renderFindings, reviewChange } from '../verify/review.js';
-import { runGates, type GateResult } from '../verify/gates.js';
-import { failureSignature, judgeGate } from '../verify/ratchet.js';
+import type { GateResult } from '../verify/gates.js';
+import type { judgeGate } from '../verify/ratchet.js';
 import { FAST_TASK } from './fast-path.js';
+import { fixNote } from './fix-memory.js';
+import { mergeNotes } from './repo-memory.js';
 import type { PlanNode } from './plan.js';
 import type { Run } from './run.js';
-import {
-  runThinkLoop,
-  type CheckOutcome,
-  type ChainKind,
-  type SessionIO,
-  type SessionResult,
-} from './think-loop.js';
-
-/** Failure text sent back to the agent, at most this many chars. */
-const FAILURE_CHARS = 6_000;
+import { checkTree, type CheckSession, type TaskCheck } from './think-loop-check.js';
+import { runThinkLoop, type ChainKind, type SessionIO, type SessionResult } from './think-loop.js';
 
 /** Whether this task runs as a think-loop session under `[plan] loop`. */
 export function usesThinkLoop(run: Run, task: PlanNode): boolean {
@@ -58,60 +51,7 @@ export interface ThinkLoopInputs {
   deps: (models: readonly ResolvedModel[]) => LoopDeps;
   workChain: readonly ResolvedModel[];
   /** The task's own checks, run in the worktree. */
-  runChecks: () => Promise<{ command: string; pass: boolean; output: string }[]>;
-}
-
-/** The checks one round ends with: every gate against the baseline, then the task's checks. */
-async function checkTree(run: Run, task: PlanNode, inputs: ThinkLoopInputs, round: number) {
-  const { changes, patch, treeHash } = await workingTreeDiff(run.worktree, run.state.lastGreen);
-  const failures: string[] = [];
-  const reasons: string[] = [];
-  // The fast path's checks are the gates, which pass before any work: it must change something.
-  if (task.id === FAST_TASK && !changes.length) {
-    reasons.push('no changes');
-    failures.push('Nothing has changed yet: the goal is not done. Make the changes it asks for.');
-  }
-  const results = await runGates(run.config.gates, {
-    exec: run.exec,
-    cwd: run.worktree,
-    env: run.childEnv,
-    logsDir: run.store.logsDir,
-    label: `c${run.state.cycle}-loop${round}`,
-    maxCmdTimeoutMs: run.maxCmdTimeoutMs,
-    redact: (s) => run.redactor.text(s),
-    signal: run.signal,
-  });
-  const verdicts = results.map((r) => judgeGate(r, run.state.baseline));
-  for (const v of verdicts) if (!v.pass) reasons.push(`gate ${v.gate}: ${v.reason ?? 'failed'}`);
-  const gateText = renderGateFailures(results, verdicts);
-  if (gateText) failures.push(gateText);
-  // The cycle's verify rejects these whatever the tests say: catch them here, while the agent
-  // can still fix them (bench hard10 task-04 lost a green session to a `# noqa` in a scratch file).
-  for (const v of antiCheat({
-    changes,
-    patch,
-    protectedPatterns: run.config.protected,
-    allow: task.allow,
-    baseline: run.state.baseline,
-    results,
-  })) {
-    reasons.push(`anti-cheat ${v.rule}`);
-    failures.push(
-      `Would be rejected by anti-cheat (${v.rule}): ${v.detail}. Undo that; fix the cause instead.`,
-    );
-  }
-  for (const c of await inputs.runChecks())
-    if (!c.pass) {
-      reasons.push(`check ${c.command}`);
-      failures.push(`Check failed: \`${c.command}\`\n${c.output}`);
-    }
-  const out: CheckOutcome = {
-    pass: reasons.length === 0,
-    failures: failures.join('\n\n').slice(0, FAILURE_CHARS),
-    signature: reasons.length ? failureSignature([...reasons, gateText]) : '',
-    tree: treeHash,
-  };
-  return out;
+  runChecks: () => Promise<TaskCheck[]>;
 }
 
 /** Restore the worktree to a tree a check passed on (lastGreen plus that tree's changes). */
@@ -119,6 +59,24 @@ async function restoreTree(run: Run, tree: string): Promise<void> {
   await rollbackTo(run.worktree, run.state.lastGreen);
   await git(run.worktree, ['read-tree', '-u', '--reset', tree]);
   await git(run.worktree, ['reset', '-q']);
+}
+
+/** Record (failure signature -> what fixed it) in the run's lessons, folded into repo memory. */
+async function rememberFix(run: Run, signature: string, summary: string): Promise<void> {
+  if (!summary.trim()) return;
+  try {
+    const today = new Date(run.clock.now()).toISOString().slice(0, 10);
+    const notes = await run.store.readNotes();
+    const next = mergeNotes(
+      notes,
+      [fixNote(signature, summary, today)],
+      run.config.context.notes_max_tokens,
+    );
+    await run.store.writeNotes(next);
+    run.events.emit('memory.fix_saved', { signature: signature.slice(0, 120) });
+  } catch (err) {
+    run.events.emit('memory.save_failed', { error: (err as Error).message });
+  }
 }
 
 /** The end review: the whole diff against the goal and the agent's analysis. */
@@ -152,6 +110,7 @@ export async function actAsThinkLoop(
     work: inputs.workChain,
   };
   let round = 0;
+  const session: CheckSession = { quarantined: new Set(), persistent: new Set() };
   const io: SessionIO = {
     segment: (s, chain) => {
       // Thinking reads without editing by design: the no-edit stuck watch would cut it short.
@@ -171,7 +130,8 @@ export async function actAsThinkLoop(
         chain === 'think' || !watch ? rest : { ...rest, watch },
       );
     },
-    check: () => checkTree(run, task, inputs, ++round),
+    check: () => checkTree(run, task, inputs.runChecks, session, ++round),
+    onFixed: (signature, summary) => rememberFix(run, signature, summary),
     ...(run.config.review.enabled
       ? { review: (analysis: string) => reviewDiff(run, task, analysis) }
       : {}),
@@ -184,5 +144,6 @@ export async function actAsThinkLoop(
     rounds: run.config.plan.loop_rounds,
     rethinks: run.config.plan.loop_rethinks,
     thinkTurns: run.config.plan.loop_think_turns,
+    rewinds: run.config.plan.loop_rewinds,
   });
 }

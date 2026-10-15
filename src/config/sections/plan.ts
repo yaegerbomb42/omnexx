@@ -26,6 +26,14 @@ export const plan = z
     /** Times a loop session may stop to re-think when stuck. */
     loop_rethinks: z.number().int().min(0).max(5).default(2),
     /**
+     * Doom-loop rewinds per loop session: when the checks get worse twice in a row, or a failure
+     * set comes back (fixing A breaks B and back), the tree goes back to the best pass so far,
+     * the turns since become a short tombstone, and the agent re-thinks. 0 turns it off.
+     */
+    loop_rewinds: z.number().int().min(0).max(5).default(2),
+    /** Re-runs of a loop check's new test failures to tell flakes apart (flakes are quarantined). */
+    loop_flaky_reruns: z.number().int().min(0).max(3).default(2),
+    /**
      * Turns a think step may explore before it must write its analysis (bench hard10: thinking
      * took 12-34 turns, half of each run, mostly experiments the execute phase repeated).
      */

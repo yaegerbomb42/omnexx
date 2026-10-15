@@ -1,6 +1,7 @@
 import type { LoopEnd, LoopResult } from '../agent/loop.js';
 import type { Message } from '../providers/types.js';
 import type { Usage } from '../providers/types.js';
+import { checkTrip, failKey, tombstone, type PassState, type StateNode } from './doom-breaker.js';
 
 /**
  * A think-first loop session: one conversation that solves a task end to end.
@@ -12,6 +13,8 @@ import type { Usage } from '../providers/types.js';
  *    fixed forward, never rolled back to the start.
  * 3. Stuck (an in-cycle stuck signal, or the same failure twice): re-think in place with the
  *    strong models ("which assumption is wrong?"), then carry on. No fresh worker.
+ *    A doom loop (checks worse twice in a row, or a failure set coming back) rewinds first: the
+ *    tree goes back to the best pass so far and the turns since become a short tombstone.
  * 4. Once green, one review of the final diff against the goal and the analysis; a finding is
  *    one more turn here, not a rejection.
  *
@@ -68,6 +71,8 @@ export interface CheckOutcome {
   signature: string;
   /** Git tree of the checked working tree. */
   tree: string;
+  /** What the check measured, for the doom-loop breaker (no breaker without it). */
+  state?: PassState;
 }
 
 export interface SessionIO {
@@ -78,6 +83,8 @@ export interface SessionIO {
   /** Put the working tree back to a tree a check passed on. */
   restore: (tree: string) => Promise<void>;
   emit: (type: string, data: Record<string, unknown>) => void;
+  /** A failure with this signature was just fixed; `summary` is what the agent says it did. */
+  onFixed?: (signature: string, summary: string) => Promise<void>;
 }
 
 export interface SessionLimits {
@@ -85,7 +92,11 @@ export interface SessionLimits {
   rethinks: number;
   /** Turns a think or re-think step may explore before it must write its analysis. */
   thinkTurns: number;
+  /** Doom-loop rewinds allowed per session (0 or unset: no breaker). */
+  rewinds?: number;
 }
+
+type Node = StateNode & { failures: string };
 
 export interface SessionResult extends LoopResult {
   analysis: string;
@@ -177,6 +188,8 @@ export async function runThinkLoop(
   let rounds = 0;
   let rethinks = 0;
   let lastSignature = '';
+  let rewinds = 0;
+  let nodes: Node[] = [];
 
   const run = async (step: Step | undefined): Promise<LoopResult> => {
     const seg = step ? continueWith(messages, step.text) : { history: [], first: anchor };
@@ -262,7 +275,21 @@ export async function runThinkLoop(
     }
     const c = await io.check();
     io.emit('loop.check', { round: rounds, pass: c.pass, failures: c.failures.slice(0, 300) });
+    if (c.state)
+      nodes = [
+        ...nodes,
+        {
+          ...c.state,
+          tree: c.tree,
+          pass: c.pass,
+          messageCount: messages.length,
+          summary: r.finalText,
+          key: c.pass ? '' : failKey(c.state.failIds),
+          failures: c.failures,
+        },
+      ];
     if (c.pass) {
+      if (lastSignature && io.onFixed) await io.onFixed(lastSignature, r.finalText);
       green = c.tree;
       greenNow = true;
       lastSignature = '';
@@ -272,6 +299,38 @@ export async function runThinkLoop(
       io.emit('loop.review', { blocking: Boolean(findings) });
       if (!findings) return finish('done');
       next = { text: reviewPrompt(findings), chain: 'work', thinking: false };
+      continue;
+    }
+    const trip = rewinds < (limits.rewinds ?? 0) ? checkTrip(nodes) : undefined;
+    if (trip) {
+      // Doom loop: back to the best tree, the turns since become a tombstone, then re-think.
+      rewinds++;
+      const best = trip.best as Node;
+      await io.restore(best.tree);
+      messages = messages.slice(0, best.messageCount);
+      nodes = nodes.slice(0, nodes.indexOf(best) + 1);
+      greenNow = best.pass;
+      lastSignature = '';
+      const note = tombstone(trip);
+      io.emit('loop.rewind', {
+        reason: trip.reason,
+        tree: best.tree,
+        pruned: trip.since.length,
+        rewind: rewinds,
+      });
+      const state = best.pass
+        ? 'The best tree passed its checks.'
+        : `The best tree's failures:\n${best.failures}`;
+      const step = rethink(
+        `${trip.reason === 'oscillation' ? 'going in circles' : 'checks getting worse'}\n${state}`,
+      );
+      next = step
+        ? { ...step, text: `${note}\n\n${step.text}` }
+        : {
+            text: `${note}\n\n${best.pass ? EXECUTE_REVISED_PROMPT : fixPrompt(best.failures)}`,
+            chain: 'work',
+            thinking: false,
+          };
       continue;
     }
     const same = c.signature !== '' && c.signature === lastSignature;
