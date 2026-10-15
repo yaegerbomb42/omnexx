@@ -19,7 +19,7 @@ export const DISPUTE_FILE = '.omnexx-spec-dispute.md';
 /** `auto` writes spec tests for goals listing at least this many requirements. */
 export const MIN_REQUIREMENTS = 5;
 const MAX_FILES = 8;
-const MAX_FILE_CHARS = 12_000;
+const MAX_FILE_CHARS = 20_000;
 const INTERFACE_MAX_CHARS = 12_000;
 const WRITER_MAX_TOKENS = 16_000;
 const JUDGE_MAX_TOKENS = 8_000;
@@ -134,11 +134,16 @@ export const suiteSchema = z.object({
 export type SpecSuite = z.infer<typeof suiteSchema>;
 
 /** Validate the writer's answer: files only under SPEC_DIR, a one-line command that runs them. */
-export function parseSuite(input: unknown): SpecSuite | undefined {
-  const r = suiteSchema.safeParse(input);
-  if (!r.success) return undefined;
+export function parseSuite(input: unknown): SpecSuite | string {
+  if (typeof input !== 'object' || input === null) return 'no answer object';
+  const o = input as { files?: unknown };
+  // A writer that went over the file cap still wrote usable tests: keep the first ones.
+  const files = Array.isArray(o.files) ? o.files.slice(0, MAX_FILES) : o.files;
+  const r = suiteSchema.safeParse({ ...input, files });
+  if (!r.success) return z.prettifyError(r.error).slice(0, 500);
   const command = r.data.command.trim();
-  if (command.includes('\n') || !command.includes(SPEC_DIR)) return undefined;
+  if (command.includes('\n')) return 'the command must be one line';
+  if (!command.includes(SPEC_DIR)) return `the command must run the files under ${SPEC_DIR}/`;
   return { command, files: r.data.files };
 }
 
@@ -147,9 +152,11 @@ const WRITER_SYSTEM = `You write independent acceptance tests for a coding task,
 Write tests that would catch a wrong reading of the spec:
 - the boundaries of each rule (zero, exactly the limit, one past it, empty input) where the spec states the outcome;
 - above all the interactions between requirements: one operation built on another (an operation that completes something an earlier call set up, an undo, a transfer, a save and restore), walked through a concrete call sequence. An internal step often wrongly re-runs a public check that its own earlier bookkeeping now fails.
-Assert only what the spec states. Where it leaves a behaviour open, don't test it. Don't test internals, timing, messages or formatting the spec doesn't fix.
+Assert only what the spec states. Where it leaves a behaviour open, don't test it. Don't test internals, timing, messages or formatting the spec doesn't fix. Build every fixture only with calls the spec says succeed (a setup helper that passes a quantity of 0 where the spec requires a positive one breaks the test, not the code).
 
 Use the project's own test runner and module style (see the project facts). Put every file under ${SPEC_DIR}/ at the repository root (one small file per requirement or interaction, import the code by a relative path from there), and give one shell command that runs only those files, naming each file (not a directory or glob), and exits non-zero when one fails. Reply only by calling the answer tool.`;
+
+const WRITER_SHAPE = ` Call the answer tool with {"command": "<one line running each file>", "files": [{"path": "${SPEC_DIR}/<name>", "content": "<the test file>"}]}.`;
 
 const JUDGE_SYSTEM = `You settle a dispute about acceptance tests. An independent model wrote tests from a specification; the agent that wrote the code says some of them contradict the specification. Decide for each disputed test file by the specification alone: drop it only when the test asserts something the spec contradicts or leaves open. A test that is right and code that is wrong means the test stays. Reply only by calling the answer tool.`;
 
@@ -206,9 +213,17 @@ export async function writeSpecSuite(run: Run, ctx: SpecContext): Promise<SpecSu
     `# Project facts\n${ctx.project}`,
   ].join('\n\n');
   try {
-    return parseSuite(
-      await askTool(run, WRITER_SYSTEM, prompt, suiteSchema, 'spec_tests', WRITER_MAX_TOKENS),
+    const ask = (text: string) =>
+      askTool(run, WRITER_SYSTEM, text, suiteSchema, 'spec_tests', WRITER_MAX_TOKENS);
+    const first = parseSuite(await ask(prompt));
+    if (typeof first !== 'string') return first;
+    // One retry with what was wrong: a model once answered with 22 tokens and no files.
+    const second = parseSuite(
+      await ask(`${prompt}\n\nYour last answer was unusable (${first}).${WRITER_SHAPE}`),
     );
+    if (typeof second !== 'string') return second;
+    run.events.emit('spec_tests.unavailable', { error: second });
+    return undefined;
   } catch (err) {
     run.events.emit('spec_tests.unavailable', { error: (err as Error).message });
     return undefined;

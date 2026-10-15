@@ -122,7 +122,7 @@ function fixEvidence(suite: SpecSuite, output: string): string {
     'Independent acceptance tests, written from the goal alone, fail against the code. Fix the code so they pass.',
     `They run with \`${suite.command}\` from ${SPEC_DIR}/ (kept out of the repo). Their output:\n${output.slice(-EVIDENCE_OUTPUT_CHARS)}`,
     `The tests:\n${tests}`,
-    `If you are sure a test contradicts the goal, don't bend the code to it: write ${DISPUTE_FILE} at the repo root naming the test file and quoting the goal's words that it contradicts, and change nothing else. A judge decides; a rejected dispute leaves the test standing.`,
+    `The tests can be wrong too. First check the failing test against the goal: a setup step the goal itself forbids (the stack trace runs through the test's own helper), or an outcome the goal never states, means the test is wrong. Then don't bend the code to it: write ${DISPUTE_FILE} at the repo root naming the test file and quoting the goal's words that it contradicts, and change nothing else. A judge decides; a rejected dispute leaves the test standing.`,
   ].join('\n\n');
 }
 

@@ -70,7 +70,8 @@ function provider(worker: Script, judgeDrop: (n: number) => string[]): Provider 
       const sys = req.system.map((b) => b.text).join('\n');
       if (sys.includes(WRITER)) {
         p.writer++;
-        return answer(req, SUITE);
+        // The first answer is unusable (no files); the one retry gets the suite.
+        return answer(req, p.writer === 1 ? {} : SUITE);
       }
       if (sys.includes(JUDGE)) {
         p.judge++;
@@ -111,7 +112,7 @@ describe('spec-first acceptance tests before finishing', () => {
     const p = provider(fileWorker, () => []);
     const { t, out, of } = await runWith(p, { plan: { mode: 'full' } });
     expect(out.status).toBe('finished');
-    expect(p.writer).toBe(1);
+    expect(p.writer).toBe(2);
     expect(of('spec_tests.result').map((e) => e.pass)).toEqual([false, true]);
     expect(of('spec_tests.fix').map((e) => e.task)).toEqual(['M2.T01']);
     const plan = await t.run.store.readPlan();

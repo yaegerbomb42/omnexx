@@ -78,10 +78,23 @@ describe('parseSuite', () => {
   });
 
   it('refuses paths outside the spec dir, traversal, and commands that ignore it', () => {
-    expect(parseSuite({ command, files: [{ ...file, path: 'src/a.js' }] })).toBeUndefined();
-    expect(parseSuite({ command, files: [{ ...file, path: 'omnexx-spec/../x' }] })).toBeUndefined();
-    expect(parseSuite({ command: 'npm test', files: [file] })).toBeUndefined();
-    expect(parseSuite({ command: `${command}\nrm -rf x`, files: [file] })).toBeUndefined();
+    expect(parseSuite({ command, files: [{ ...file, path: 'src/a.js' }] })).toMatch(/paths/);
+    expect(parseSuite({ command, files: [{ ...file, path: 'omnexx-spec/../x' }] })).toMatch(
+      /paths/,
+    );
+    expect(parseSuite({ command: 'npm test', files: [file] })).toMatch(/must run the files/);
+    expect(parseSuite({ command: `${command}\nrm -rf x`, files: [file] })).toMatch(/one line/);
+    expect(parseSuite({})).toBeTypeOf('string');
+    expect(parseSuite(undefined)).toBe('no answer object');
+  });
+
+  it('keeps the first files of a suite over the cap', () => {
+    const files = Array.from({ length: 12 }, (_, i) => ({
+      ...file,
+      path: `omnexx-spec/t${i}.mjs`,
+    }));
+    const suite = parseSuite({ command, files });
+    expect(typeof suite === 'string' ? suite : suite.files).toHaveLength(8);
   });
 });
 
