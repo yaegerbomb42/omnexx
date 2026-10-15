@@ -27,6 +27,7 @@ export const readTool: Tool<typeof schema> = {
   description: `Read a file with line numbers, at most ${MAX_READ_LINES} lines per call. Files over ${MAX_READ_LINES} lines must be read by range; reading one without a range returns its outline.`,
   schema,
   readOnly: true,
+  concurrent: true,
   async run(input, ctx) {
     let text: string;
     try {

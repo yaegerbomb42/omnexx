@@ -127,6 +127,8 @@ export class OpenAICompatProvider implements Provider {
   readonly name: string;
   /** Output limits learned from 400s, per model: later calls ask for no more than this. */
   private readonly outputCaps = new Map<string, number>();
+  /** Off once the server refused `parallel_tool_calls` (some local servers reject unknown fields). */
+  private parallelToolCalls = true;
 
   constructor(private readonly opts: OpenAICompatOptions) {
     this.name = opts.name;
@@ -155,6 +157,10 @@ export class OpenAICompatProvider implements Provider {
           this.outputCaps.set(req.model, limit);
           continue;
         }
+        if (this.parallelToolCalls && /parallel_tool_calls/i.test(err.message)) {
+          this.parallelToolCalls = false;
+          continue;
+        }
         if (!/enable_thinking/i.test(err.message)) throw err;
         thinking = thinking === false ? undefined : false;
       }
@@ -179,6 +185,10 @@ export class OpenAICompatProvider implements Provider {
         : {}),
       ...(req.toolChoice?.type === 'tool'
         ? { tool_choice: { type: 'function', function: { name: req.toolChoice.name } } }
+        : {}),
+      // Several independent calls in one turn save whole round trips; the loop runs reads at once.
+      ...(req.tools.length && !req.toolChoice && this.parallelToolCalls
+        ? { parallel_tool_calls: true }
         : {}),
       ...(req.onDelta ? { stream: true, stream_options: { include_usage: true } } : {}),
       ...(thinking === undefined ? {} : { enable_thinking: thinking }),

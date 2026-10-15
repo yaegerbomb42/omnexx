@@ -46,6 +46,8 @@ import { QuotaLedger } from '../providers/quota-ledger.js';
 import { compactPlanView, planCounts } from '../core/plan.js';
 import { resolvePaths } from '../core/paths.js';
 import { listRunIds, RunStore } from '../core/run-store.js';
+import { formatEstimate, type RunEstimate } from '../core/run-estimate.js';
+import { estimateForStore, PROGRESS_EVENTS, remainingForRun } from '../core/run-estimate-io.js';
 import { describeError } from '../errors.js';
 import { emptyTelemetry, fold, type Telemetry } from '../telemetry/aggregate.js';
 import { EventTail } from '../telemetry/feed.js';
@@ -184,6 +186,9 @@ export class Session {
   private code: CodeChat | undefined;
   /** The model request in flight, with its expected duration (for the editor's countdown). */
   waiting: { startedAt: number; estimateMs: number | null } | null = null;
+  /** "est. ~3 min, ~40k tokens, ~$0.02" before work starts, then "~2 min left" as it goes. */
+  estimate: string | null = null;
+  private runEstimate: RunEstimate | undefined;
   private opening: Promise<CodeChat> | undefined;
   /** Model chosen with /model before the chat opened. */
   private chatModel: string | undefined;
@@ -308,7 +313,26 @@ export class Session {
     this.plan = '';
     this.lastPlanAt = 0;
     this.push('system', `attached to ${store.runId}`);
+    await this.estimateRun(store);
     await this.poll();
+  }
+
+  /** The attached run's estimate from similar past runs (shown until a task finishes). */
+  private async estimateRun(store: RunStore): Promise<void> {
+    const paths = resolvePaths(this.io.env);
+    this.runEstimate = await loadConfig({ cwd: this.io.cwd, env: this.io.env })
+      .then(({ config }) => estimateForStore(paths, config, store))
+      .catch(() => undefined);
+    this.estimate = formatEstimate(this.runEstimate);
+  }
+
+  /** After a plan is written or a task finishes: the time left. */
+  private async trackRunEstimate(e: { type: string; ts: number }): Promise<void> {
+    if (e.type === 'run.finish') this.estimate = null;
+    if (!PROGRESS_EVENTS.has(e.type) || !this.runId) return;
+    const store = new RunStore(resolvePaths(this.io.env), this.runId);
+    const elapsed = e.ts - (this.telemetry.startedAt ?? e.ts);
+    this.estimate = (await remainingForRun(store, this.runEstimate, elapsed)) ?? this.estimate;
   }
 
   detach(): void {
@@ -321,6 +345,7 @@ export class Session {
     this.tail = undefined;
     this.runAlive = false;
     this.plan = '';
+    this.estimate = null;
     this.changed();
   }
 
@@ -390,6 +415,7 @@ export class Session {
     for (const e of events) {
       fold(this.telemetry, e);
       this.trackRunTodos(e);
+      await this.trackRunEstimate(e);
       const line = humanize(e, { brand: this.b, verbosity: this.verbosity });
       if (line) this.push('feed', line);
       this.reactToRun(e);
@@ -1013,6 +1039,10 @@ export class Session {
     },
     waiting: (w: { startedAt: number; estimateMs: number | null } | null) => {
       this.waiting = w;
+      this.changed();
+    },
+    estimate: (line: string | null) => {
+      this.estimate = line;
       this.changed();
     },
     browser: (f: BrowserFrame) => {

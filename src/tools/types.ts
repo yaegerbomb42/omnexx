@@ -76,6 +76,11 @@ export interface Tool<S extends z.ZodType = z.ZodType> {
   schema: S;
   /** Read-only tools are the only ones the planner gets. */
   readOnly: boolean;
+  /**
+   * Safe to run at the same time as other concurrent calls from the same turn: it changes no
+   * state at all (not even notes or the todo list). Unset means the call runs on its own.
+   */
+  concurrent?: boolean;
   /** Tidy model input before validation (shape slips only; meaning is still validated). */
   normalize?: (input: unknown) => unknown;
   run(input: z.infer<S>, ctx: ToolContext): Promise<ToolOutput>;

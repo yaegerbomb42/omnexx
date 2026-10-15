@@ -47,7 +47,14 @@ SonarCloud findings from the #20 integration merge are still open.
   backends, 10 s Playwright action timeouts with a snapshot on timeout, network-idle settle on
   agent-browser, and `check_page` (screenshot, console errors, failed requests, overflow,
   overlap, broken images; `width` for phone checks). No live web5 run yet (free models only).
-
+- **2026-10-14, branch `feat/run-estimates`:** run estimates. Each finished run (and chat work
+  started by approving a plan) adds a sample to `run-history.json` next to `latency.json`: goal
+  length, fast path vs planned, plan nodes, repo files, wall time, fresh/cached tokens, cost,
+  model. Before a run, `omnexx run`, the TUI status bar and the VS Code panel show "est. ~3 min,
+  ~40k tokens, ~$0.02 (5 similar runs)" from the medians of the 5 nearest past runs (log-scale
+  distance; same model and path when there are 3+), a range when there are fewer than 3 or the
+  quartiles are far apart, "no history yet" otherwise; then "~2 min left" as tasks finish.
+  `src/core/run-estimate.ts`, `run-history.ts`, `run-estimate-io.ts`, `src/tui/chat-estimate.ts`.
 - **2026-10-13 (single agent), branch `feat/autonomy-2`:** efficiency work driven by a
   head-to-head bench (same model, DeepSeek-V4.1-Flash, for every harness; tokens counted by
   one metering proxy, `bench --endpoint <PREFIX>`). Cline and OpenHands runners added. Fixes:

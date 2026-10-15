@@ -222,6 +222,27 @@ describe('Gemini + Responses providers (recorded fixtures)', () => {
     expect(res.content).toEqual([{ type: 'tool_use', id: 'c9', name: 'ping', input: {} }]);
     expect(res.usage).toMatchObject({ uncached: 7, output: 3 });
   });
+  it('responses asks for parallel tool calls when tools are offered', async () => {
+    const srv = await mockServer((_r, res) => {
+      json(res, 200, { model: 'gpt-5', status: 'completed', output: [], usage: {} });
+    });
+    const p = new ResponsesProvider({
+      name: 'openai',
+      baseUrl: srv.url,
+      apiKey: 'k',
+      timeoutMs: 5_000,
+    });
+    await p.complete({
+      model: 'gpt-5',
+      system: [],
+      tools: [{ name: 'read', description: 'r', inputSchema: { type: 'object' } }],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      maxTokens: 10,
+      messageBreakpoints: [],
+    });
+    const body = JSON.parse(srv.requests[0]?.body ?? '{}') as Record<string, unknown>;
+    expect(body.parallel_tool_calls).toBe(true);
+  });
   it('both map HTTP errors to retryable ProviderErrors', async () => {
     const srv = await mockServer((_r, res) => {
       json(res, 429, { error: { message: 'slow down' } });
