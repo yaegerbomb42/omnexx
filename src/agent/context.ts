@@ -27,6 +27,8 @@ export interface CycleInputs {
   role?: string;
   /** What the user's agent settings mean (effort, time); a volatile block after the goal. */
   brief?: string;
+  /** The repo's verified facts (how it builds and tests); a volatile block after the settings. */
+  facts?: string;
   /** How each section reaches the model; all pinned when unset (the old behaviour). */
   sections?: SectionModes;
   tools: ToolSpec[];
@@ -66,6 +68,7 @@ export function buildCycleContext(i: CycleInputs): {
   const intent = keep('intent', i.intent) ? `\n\n${i.intent ?? ''}` : '';
   blocks.push({ label: 'goal', text: `# Goal\n\n${i.goal.trim()}${intent}` });
   if (i.brief?.trim()) blocks.push({ label: 'settings', text: i.brief.trim() });
+  if (i.facts?.trim()) blocks.push({ label: 'facts', text: i.facts.trim() });
   if (keep('lessons', i.notes))
     blocks.push({ label: 'notes', text: `# Lessons (notes.md)\n\n${i.notes.trim()}` });
   const system: SystemBlock[] = blocks.map((b, n) => ({

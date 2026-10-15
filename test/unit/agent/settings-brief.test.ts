@@ -68,3 +68,12 @@ describe('the agent settings brief in the cycle prompt', () => {
     expect(buildCycleContext(inputs).labels).toEqual(['system', 'goal', 'notes']);
   });
 });
+
+describe('the verified facts block in the cycle prompt', () => {
+  it('is a volatile block after the settings, before the lessons', () => {
+    const facts = '# Verified facts about this repo\n- [F1] test: tests pass with `npm test`';
+    const ctx = buildCycleContext({ ...inputs, facts });
+    expect(ctx.labels).toEqual(['system', 'goal', 'facts', 'notes']);
+    expect(ctx.system[2]).toMatchObject({ text: facts, volatile: true });
+  });
+});
