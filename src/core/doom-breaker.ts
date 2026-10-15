@@ -48,7 +48,8 @@ export const DROPS_TO_TRIP = 2;
 /** Upper bound on the tombstone, in characters (~150 tokens). */
 export const TOMBSTONE_CHARS = 600;
 
-export const failKey = (ids: readonly string[]): string => [...new Set(ids)].sort().join('\n');
+export const failKey = (ids: readonly string[]): string =>
+  [...new Set(ids)].sort((a, b) => a.localeCompare(b)).join('\n');
 
 /** Lexicographic score: positive when `a` is better than `b`. */
 export function compareScore(a: PassState, b: PassState): number {
