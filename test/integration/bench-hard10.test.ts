@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { getHard10Suite } from '../../bench/suites/index.ts';
 import type { TaskDef } from '../../bench/types.ts';
 
@@ -17,6 +18,16 @@ function applySolution(task: TaskDef, dir: string): void {
     rmSync(join(dir, p), { recursive: true, force: true });
   }
   rmSync(del);
+}
+
+/** The tail of check.sh's output with tracing on, for failure messages. */
+function checkOutput(task: TaskDef, dir: string): string {
+  const r = spawnSync('bash', ['-x', join(SUITE_DIR, task.path, 'check.sh')], {
+    cwd: dir,
+    encoding: 'utf-8',
+    timeout: 120_000,
+  });
+  return `${r.stdout}\n${r.stderr}`.split('\n').slice(-40).join('\n');
 }
 
 describe('hard10 suite', () => {
@@ -43,12 +54,17 @@ describe('hard10 suite', () => {
           const start = await suite.checkTask(task, dir);
           applySolution(task, dir);
           const reference = await suite.checkTask(task, dir);
-          return { id: task.id, start, reference };
+          // On a failing reference, rerun the check visibly so CI logs say why.
+          const log = reference ? '' : checkOutput(task, dir);
+          return { id: task.id, start, reference, log };
         } finally {
           rmSync(dirname(dir), { recursive: true, force: true });
         }
       }),
     );
-    expect(verdicts.filter((v) => v.start || !v.reference)).toEqual([]);
+    const bad = verdicts
+      .filter((v) => v.start || !v.reference)
+      .map((v) => `${v.id}: ${v.start ? 'starts solved' : `reference fails\n${v.log}`}`);
+    expect(bad).toEqual([]);
   }, 900_000);
 });
