@@ -37,6 +37,16 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-15 (single agent), branch `feat/mcp-easy`:** MCP servers made easy. `src/mcp/manage.ts`
+  is the one place that adds (command, URL with OAuth auto-detect, gallery, import, pasted JSON),
+  lists (starts each server: status, tool count, approx tool-schema tokens), enables/disables
+  (`enabled = false`), sets the tool allow-list, removes and signs in; the CLI (`omnexx mcp
+gallery|list|enable|disable|allow|login|logs`), the TUI's `/mcp` and the VS Code settings
+  section (`vscode/src/webview/mcp.ts`, chat-server `{type: "mcp", op}` in `cli/chat-mcp.ts`) all
+  use it. Stdio servers' stderr is captured (no longer inherited into the TUI) and a failed start
+  says why with its tail. Import also reads VS Code and Windsurf. SSE-only endpoints stay
+  unsupported (the SDK's SSE client is deprecated and lint forbids it).
+
 - **2026-10-15 (single agent), branch `feat/think-loop`:** the fast path is now a think-first
   loop session (`[plan] loop = "fast"`, `core/think-loop.ts`): think with the planner's models
   (explore, then an explicit analysis), execute in the same conversation with the worker's,

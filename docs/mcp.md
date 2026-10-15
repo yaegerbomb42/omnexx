@@ -1,14 +1,54 @@
 # Model Context Protocol (MCP) Client
 
-Omnexx supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), allowing agents to connect to external tool servers over stdio or Streamable HTTP/SSE.
+Omnexx supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), allowing agents to connect to external tool servers over stdio or Streamable HTTP. (Old SSE-only endpoints are not supported; most servers also offer a `/mcp` streamable endpoint.)
 
 ## Quick setup
 
 ```bash
+omnexx mcp gallery               # popular servers: filesystem, github, playwright, postgres, …
+omnexx mcp gallery filesystem    # add one (asks for what it needs, or --set KEY=VALUE)
 omnexx mcp add playwright        # by name, from the official MCP registry
 omnexx mcp search github         # ✓ marks a known publisher
-omnexx mcp import                # servers you set up in Claude Code, Claude Desktop or Cursor
+omnexx mcp add fs -- npx -y @modelcontextprotocol/server-filesystem ~/notes
+omnexx mcp add linear --url https://mcp.linear.app/mcp   # asks for a browser sign-in if needed
+omnexx mcp import                # from Claude Code, Claude Desktop, Cursor, VS Code, Windsurf
+omnexx mcp import --json cfg.json  # a pasted {"mcpServers": …} block ("-" reads stdin)
+omnexx mcp list                  # status, tool count and context cost of each server
 ```
+
+Every add starts the server once, so a broken setup shows up right away: a missing `npx`/`uvx`/
+`docker` gets an install hint, a remote server that answers 401 is switched to OAuth and
+`omnexx mcp login <name>` signs you in (in a terminal it starts right away), and a server that
+exits prints the tail of its stderr. `omnexx mcp logs <name>` shows its whole output.
+
+### Status, tool cost, on/off and allow-lists
+
+Every tool a server offers costs context tokens on every request (its name, description and input
+schema are sent with each one). `omnexx mcp list` starts each server and shows:
+
+```
+  ● playwright           21 tools ~4.2k tok     stdio npx -y @playwright/mcp@latest
+  ✗ postgres             failed                 stdio npx -y @modelcontextprotocol/server-postgres …
+      MCP server "postgres" failed to start: it exited during startup
+  ○ notion               disabled               http  https://mcp.notion.com/mcp
+```
+
+- `omnexx mcp disable <name>` / `enable <name>`: keep the setup but stop starting it
+  (`enabled = false` in its table). A project server (omnexx.toml or `.mcp.json`) gets a user
+  override table instead.
+- `omnexx mcp allow <name> 'browser_*' read_file`: only these tools reach the model;
+  `omnexx mcp allow <name>` with no globs allows all again.
+
+### VS Code
+
+Settings (the gear) → **MCP servers**: each server with a status dot (green running, red failed,
+hollow disabled), its tool count and approximate tokens, an on/off switch, **Tools** (tick which
+tools the model sees, with the cost of each), **Logs**, **Sign in** for a remote server that needs
+it, and **Remove**. **Add server** opens a searchable gallery of popular servers plus a search of
+the official MCP registry (one click, then a short form for any required value), a command, a URL,
+or **Paste JSON** (an `mcpServers` block from Claude Desktop, Cursor, Windsurf or VS Code).
+**Import from Claude / Cursor / VS Code** lists what the other tools have and imports the ones you
+tick. Tokens always go to the private secrets file.
 
 `omnexx mcp add <name>` with no command looks the name up in the
 [official MCP registry](https://registry.modelcontextprotocol.io) and shows who publishes it, what
@@ -25,7 +65,8 @@ the config refers to them as `secret:<KEY>`. `omnexx mcp import` does the same w
 in other tools' configs, so tokens never land in `config.toml`. Every add, import and remove edits
 only that server's table: comments and the rest of your config stay as you wrote them.
 
-In the TUI: `/mcp`, `/mcp add <name>`, `/mcp search <q>`, `/mcp import`.
+In the TUI: `/mcp` shows the same status list; `/mcp gallery [id]`, `/mcp add <name>`,
+`/mcp enable|disable <name>`, `/mcp allow <name> <globs>`, `/mcp search <q>`, `/mcp import`.
 
 ### Or just ask omnexx
 
@@ -57,10 +98,11 @@ allow_tools = ["*"]             # Glob list of allowed tool names (default "*")
 timeout = "30s"
 
 [mcp.servers.remote_service]
-url = "https://mcp.internal.example/sse"
+url = "https://mcp.internal.example/mcp"
 headers_env = { Authorization = "SERVICE_TOKEN" } # Header values: an env var name, secret:<KEY>, or a literal
 allow_tools = ["query_*"]
-timeout = "1m"
+timeout = "1m"                  # how long it may take to start (npx downloads count)
+enabled = false                 # keep it configured but never start it
 ```
 
 Omnexx also automatically discovers and reads `.mcp.json` (Claude Code format) in the repository root. Any server defined in `omnexx.toml` takes precedence over `.mcp.json`.
@@ -87,11 +129,17 @@ Omnexx also automatically discovers and reads `.mcp.json` (Claude Code format) i
 # Add a stdio server
 omnexx mcp add local-fs -- npx -y @modelcontextprotocol/server-filesystem /path/to/dir
 
-# Add an HTTP / SSE server
-omnexx mcp add remote-api --url https://mcp.example.com/sse
+# Add a remote (streamable HTTP) server; --set Authorization=<token> for a token
+omnexx mcp add remote-api --url https://mcp.example.com/mcp
+omnexx mcp login remote-api      # browser sign-in (OAuth) when it needs one
 
-# List configured servers
+# List servers with status, tool count and context cost (--quick: don't start them)
 omnexx mcp list
+
+# Switch off / on, limit tools, see output
+omnexx mcp disable local-fs
+omnexx mcp allow local-fs read_file list_directory
+omnexx mcp logs local-fs
 
 # Test connectivity and inspect discovered tools
 omnexx mcp test local-fs

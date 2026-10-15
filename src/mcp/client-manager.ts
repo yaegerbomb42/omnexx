@@ -6,6 +6,8 @@ import type { McpServerConfig } from '../config/sections/mcp.js';
 import { matchesAny } from '../security/glob.js';
 import { SECRET_PREFIX, type McpSecrets } from '../integrations/secrets.js';
 import { McpOAuthProvider, oauthOptions } from './oauth.js';
+import { parseDuration } from '../config/duration.js';
+import { describeStartFailure, type ServerProbe, toolTokens } from './status.js';
 
 /** What every stdio server gets from the host environment, whatever its config says. */
 const BASE_ENV = [
@@ -70,6 +72,20 @@ interface ServerInstance {
   transport?: Transport | null;
   crashedOnce: boolean;
   connected: boolean;
+  /** Why the last connect failed, with the server's stderr tail; cleared on success. */
+  lastError?: string | undefined;
+  /** The stderr of the last server process that failed to start. */
+  lastLog?: string | undefined;
+}
+
+const DEFAULT_CONNECT_MS = 30_000;
+
+function connectTimeout(config: McpServerConfig): number {
+  try {
+    return parseDuration(config.timeout);
+  } catch {
+    return DEFAULT_CONNECT_MS;
+  }
 }
 
 export class McpClientManager {
@@ -85,6 +101,7 @@ export class McpClientManager {
     this.secrets = opts.secrets ?? {};
     this.configHome = opts.configHome;
     for (const [name, cfg] of Object.entries(serverConfigs)) {
+      if (cfg.enabled === false) continue;
       this.servers.set(name, {
         config: cfg,
         crashedOnce: false,
@@ -192,7 +209,16 @@ export class McpClientManager {
       }
     };
 
-    await client.connect(transport);
+    try {
+      await client.connect(transport, { timeout: connectTimeout(config) });
+    } catch (err) {
+      const log = (transport as Partial<NodeStdioClientTransport>).stderr ?? '';
+      instance.lastError = describeStartFailure(name, config, err, log);
+      instance.lastLog = log;
+      await transport.close().catch(() => undefined);
+      throw new Error(instance.lastError, { cause: err });
+    }
+    instance.lastError = undefined;
     instance.client = client;
     instance.transport = transport;
     instance.connected = true;
@@ -249,6 +275,44 @@ export class McpClientManager {
 
     this.toolCache = allTools;
     return allTools;
+  }
+
+  /** The server's stderr so far (stdio servers; empty for remote ones). */
+  serverLog(name: string): string {
+    const instance = this.servers.get(name);
+    const t = instance?.transport as Partial<NodeStdioClientTransport> | undefined | null;
+    return t?.stderr ?? instance?.lastLog ?? '';
+  }
+
+  /**
+   * Start every server and report on each: running with its tools (and their context cost), or
+   * failed with why. Tools outside a server's allow-list are listed but marked not allowed.
+   */
+  async probe(): Promise<ServerProbe[]> {
+    const out: ServerProbe[] = [];
+    for (const [name, instance] of this.servers.entries()) {
+      try {
+        const client = await this.connectServer(name, instance);
+        const { tools } = await client.listTools();
+        const globs = instance.config.allow_tools;
+        const listed = tools.map((t) => ({
+          name: t.name,
+          description: t.description ?? '',
+          tokens: toolTokens(t),
+          allowed: globs.length === 0 || Boolean(matchesAny(t.name, globs)),
+        }));
+        out.push({ name, state: 'running', tools: listed, log: this.serverLog(name) });
+      } catch (err) {
+        out.push({
+          name,
+          state: 'failed',
+          tools: [],
+          error: instance.lastError ?? (err instanceof Error ? err.message : String(err)),
+          log: this.serverLog(name),
+        });
+      }
+    }
+    return out;
   }
 
   async callTool(

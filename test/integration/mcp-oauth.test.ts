@@ -5,7 +5,8 @@ import { McpClientManager } from '../../src/mcp/client-manager.js';
 import { signIn } from '../../src/mcp/login.js';
 import { forgetLogin, hasTokens, oauthFile } from '../../src/mcp/oauth.js';
 import { fakeBrowser, startFakeOAuthMcp, type FakeOAuthMcp } from '../support/fake-oauth-mcp.js';
-import { tempDir } from '../support/tmp.js';
+import { isolatedEnv, tempDir } from '../support/tmp.js';
+import { addUrl, listServers, loginServer } from '../../src/mcp/manage.js';
 
 let fake: FakeOAuthMcp | undefined;
 afterEach(async () => {
@@ -80,5 +81,25 @@ describe('MCP OAuth sign-in', () => {
     await forgetLogin(home, 'fake');
 
     expect(await hasTokens(home, 'fake')).toBe(false);
+  });
+
+  it('adding a URL that answers 401 switches it to OAuth, and login signs in through the browser', async () => {
+    // Arrange
+    fake = await startFakeOAuthMcp();
+    const place = { cwd: await tempDir(), env: await isolatedEnv() };
+
+    // Act
+    const added = await addUrl(place, 'remote', fake.url);
+    const tools = await loginServer(place, 'remote', {
+      open: (u) => void fakeBrowser(u),
+      log: () => undefined,
+    });
+
+    // Assert
+    expect(added.needsLogin).toBe(true);
+    expect(added.probe?.error).toContain('omnexx mcp login remote');
+    expect(tools).toBe(1);
+    const [v] = await listServers(place, { probe: true });
+    expect(v).toMatchObject({ name: 'remote', oauth: true, state: 'running', toolCount: 1 });
   });
 });

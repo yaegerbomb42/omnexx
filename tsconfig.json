@@ -32,6 +32,7 @@
     "vscode/src/webview/crew.ts",
     "vscode/src/webview/roles.ts",
     "vscode/src/webview/contextPage.ts",
-    "vscode/src/webview/inspector.ts"
+    "vscode/src/webview/inspector.ts",
+    "vscode/src/webview/mcp.ts"
   ]
 }

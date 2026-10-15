@@ -3,6 +3,9 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/stdio.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 
+/** How much of a server's stderr is kept, for "why didn't it start?" messages and the Logs view. */
+export const STDERR_TAIL_CHARS = 8_000;
+
 export interface StdioServerParameters {
   command: string;
   args?: string[] | undefined;
@@ -18,6 +21,8 @@ export class NodeStdioClientTransport implements Transport {
   private _process?: ChildProcess | undefined;
   private readonly _readBuffer = new ReadBuffer();
   private readonly _params: StdioServerParameters;
+  private _stderr = '';
+  private _exit: string | undefined;
 
   onclose?: () => void;
   onerror?: (error: Error) => void;
@@ -31,6 +36,11 @@ export class NodeStdioClientTransport implements Transport {
     return this._process?.pid ?? null;
   }
 
+  /** The last few KB the server wrote to stderr (its log), plus how it exited, if it has. */
+  get stderr(): string {
+    return this._exit ? `${this._stderr}${this._stderr ? '\n' : ''}${this._exit}` : this._stderr;
+  }
+
   async start(): Promise<void> {
     if (this._process) {
       throw new Error('NodeStdioClientTransport already started');
@@ -39,7 +49,7 @@ export class NodeStdioClientTransport implements Transport {
     return new Promise((resolve, reject) => {
       const child = spawn(this._params.command, this._params.args ?? [], {
         env: this._params.env ? { ...process.env, ...this._params.env } : process.env,
-        stdio: ['pipe', 'pipe', 'inherit'],
+        stdio: ['pipe', 'pipe', 'pipe'],
         shell: false,
         cwd: this._params.cwd,
       });
@@ -55,7 +65,13 @@ export class NodeStdioClientTransport implements Transport {
         resolve();
       });
 
-      child.on('close', () => {
+      child.stderr.on('data', (chunk: Buffer) => {
+        this._stderr = (this._stderr + chunk.toString()).slice(-STDERR_TAIL_CHARS);
+      });
+
+      child.on('close', (code, signal) => {
+        if (this._process === child && (code || signal))
+          this._exit = `(exited with ${signal ? `signal ${signal}` : `code ${String(code)}`})`;
         this._process = undefined;
         this.onclose?.();
       });

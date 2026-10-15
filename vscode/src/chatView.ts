@@ -9,6 +9,7 @@ import { primaryFolder } from './tree.js';
 
 /** Commands the webview may forward to omnexx unchanged. */
 const FORWARD = new Set([
+  'mcp',
   'send',
   'answer',
   'stop',
