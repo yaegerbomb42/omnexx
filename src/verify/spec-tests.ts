@@ -267,3 +267,34 @@ const BROKEN =
 export function suiteBroken(output: string): boolean {
   return BROKEN.test(output);
 }
+
+const COUNT_PATTERNS: readonly [RegExp, RegExp][] = [
+  // node --test (spec and tap reporters)
+  [/^[#ℹ] fail (\d+)$/m, /^[#ℹ] pass (\d+)$/m],
+  // vitest, jest, pytest, mocha
+  [/(\d+) fail(?:ed|ing)\b/, /(\d+) pass(?:ed|ing)\b/],
+];
+
+/** Passing and failing test counts from a runner's summary, when it prints one. */
+export function testCounts(output: string): { pass: number; fail: number } | undefined {
+  for (const [failRe, passRe] of COUNT_PATTERNS) {
+    const fail = failRe.exec(output)?.[1];
+    const pass = passRe.exec(output)?.[1];
+    if (fail !== undefined || pass !== undefined)
+      return { pass: Number(pass ?? 0), fail: Number(fail ?? 0) };
+  }
+  return undefined;
+}
+
+/**
+ * More than this share of spec tests failing on code that already passed the project's own
+ * gates says the suite is wrong, not the code (bench: a suite read `.code` off `assert.throws`,
+ * which returns nothing, and 12 tests failed on correct code).
+ */
+export const MAX_FAIL_SHARE = 0.5;
+
+export function suiteImplausible(counts: { pass: number; fail: number } | undefined): boolean {
+  if (!counts) return false;
+  const total = counts.pass + counts.fail;
+  return total > 0 && counts.fail / total > MAX_FAIL_SHARE;
+}

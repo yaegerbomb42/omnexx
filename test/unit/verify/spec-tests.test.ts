@@ -6,9 +6,12 @@ import {
   publicInterface,
   specTestsWanted,
   suiteBroken,
+  suiteImplausible,
+  testCounts,
 } from '../../../src/verify/spec-tests.js';
 
-const config = (review: object = {}, plan: object = {}) => configSchema.parse({ review, plan });
+const config = (review: object = {}, plan: object = {}) =>
+  configSchema.parse({ review: { spec_tests: 'auto', ...review }, plan });
 const LIST = ['1. add', '2. remove', '- list', '* count', '3) reserve'].join('\n');
 
 describe('specTestsWanted', () => {
@@ -95,6 +98,34 @@ describe('parseSuite', () => {
     }));
     const suite = parseSuite({ command, files });
     expect(typeof suite === 'string' ? suite : suite.files).toHaveLength(8);
+  });
+});
+
+describe('defaults', () => {
+  it('is off unless asked for, with one fix round of at most 3 cycles', () => {
+    const review = configSchema.parse({}).review;
+    expect(review).toMatchObject({
+      spec_tests: 'off',
+      spec_tests_max_rounds: 1,
+      spec_tests_max_cycles: 3,
+    });
+  });
+});
+
+describe('testCounts and suiteImplausible', () => {
+  it('reads node --test, tap, vitest and pytest summaries', () => {
+    expect(testCounts('ℹ tests 14\nℹ pass 2\nℹ fail 12')).toEqual({ pass: 2, fail: 12 });
+    expect(testCounts('# pass 3\n# fail 0')).toEqual({ pass: 3, fail: 0 });
+    expect(testCounts('Tests  2 failed | 5 passed (7)')).toEqual({ pass: 5, fail: 2 });
+    expect(testCounts('==== 1 failed, 9 passed in 0.2s')).toEqual({ pass: 9, fail: 1 });
+    expect(testCounts('Segmentation fault')).toBeUndefined();
+  });
+
+  it('calls a suite wrong when most of it fails on green code', () => {
+    expect(suiteImplausible({ pass: 2, fail: 12 })).toBe(true);
+    expect(suiteImplausible({ pass: 38, fail: 2 })).toBe(false);
+    expect(suiteImplausible({ pass: 1, fail: 1 })).toBe(false);
+    expect(suiteImplausible(undefined)).toBe(false);
   });
 });
 

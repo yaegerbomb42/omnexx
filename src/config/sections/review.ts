@@ -34,11 +34,14 @@ export const review = z
      * interactions between requirements; failures go back to the worker. `auto` runs them for
      * goals above the fast-path size or with several listed requirements (bench task-10: the
      * worker's code and its own tests agreed on a wrong behaviour that review and audit missed).
+     * Off by default until a bench shows it pays for itself.
      */
-    spec_tests: z.enum(['auto', 'on', 'off']).default('auto'),
+    spec_tests: z.enum(['auto', 'on', 'off']).default('off'),
     /** Models that write the spec tests and judge the worker's disputes of them. */
     spec_tests_models: z.enum(['cheap', 'worker', 'planner']).default('planner'),
     /** Fix rounds the spec tests may send back to the worker before the run finishes anyway. */
-    spec_tests_max_rounds: z.number().int().min(1).max(5).default(2),
+    spec_tests_max_rounds: z.number().int().min(1).max(5).default(1),
+    /** Cycles one fix round may take before it is cut off and judged on what it did. */
+    spec_tests_max_cycles: z.number().int().min(1).max(20).default(3),
   })
   .prefault({});

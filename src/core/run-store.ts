@@ -137,6 +137,10 @@ export const stateSchema = z.object({
       reason: z.string().optional(),
       /** The judge's last rejected dispute: carried into the next fix task's evidence. */
       ruling: z.string().optional(),
+      /** The commit a fix round started from, its cycle, and how many spec tests failed then. */
+      fromSha: z.string().optional(),
+      fromCycle: z.number().int().optional(),
+      failedBefore: z.number().int().optional(),
     })
     .optional(),
   /** The fast path (one pass on the whole goal before planning): tried, then failed if it fell back. */

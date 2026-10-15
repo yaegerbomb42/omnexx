@@ -2,6 +2,7 @@ import { appendFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import { readIntent } from '../agent/intent.js';
 import { git } from '../git/git.js';
+import { rollbackTo } from '../git/rollback.js';
 import {
   DISPUTE_FILE,
   judgeDispute,
@@ -9,6 +10,8 @@ import {
   SPEC_DIR,
   specTestsWanted,
   suiteBroken,
+  suiteImplausible,
+  testCounts,
   suiteSchema,
   writeSpecSuite,
   type SpecSuite,
@@ -205,13 +208,32 @@ async function runGate(r: Run): Promise<boolean> {
     return false;
   }
   const { pass, output } = await runSuite(r, suite);
-  r.events.emit('spec_tests.result', { round: st.rounds, pass, files: suite.files.length });
+  const counts = testCounts(output);
+  r.events.emit('spec_tests.result', {
+    round: st.rounds,
+    pass,
+    files: suite.files.length,
+    ...(counts ? { passed: counts.pass, failed: counts.fail } : {}),
+  });
   if (pass) {
     await setSpec(r, { status: 'passed', rounds: st.rounds });
     return false;
   }
   if (suiteBroken(output)) {
     await setSpec(r, { status: 'skipped', rounds: st.rounds, reason: 'the suite could not run' });
+    return false;
+  }
+  if (st.rounds === 0 && suiteImplausible(counts)) {
+    r.events.emit('spec_tests.implausible', { ...counts });
+    await setSpec(r, {
+      status: 'skipped',
+      rounds: 0,
+      reason: 'most spec tests fail on green code',
+    });
+    return false;
+  }
+  if (st.rounds > 0 && (await revertIfNoBetter(r, st, counts?.fail))) {
+    await setSpec(r, { status: 'failed-open', rounds: st.rounds, reason: 'fix round reverted' });
     return false;
   }
   if (st.rounds >= r.config.review.spec_tests_max_rounds) {
@@ -222,7 +244,39 @@ async function runGate(r: Run): Promise<boolean> {
   const round = st.rounds + 1;
   const taskId = await addFixTask(r, suite, output, round, st.ruling);
   r.events.emit('spec_tests.fix', { round, task: taskId });
-  await setSpec(r, { status: 'fixing', rounds: round, taskId });
+  await setSpec(r, {
+    status: 'fixing',
+    rounds: round,
+    taskId,
+    fromSha: r.state.lastGreen,
+    fromCycle: r.state.cycle,
+    ...(counts ? { failedBefore: counts.fail } : {}),
+  });
+  return true;
+}
+
+/**
+ * A fix round that left as many spec tests failing as before only changed code that already
+ * passed every gate: its commits are a risk with no gain, so the run goes back to where the round
+ * started. True when it reverted.
+ */
+async function revertIfNoBetter(
+  r: Run,
+  st: SpecState,
+  failed: number | undefined,
+): Promise<boolean> {
+  if (!st.fromSha || st.fromSha === r.state.lastGreen) return false;
+  const better = failed !== undefined && st.failedBefore !== undefined && failed < st.failedBefore;
+  if (better) return false;
+  await rollbackTo(r.worktree, st.fromSha);
+  r.state.lastGreen = st.fromSha;
+  r.state.greenHistory.push({ sha: st.fromSha, cycle: r.state.cycle });
+  r.events.emit('spec_tests.reverted', {
+    to: st.fromSha,
+    failedBefore: st.failedBefore ?? null,
+    failedAfter: failed ?? null,
+  });
+  await r.save();
   return true;
 }
 
@@ -272,14 +326,29 @@ export async function settleSpecWork(r: Run): Promise<void> {
   if (st?.status !== 'fixing' || !st.taskId || !r.plan) return;
   const ruling = (await settleDispute(r, st.taskId)) ?? st.ruling;
   const task = getNode(r.requirePlan(), st.taskId);
-  if (task.status === 'parked' && !task.skipped) {
-    task.skipped = true;
-    await r.savePlan();
-    r.events.emit('spec_tests.failed_open', { rounds: st.rounds, task: task.id });
-    await setSpec(r, { ...st, status: 'failed-open', reason: task.parkedReason ?? 'parked' });
-    return;
+  const spent = r.state.cycle - (st.fromCycle ?? r.state.cycle);
+  if (
+    task.status !== 'done' &&
+    task.status !== 'parked' &&
+    spent >= r.config.review.spec_tests_max_cycles
+  ) {
+    task.status = 'parked';
+    task.parkedReason = `spec test fix cut off after its ${spent}-cycle budget`;
+    r.events.emit('spec_tests.budget_spent', { task: task.id, cycles: spent });
   }
+  // A parked fix task never stops the run: the gate re-runs and judges what the round did.
+  if (task.status === 'parked') {
+    task.skipped = true;
+    // The milestone holds only this task; left open it would keep the run from finishing.
+    const milestone = task.parentId ? getNode(r.requirePlan(), task.parentId) : undefined;
+    if (milestone && milestone.status !== 'done') {
+      milestone.status = 'parked';
+      milestone.skipped = true;
+      milestone.parkedReason = task.parkedReason;
+    }
+  }
+  await r.savePlan();
   if (task.status === 'done' || task.status === 'parked')
-    await setSpec(r, { status: 'written', rounds: st.rounds, ...(ruling ? { ruling } : {}) });
+    await setSpec(r, { ...st, status: 'written', ...(ruling ? { ruling } : {}) });
   else if (ruling !== st.ruling) await setSpec(r, { ...st, ruling });
 }

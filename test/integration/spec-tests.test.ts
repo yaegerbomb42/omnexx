@@ -36,6 +36,8 @@ const SUITE = {
         "test('fulfil ships reserved stock', () => {",
         "  if (!existsSync('out/M2.T01.txt')) throw new Error('fulfil re-checked available stock');",
         '});',
+        // A passing case too: a suite failing most of its tests on green code is judged wrong.
+        "test('reserve lowers available', () => {});",
       ].join('\n'),
     },
   ],
@@ -89,7 +91,13 @@ function provider(worker: Script, judgeDrop: (n: number) => string[]): Provider 
 }
 
 async function runWith(p: Provider, extra: ConfigInput = {}, goal = GOAL) {
-  const review = { enabled: false, audit: false, strict_checks: false, ...extra.review };
+  const review = {
+    enabled: false,
+    audit: false,
+    strict_checks: false,
+    spec_tests: 'on' as const,
+    ...extra.review,
+  };
   const config: ConfigInput = { ...extra, review };
   const t = await startTestRun({
     repo: await makeRepo(),
@@ -147,25 +155,49 @@ describe('spec-first acceptance tests before finishing', () => {
     expect((await git(t.run.worktree, ['ls-files'])).stdout).not.toContain('dispute');
   });
 
-  it('finishes anyway once its fix rounds are spent', async () => {
+  it('reverts a fix round that left as many spec tests failing, and finishes on the last green', async () => {
     const worker: Script = (m) =>
       m.taskId?.startsWith('M1') ? fileWorker(m) : fileWorker({ ...m, taskId: `${m.taskId}-x` });
     const p = provider(worker, () => []);
+    const { t, out, of } = await runWith(p, { plan: { mode: 'full' } });
+    expect(out.status).toBe('finished');
+    expect(of('spec_tests.result').map((e) => [e.pass, e.failed])).toEqual([
+      [false, 1],
+      [false, 1],
+    ]);
+    const [reverted] = of('spec_tests.reverted');
+    expect(reverted).toMatchObject({ failedBefore: 1, failedAfter: 1 });
+    // The round's commit is gone: the worktree is back where the round started.
+    expect((await git(t.run.worktree, ['rev-parse', 'HEAD'])).stdout.trim()).toBe(reverted?.to);
+    expect((await git(t.run.worktree, ['ls-files'])).stdout).not.toContain('M2.T01-x');
+    expect((await t.run.store.readState()).specTests).toMatchObject({ status: 'failed-open' });
+  });
+
+  it('cuts a fix round off after spec_tests_max_cycles and finishes', async () => {
+    const worker: Script = (m) =>
+      m.taskId?.startsWith('M1') ? fileWorker(m) : say('I could not find what to change.');
+    const p = provider(worker, () => []);
     const { out, of } = await runWith(p, {
       plan: { mode: 'full' },
-      review: { spec_tests_max_rounds: 1 },
+      review: { spec_tests_max_cycles: 1 },
     });
     expect(out.status).toBe('finished');
-    expect(of('spec_tests.result').map((e) => e.pass)).toEqual([false, false]);
+    expect(of('spec_tests.budget_spent')).toEqual([
+      expect.objectContaining({ task: 'M2.T01', cycles: 1 }),
+    ]);
     expect(of('spec_tests.failed_open')).toHaveLength(1);
   });
 
-  it('costs nothing when off, or in auto mode for a small goal', async () => {
+  it('is off by default, and costs nothing in auto mode for a small goal', async () => {
     const off = provider(fileWorker, () => []);
-    const r1 = await runWith(off, { review: { spec_tests: 'off' } });
+    const r1 = await runWith(off, { review: { spec_tests: undefined } });
     expect(r1.out.status).toBe('finished');
     const small = provider(fileWorker, () => []);
-    const r2 = await runWith(small, {}, 'Make the test suite pass.');
+    const r2 = await runWith(
+      small,
+      { review: { spec_tests: 'auto' } },
+      'Make the test suite pass.',
+    );
     expect(r2.out.status).toBe('finished');
     expect(off.writer + small.writer).toBe(0);
   });
