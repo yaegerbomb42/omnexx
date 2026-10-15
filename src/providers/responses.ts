@@ -107,6 +107,7 @@ export class ResponsesProvider implements Provider {
               description: t.description,
               parameters: t.inputSchema,
             })),
+            parallel_tool_calls: true,
           }
         : {}),
     };

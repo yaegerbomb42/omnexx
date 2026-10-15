@@ -158,6 +158,7 @@ export const searchTool: Tool<typeof schema> = {
   description: `Search file contents with a regex (ripgrep). Returns up to ${MAX_HITS} matching lines with 2 lines of context (at most ${PER_FILE} per file). Scope it: pass path (a folder) and glob (e.g. "**/*.ts") whenever you know where to look; dependency, build and cache folders are skipped.`,
   schema,
   readOnly: true,
+  concurrent: true,
   async run(input, ctx) {
     let dir: string;
     try {

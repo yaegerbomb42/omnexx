@@ -264,6 +264,34 @@ export function messageSegments(messages: readonly Message[]): {
   return { messages: contextTokens(messages), toolResults, byTool };
 }
 
+/** The tool a call names, directly or through an alias models invent (cat → read). */
+function resolveTool(byName: ReadonlyMap<string, Tool>, name: string): Tool | undefined {
+  return byName.get(name) ?? byName.get(TOOL_ALIASES[name.toLowerCase()] ?? '');
+}
+
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += Math.max(1, size)) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Calls grouped for execution, order kept: each run of consecutive concurrency-safe calls is
+ * one batch, every other call is a batch of its own.
+ */
+export function concurrentRuns<T extends { name: string }>(
+  calls: readonly T[],
+  isConcurrent: (name: string) => boolean,
+): T[][] {
+  return calls.reduce<T[][]>((batches, call) => {
+    const last = batches.at(-1);
+    const safe = isConcurrent(call.name);
+    if (safe && last && isConcurrent(last[0]?.name ?? ''))
+      return [...batches.slice(0, -1), [...last, call]];
+    return [...batches, [call]];
+  }, []);
+}
+
 function summarizeInput(input: unknown): string {
   const s = JSON.stringify(input);
   return s.length > 300 ? `${s.slice(0, 300)}…` : s;
@@ -591,7 +619,7 @@ export async function runAgentLoop(
 
     const finished = { now: false };
     const runCall = async (call: (typeof calls)[number]): Promise<ContentBlock> => {
-      const tool = byName.get(call.name) ?? byName.get(TOOL_ALIASES[call.name.toLowerCase()] ?? '');
+      const tool = resolveTool(byName, call.name);
       let content: string;
       let isError: boolean;
       const toolStart = deps.clock.now();
@@ -657,9 +685,12 @@ export async function runAgentLoop(
     };
     const results: ContentBlock[] = [];
     // A turn of only `task` calls fans out: read-only helpers can't conflict with each other.
-    const parallel = calls.every((c) => c.name === 'task') ? (deps.parallelTasks ?? 1) : 1;
-    for (let i = 0; i < calls.length; i += parallel)
-      results.push(...(await Promise.all(calls.slice(i, i + parallel).map(runCall))));
+    // Otherwise runs of consecutive concurrency-safe calls (reads, searches) go out together;
+    // every other call runs alone, in order, so writes and commands never interleave.
+    const batches = calls.every((c) => c.name === 'task')
+      ? chunk(calls, deps.parallelTasks ?? 1)
+      : concurrentRuns(calls, (name) => resolveTool(byName, name)?.concurrent === true);
+    for (const batch of batches) results.push(...(await Promise.all(batch.map(runCall))));
     const steer = deps.pendingInput?.() ?? [];
     if (steer.length) {
       results.push({ type: 'text', text: steeringText(steer) });

@@ -71,6 +71,7 @@ export const outlineTool: Tool<typeof schema> = {
     'List the symbols (functions, classes, types, exports) of a file with their line numbers. Use before reading large files.',
   schema,
   readOnly: true,
+  concurrent: true,
   async run(input, ctx) {
     try {
       const abs = ctx.jail.resolve(input.path, 'read');

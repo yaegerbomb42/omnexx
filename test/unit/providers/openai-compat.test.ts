@@ -285,6 +285,38 @@ describe('model limits and refusals', () => {
     expect(sent).toEqual([32_000, 8192, 8192]);
   });
 
+  it('asks for parallel tool calls when tools are offered and the choice is free', async () => {
+    const srv = await mockServer((_r, res) => {
+      json(res, 200, ok);
+    });
+    const free: CompletionRequest = { ...req };
+    delete free.toolChoice;
+    await make(srv.url).complete(free);
+    await make(srv.url).complete(req);
+    await make(srv.url).complete({ ...free, tools: [] });
+    const flags = srv.requests.map(
+      (r) => (JSON.parse(r.body) as { parallel_tool_calls?: boolean }).parallel_tool_calls,
+    );
+    expect(flags).toEqual([true, undefined, undefined]);
+  });
+
+  it('drops parallel_tool_calls for a server that rejects it, and remembers', async () => {
+    const srv = await mockServer((r, res) => {
+      if ('parallel_tool_calls' in (JSON.parse(r.body) as object))
+        json(res, 400, {
+          error: { message: 'Unrecognized request argument: parallel_tool_calls' },
+        });
+      else json(res, 200, ok);
+    });
+    const p = make(srv.url);
+    const free: CompletionRequest = { ...req };
+    delete free.toolChoice;
+    await p.complete(free);
+    await p.complete(free);
+    const flags = srv.requests.map((r) => 'parallel_tool_calls' in (JSON.parse(r.body) as object));
+    expect(flags).toEqual([true, false, false]);
+  });
+
   it('a content-filter refusal fails over to the next model', async () => {
     const srv = await mockServer((_r, res) => {
       json(res, 400, {

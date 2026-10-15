@@ -47,6 +47,7 @@ export const listTool: Tool<typeof schema> = {
     'List files and folders as a tree (folders end in "/"; dependency and build folders are left out). Use it to find your way around before reading.',
   schema,
   readOnly: true,
+  concurrent: true,
   async run(input, ctx) {
     let dir: string;
     try {

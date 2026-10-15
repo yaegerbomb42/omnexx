@@ -200,6 +200,7 @@ export const readLogTool: Tool<typeof readLogSchema> = {
     'Page through the full output of an earlier command or gate run, 400 lines at a time.',
   schema: readLogSchema,
   readOnly: true,
+  concurrent: true,
   async run(input, ctx) {
     let text: string;
     try {
