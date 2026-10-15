@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { OmnexxError } from '../errors.js';
 import { globToRegExp } from '../security/glob.js';
 import { isSecretPath } from '../security/paths.js';
+import { formatHits, LIST_MAX, matchCounts } from './search-format.js';
 import { fail, ok, type Tool } from './types.js';
 
 export const MAX_HITS = 100;
@@ -72,6 +73,7 @@ async function viaRg(
   const args = [
     '-n',
     '--with-filename',
+    '--null',
     '--no-heading',
     '--color=never',
     '-C',
@@ -120,7 +122,7 @@ async function viaJs(
   if (target !== '.') {
     const lines = (await readFile(join(dir, target), 'utf8')).split('\n');
     lines.forEach((l, i) => {
-      if (re.test(l)) out.push(`${target}:${i + 1}:${l.slice(0, 300)}`);
+      if (re.test(l)) out.push(`${target}\0${i + 1}:${l.slice(0, 300)}`);
     });
     return out;
   }
@@ -145,7 +147,7 @@ async function viaJs(
       if (text === undefined) continue;
       const lines = text.split('\n');
       lines.forEach((l, i) => {
-        if (re.test(l)) out.push(`${rel}:${i + 1}:${l.slice(0, 300)}`);
+        if (re.test(l)) out.push(`${rel}\0${i + 1}:${l.slice(0, 300)}`);
       });
     }
   };
@@ -155,7 +157,7 @@ async function viaJs(
 
 export const searchTool: Tool<typeof schema> = {
   name: 'search',
-  description: `Search file contents with a regex (ripgrep). Returns up to ${MAX_HITS} matching lines with 2 lines of context (at most ${PER_FILE} per file). Scope it: pass path (a folder) and glob (e.g. "**/*.ts") whenever you know where to look; dependency, build and cache folders are skipped.`,
+  description: `Search file contents with a regex (ripgrep). Returns matches grouped by file: with 2 lines of context when there are few, match lines only when there are more, and an overview of files and counts when there are over ${LIST_MAX}. Scope it: pass path (a folder) and glob (e.g. "**/*.ts") whenever you know where to look; dependency, build and cache folders are skipped.`,
   schema,
   readOnly: true,
   concurrent: true,
@@ -187,62 +189,19 @@ export const searchTool: Tool<typeof schema> = {
       const lines =
         (await viaRg(input.pattern, dir, input.glob, target, atHome)) ??
         (await viaJs(input.pattern, dir, input.glob, target));
-      const hits = lines.filter((l) => /^[^:]+:\d+:/.test(l));
-      if (!hits.length) return ok('no matches');
-      let shown = 0;
-      const kept: string[] = [];
-      for (const l of lines) {
-        if (/^[^:]+:\d+:/.test(l)) shown++;
-        if (shown > MAX_HITS) break;
-        kept.push(l.replace(/^\.\//, ''));
-      }
-      const capped = cappedFiles(hits);
-      const perFile = capped.length
-        ? `\n(${capped.slice(0, 5).join(', ')} ${capped.length === 1 ? 'has' : 'have'} more than ${String(PER_FILE)} matches; search one with path set to it to see them all)`
-        : '';
-      const note =
-        perFile +
-        (hits.length > MAX_HITS
-          ? `\n(${hits.length - MAX_HITS} more matches not shown. Most are in: ${whereMatches(hits)}. Narrow with path or glob.)`
-          : '');
-      return ok(ctx.redactor.text(kept.join('\n')) + note);
+      const counts = matchCounts(lines);
+      if (!counts.size) return ok('no matches');
+      const total = [...counts.values()].reduce((a, b) => a + b, 0);
+      const capped = [...counts].filter(([, n]) => n >= PER_FILE).map(([f]) => f);
+      const perFile =
+        capped.length && total <= LIST_MAX
+          ? `\n(${capped.slice(0, 5).join(', ')} ${capped.length === 1 ? 'has' : 'have'} more than ${String(PER_FILE)} matches; search one with path set to it to see them all)`
+          : '';
+      return ok(ctx.redactor.text(formatHits(lines)) + perFile);
     } catch (err) {
       return fail(`search failed: ${(err as Error).message}`);
     }
   },
 };
-
-/** A match's folder, two levels deep at most ("src/api"), or "." for files at the top. */
-function folderOf(parts: readonly string[]): string {
-  if (parts.length > 2) return parts.slice(0, 2).join('/');
-  if (parts.length === 2) return parts[0] ?? '.';
-  return '.';
-}
-
-/** "src/api (40), web/pages (12)": where the matches are, by their first two folders. */
-export function whereMatches(hits: readonly string[], top = 6): string {
-  const counts = new Map<string, number>();
-  for (const h of hits) {
-    const file = h.replace(/^\.\//, '').split(':')[0] ?? '';
-    const parts = file.split('/');
-    const key = folderOf(parts);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return [...counts]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, top)
-    .map(([k, n]) => `${k} (${String(n)})`)
-    .join(', ');
-}
-
-/** Files that reached the per-file cap, so their remaining matches weren't returned. */
-function cappedFiles(hits: readonly string[]): string[] {
-  const counts = new Map<string, number>();
-  for (const h of hits) {
-    const file = h.replace(/^\.\//, '').split(':')[0] ?? '';
-    counts.set(file, (counts.get(file) ?? 0) + 1);
-  }
-  return [...counts].filter(([, n]) => n >= PER_FILE).map(([f]) => f);
-}
 
 export const _internal = { viaJs };
