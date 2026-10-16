@@ -12,7 +12,10 @@ const schema = z.strictObject({
   end: z.number().int().positive().describe('Last line to replace (inclusive)'),
   expected_hash: z
     .string()
-    .regex(/^[a-z2-9]{2}(?:[a-z2-9]{2})?$/)
+    .regex(
+      /^[a-z2-9]{2}(?:[a-z2-9]{2})?$/,
+      'use the 2-character tags read shows with anchors: true, start tag then end tag (e.g. "k3pq"), or leave expected_hash out',
+    )
     .optional()
     .describe(
       'Anchor tags from read with anchors: true: the start line tag then the end line tag (e.g. "k3pq"). Refuses if those lines changed; follows them if they moved.',

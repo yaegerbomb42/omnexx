@@ -15,9 +15,14 @@ describe('read dedupe', () => {
     const first = await readTool.run({ path: 'src/a.ts' }, ctx);
     expect(first.content).toContain('    2  two');
     const again = await readTool.run({ path: 'src/a.ts' }, ctx);
-    expect(again.content).toMatch(/unchanged since you read it earlier this cycle/);
+    expect(again.content).toMatch(
+      /unchanged and lines 1-\d+ were already shown earlier this cycle/,
+    );
     expect(again.content.length).toBeLessThan(first.content.length + 200);
-    // A different range is a different read.
+    // A range inside what was already shown is answered from context, once...
+    const inside = await readTool.run({ path: 'src/a.ts', start: 2, end: 2 }, ctx);
+    expect(inside.content).toMatch(/lines 2-2 were already shown/);
+    // ...and asking for exactly that again returns the lines (they may have been trimmed).
     expect((await readTool.run({ path: 'src/a.ts', start: 2, end: 2 }, ctx)).content).toContain(
       'two',
     );
