@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.0
+
+- Built on omnexx 0.18.0: works from a concise working state and never goes over your Memory
+  budget (now up to 1M); saved Agent settings keep the fast think-first loop; no more lock-out
+  after a rate limit.
+
 ## 0.13.0
 
 - Built on omnexx 0.17.0. **Settings**: section chips, icons and subtitles, folding sections,

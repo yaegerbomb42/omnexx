@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.18.0
+
+- **Working state, never over budget**: stale reads, failed attempts and chatter are pruned as
+  they're superseded; near your Memory budget older turns fold into a concise working state
+  (goal, analysis verbatim, done steps, what didn't work, open items, key files). Memory goes
+  up to **1M** on models that support it.
+- **Fix: saved Agent settings no longer force the slow planner.** Every effort level used to
+  turn off the think-first loop; effort now caps milestones only when a plan is made.
+- **Fix: one rate limit no longer locks omnexx out** of its only model for minutes; benched
+  models are tried when nothing else can take the call.
+- **Fix: the cycle token cap counts cache reads at their real cost** (a tenth), so mostly-cached
+  sessions aren't cut off mid-fix; an unfinished fix for a review finding isn't accepted.
+- `cmd <<'EOF' … EOF` heredocs run (the body is passed as input).
+- Bench: `--quick` (5–10 minutes) and `npm run bench:watch` to watch runs live.
+
 ## 0.17.0
 
 - **Chat keeps working when it runs out of room**: it summarizes the work so far and continues
