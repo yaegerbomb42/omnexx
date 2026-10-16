@@ -23,7 +23,7 @@ const model = (provider: string) => ({ provider, alias: 'm', id: 'm', price });
 const MODELS = [model('a'), model('b'), model('c')];
 
 /** A fixture: a ranked list a, b, c behind one scripted provider, sharing one quota ledger. */
-async function fixture(strategy: Strategy) {
+async function fixture(strategy: Strategy, extra: Partial<LoopDeps> = {}) {
   const clock = new FakeClock();
   const ledger = new QuotaLedger(`${await tempDir()}/quota.json`, () => clock.now());
   const outcome: Record<string, Outcome> = { a: 'ok', b: 'ok', c: 'ok' };
@@ -55,6 +55,7 @@ async function fixture(strategy: Strategy) {
       spentUsd: () => 0,
       onUsage: () => Promise.resolve(),
       control: () => Promise.resolve('continue'),
+      ...extra,
     };
     await runAgentLoop(
       {
@@ -115,6 +116,22 @@ describe('fallback on quota', () => {
     const before = f.clock.now();
     expect(await f.call()).toEqual(['a']);
     expect(f.clock.now() - before).toBeLessThan(1_000);
+  });
+
+  it('still calls, without waiting, when every provider is cooling down after a failure', async () => {
+    const f = await fixture('fallback', {
+      providerBlocked: () => 'cooling down after a failure until later',
+    });
+    const before = f.clock.now();
+    expect(await f.call()).toEqual(['a']);
+    expect(f.clock.now() - before).toBeLessThan(1_000);
+  });
+
+  it('never calls a provider that is over its spending cap', async () => {
+    const f = await fixture('fallback', {
+      providerBlocked: (p) => (p === 'a' ? 'spending cap max_usd reached' : undefined),
+    });
+    expect(await f.call()).toEqual(['b']);
   });
 
   it('walks further down the list when #2 runs out too', async () => {
