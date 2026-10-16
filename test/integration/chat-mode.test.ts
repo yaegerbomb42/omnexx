@@ -138,3 +138,76 @@ describe('chat runs out of room', () => {
     expect(text).not.toMatch(/\(stopped: max_tokens_per_cycle\)/);
   }, 60_000);
 });
+
+describe('stop, pause and new messages act at once', () => {
+  async function chatWithSlowCommand() {
+    const repo = await makeRepo();
+    const provider = new ScriptedProvider(({ request }) => {
+      const asks = request.messages
+        .filter((m) => m.role === 'user')
+        .flatMap((m) => m.content)
+        .map((b) => (b.type === 'text' ? b.text : ''))
+        .join('\n');
+      if (asks.includes('switch to this')) return say('switched right away');
+      if (asks.includes('Continue where you left off')) return say('carried on after resume');
+      return request.messages.some((m) => m.content.some((b) => b.type === 'tool_result'))
+        ? say('the slow command finished')
+        : call('bash', { command: 'sleep 30' });
+    });
+    const io: CliIO = {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new PassThrough(),
+      env: await isolatedEnv({ ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000' }),
+      cwd: repo,
+      isTTY: false,
+      makeProvider: () => provider,
+    };
+    const s = new Session(io, () => Promise.resolve(0));
+    await s.submit('/chat');
+    return s;
+  }
+  const started = (s: Session) =>
+    new Promise<void>((resolve) => {
+      const t = setInterval(() => {
+        if (s.entries.some((e) => e.text.includes('sleep 30'))) {
+          clearInterval(t);
+          resolve();
+        }
+      }, 20);
+    });
+
+  it('stop kills a running command right away', async () => {
+    const s = await chatWithSlowCommand();
+    const t0 = Date.now();
+    const work = s.submit('run the slow thing');
+    await started(s);
+    await s.submit('/stop');
+    await work;
+    expect(Date.now() - t0).toBeLessThan(10_000);
+  }, 40_000);
+
+  it('a new message cuts the current step short and is answered right away', async () => {
+    const s = await chatWithSlowCommand();
+    const t0 = Date.now();
+    const work = s.submit('run the slow thing');
+    await started(s);
+    await s.submit('switch to this');
+    await work;
+    expect(Date.now() - t0).toBeLessThan(10_000);
+    expect(s.entries.map((e) => e.text).join('\n')).toContain('switched right away');
+  }, 40_000);
+
+  it('pause holds at once and resume carries on', async () => {
+    const s = await chatWithSlowCommand();
+    const t0 = Date.now();
+    const work = s.submit('run the slow thing');
+    await started(s);
+    await s.submit('/pause');
+    await work;
+    expect(Date.now() - t0).toBeLessThan(10_000);
+    expect(s.entries.map((e) => e.text).join('\n')).toMatch(/paused/);
+    await s.submit('/resume');
+    expect(s.entries.map((e) => e.text).join('\n')).toContain('carried on after resume');
+  }, 40_000);
+});

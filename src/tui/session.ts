@@ -1188,7 +1188,7 @@ export class Session {
     // While the agent works, a new message goes straight to it, read at its next step.
     if (this.code?.busy) {
       this.code.steer(text);
-      this.push('system', 'sent to the agent; it reads this at its next step');
+      this.push('system', 'switching to your message now');
       return;
     }
     this.busy = 'working';
@@ -1348,8 +1348,8 @@ export class Session {
         return;
       case 'pause':
         if (this.code?.busy) {
-          this.code.paused = true;
-          this.push('system', 'pausing after the current step; /resume to continue');
+          this.code.pauseNow();
+          this.push('system', 'pausing now; /resume to continue');
         } else if (this.runId) await this.cli(['pause', this.runId]);
         else this.push('system', 'nothing is running');
         return;
@@ -1357,6 +1357,10 @@ export class Session {
         if (this.code?.busy) {
           this.code.paused = false;
           this.push('system', 'resumed');
+        } else if (this.code?.pausedTurn) {
+          this.code.pausedTurn = false;
+          this.push('system', 'resumed');
+          await this.code_('Continue where you left off.');
         } else await this.cli(['resume', ...(this.runId ? [this.runId] : []), ...args]);
         return;
       case 'stop':
