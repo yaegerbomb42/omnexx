@@ -11,6 +11,8 @@ import { liveDir, type LiveStatus } from './live.ts';
  */
 
 const TAIL_LINES = 60;
+/** Library warnings and their stack frames, printed on every call; not the agent's work. */
+const NOISE = /^(\s+at \S|DeprecationWarning:|\(node:\d+\) |\(Use `node --trace)/;
 const MAX_LINE = 300;
 
 // Built from a string so the escape character isn't a control character in a regex literal.
@@ -19,7 +21,7 @@ const ANSI = new RegExp(String.fromCodePoint(27) + String.raw`\[[0-9;?]*[A-Za-z]
 /** A readable line from agent output: Cline's --json events show their text, the rest as is. */
 export function readable(line: string): string | undefined {
   const clean = line.replace(ANSI, '').trimEnd();
-  if (!clean.trim()) return undefined;
+  if (!clean.trim() || NOISE.test(clean)) return undefined;
   if (clean.startsWith('{')) {
     try {
       const j = JSON.parse(clean) as Record<string, unknown>;

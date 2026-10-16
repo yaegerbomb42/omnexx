@@ -39,6 +39,8 @@ describe('bench quick and live', () => {
     expect(readable('{"type":"ping"}')).toBeUndefined();
     expect(readable('\x1b[32m✓ done\x1b[39m')).toBe('✓ done');
     expect(readable('   ')).toBeUndefined();
+    expect(readable('DeprecationWarning: AI SDK Warning (openai-compatible.chat)')).toBeUndefined();
+    expect(readable('      at iX (/$bunfs/root/chunk.js:26:46952)')).toBeUndefined();
     expect(tail(Array.from({ length: 100 }, (_, i) => `line ${String(i)}`).join('\n'), 3)).toEqual([
       'line 97',
       'line 98',
