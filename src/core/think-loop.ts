@@ -187,6 +187,8 @@ export async function runThinkLoop(
   let green: string | undefined;
   let greenNow = false;
   let reviewed = false;
+  // Review findings handed back that the work since hasn't finished addressing.
+  let findingsOpen = false;
   let rounds = 0;
   let rethinks = 0;
   let lastSignature = '';
@@ -223,7 +225,10 @@ export async function runThinkLoop(
       io.emit('loop.restore_green', { tree: green });
       greenNow = true;
     }
-    io.emit('loop.end', { end, rounds, rethinks, reviewed, green: greenNow, turns });
+    // Findings whose fix was cut short (budget, stuck) don't count as reviewed: the cycle's own
+    // review sees the final diff and rejects it if they still stand.
+    const settled = reviewed && !(findingsOpen && last?.end !== 'done');
+    io.emit('loop.end', { end, rounds, rethinks, reviewed: settled, green: greenNow, turns });
     return {
       end,
       turns,
@@ -233,7 +238,7 @@ export async function runThinkLoop(
       messages,
       ...(last?.stuck && end === 'stuck' ? { stuck: last.stuck } : {}),
       analysis,
-      reviewed,
+      reviewed: settled,
       rounds,
       rethinks,
       green: greenNow,
@@ -305,6 +310,7 @@ export async function runThinkLoop(
       const findings = await io.review(analysis);
       io.emit('loop.review', { blocking: Boolean(findings) });
       if (!findings) return finish('done');
+      findingsOpen = true;
       next = { text: reviewPrompt(findings), chain: 'work', thinking: false };
       continue;
     }

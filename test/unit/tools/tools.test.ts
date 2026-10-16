@@ -7,6 +7,7 @@ import {
   DEFAULT_BASH_TIMEOUT_MS,
   readLogTool,
   trimOutput,
+  splitHeredoc,
 } from '../../../src/tools/bash.js';
 import { multiEditTool, strReplaceTool, writeFileTool } from '../../../src/tools/edit.js';
 import { extractSymbols, outlineTool } from '../../../src/tools/outline.js';
@@ -387,5 +388,23 @@ describe('search scoping', () => {
     expect(broad.content).toMatch(/^240 matches in 24 files/);
     expect(broad.content).toMatch(/^a\d\/f\d\.ts \(10\)/m);
     expect(broad.content).toMatch(/narrow with path or glob/);
+  });
+});
+
+describe('bash heredoc', () => {
+  it('runs `cmd <<EOF … EOF` with the body as stdin, checking only the command', async () => {
+    expect(splitHeredoc("python3 - <<'EOF'\nprint(6 * 7)\nEOF")).toEqual({
+      command: 'python3 -',
+      stdin: 'print(6 * 7)\n',
+    });
+    expect(splitHeredoc('cat <<-END\n\tline\nEND\n')).toEqual({
+      command: 'cat',
+      stdin: 'line\n',
+    });
+    expect(splitHeredoc('echo hi')).toBeUndefined();
+    const ctx = await toolContext(await repo());
+    const r = await bashTool.run({ command: "python3 - <<'EOF'\nprint(6 * 7)\nEOF" }, ctx);
+    expect(r.isError).toBeFalsy();
+    expect(r.content).toContain('42');
   });
 });

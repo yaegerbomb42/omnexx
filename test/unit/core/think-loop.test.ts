@@ -163,6 +163,16 @@ describe('think-first loop session', () => {
     expect(out).toMatchObject({ end: 'done', reviewed: true, green: true });
   });
 
+  it('does not count a review as settled when its fix was cut short', async () => {
+    const { io } = fakeIO(
+      [{ say: 'analysis' }, { say: 'done' }, { say: 'half way', end: 'max_tokens_per_cycle' }],
+      [pass('t1'), pass('t2')],
+      ['- [blocker] the empty input case is unhandled'],
+    );
+    const out = await runThinkLoop(first, io, limits);
+    expect(out).toMatchObject({ reviewed: false, green: true });
+  });
+
   it('goes back to the last green tree when the session ends red', async () => {
     const { io, restored, events } = fakeIO(
       [{ say: 'a' }, { say: 'b' }, { say: 'c' }, { say: 'd' }],
