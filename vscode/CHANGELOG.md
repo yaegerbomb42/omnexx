@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.1
+
+- Built on omnexx 0.18.1: no idling after a rate limit, stops as soon as the work is done and
+  verified, and commands never outlive the run.
+
 ## 0.14.0
 
 - Built on omnexx 0.18.0: works from a concise working state and never goes over your Memory
