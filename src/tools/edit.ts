@@ -108,6 +108,24 @@ export const strReplaceTool: Tool<typeof strReplaceSchema> = {
   run: (input, ctx) => applyEdits(input.path, [input], ctx),
 };
 
+/** Names models use for an edit's old and new text, mapped to old_str / new_str. */
+const EDIT_KEY_ALIASES: Readonly<Record<string, string>> = {
+  old_string: 'old_str',
+  oldText: 'old_str',
+  old_text: 'old_str',
+  old: 'old_str',
+  search: 'old_str',
+  find: 'old_str',
+  before: 'old_str',
+  new_string: 'new_str',
+  newText: 'new_str',
+  new_text: 'new_str',
+  new: 'new_str',
+  replace: 'new_str',
+  replacement: 'new_str',
+  after: 'new_str',
+};
+
 const multiSchema = z.strictObject({ path: z.string(), edits: z.array(editSchema).min(1).max(30) });
 
 export const multiEditTool: Tool<typeof multiSchema> = {
@@ -129,7 +147,11 @@ export const multiEditTool: Tool<typeof multiSchema> = {
       path: i.path ?? inner?.path,
       edits: i.edits.map((e: unknown) => {
         if (typeof e !== 'object' || e === null) return e;
-        return Object.fromEntries(Object.entries(e).filter(([k]) => k !== 'path'));
+        return Object.fromEntries(
+          Object.entries(e)
+            .filter(([k]) => k !== 'path')
+            .map(([k, v]) => [EDIT_KEY_ALIASES[k] ?? k, v]),
+        );
       }),
     };
   },

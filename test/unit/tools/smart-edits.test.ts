@@ -187,3 +187,21 @@ describe('post-edit diagnostics', () => {
     expect(root).toBeTruthy();
   });
 });
+
+describe('multi_edit field names', () => {
+  it('accepts the names models use for old and new text', () => {
+    const n = multiEditTool.normalize?.({
+      path: 'a.ts',
+      edits: [
+        { search: 'a', replace: 'b' },
+        { old_string: 'c', new_string: 'd' },
+        { oldText: 'e', newText: 'f' },
+      ],
+    }) as { edits: { old_str: string; new_str: string }[] };
+    expect(n.edits).toEqual([
+      { old_str: 'a', new_str: 'b' },
+      { old_str: 'c', new_str: 'd' },
+      { old_str: 'e', new_str: 'f' },
+    ]);
+  });
+});

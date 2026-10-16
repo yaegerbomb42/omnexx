@@ -71,16 +71,55 @@ export const readTool: Tool<typeof schema> = {
     const body = shown.join('\n');
     const more = end < lines.length ? `\n(lines ${end + 1}-${lines.length} not shown)` : '';
     const out = `${body}${more}`;
-    if (ctx.reads) {
-      const key = `${input.path}:${start}-${end}${input.anchors ? ':a' : ''}`;
-      const hash = createHash('sha256').update(out).digest('hex');
-      if (ctx.reads.get(key) === hash) {
-        return ok(
-          `${input.path}:${start}-${end} is unchanged since you read it earlier this cycle; that result is still in your context above.`,
-        );
-      }
-      ctx.reads.set(key, hash);
-    }
+    const repeat =
+      ctx.reads && alreadyShown(ctx.reads, input.path, text, start, end, input.anchors);
+    if (repeat) return ok(repeat);
     return ok(out);
   },
 };
+
+/** Line ranges of a file already shown this cycle, kept as `hash|a-b,c-d` in the reads cache. */
+function parseCoverage(value: string | undefined): { hash: string; ranges: [number, number][] } {
+  const [hash = '', list = ''] = (value ?? '').split('|');
+  const ranges = list
+    .split(',')
+    .filter(Boolean)
+    .map((r) => r.split('-').map(Number) as [number, number]);
+  return { hash, ranges };
+}
+
+const covers = (ranges: readonly [number, number][], start: number, end: number): boolean => {
+  for (let n = start; n <= end; n++) if (!ranges.some(([a, b]) => n >= a && n <= b)) return false;
+  return true;
+};
+
+/**
+ * A short note instead of the lines when the file is unchanged and every requested line was
+ * already shown this cycle (any earlier range, not just the same one). Asking for exactly the
+ * same range again right after returns the lines, in case the earlier result was trimmed.
+ */
+function alreadyShown(
+  reads: Map<string, string>,
+  path: string,
+  text: string,
+  start: number,
+  end: number,
+  anchors: boolean | undefined,
+): string | undefined {
+  const covKey = `cov:${path}${anchors ? ':a' : ''}`;
+  const lastKey = `last:${path}${anchors ? ':a' : ''}`;
+  const hash = createHash('sha256').update(text).digest('hex');
+  const seen = parseCoverage(reads.get(covKey));
+  const range = `${String(start)}-${String(end)}`;
+  if (seen.hash === hash && covers(seen.ranges, start, end) && reads.get(lastKey) !== range) {
+    reads.set(lastKey, range);
+    return `${path} is unchanged and lines ${range} were already shown earlier this cycle; use that result above. (Ask for the same range again if it is no longer in your context.)`;
+  }
+  const ranges =
+    seen.hash === hash
+      ? [...seen.ranges, [start, end] as [number, number]]
+      : [[start, end] as [number, number]];
+  reads.set(covKey, `${hash}|${ranges.map(([a, b]) => `${String(a)}-${String(b)}`).join(',')}`);
+  reads.delete(lastKey);
+  return undefined;
+}

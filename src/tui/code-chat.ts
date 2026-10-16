@@ -12,7 +12,7 @@ import {
   pruneSuperseded,
   transcriptFor,
 } from '../agent/compaction.js';
-import { runAgentLoop } from '../agent/loop.js';
+import { runAgentLoop, type LoopDeps } from '../agent/loop.js';
 import type { CliIO } from '../cli/io.js';
 import { resolveRunDeps } from '../cli/run-deps.js';
 import type { OmnexxConfig } from '../config/schema.js';
@@ -70,6 +70,13 @@ import { emptyTelemetry, fold, type Telemetry } from '../telemetry/aggregate.js'
 
 /** Questions read without editing; only this many turns in a row without an edit is circling. */
 const CHAT_NO_EDIT_TURNS = 25;
+/** How many times one message may summarize and keep going after running out of room. */
+const CHAT_CONTINUES = 3;
+const CONTINUE_ENDS: ReadonlySet<string> = new Set(['max_tokens_per_cycle', 'max_turns_per_cycle']);
+
+function continuePrompt(ask: string): string {
+  return `Continue the task from the summary above; don't redo finished steps or re-read files you already read unless they changed. The request was:\n\n${ask}`;
+}
 
 function kTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
@@ -85,7 +92,7 @@ export const CHAT_SYSTEM = `You are Omnexx in chat mode: a coding agent working 
 - Do what they ask, then stop and reply briefly: what you changed and what you checked.
 - For anything with more than two steps, write a todo list first with the todo tool and keep it current: one item in_progress at a time, done as you finish.
 - Use the context tool to pull in wider context (general, repo, heat, recent) only when it helps; save what you learn about the codebase with context update.
-- Before each tool call, say in one short sentence what you are about to do and why.
+- Each turn: one short sentence on what you are doing and why, then every call you can make now in the same turn (read all the files you need at once, search and read together, send todo updates alongside). Independent reads and searches run in parallel. Don't read a file again unless it changed; use ranges from what you already have.
 - Explore with the codebase map, outline, search and ranged reads. Edit with str_replace / multi_edit (or replace_lines after a read with anchors: true); write_file for new or small files.
 - Run the relevant tests with bash before you finish when you changed code.
 - The person may send messages while you work; they arrive marked as such. Read them and adjust at once.
@@ -589,82 +596,106 @@ export class CodeChat {
     const abort = new AbortController();
     this.abort = abort;
     try {
-      const result = await runAgentLoop(
+      const deps: LoopDeps = {
+        provider: this.provider,
+        models: this.models,
+        strategy: this.strategy,
+        ...(this.paths
+          ? (() => {
+              const quota = new QuotaLedger(join(this.paths.configHome, 'quota.json'));
+              return {
+                modelExhausted: (r: string) => quota.isOut(r),
+                markExhausted: (r: string) => {
+                  quota.mark(r);
+                },
+                markRateLimited: (r: string, ms: number) => {
+                  quota.mark(r, ms);
+                },
+              };
+            })()
+          : {}),
+        tools,
+        toolCtx: this.ctx,
+        budget: { ...this.config.budget, max_turns_per_cycle: 200 },
+        // A chat turn that circles gets told so once, then stops (it once burned 400k tokens).
+        watch: new InCycleWatch(
+          {
+            repeatedToolCall: this.config.stuck.repeated_tool_call,
+            noEditTurns: CHAT_NO_EDIT_TURNS,
+            burnTokens: undefined,
+          },
+          () => this.editOps - editsBefore,
+        ),
+        watchMode: 'nudge',
+        maxTokens: this.config.providers.anthropic.max_tokens,
+        clock: realClock,
+        events: this.events,
+        spentUsd: () => this.usd,
+        onUsage: (_u, usd) => {
+          this.usd += usd;
+          return Promise.resolve();
+        },
+        control: () => Promise.resolve(this.paused ? 'pause' : 'continue'),
+        pausePollMs: 300,
+        signal: abort.signal,
+        onDelta: (d) => {
+          if (d.text) view.stream(d.text);
+        },
+        pendingInput: () => this.queue.splice(0),
+        onRequest: ({ model, inputTokens }) => {
+          const est = estimateLatency(this.latency, model, inputTokens);
+          view.waiting?.({ startedAt: Date.now(), estimateMs: est ?? null });
+        },
+        onResponse: ({ model, inputTokens, ms }) => {
+          view.waiting?.(null);
+          const m = this.models.find((x) => `${x.provider}:${x.id}` === model);
+          this.served = m ? `${m.provider}:${m.alias}` : model;
+          this.latency = recordLatency(this.latency, model, { ms, tokens: inputTokens });
+          if (this.paths)
+            void saveLatency(latencyFile(this.paths), this.latency).catch(() => undefined);
+        },
+        // Within one long turn only old tool output is trimmed; summaries happen between turns.
+        compaction: {
+          settings: {
+            clearAt: this.config.context.clear_tool_results_at,
+            keepToolResults: this.config.context.keep_tool_results,
+            compactAt: Number.MAX_SAFE_INTEGER,
+            keepTurns: this.config.context.compact_keep_turns,
+          },
+        },
+      };
+      let result = await runAgentLoop(
         {
           system: request.system,
           history: this.history,
           first: { role: 'user', content: [{ type: 'text', text: ask }, ...(opts.images ?? [])] },
           tools: request.tools,
         },
-        {
-          provider: this.provider,
-          models: this.models,
-          strategy: this.strategy,
-          ...(this.paths
-            ? (() => {
-                const quota = new QuotaLedger(join(this.paths.configHome, 'quota.json'));
-                return {
-                  modelExhausted: (r: string) => quota.isOut(r),
-                  markExhausted: (r: string) => {
-                    quota.mark(r);
-                  },
-                  markRateLimited: (r: string, ms: number) => {
-                    quota.mark(r, ms);
-                  },
-                };
-              })()
-            : {}),
-          tools,
-          toolCtx: this.ctx,
-          budget: { ...this.config.budget, max_turns_per_cycle: 200 },
-          // A chat turn that circles gets told so once, then stops (it once burned 400k tokens).
-          watch: new InCycleWatch(
-            {
-              repeatedToolCall: this.config.stuck.repeated_tool_call,
-              noEditTurns: CHAT_NO_EDIT_TURNS,
-              burnTokens: undefined,
-            },
-            () => this.editOps - editsBefore,
-          ),
-          watchMode: 'nudge',
-          maxTokens: this.config.providers.anthropic.max_tokens,
-          clock: realClock,
-          events: this.events,
-          spentUsd: () => this.usd,
-          onUsage: (_u, usd) => {
-            this.usd += usd;
-            return Promise.resolve();
-          },
-          control: () => Promise.resolve(this.paused ? 'pause' : 'continue'),
-          pausePollMs: 300,
-          signal: abort.signal,
-          onDelta: (d) => {
-            if (d.text) view.stream(d.text);
-          },
-          pendingInput: () => this.queue.splice(0),
-          onRequest: ({ model, inputTokens }) => {
-            const est = estimateLatency(this.latency, model, inputTokens);
-            view.waiting?.({ startedAt: Date.now(), estimateMs: est ?? null });
-          },
-          onResponse: ({ model, inputTokens, ms }) => {
-            view.waiting?.(null);
-            const m = this.models.find((x) => `${x.provider}:${x.id}` === model);
-            this.served = m ? `${m.provider}:${m.alias}` : model;
-            this.latency = recordLatency(this.latency, model, { ms, tokens: inputTokens });
-            if (this.paths)
-              void saveLatency(latencyFile(this.paths), this.latency).catch(() => undefined);
-          },
-          // Within one long turn only old tool output is trimmed; summaries happen between turns.
-          compaction: {
-            settings: {
-              clearAt: this.config.context.clear_tool_results_at,
-              keepToolResults: this.config.context.keep_tool_results,
-              compactAt: Number.MAX_SAFE_INTEGER,
-              keepTurns: this.config.context.compact_keep_turns,
-            },
-          },
-        },
+        deps,
       );
+      // Out of room for this message: summarize, then keep going instead of stopping.
+      for (
+        let n = 0;
+        n < CHAT_CONTINUES && CONTINUE_ENDS.has(result.end) && !abort.signal.aborted;
+        n++
+      ) {
+        this.history = result.messages;
+        const summarized = await this.compactForContinue();
+        if (!summarized) break;
+        view.line({
+          kind: 'feed',
+          text: 'context was full: summarized the work so far and kept going',
+        });
+        result = await runAgentLoop(
+          {
+            system: request.system,
+            history: this.history,
+            first: { role: 'user', content: [{ type: 'text', text: continuePrompt(text) }] },
+            tools: request.tools,
+          },
+          deps,
+        );
+      }
       this.history = result.messages;
       reply = { end: result.end, text: result.finalText };
       view.stream('');
@@ -778,6 +809,35 @@ export class CodeChat {
   }
 
   /** Between messages: trim old tool output, then summarize the oldest exchanges if still big. */
+  /**
+   * Summarize everything, including the message still being worked on, so the work can go on
+   * in a fresh context. False when no summary could be made (then the reply stops as before).
+   */
+  private async compactForContinue(): Promise<boolean> {
+    const summary = await this.summarize(this.history).catch(() => undefined);
+    if (!summary) return false;
+    const running = (await this.ctx.runningContext?.forPrompt()) ?? '';
+    this.history = [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `Summary of the work so far:\n${summary}${running ? `\n\n${running}` : ''}`,
+          },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Understood; continuing from there.' }],
+      },
+    ];
+    // The earlier file contents are gone with the summary: reads start fresh.
+    this.ctx.reads?.clear();
+    this.contextUsed = this.baseTokens() + contextTokens(this.history);
+    return true;
+  }
+
   private async compactIfNeeded(
     force = false,
     keepTurns = this.config.context.compact_keep_turns,

@@ -97,7 +97,8 @@ describe('search', () => {
     expect((await searchTool.run({ pattern: 'v\\d\\d', glob: 'src/*.ts' }, ctx)).content).toMatch(
       /src\/big\.ts has more than 20 matches/,
     );
-    expect((await searchTool.run({ pattern: '(' }, ctx)).content).toMatch(/invalid regex/);
+    const literal = await searchTool.run({ pattern: 'return a + (' }, ctx);
+    expect(literal.content).toMatch(/not a valid regex, so searched for the literal text/);
     expect((await searchTool.run({ pattern: 'x', path: '..' }, ctx)).isError).toBe(true);
     const js = await _internal.viaJs('return a', root, undefined);
     expect(js).toEqual(['src/a.ts\u00002:  return a + b;']);

@@ -173,10 +173,14 @@ export const searchTool: Tool<typeof schema> = {
       const { listTree } = await import('./list.js');
       return ok(await listTree(dir, ctx.jail.resolve('.', 'read'), 3));
     }
+    // Models often send code like `test(` meaning the literal text: search for it as written.
+    let pattern = input.pattern;
+    let literalNote = '';
     try {
-      new RegExp(input.pattern);
+      new RegExp(pattern);
     } catch {
-      return fail(`invalid regex: ${input.pattern}`);
+      pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      literalNote = `(not a valid regex, so searched for the literal text "${input.pattern}")\n`;
     }
     try {
       // A file as `path` (models do this often): search just that file, from its directory.
@@ -187,17 +191,17 @@ export const searchTool: Tool<typeof schema> = {
       }
       const atHome = resolve(ctx.jail.root) === resolve(homedir());
       const lines =
-        (await viaRg(input.pattern, dir, input.glob, target, atHome)) ??
-        (await viaJs(input.pattern, dir, input.glob, target));
+        (await viaRg(pattern, dir, input.glob, target, atHome)) ??
+        (await viaJs(pattern, dir, input.glob, target));
       const counts = matchCounts(lines);
-      if (!counts.size) return ok('no matches');
+      if (!counts.size) return ok(`${literalNote}no matches`);
       const total = [...counts.values()].reduce((a, b) => a + b, 0);
       const capped = [...counts].filter(([, n]) => n >= PER_FILE).map(([f]) => f);
       const perFile =
         capped.length && total <= LIST_MAX
           ? `\n(${capped.slice(0, 5).join(', ')} ${capped.length === 1 ? 'has' : 'have'} more than ${String(PER_FILE)} matches; search one with path set to it to see them all)`
           : '';
-      return ok(ctx.redactor.text(formatHits(lines)) + perFile);
+      return ok(literalNote + ctx.redactor.text(formatHits(lines)) + perFile);
     } catch (err) {
       return fail(`search failed: ${(err as Error).message}`);
     }

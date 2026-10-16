@@ -105,3 +105,36 @@ describe('/compact (the panel Compact button)', () => {
     );
   }, 60_000);
 });
+
+describe('chat runs out of room', () => {
+  it('summarizes and keeps going instead of stopping at max_tokens_per_cycle', async () => {
+    const repo = await makeRepo();
+    await writeFile(join(repo, 'omnexx.toml'), '[budget]\nmax_tokens_per_cycle = 40000\n');
+    const provider = new ScriptedProvider(({ request, turn }) => {
+      if (request.system.some((b) => b.text.startsWith('You compress a coding conversation')))
+        return say('Read README.md several times; nothing changed yet.');
+      const first = request.messages.find((m) => m.role === 'user')?.content[0];
+      const continuing =
+        first?.type === 'text' && first.text.startsWith('Summary of the work so far');
+      return continuing
+        ? say('finished after continuing')
+        : call('search', { pattern: `term${String(turn)}` });
+    });
+    const io: CliIO = {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new PassThrough(),
+      env: await isolatedEnv({ ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000' }),
+      cwd: repo,
+      isTTY: false,
+      makeProvider: () => provider,
+    };
+    const s = new Session(io, () => Promise.resolve(0));
+    await s.submit('/chat');
+    await s.submit('look around the repo');
+    const text = s.entries.map((e) => e.text).join('\n');
+    expect(text).toMatch(/context was full: summarized the work so far and kept going/);
+    expect(text).toContain('finished after continuing');
+    expect(text).not.toMatch(/\(stopped: max_tokens_per_cycle\)/);
+  }, 60_000);
+});
