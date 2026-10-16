@@ -5,101 +5,18 @@
  * URL and a key, with the API flavor detected by probing (src/providers/probe.ts).
  */
 
-/** The wire API an endpoint speaks. */
-export type ApiFlavor = 'openai-chat' | 'openai-responses' | 'anthropic' | 'gemini';
+import {
+  AZURE_RESOURCE,
+  type ApiFlavor,
+  type AuthStyle,
+  type CatalogEntry,
+  hosted,
+  local,
+  REGION,
+} from './catalog-types.js';
+import { MORE_HOSTED, MORE_LOCAL } from './catalog-more.js';
 
-/**
- * How the key is sent. `bearer`: Authorization: Bearer; `api-key`: an `api-key` header (Azure);
- * `x-api-key`: Anthropic style; `x-goog-api-key`: Gemini; `none`: no key (local servers).
- */
-export type AuthStyle = 'bearer' | 'api-key' | 'x-api-key' | 'x-goog-api-key' | 'none';
-
-/** A value the base URL needs, e.g. an Azure resource name; `{key}` in baseUrl is replaced. */
-export interface CatalogField {
-  key: string;
-  label: string;
-  placeholder: string;
-  default?: string;
-}
-
-export interface CatalogEntry {
-  id: string;
-  name: string;
-  /** May contain `{field}` placeholders, filled from `fields`. */
-  baseUrl: string;
-  fields: readonly CatalogField[];
-  auth: AuthStyle;
-  /** Standard env vars holding the key, most common first. Empty for keyless servers. */
-  keyEnvs: readonly string[];
-  /** How its keys start, so a pasted key is recognised. */
-  keyPrefix?: string;
-  flavor: ApiFlavor;
-  /** Path of the model list relative to the base URL; null when the provider has none. */
-  modelsPath: string | null;
-  /** Has a free tier (hosted) or costs nothing (local). */
-  freeTier: boolean;
-  /** A server the person runs themselves. */
-  local: boolean;
-  /** Where to get a key (or download the server). */
-  signup?: string;
-  docs?: string;
-  /** One line shown under the form: caveats, like short-lived tokens. */
-  note?: string;
-}
-
-const AZURE_RESOURCE: CatalogField = {
-  key: 'resource',
-  label: 'Resource name',
-  placeholder: 'my-resource',
-};
-const REGION = (fallback: string): CatalogField => ({
-  key: 'region',
-  label: 'Region',
-  placeholder: fallback,
-  default: fallback,
-});
-
-type Extra = Partial<Omit<CatalogEntry, 'id' | 'name' | 'baseUrl'>>;
-
-function hosted(
-  id: string,
-  name: string,
-  baseUrl: string,
-  keyEnv: string,
-  signup: string,
-  extra: Extra = {},
-): CatalogEntry {
-  return {
-    id,
-    name,
-    baseUrl,
-    fields: [],
-    auth: 'bearer',
-    keyEnvs: [keyEnv],
-    flavor: 'openai-chat',
-    modelsPath: 'models',
-    freeTier: false,
-    local: false,
-    signup,
-    ...extra,
-  };
-}
-
-function local(id: string, name: string, baseUrl: string, docs: string): CatalogEntry {
-  return {
-    id,
-    name,
-    baseUrl,
-    fields: [],
-    auth: 'none',
-    keyEnvs: [],
-    flavor: 'openai-chat',
-    modelsPath: 'models',
-    freeTier: true,
-    local: true,
-    docs,
-  };
-}
+export type { ApiFlavor, AuthStyle, CatalogEntry, CatalogField } from './catalog-types.js';
 
 export const PROVIDER_CATALOG: readonly CatalogEntry[] = [
   hosted(
@@ -402,6 +319,7 @@ export const PROVIDER_CATALOG: readonly CatalogEntry[] = [
       modelsPath: null,
     },
   ),
+  ...MORE_HOSTED,
   local('ollama', 'Ollama', 'http://localhost:11434/v1', 'https://ollama.com/download'),
   local('lmstudio', 'LM Studio', 'http://localhost:1234/v1', 'https://lmstudio.ai'),
   local('vllm', 'vLLM', 'http://localhost:8000/v1', 'https://docs.vllm.ai'),
@@ -414,6 +332,7 @@ export const PROVIDER_CATALOG: readonly CatalogEntry[] = [
   local('litellm', 'LiteLLM proxy', 'http://localhost:4000/v1', 'https://docs.litellm.ai'),
   local('jan', 'Jan', 'http://localhost:1337/v1', 'https://jan.ai'),
   local('localai', 'LocalAI', 'http://localhost:8080/v1', 'https://localai.io'),
+  ...MORE_LOCAL,
 ];
 
 export function catalogEntry(id: string): CatalogEntry | undefined {

@@ -17,7 +17,7 @@ describe('provider catalog', () => {
     expect(hosted.length).toBeGreaterThanOrEqual(24);
     for (const [name, t] of hosted) {
       expect(t.baseUrl, name).toMatch(/^https:\/\//);
-      expect(t.keyEnv, name).toMatch(/^[A-Z_]+$/);
+      expect(t.keyEnv, name).toMatch(/^[A-Z][A-Z0-9_]*$/);
       expect(t.signup, name).toMatch(/^https:\/\//);
     }
     expect(PROVIDER_TEMPLATES.gemini?.kind).toBe('gemini');
