@@ -5,52 +5,9 @@ import { isAbsolute, join } from 'node:path';
 import * as vscode from 'vscode';
 import { ChatProcess, type ServerMessage } from './chatProcess.js';
 import { BUNDLED_VERSION, engine, refreshEngine } from './engine.js';
+import { FORWARD } from './forward.js';
 import { primaryFolder } from './tree.js';
 
-/** Commands the webview may forward to omnexx unchanged. */
-const FORWARD = new Set([
-  'mcp',
-  'send',
-  'answer',
-  'stop',
-  'pause',
-  'resume',
-  'mode',
-  'yolo',
-  'undo',
-  'clear',
-  'compact',
-  'models',
-  'settings',
-  'addProvider',
-  'removeProvider',
-  'testProvider',
-  'probeProvider',
-  'roles',
-  'setRoles',
-  'contextFiles',
-  'setSectionMode',
-  'contextList',
-  'contextUpdate',
-  'contextDelete',
-  'contextReset',
-  'contextAdd',
-  'contextPin',
-  'contextRestore',
-  'skills',
-  'skillsSearch',
-  'skillsPreview',
-  'skillsInstall',
-  'skillsUpdate',
-  'skillsRemove',
-  'skillsUnhide',
-  'skillsToggle',
-  'skillsMarketAdd',
-  'browser',
-  'setBrowser',
-  'agentSettings',
-  'setAgentSettings',
-]);
 const BREW_PATHS = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'];
 const MODEL_LIST_TIMEOUT_MS = 15_000;
 
