@@ -395,22 +395,49 @@ export class CodeChat {
     return this.abort !== undefined;
   }
 
-  /** A message typed while the agent works: it joins the conversation at the next step. */
+  /** Why the current turn was cut short, so its ending says the right thing. */
+  private abortReason: 'stop' | 'pause' | 'steer' | undefined;
+
+  /** True after an immediate pause cut a turn short; /resume carries it on. */
+  pausedTurn = false;
+
+  /**
+   * A message typed while the agent works: the current step (model call or command) is cut
+   * short at once, keeping every completed step, and the message is answered next.
+   */
   steer(text: string): void {
-    this.queue.push(text);
+    // Held aside (not in the loop's queue, which would fold it into the turn being cut short),
+    // then answered as the next turn.
+    this.steered.push(text);
+    if (!this.abort) return;
+    this.abortReason = 'steer';
+    this.abort.abort();
+  }
+
+  /** Messages that cut a turn short, answered next. */
+  private readonly steered: string[] = [];
+
+  /** /pause: stop the current step at once (completed steps are kept); /resume carries on. */
+  pauseNow(): void {
+    if (!this.abort) return;
+    this.abortReason = 'pause';
+    this.pausedTurn = true;
+    this.abort.abort();
   }
 
   /** Messages that arrived after the agent's last step: the session sends them next. */
   takeLeftovers(): string[] {
-    return this.queue.splice(0);
+    return [...this.queue.splice(0), ...this.steered.splice(0)];
   }
 
   /** /pause: hold at the next step boundary until resume() (the loop polls control()). */
   paused = false;
 
-  /** Esc: end the current turn, keeping every completed step. */
+  /** Esc: end the current turn at once, keeping every completed step. */
   interrupt(): void {
-    this.abort?.abort();
+    if (!this.abort) return;
+    this.abortReason = 'stop';
+    this.abort.abort();
   }
 
   /** The context limit the chat compacts at. */
@@ -611,7 +638,8 @@ export class CodeChat {
             })()
           : {}),
         tools,
-        toolCtx: this.ctx,
+        // The turn's signal reaches running commands too, so stop/pause/steer kill them at once.
+        toolCtx: { ...this.ctx, signal: abort.signal },
         budget: { ...this.config.budget, max_turns_per_cycle: 200 },
         // A chat turn that circles gets told so once, then stops (it once burned 400k tokens).
         watch: new InCycleWatch(
@@ -696,11 +724,15 @@ export class CodeChat {
       reply = { end: result.end, text: result.finalText };
       view.stream('');
       if (result.finalText) view.line({ kind: 'out', text: result.finalText });
-      if (result.end === 'stop-now')
+      if (result.end === 'stop-now' && this.abortReason === 'pause')
+        view.line({ kind: 'feed', text: 'paused. /resume carries on' });
+      else if (result.end === 'stop-now' && this.abortReason !== 'steer')
         view.line({ kind: 'feed', text: 'stopped. tell me what to do instead' });
-      else if (result.end !== 'done') view.line({ kind: 'err', text: `(stopped: ${result.end})` });
+      else if (result.end !== 'done' && result.end !== 'stop-now')
+        view.line({ kind: 'err', text: `(stopped: ${result.end})` });
     } finally {
       this.abort = undefined;
+      this.abortReason = undefined;
       this.paused = false;
       view.waiting?.(null);
       this.contextUsed = this.baseTokens() + contextTokens(this.history);

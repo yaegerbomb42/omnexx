@@ -41,7 +41,7 @@ function reply(content: ContentBlock[], req: CompletionRequest): CompletionRespo
 }
 
 describe('chat: steering, todo, actions and stop', () => {
-  it('a message typed mid-turn reaches the very next model request', async () => {
+  it('a message typed mid-turn cuts the step short and is the very next request', async () => {
     const seen: CompletionRequest[] = [];
     const box: { s?: Session } = {};
     const provider: Provider = {
@@ -80,14 +80,13 @@ describe('chat: steering, todo, actions and stop', () => {
     const s = await chatSession(provider);
     box.s = s;
     await s.submit('format a.js');
-    expect(lastUserText(seen[1] as CompletionRequest)).toMatch(
-      /while you were working[\s\S]*> actually, use tabs/,
-    );
+    // The next request is the new message itself, not the cut-short step's follow-up.
+    expect(lastUserText(seen[1] as CompletionRequest)).toMatch(/actually, use tabs/);
     const text = s.entries.map((e) => `${e.kind}:${e.text}`).join('\n');
     expect(text).toContain('think:Let me plan this.');
     expect(text).toContain('act:updating the todo list');
     expect(text).toContain('act:reading src/a.js');
-    expect(text).toContain('system:sent to the agent; it reads this at its next step');
+    expect(text).toContain('system:switching to your message now');
     expect(text).toContain('out:Done, with tabs.');
     expect(s.todos.map((t) => t.status)).toEqual(['in_progress', 'pending']);
   });
