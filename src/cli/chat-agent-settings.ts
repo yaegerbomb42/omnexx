@@ -60,6 +60,5 @@ export async function agentSettingsCommand(
     askOnStart: c.askOnStart !== false,
   });
   write(agentSettingsMessage(saved));
-  session.push('system', `agent settings: ${host.summary ?? ''}`);
   await session.reloadChat();
 }

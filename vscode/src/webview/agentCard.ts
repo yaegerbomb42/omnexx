@@ -5,6 +5,7 @@
  * Data comes from `omnexx chat-server` (`agentSettings`), saved with `setAgentSettings`.
  */
 import { escapeHtml } from './render.js';
+import { flashSaved } from './savedMark.js';
 import {
   meaning,
   position,
@@ -13,23 +14,11 @@ import {
   type AgentLevels,
   type AgentMeta,
   type SliderId,
+  SLIDERS,
+  type Slider,
 } from './agentCardModel.js';
 
 type Post = (msg: Record<string, unknown>) => void;
-
-interface Slider {
-  id: SliderId;
-  name: string;
-  prominent: boolean;
-}
-
-const SLIDERS: Slider[] = [
-  { id: 'taskEffort', name: 'Effort per task', prominent: true },
-  { id: 'contextLevel', name: 'Context', prominent: true },
-  { id: 'turnEffort', name: 'Effort per turn', prominent: false },
-  { id: 'time', name: 'Time on task', prominent: false },
-  { id: 'maxTokens', name: 'Max tokens per turn', prominent: false },
-];
 
 let levels: AgentLevels | undefined;
 let meta: AgentMeta | undefined;
@@ -42,6 +31,7 @@ function sliderHtml(s: Slider, l: AgentLevels, m: AgentMeta): string {
   <label for="agent-${s.id}">${s.name}</label>
   <input id="agent-${s.id}" type="range" min="1" max="${String(steps(s.id, m))}" step="1" value="${String(position(s.id, l, m))}" data-agent-slider="${s.id}">
   <span class="agent-meaning" data-agent-meaning="${s.id}">${escapeHtml(meaning(s.id, l, m))}</span>
+  <span class="agent-hint">${escapeHtml(s.hint)}</span>
 </div>`;
 }
 
@@ -103,8 +93,8 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
 function save(post: Post, ask: boolean): void {
   if (!levels) return;
   askOnStart = ask;
-  status = 'Saved';
   post({ type: 'setAgentSettings', levels, askOnStart: ask });
+  flashSaved('agent');
 }
 
 function closeStart(): void {

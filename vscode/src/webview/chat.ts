@@ -79,6 +79,8 @@ type Incoming =
 
 interface VsCodeApi {
   postMessage: (msg: unknown) => void;
+  getState: () => unknown;
+  setState: (state: unknown) => void;
 }
 declare function acquireVsCodeApi(): VsCodeApi;
 
@@ -417,6 +419,13 @@ document.addEventListener('keydown', (e) => {
     post({ type: 'stop' });
 });
 
+settings.useFoldStore({
+  get: () => (vscode.getState() as { folded?: unknown } | undefined)?.folded,
+  set: (folded) => {
+    const prev = vscode.getState();
+    vscode.setState({ ...(typeof prev === 'object' && prev ? prev : {}), folded });
+  },
+});
 settings.wire(post);
 agentCard.wire(post);
 contextPage.wire(post);

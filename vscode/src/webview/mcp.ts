@@ -6,6 +6,9 @@
  * through `{type: "mcp", op, …}` (see src/cli/chat-mcp.ts).
  */
 import { escapeHtml } from './render.js';
+import { cardHtml, registryCards, toCards, type Card } from './mcpCards.js';
+import { mcpIcon } from './mcpIcons.js';
+import { emptyHtml } from './settingsLayout.js';
 
 type Post = (msg: Record<string, unknown>) => void;
 
@@ -29,29 +32,6 @@ interface Server {
   toolCount: number;
   tokens: number;
   error?: string;
-}
-
-interface Need {
-  key: string;
-  help?: string;
-  description?: string;
-  target: string;
-  secret: boolean;
-  required: boolean;
-  placeholder?: string;
-}
-
-/** A gallery entry or a registry hit, as one card. */
-interface Card {
-  via: 'gallery' | 'registry';
-  id: string;
-  name: string;
-  description: string;
-  sub: string;
-  needs: Need[];
-  note?: string;
-  oauth?: boolean;
-  trusted?: boolean;
 }
 
 interface Importable {
@@ -132,7 +112,7 @@ function serverHtml(s: Server): string {
       : '';
   return `<li class="mcp-server ${state}">
   <div class="mcp-row">
-    <span class="mcp-dot ${state}" title="${escapeHtml(dotTitle(s))}" aria-label="${escapeHtml(dotTitle(s))}"></span>
+    <span class="mcp-mark">${mcpIcon(s.name)}<span class="mcp-dot ${state}" title="${escapeHtml(dotTitle(s))}" aria-label="${escapeHtml(dotTitle(s))}"></span></span>
     <div class="p-main"><div class="p-name">${n}</div><div class="p-url" title="${escapeHtml(s.target)}">${escapeHtml(s.target)}</div><div class="p-tags">${tags}</div>${error}</div>
     <label class="mcp-switch" title="${s.enabled ? 'Disable' : 'Enable'} ${n}"><input type="checkbox" aria-label="Use ${n}" data-mcp-enable="${n}" ${s.enabled ? 'checked' : ''} ${busy === s.name ? 'disabled' : ''}><span></span></label>
   </div>
@@ -159,7 +139,10 @@ function toolsHtml(s: Server): string {
 function listHtml(): string {
   if (!loaded) return '<p class="hint">Loading MCP servers…</p>';
   if (!servers.length)
-    return '<p class="hint">No MCP servers yet. They give omnexx extra tools: a browser, your database, GitHub, Notion… Add one below.</p>';
+    return emptyHtml(
+      'No MCP servers yet',
+      'They give omnexx extra tools: a browser, your database, GitHub, Notion… Pick one from the gallery.',
+    );
   const running = servers.filter((s) => s.state === 'running');
   const tools = running.reduce((a, s) => a + s.toolCount, 0);
   const tokens = running.reduce((a, s) => a + s.tokens, 0);
@@ -169,10 +152,9 @@ function listHtml(): string {
   return `<p class="hint">${summary}</p><ul class="providers mcp-list">${servers.map(serverHtml).join('')}</ul>`;
 }
 
-function cardHtml(c: Card): string {
-  const on = picked?.id === c.id && picked.via === c.via;
-  return `<button class="ptile mcp-card${on ? ' on' : ''}" data-mcp-card="${escapeHtml(c.via)}:${escapeHtml(c.id)}" title="${escapeHtml(c.description)}"><span class="t-label">${c.trusted ? '✓ ' : ''}${escapeHtml(c.name)}</span><span class="t-sub">${escapeHtml(c.sub)}</span></button>`;
-}
+const searchLabel = (q: string): string => `Search the MCP registry for "${escapeHtml(q)}"`;
+
+const pickedCard = (c: Card): string => cardHtml(c, picked?.id === c.id && picked.via === c.via);
 
 function matches(c: Card): boolean {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -194,12 +176,12 @@ function formHtml(c: Card): string {
 function cardsHtml(): string {
   const popular = gallery.filter(matches);
   const reg = registry.hits.length
-    ? `<div class="t-group">MCP registry: "${escapeHtml(registry.query)}"</div><div class="tiles">${registry.hits.map(cardHtml).join('')}</div>`
+    ? `<div class="t-group">MCP registry: "${escapeHtml(registry.query)}"</div><div class="mcp-cards">${registry.hits.map(pickedCard).join('')}</div>`
     : '';
   const searchBtn = query.trim()
-    ? `<button class="ghost" data-mcp-registry ${registry.busy ? 'disabled' : ''}>${registry.busy ? 'Searching the registry…' : `Search the MCP registry for "${escapeHtml(query.trim())}"`}</button>`
+    ? `<button class="ghost" data-mcp-registry ${registry.busy ? 'disabled' : ''}>${registry.busy ? 'Searching the registry…' : searchLabel(query.trim())}</button>`
     : '';
-  return `${popular.length ? `<div class="t-group">Popular</div><div class="tiles">${popular.map(cardHtml).join('')}</div>` : '<p class="hint">No popular server matches.</p>'}${reg}${searchBtn}${picked ? formHtml(picked) : ''}`;
+  return `${popular.length ? `<div class="t-group">Popular</div><div class="mcp-cards">${popular.map(pickedCard).join('')}</div>` : '<p class="hint">No popular server matches.</p>'}${reg}${searchBtn}${picked ? formHtml(picked) : ''}`;
 }
 
 function galleryHtml(): string {
@@ -254,35 +236,8 @@ export function html(): string {
     ? `<span class="status ${status.ok ? 'ok' : 'error'}" role="status">${escapeHtml(status.text)}</span>`
     : '<span class="status" role="status"></span>';
   return `${listHtml()}
-<div class="row-end mcp-bar">${st}<button class="ghost" data-mcp-refresh title="Start every server again and recount">Refresh</button><button class="ghost" data-mcp-import-scan>Import from Claude / Cursor / VS Code</button><button class="primary" data-mcp-add-toggle aria-expanded="${String(adding)}">${adding ? 'Close' : 'Add server'}</button></div>
+<div class="row-end mcp-bar">${st}<button class="ghost" data-mcp-refresh title="Start every server again and recount">Refresh</button><button class="ghost" data-mcp-import-scan title="Import servers set up in Claude, Cursor, VS Code or Windsurf">Import</button><button class="primary" data-mcp-add-toggle aria-expanded="${String(adding)}">${adding ? 'Close' : 'Add server'}</button></div>
 ${importHtml()}${adding ? addHtml() : ''}`;
-}
-
-function toCards(m: Record<string, unknown>): Card[] {
-  const entries = Array.isArray(m.entries) ? (m.entries as Record<string, unknown>[]) : [];
-  return entries.map((e) => ({
-    via: 'gallery',
-    id: String(e.id),
-    name: String(e.name),
-    description: asText(e.description),
-    sub: e.oauth ? 'sign in' : e.url ? 'remote' : asText(e.command),
-    needs: (e.needs as Need[] | undefined) ?? [],
-    ...(typeof e.note === 'string' ? { note: e.note } : {}),
-    oauth: e.oauth === true,
-  }));
-}
-
-function registryCards(m: Record<string, unknown>): Card[] {
-  const hits = Array.isArray(m.hits) ? (m.hits as Record<string, unknown>[]) : [];
-  return hits.map((h) => ({
-    via: 'registry',
-    id: String(h.id),
-    name: String(h.title ?? h.name),
-    description: `${asText(h.description)} · runs ${asText(h.runs)}${h.trusted ? '' : ' · not a known publisher: check it first'}`,
-    sub: asText(h.publisher),
-    needs: (h.needs as Need[] | undefined) ?? [],
-    trusted: h.trusted === true,
-  }));
 }
 
 /** Messages from chat-server for this section; true when handled. */
