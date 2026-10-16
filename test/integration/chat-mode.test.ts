@@ -211,3 +211,25 @@ describe('stop, pause and new messages act at once', () => {
     expect(s.entries.map((e) => e.text).join('\n')).toContain('carried on after resume');
   }, 40_000);
 });
+
+describe('which model are you', () => {
+  it('tells the model its real name, so it does not guess another', async () => {
+    const repo = await makeRepo();
+    const provider = new ScriptedProvider(() => say('ok'));
+    const io: CliIO = {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new PassThrough(),
+      env: await isolatedEnv({ ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000' }),
+      cwd: repo,
+      isTTY: false,
+      makeProvider: () => provider,
+    };
+    const s = new Session(io, () => Promise.resolve(0));
+    await s.submit('/chat');
+    await s.submit('which model are you?');
+    const system = provider.requests[0]?.system.map((b) => b.text).join('\n') ?? '';
+    expect(system).toMatch(/running on the model \S+:\S+ \(provider:model\)/);
+    expect(system).toMatch(/don't guess another name/);
+  });
+});
