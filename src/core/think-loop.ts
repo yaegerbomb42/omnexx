@@ -1,6 +1,7 @@
 import type { LoopEnd, LoopResult } from '../agent/loop.js';
 import type { Message } from '../providers/types.js';
 import type { Usage } from '../providers/types.js';
+import { analysisSteps, stepsTodo, wroteTodo } from './analysis-steps.js';
 import { checkTrip, failKey, tombstone, type PassState, type StateNode } from './doom-breaker.js';
 
 /**
@@ -197,6 +198,16 @@ export async function runThinkLoop(
   let lastSignature = '';
   let rewinds = 0;
   let nodes: Node[] = [];
+  // The checklist shown to the person comes from the analysis unless the model keeps its own.
+  let seeded: string[] = [];
+  let ownTodo = false;
+  const seedTodo = (): void => {
+    if (ownTodo) return;
+    const steps = analysisSteps(analysis);
+    if (!steps.length || steps.join('\n') === seeded.join('\n')) return;
+    seeded = steps;
+    io.emit('todo.update', { items: stepsTodo(steps), source: 'analysis' });
+  };
 
   const run = async (step: Step | undefined): Promise<LoopResult> => {
     const seg = step ? continueWith(messages, step.text) : { history: [], first: anchor };
@@ -211,6 +222,7 @@ export async function runThinkLoop(
       step?.chain ?? 'think',
     );
     messages = r.messages;
+    ownTodo ||= wroteTodo(r.messages);
     usage = addUsage(usage, r.usage);
     usd += r.usd;
     turns += r.turns;
@@ -231,6 +243,8 @@ export async function runThinkLoop(
     // Findings whose fix was cut short (budget, stuck) don't count as reviewed: the cycle's own
     // review sees the final diff and rejects it if they still stand.
     const settled = reviewed && !(findingsOpen && last?.end !== 'done');
+    if (seeded.length && !ownTodo && greenNow && end === 'done')
+      io.emit('todo.update', { items: stepsTodo(seeded, true), source: 'analysis' });
     io.emit('loop.end', { end, rounds, rethinks, reviewed: settled, green: greenNow, turns });
     return {
       end,
@@ -257,6 +271,7 @@ export async function runThinkLoop(
   const thought = await decide(await run(undefined));
   io.emit('loop.think', { turns, chars: analysis.length, end: thought.end });
   if (TERMINAL.has(thought.end)) return finish(thought.end);
+  seedTodo();
 
   let next: Step = { text: EXECUTE_PROMPT, chain: 'work', thinking: false };
   const rethink = (why: string): Step | undefined => {
@@ -277,6 +292,7 @@ export async function runThinkLoop(
     if (next.thinking) {
       const decided = await decide(r);
       if (TERMINAL.has(decided.end)) return finish(decided.end);
+      seedTodo();
       next = { text: EXECUTE_REVISED_PROMPT, chain: 'work', thinking: false };
       continue;
     }

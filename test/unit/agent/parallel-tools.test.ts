@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { budgetSchema } from '../../../src/config/schema.js';
-import { BATCH_HINT, runAgentLoop, type LoopDeps } from '../../../src/agent/loop.js';
+import {
+  BATCH_HINT,
+  BOOKKEEPING_HINT,
+  runAgentLoop,
+  type LoopDeps,
+} from '../../../src/agent/loop.js';
 import type { Tool } from '../../../src/tools/types.js';
 import { ScriptedProvider, type ScriptedTurn } from '../../support/scripted-provider.js';
 import { FakeClock } from '../../support/clock.js';
@@ -144,6 +149,15 @@ describe('batching hint', () => {
     const { hints } = await runTurns([both, one('read'), one('search')], tools);
     // messages: 0 task, 1 assistant, 2 results of the batched turn, 3 assistant, 4 results of the lone read.
     expect(hints).toEqual([4]);
+  });
+
+  it('says once that a turn of only bookkeeping wasted a round trip', async () => {
+    const notes = [tool('todo', true), tool('running_context', true), ...tools];
+    const { res } = await runTurns([one('todo'), one('running_context')], notes);
+    const said = res.messages.flatMap((m, i) =>
+      m.content.some((b) => b.type === 'text' && b.text === BOOKKEEPING_HINT) ? [i] : [],
+    );
+    expect(said).toEqual([2]);
   });
 
   it('is not said once the model has started changing things', async () => {

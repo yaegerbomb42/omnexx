@@ -18,7 +18,7 @@ const schema = z.strictObject({
 export const runningContextTool: Tool<typeof schema> = {
   name: 'running_context',
   description:
-    'Add to your running context for this task: a living memory shown to you again at the start of every cycle and after the context is trimmed. Record progress after each meaningful step, the solution when something works, dead ends so you never retry them, and a checkpoint of where you are before you finish. Short, concrete, with file paths.',
+    "Add to your running context for this task: a living memory shown to you again at the start of every cycle and after the context is trimmed. The harness already records each cycle's outcome and your summary, so use this for dead ends you must not retry and solutions that took real digging. Short, concrete, with file paths; send it alongside other calls.",
   schema,
   readOnly: true,
   async run(input, ctx) {
