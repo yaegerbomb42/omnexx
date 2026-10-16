@@ -75,7 +75,8 @@ export class OmnexxRunner extends AgentRunner {
       '--budget',
       String(this.opts.budgetUsd ?? 2),
     ];
-    args.push('--hours', String(hours), '--push', 'none', '--quiet');
+    // Not --quiet: the live feed is what bench:watch shows.
+    args.push('--hours', String(hours), '--push', 'none');
     if (await hasScript(workDir, 'test')) args.push('--gate', 'npm test');
 
     this.opts.meter?.reset();
