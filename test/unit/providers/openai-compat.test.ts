@@ -67,6 +67,31 @@ describe('toChatMessages', () => {
   });
 });
 
+describe('assistant turns that only call tools', () => {
+  it('are sent with empty string content, never null (Ollama rejects null)', () => {
+    const out = toChatMessages({
+      model: 'm',
+      system: [{ text: 's' }],
+      tools: [],
+      maxTokens: 10,
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: 'go' }] },
+        {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 't1', name: 'read', input: { path: 'a' } }],
+        },
+        {
+          role: 'user',
+          content: [{ type: 'tool_result', toolUseId: 't1', content: 'x' }],
+        },
+      ],
+    } as unknown as Parameters<typeof toChatMessages>[0]);
+    const assistant = out.find((m) => m.role === 'assistant');
+    expect(assistant?.content).toBe('');
+    expect(out.every((m) => m.content !== null)).toBe(true);
+  });
+});
+
 describe('OpenAICompatProvider against a loopback mock', () => {
   it('sends Chat Completions with tools and auth; maps tool calls, finish reason and cached usage', async () => {
     const srv = await mockServer((_r, res) => {
