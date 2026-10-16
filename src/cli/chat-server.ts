@@ -22,7 +22,7 @@ import { println, type CliIO } from './io.js';
  * roles · setRoles {roles?, pool?: {ranked, mode}} · contextFiles · setSectionMode {id, mode} · contextList ·
  * contextUpdate {id, text} · contextDelete {id} · contextReset · contextAdd {text} · contextPin {id} ·
  * contextRestore {id} · skills · skillsSearch {query} · skillsPreview {id} · skillsInstall {id} ·
- * skillsUpdate · skillsRemove {name} · skillsToggle {name, on} · skillsMarketAdd {source} · chats ·
+ * skillsUpdate · skillsRemove {name, mode?: hide|delete, path?} · skillsUnhide {name} · skillsToggle {name, on} · skillsMarketAdd {source} · chats ·
  * resumeChat {id} · browser · setBrowser {engine, profile?, sessionName?, headless} · mcp {op, …}
  * (see chat-mcp.ts) · agentSettings · setAgentSettings {levels, askOnStart}.
  * Out: ready {version} · state (below; `entries` holds only lines not sent before) · models
@@ -414,6 +414,7 @@ export async function serveChat(
       case 'skillsInstall':
       case 'skillsUpdate':
       case 'skillsRemove':
+      case 'skillsUnhide':
       case 'skillsToggle':
       case 'skillsMarketAdd':
         run(
@@ -429,7 +430,6 @@ export async function serveChat(
         run(
           import('./chat-settings.js').then(async ({ setBrowserSettings }) => {
             await setBrowserSettings(io, c);
-            session.push('system', 'browser settings saved; new runs use them');
             await sendBrowser();
           }),
         );
@@ -467,7 +467,6 @@ export async function serveChat(
                 : [];
               await writePool(paths, ranked, parsePoolMode(pool.mode));
             }
-            session.push('system', 'your models saved; new chats and runs use them');
             await sendRoles();
           }),
         );

@@ -142,7 +142,7 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'cards', help: 'agent cards: local helpers and remote A2A agents; /cards add <url>' },
   {
     name: 'settings',
-    help: 'agent settings: effort per task and turn, context, time, max tokens',
+    help: 'agent settings: effort per task and turn, context, time, max reply length',
   },
   { name: 'compact', help: 'summarize the conversation to free up context' },
   { name: 'clear', help: 'start a fresh conversation' },

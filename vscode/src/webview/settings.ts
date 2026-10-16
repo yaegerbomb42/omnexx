@@ -11,6 +11,9 @@ import * as agentCard from './agentCard.js';
 import { badge } from './modelPicker.js';
 import { escapeHtml } from './render.js';
 import * as providerForm from './providerForm.js';
+import * as layout from './settingsLayout.js';
+import { flashSaved } from './savedMark.js';
+import type { SectionId } from './settingsLayout.js';
 
 export interface CatalogProvider {
   name: string;
@@ -100,7 +103,7 @@ function browserHtml(): string {
   <input id="browser-profile" class="field" type="text" placeholder="optional: reuse its logins" spellcheck="false" value="${escapeHtml(b.profile ?? '')}">
   <label for="browser-session">Session name</label>
   <input id="browser-session" class="field" type="text" placeholder="optional" spellcheck="false" value="${escapeHtml(b.sessionName ?? '')}">
-  <p class="hint">Saved to your user config.toml; new runs use them.</p>`;
+  <p class="hint">New runs use these.</p>`;
 }
 
 /** Save the browser settings with one change applied, reading the text fields as they stand. */
@@ -125,6 +128,7 @@ function saveBrowser(post: Post, change: Partial<BrowserPrefs>): void {
     ...(browserPrefs.profile ? { profile: browserPrefs.profile } : {}),
     ...(browserPrefs.sessionName ? { sessionName: browserPrefs.sessionName } : {}),
   });
+  flashSaved('browser');
 }
 
 /** The person has typed or picked something in the add form, so a redraw keeps it. */
@@ -146,7 +150,11 @@ function modelFieldHtml(): string {
 
 function connectedHtml(): string {
   if (!connected.length)
-    return '<p class="hint">Nothing connected yet. Add a provider below to start chatting.</p>';
+    return layout.emptyHtml(
+      'No providers yet',
+      'Connect one account or local server and you can start chatting.',
+      '<button class="primary" data-sec-jump="add">Add a provider</button>',
+    );
   return `<ul class="providers">${connected
     .map((p) => {
       const key = p.local
@@ -184,42 +192,84 @@ function tilesHtml(): string {
   return `${hosted.length ? `<div class="t-group">Hosted</div><div class="tiles">${hosted.map((c) => tile(c.name, c.label, c.fields?.length ? 'needs setup' : c.freeTier ? 'free tier' : c.keyPrefix ? `${c.keyPrefix}…` : 'API key')).join('')}</div>` : ''}${local.length ? `<div class="t-group">On your machine</div><div class="tiles">${local.map((c) => tile(c.name, c.label, 'no key')).join('')}</div>` : ''}${custom ? `<div class="t-group">Other</div><div class="tiles">${tile(CUSTOM, 'Custom endpoint', 'OpenAI / Anthropic API')}</div>` : ''}${!hosted.length && !local.length && !custom ? '<p class="hint">No provider matches.</p>' : ''}`;
 }
 
-function draw(): void {
-  const page = q('settings', HTMLElement);
-  page.innerHTML = `
-<div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
-<section class="set-section" data-sec="agent"><h3>Agent</h3><div id="agent-box">${agentCard.html()}</div></section>
-<section class="set-section" data-sec="model"><h3>Chat model</h3>${modelFieldHtml()}</section>
-<section class="set-section" data-sec="models"><h3>Your models</h3><div id="roles-box">${roles.html()}</div></section>
-<section class="set-section" data-sec="skills"><h3>Skills</h3><div id="skills-box">${skills.html()}</div></section>
-<section class="set-section" data-sec="providers"><h3>Providers</h3>${connectedHtml()}</section>
-<section class="set-section add" data-sec="add"><h3>Add a provider</h3>
-  <input id="tile-search" class="field" type="search" placeholder="Search 30+ providers…" aria-label="Search providers" value="${escapeHtml(tileQuery)}" spellcheck="false">
+/** Where the folded sections are remembered (the webview's state; tests and first run: memory). */
+export interface FoldStore {
+  get: () => unknown;
+  set: (folded: SectionId[]) => void;
+}
+
+let folded: SectionId[] = [...layout.FOLDED_BY_DEFAULT];
+let foldStore: FoldStore | undefined;
+
+/** Use the webview's saved state for which sections are folded. */
+export function useFoldStore(store: FoldStore): void {
+  foldStore = store;
+  const saved = store.get();
+  if (Array.isArray(saved)) folded = saved.filter(layout.isSectionId);
+}
+
+function setFolded(id: SectionId, fold: boolean): void {
+  folded = layout.toggled(folded, id, fold);
+  foldStore?.set(folded);
+  const section = document.getElementById(`sec-${id}`);
+  section?.classList.toggle('folded', fold);
+  section?.querySelector('.sec-head')?.setAttribute('aria-expanded', String(!fold));
+  const body = document.getElementById(`sec-body-${id}`);
+  if (body) body.hidden = fold;
+}
+
+/** A nav chip: unfold its section and bring it into view. */
+function jumpTo(id: SectionId): void {
+  setFolded(id, false);
+  document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+const sec = (id: SectionId, body: string, extra = ''): string =>
+  layout.sectionHtml(id, body, folded.includes(id), extra);
+
+function addFormHtml(): string {
+  return `<input id="tile-search" class="field" type="search" placeholder="Search ${String(catalog.length || 30)}+ providers…" aria-label="Search providers" value="${escapeHtml(tileQuery)}" spellcheck="false">
   <div id="tile-box" class="tile-box">${tilesHtml()}</div>
   <div id="add-url-row"><label for="add-url">Base URL</label><input id="add-url" class="field" type="url" placeholder="http://localhost:8000/v1" spellcheck="false"></div>
   <div id="add-name-row"><label for="add-name">Name</label><input id="add-name" class="field" type="text" placeholder="mybox" spellcheck="false"></div>
   <div id="add-extra"></div>
   <div id="add-key-row"><label for="add-key">API key</label><input id="add-key" class="field" type="password" autocomplete="off" spellcheck="false"><a id="add-signup" class="signup" href="#">Get a key ↗</a></div>
-  <p class="hint">Keys are stored in a private file on this machine (0600) and only ever shown masked.</p>
-  <div class="row-end"><span id="add-status" class="status" role="status"></span><button id="add-probe" class="ghost" title="Check the URL and key without saving">Test</button><button id="add-save" class="primary">Connect</button></div>
-</section>
-<section class="set-section" data-sec="approvals"><h3>Approvals</h3>
-  <div class="seg wide" role="group" aria-label="Approval default">
+  <p class="hint">🔒 Stored privately on this machine; only ever shown masked.</p>
+  <div class="row-end"><span id="add-status" class="status" role="status"></span><button id="add-probe" class="ghost" title="Check the URL and key without saving">Test</button><button id="add-save" class="primary">Connect</button></div>`;
+}
+
+function approvalsHtml(): string {
+  return `<div class="seg wide" role="group" aria-label="Approval default">
     <button data-approval-default="ask" aria-pressed="${String(!autoApproveDefault)}">Ask first</button>
     <button data-approval-default="auto" aria-pressed="${String(autoApproveDefault)}">Auto-approve</button>
   </div>
-  <p class="hint">How new chats start. Auto-approve lets omnexx go outside the repo and run guarded commands without asking; hard-blocked commands stay blocked.</p>
-</section>
-<section class="set-section" data-sec="mcp"><h3>MCP servers</h3><div id="mcp-box">${mcp.html()}</div></section>
-<section class="set-section" data-sec="browser"><h3>Browser</h3><div id="browser-box">${browserHtml()}</div></section>
-<section class="set-section" data-sec="advanced"><h3>Advanced</h3>
-  <div id="engine-box" class="engine">${engineHtml()}</div>
+  <p class="hint">${autoApproveDefault ? 'New chats run guarded commands and leave the repo without asking. Hard-blocked commands stay blocked.' : 'New chats ask before running guarded commands or touching files outside the repo.'}</p>`;
+}
+
+function advancedHtml(): string {
+  return `<div id="engine-box" class="engine">${engineHtml()}</div>
   <div class="links">
     <button class="ghost" data-action-ext="editToml">Edit project settings (omnexx.toml)</button>
     <button class="ghost" data-action-ext="editUserConfig">Edit user settings (config.toml)</button>
     <button class="ghost" data-action-ext="restart">Restart omnexx</button>
-  </div>
-</section>`;
+  </div>`;
+}
+
+function draw(): void {
+  const page = q('settings', HTMLElement);
+  page.innerHTML = `
+<div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
+${layout.navHtml()}
+${sec('agent', `<div id="agent-box">${agentCard.html()}</div>`)}
+${sec('model', modelFieldHtml())}
+${sec('models', `<div id="roles-box">${roles.html()}</div>`)}
+${sec('skills', `<div id="skills-box">${skills.html()}</div>`)}
+${sec('providers', connectedHtml())}
+${sec('add', addFormHtml(), 'add')}
+${sec('approvals', approvalsHtml())}
+${sec('mcp', `<div id="mcp-box">${mcp.html()}</div>`)}
+${sec('browser', `<div id="browser-box">${browserHtml()}</div>`)}
+${sec('advanced', advancedHtml())}`;
   syncForm();
   drawStatus();
 }
@@ -466,6 +516,16 @@ export function wire(post: Post): void {
     if (roles.click(t, post)) return;
     if (mcp.click(t, post)) return;
     if (skills.click(t, post)) return;
+    const jump = t.closest<HTMLElement>('[data-sec-jump]')?.dataset.secJump;
+    if (layout.isSectionId(jump)) {
+      jumpTo(jump);
+      return;
+    }
+    const fold = t.closest<HTMLElement>('[data-sec-toggle]')?.dataset.secToggle;
+    if (layout.isSectionId(fold)) {
+      setFolded(fold, !folded.includes(fold));
+      return;
+    }
     const tileName = t.closest<HTMLElement>('[data-provider]')?.dataset.provider;
     if (tileName) {
       chosen = tileName;
@@ -516,7 +576,9 @@ export function wire(post: Post): void {
       } else if (approval) {
         autoApproveDefault = approval === 'auto';
         post({ type: 'setApprovalDefault', on: autoApproveDefault });
-        draw();
+        const box = document.getElementById('sec-body-approvals');
+        if (box) box.innerHTML = approvalsHtml();
+        flashSaved('approvals');
       } else if (engine === 'chromium' || engine === 'camoufox') {
         saveBrowser(post, { engine });
         q('browser-box', HTMLElement).innerHTML = browserHtml();

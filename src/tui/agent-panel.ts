@@ -163,7 +163,7 @@ export function panelLines(s: AgentPanelState): PanelLine[] {
     },
     {
       row: 'tokens',
-      name: 'max tokens / turn',
+      name: 'max reply length',
       bar: bar(tokenIndex, MAX_TOKEN_CHOICES.length),
       value: fmtK(l.maxTokens),
     },

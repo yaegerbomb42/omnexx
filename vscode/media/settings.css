@@ -1,0 +1,350 @@
+/*
+ * Settings page frame (loaded after chat.css): sticky colored section nav, foldable sections with
+ * an icon and subtitle, empty states, the quiet "Saved ✓", MCP gallery cards and skill rows.
+ * Colors come from each section's --sec (set in chat.css) and VS Code theme variables.
+ */
+
+/* Section colors also apply to the nav chips. */
+.set-chip[data-sec='agent'] {
+  --sec: var(--vscode-charts-purple, #b180d7);
+}
+.set-chip[data-sec='model'],
+.set-chip[data-sec='models'] {
+  --sec: var(--vscode-charts-blue, #3794ff);
+}
+.set-chip[data-sec='skills'] {
+  --sec: var(--vscode-charts-yellow, #cca700);
+}
+.set-chip[data-sec='providers'],
+.set-chip[data-sec='add'] {
+  --sec: var(--vscode-charts-green, #89d185);
+}
+.set-chip[data-sec='approvals'] {
+  --sec: var(--vscode-charts-orange, #d18616);
+}
+.set-chip[data-sec='mcp'] {
+  --sec: var(--vscode-charts-red, #f14c4c);
+}
+.set-chip[data-sec='browser'] {
+  --sec: var(--vscode-terminal-ansiCyan, #29b8db);
+}
+.set-chip[data-sec='advanced'] {
+  --sec: var(--vscode-descriptionForeground, #9d9d9d);
+}
+
+.set-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 -12px;
+  padding: 6px 12px 8px;
+  background: var(--vscode-sideBar-background, var(--surface));
+  border-bottom: 1px solid var(--line);
+}
+
+.set-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--sec) 45%, transparent);
+  background: color-mix(in srgb, var(--sec) 12%, transparent);
+  color: var(--fg);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.set-chip:hover,
+.set-chip:focus-visible {
+  background: color-mix(in srgb, var(--sec) 26%, transparent);
+  border-color: var(--sec);
+  outline: none;
+}
+
+.set-chip .sec-icon {
+  width: 12px;
+  height: 12px;
+  color: var(--sec);
+}
+
+.settings .set-section {
+  scroll-margin-top: 64px;
+}
+
+.settings .set-section[data-sec] {
+  gap: 0;
+  padding: 0;
+}
+
+.sec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.sec-head:focus-visible {
+  outline: 1px solid var(--sec, var(--vscode-focusBorder));
+  outline-offset: -1px;
+}
+
+.sec-head > .sec-icon {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 5px;
+  border-radius: 7px;
+  color: var(--sec, var(--accent));
+  background: color-mix(in srgb, var(--sec, var(--accent)) 18%, transparent);
+}
+
+.sec-titles {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.sec-title {
+  font-weight: 600;
+  font-size: var(--fs-md);
+  color: var(--fg);
+}
+
+.sec-sub {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sec-chev {
+  flex: none;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+
+.set-section.folded .sec-chev {
+  transform: rotate(-90deg);
+}
+
+.sec-saved {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--vscode-charts-green, var(--ok));
+  opacity: 0;
+  transition: opacity 0.6s;
+}
+
+.sec-saved.shown {
+  opacity: 1;
+  transition: opacity 0.1s;
+}
+
+.sec-body {
+  display: grid;
+  gap: 6px;
+  padding: 0 12px 12px;
+}
+
+.sec-body[hidden] {
+  display: none;
+}
+
+.sec-body > .hint:first-child {
+  margin-top: 0;
+}
+
+/* Empty states: a title, why it matters, one action. */
+.empty {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  padding: 10px;
+  border: 1px dashed color-mix(in srgb, var(--sec, var(--accent)) 45%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--sec, var(--accent)) 6%, transparent);
+}
+
+.empty-title {
+  font-weight: 600;
+}
+
+.empty .hint {
+  margin: 0;
+}
+
+/* Consistent buttons inside sections. */
+.settings .sec-body .ghost,
+.settings .sec-body .danger-btn,
+.settings .sec-body .primary {
+  min-height: 24px;
+  border-radius: 6px;
+}
+
+.settings .sec-body .ghost:hover {
+  border-color: var(--sec, var(--accent));
+}
+
+.agent-hint {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+/* MCP gallery cards and server marks. */
+.mcp-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.mcp-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.mcp-card:hover {
+  border-color: var(--sec, var(--accent));
+}
+
+.mcp-card.on {
+  border-color: var(--sec, var(--accent));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--sec, var(--accent)) 50%, transparent);
+}
+
+.mc-text {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.mc-name {
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mc-ok {
+  color: var(--vscode-charts-green, var(--ok));
+}
+
+.mc-about {
+  font-size: var(--fs-xs);
+  color: var(--fg);
+  opacity: 0.85;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mc-sub {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--ic);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 12%);
+}
+
+.mcp-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.mcp-mark {
+  position: relative;
+  flex: none;
+}
+
+.mcp-mark .mcp-dot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  margin: 0;
+  box-shadow: 0 0 0 2px var(--vscode-sideBar-background, var(--surface));
+}
+
+/* Skills: a switch on each row, actions under it, and the remove choice. */
+.sk {
+  align-items: center;
+}
+
+.sk .mcp-switch {
+  margin: 0 0 0 4px;
+}
+
+.sk-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.sk-actions .ghost {
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+}
+
+.sk-confirm {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--bad) 40%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bad) 6%, transparent);
+}
+
+.sk-confirm .hint {
+  margin: 0 0 4px;
+}
+
+.sk-confirm .ci-actions {
+  flex-wrap: wrap;
+}
+
+.sk-path code {
+  word-break: break-all;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sec-chev,
+  .sec-saved {
+    transition: none;
+  }
+}

@@ -68,3 +68,44 @@ export function meaning(id: SliderId, l: AgentLevels, meta: AgentMeta): string {
       return k(l.maxTokens);
   }
 }
+
+export interface Slider {
+  id: SliderId;
+  name: string;
+  hint: string;
+  prominent: boolean;
+}
+
+/** The card's sliders, with plain-English labels and a one-line hint each. */
+export const SLIDERS: readonly Slider[] = [
+  {
+    id: 'taskEffort',
+    name: 'Effort per task',
+    hint: 'how much planning and checking a whole task gets',
+    prominent: true,
+  },
+  {
+    id: 'contextLevel',
+    name: 'Memory (context)',
+    hint: 'how much of the conversation and code the model keeps in view',
+    prominent: true,
+  },
+  {
+    id: 'turnEffort',
+    name: 'Effort per turn',
+    hint: 'how hard the model thinks before each reply',
+    prominent: false,
+  },
+  {
+    id: 'time',
+    name: 'Time on task',
+    hint: 'when a long run stops on its own',
+    prominent: false,
+  },
+  {
+    id: 'maxTokens',
+    name: 'Max reply length',
+    hint: 'how much the model can write per reply (output), not what it remembers',
+    prominent: false,
+  },
+];

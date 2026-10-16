@@ -43,6 +43,7 @@ const FORWARD = new Set([
   'skillsInstall',
   'skillsUpdate',
   'skillsRemove',
+  'skillsUnhide',
   'skillsToggle',
   'skillsMarketAdd',
   'browser',
@@ -325,6 +326,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private html(webview: vscode.Webview): string {
     const nonce = randomBytes(16).toString('base64');
     const css = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'chat.css'));
+    const settingsCss = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'settings.css'),
+    );
     const js = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'out', 'chat.js'));
     const logo = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'logo.png'));
     const csp = [
@@ -341,6 +345,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="${css.toString()}">
+<link rel="stylesheet" href="${settingsCss.toString()}">
 <title>omnexx</title>
 </head>
 <body>
