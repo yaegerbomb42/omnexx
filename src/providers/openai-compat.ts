@@ -134,6 +134,8 @@ export class OpenAICompatProvider implements Provider {
   readonly name: string;
   /** Output limits learned from 400s, per model: later calls ask for no more than this. */
   private readonly outputCaps = new Map<string, number>();
+  /** Models that want `max_completion_tokens` instead of `max_tokens` (OpenAI reasoning models). */
+  private readonly completionTokens = new Set<string>();
   /** Off once the server refused `parallel_tool_calls` (some local servers reject unknown fields). */
   private parallelToolCalls = true;
 
@@ -166,6 +168,10 @@ export class OpenAICompatProvider implements Provider {
           this.outputCaps.set(req.model, limit);
           continue;
         }
+        if (/max_completion_tokens/i.test(err.message) && !this.completionTokens.has(req.model)) {
+          this.completionTokens.add(req.model);
+          continue;
+        }
         if (this.parallelToolCalls && /parallel_tool_calls/i.test(err.message)) {
           this.parallelToolCalls = false;
           continue;
@@ -190,7 +196,9 @@ export class OpenAICompatProvider implements Provider {
     const body = {
       model: req.model,
       messages: toChatMessages(req),
-      max_tokens: req.maxTokens,
+      ...(this.completionTokens.has(req.model)
+        ? { max_completion_tokens: req.maxTokens }
+        : { max_tokens: req.maxTokens }),
       ...(req.tools.length
         ? {
             tools: req.tools.map((t) => ({

@@ -342,6 +342,26 @@ describe('model limits and refusals', () => {
     expect(flags).toEqual([true, false, false]);
   });
 
+  it('switches to max_completion_tokens for a model that rejects max_tokens, and remembers', async () => {
+    const srv = await mockServer((r, res) => {
+      if ('max_tokens' in (JSON.parse(r.body) as object))
+        json(res, 400, {
+          error: {
+            message:
+              "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.",
+          },
+        });
+      else json(res, 200, ok);
+    });
+    const p = make(srv.url);
+    await p.complete(req);
+    await p.complete(req);
+    const keys = srv.requests.map((r) =>
+      'max_completion_tokens' in (JSON.parse(r.body) as object) ? 'completion' : 'max',
+    );
+    expect(keys).toEqual(['max', 'completion', 'completion']);
+  });
+
   it('a content-filter refusal fails over to the next model', async () => {
     const srv = await mockServer((_r, res) => {
       json(res, 400, {

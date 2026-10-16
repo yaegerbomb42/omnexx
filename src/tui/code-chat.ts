@@ -74,6 +74,22 @@ function continuePrompt(ask: string): string {
   return `Continue the task from the summary above; don't redo finished steps or re-read files you already read unless they changed. The request was:\n\n${ask}`;
 }
 
+/** The model a chat answers on: the one picked, else the first of the worker list. */
+function identityRef(
+  ref: string | readonly string[] | undefined,
+  config: OmnexxConfig,
+): string | undefined {
+  const picked = typeof ref === 'string' ? ref : ref?.[0];
+  if (picked) return picked;
+  const w = config.models.worker;
+  return typeof w === 'string' ? w : w[0];
+}
+
+/** What the model is told about itself, so "which model are you?" gets a true answer. */
+export function identityLine(ref: string): string {
+  return `You are omnexx, a coding agent, running on the model ${ref} (provider:model). If asked which model you are, say exactly that; don't guess another name.`;
+}
+
 function kTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
@@ -317,6 +333,10 @@ export class CodeChat {
       ...(agentBriefFor(config) ? [{ text: agentBriefFor(config) ?? '', volatile: true }] : []),
       // What ran and passed here before; volatile, since a passing command can add to it.
       ...(factsBlock ? [{ text: factsBlock, volatile: true }] : []),
+      // Models guess their own name ("Claude 3.5 Sonnet") unless told; after the cached prefix.
+      ...(identityRef(ref, config)
+        ? [{ text: identityLine(identityRef(ref, config) ?? ''), volatile: true }]
+        : []),
     ];
     const chat = new CodeChat(config, deps.provider, tools, system, ctx, events, store, model);
     chat.paths = paths;
