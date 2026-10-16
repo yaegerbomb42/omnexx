@@ -71,6 +71,10 @@ import { emptyTelemetry, fold, type Telemetry } from '../telemetry/aggregate.js'
 /** Questions read without editing; only this many turns in a row without an edit is circling. */
 const CHAT_NO_EDIT_TURNS = 25;
 
+function kTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
 /** A saved chat's id: `chat_<UTC timestamp>_<random>`. */
 function newChatId(): string {
   return `chat_${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}_${randomBytes(3).toString('hex')}`;
@@ -774,7 +778,10 @@ export class CodeChat {
   }
 
   /** Between messages: trim old tool output, then summarize the oldest exchanges if still big. */
-  private async compactIfNeeded(force = false): Promise<void> {
+  private async compactIfNeeded(
+    force = false,
+    keepTurns = this.config.context.compact_keep_turns,
+  ): Promise<void> {
     const limit = this.config.context.compact_at;
     if (!force && contextTokens(this.history) < this.config.context.clear_tool_results_at) return;
     this.history = clearOldToolResults(
@@ -786,7 +793,7 @@ export class CodeChat {
     const starts = this.history.flatMap((m, i) =>
       m.role === 'user' && m.content.some((b) => b.type === 'text') ? [i] : [],
     );
-    const cut = starts.at(-Math.max(1, this.config.context.compact_keep_turns));
+    const cut = starts.at(-Math.max(1, keepTurns));
     if (cut === undefined || cut === 0) return;
     const head = this.history.slice(0, cut);
     const summary = await this.summarize(head).catch(() => undefined);
@@ -809,17 +816,45 @@ export class CodeChat {
       },
       ...this.history.slice(cut),
     ];
-    this.view?.line({
-      kind: 'feed',
-      text: 'summarized the earlier conversation to free up context',
-    });
+    if (!force)
+      this.view?.line({
+        kind: 'feed',
+        text: 'summarized the earlier conversation to free up context',
+      });
     this.contextUsed = this.baseTokens() + contextTokens(this.history);
   }
 
-  /** /compact. */
+  /**
+   * /compact and the panel's Compact button: summarize everything but the latest exchange, and
+   * always say what happened (it used to do nothing, silently, in a short chat).
+   */
   async compact(view: ChatView): Promise<void> {
     this.view = view;
-    await this.compactIfNeeded(true);
+    if (this.busy) {
+      view.line({ kind: 'feed', text: 'compact after the agent finishes this message' });
+      return;
+    }
+    const before = contextTokens(this.history);
+    const exchanges = this.history.filter(
+      (m) => m.role === 'user' && m.content.some((b) => b.type === 'text'),
+    ).length;
+    if (exchanges < 2) {
+      view.line({
+        kind: 'feed',
+        text: `nothing to compact yet: the conversation is one exchange (${kTokens(before)} tokens)`,
+      });
+      return;
+    }
+    await this.compactIfNeeded(true, 1);
+    this.ctx.reads?.clear();
+    const after = contextTokens(this.history);
+    view.line({
+      kind: 'feed',
+      text:
+        after < before
+          ? `compacted: ${kTokens(before)} → ${kTokens(after)} tokens`
+          : `couldn't shrink the conversation (${kTokens(before)} tokens); the summary model may have failed`,
+    });
   }
 
   private async summarize(head: readonly Message[]): Promise<string | undefined> {

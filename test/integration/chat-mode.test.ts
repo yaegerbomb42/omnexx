@@ -74,3 +74,34 @@ describe('chat mode', () => {
     );
   });
 });
+
+describe('/compact (the panel Compact button)', () => {
+  it('says there is nothing to compact in a one-exchange chat, and compacts a longer one', async () => {
+    const repo = await makeRepo();
+    const provider = new ScriptedProvider(({ request }) =>
+      request.system.some((b) => b.text.startsWith('You compress a coding conversation'))
+        ? say('Earlier: the user asked twice about the repo.')
+        : say(`answer ${'x'.repeat(4_000)}`),
+    );
+    const io: CliIO = {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new PassThrough(),
+      env: await isolatedEnv({ ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000' }),
+      cwd: repo,
+      isTTY: false,
+      makeProvider: () => provider,
+    };
+    const s = new Session(io, () => Promise.resolve(0));
+    await s.submit('/chat');
+    await s.submit('first question');
+    await s.submit('/compact');
+    expect(s.entries.map((e) => e.text).join('\n')).toMatch(/nothing to compact yet/);
+    await s.submit('second question');
+    await s.submit('third question');
+    await s.submit('/compact');
+    expect(s.entries.map((e) => e.text).join('\n')).toMatch(
+      /compacted: [\d.]+k? → [\d.]+k? tokens/,
+    );
+  }, 60_000);
+});
