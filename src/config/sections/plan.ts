@@ -49,5 +49,10 @@ export const plan = z
     helpers: z.number().int().min(0).max(8).optional(),
     /** Upper bound on milestones in the first plan; unset lets the planner size it to the goal. */
     milestones: z.number().int().min(1).max(30).optional(),
+    /**
+     * Upper bound on milestones from the task-effort setting. Applies only when the run plans;
+     * it never turns planning on (setting milestones does).
+     */
+    milestone_cap: z.number().int().min(1).max(30).optional(),
   })
   .prefault({});

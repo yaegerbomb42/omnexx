@@ -160,6 +160,15 @@ export function withoutModelsTables(toml: string): string {
   return withoutTables(toml, ['models']);
 }
 
+/** Files in a user's config home that are personal state, not configuration. */
+const PERSONAL_STATE = [
+  'agent-settings.json',
+  'quota.json',
+  'sticky-pool.json',
+  'latency.json',
+  'run-history.json',
+];
+
 async function benchConfigHome(
   home: string,
   o: {
@@ -176,6 +185,9 @@ async function benchConfigHome(
   const dest = join(home, 'config');
   if (existsSync(src)) await cp(src, dest, { recursive: true });
   else await mkdir(dest, { recursive: true });
+  // Personal settings and runtime state would make runs depend on whoever runs the bench:
+  // the agent sliders, which models are benched for quota, sticky picks, latency history.
+  await Promise.all(PERSONAL_STATE.map((f) => rm(join(dest, f), { force: true })));
   const file = join(dest, 'config.toml');
   let text = await readFile(file, 'utf-8').catch(() => '');
   if (o.model) {

@@ -158,7 +158,9 @@ export function derivedAgentLayer(merged: Plain): Plain | undefined {
       loop_think_turns: p.thinkTurns,
       loop_rounds: p.rounds,
       loop_rethinks: p.rethinks,
-      ...(p.milestones === undefined ? {} : { milestones: p.milestones }),
+      // A cap the planner honours when it plans; unlike [plan] milestones it doesn't force
+      // planning, so short goals keep the think-first loop at every effort level.
+      ...(p.milestones === undefined ? {} : { milestone_cap: p.milestones }),
     };
   }
   if (s.contextLevel !== undefined) {
