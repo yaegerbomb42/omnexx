@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.18.1
+
+- **No idling after a rate limit**: a provider cooling down after a 429 is still tried when it is
+  the only one (it could idle a run 4-5 minutes).
+- **Stops when done**: once the tests pass and the goal holds, the agent stops instead of
+  re-running tests, writing demos or scratch scripts, or updating notes.
+- **Commands never outlive the run**: the per-command cap follows the time left in the run.
+
 ## 0.18.0
 
 - **Working state, never over budget**: stale reads, failed attempts and chatter are pruned as
