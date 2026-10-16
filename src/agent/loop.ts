@@ -430,23 +430,37 @@ export async function runAgentLoop(
           const skipped: string[] = [];
           let onlyBudget = true;
           const order = callOrder(deps.models, deps.strategy);
-          // Benched models (out of quota, rate-limited) are skipped while another model can
-          // take the call. When every model is benched, they are tried anyway: one real retry
-          // beats sitting out the bench window with nothing to call (it cost 8 minutes a run).
+          // Soft blocks (a model out of quota or rate-limited, a provider cooling down after a
+          // failure) are skipped while another model can take the call; when none can, they are
+          // tried anyway: one real retry beats sitting out the window with nothing to call (each
+          // cost minutes a run). Hard blocks (a spending cap) always hold.
+          const blockOf = (m: (typeof order)[number]): string | undefined =>
+            deps.providerBlocked?.(m.provider);
+          const cooling = (b: string | undefined): boolean =>
+            b?.startsWith('cooling down') === true;
           const benched = (m: (typeof order)[number]): boolean =>
             skipsOutModels(deps.strategy) &&
             deps.modelExhausted?.(`${m.provider}:${m.id}`) === true;
-          const allBenched = order.every(benched);
+          const soft = (m: (typeof order)[number]): boolean => benched(m) || cooling(blockOf(m));
+          const hard = (m: (typeof order)[number]): boolean => {
+            const b = blockOf(m);
+            return b !== undefined && !cooling(b);
+          };
+          const anyFree = order.some((m) => !soft(m) && !hard(m));
           for (const m of order) {
-            if (!allBenched && benched(m)) {
-              onlyBudget = false;
-              skipped.push(`${m.provider}:${m.id}: out of quota`);
+            const blocked = blockOf(m);
+            if (hard(m)) {
+              if (!blocked?.includes('max_usd')) onlyBudget = false;
+              skipped.push(`${m.provider}: ${blocked ?? ''}`);
               continue;
             }
-            const blocked = deps.providerBlocked?.(m.provider);
-            if (blocked) {
-              if (!blocked.includes('max_usd')) onlyBudget = false;
-              skipped.push(`${m.provider}: ${blocked}`);
+            if (anyFree && soft(m)) {
+              onlyBudget = false;
+              skipped.push(
+                benched(m)
+                  ? `${m.provider}:${m.id}: out of quota`
+                  : `${m.provider}: ${blocked ?? ''}`,
+              );
               continue;
             }
             const req = turnRequest(ctx, messages, m.id, deps.maxTokens);
