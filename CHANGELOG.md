@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.16.1
+
+- The VS Code settings page has a color per section (agent, models, skills, providers,
+  approvals, MCP, browser), from the theme's own palette so it suits light and dark themes.
+
 ## 0.16.0
 
 - **`read_symbol`**: one call returns a definition, the types in its signature (from any file)

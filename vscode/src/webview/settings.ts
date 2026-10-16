@@ -188,12 +188,12 @@ function draw(): void {
   const page = q('settings', HTMLElement);
   page.innerHTML = `
 <div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
-<section class="set-section"><h3>Agent</h3><div id="agent-box">${agentCard.html()}</div></section>
-<section class="set-section"><h3>Chat model</h3>${modelFieldHtml()}</section>
-<section class="set-section"><h3>Your models</h3><div id="roles-box">${roles.html()}</div></section>
-<section class="set-section"><h3>Skills</h3><div id="skills-box">${skills.html()}</div></section>
-<section class="set-section"><h3>Providers</h3>${connectedHtml()}</section>
-<section class="set-section add"><h3>Add a provider</h3>
+<section class="set-section" data-sec="agent"><h3>Agent</h3><div id="agent-box">${agentCard.html()}</div></section>
+<section class="set-section" data-sec="model"><h3>Chat model</h3>${modelFieldHtml()}</section>
+<section class="set-section" data-sec="models"><h3>Your models</h3><div id="roles-box">${roles.html()}</div></section>
+<section class="set-section" data-sec="skills"><h3>Skills</h3><div id="skills-box">${skills.html()}</div></section>
+<section class="set-section" data-sec="providers"><h3>Providers</h3>${connectedHtml()}</section>
+<section class="set-section add" data-sec="add"><h3>Add a provider</h3>
   <input id="tile-search" class="field" type="search" placeholder="Search 30+ providers…" aria-label="Search providers" value="${escapeHtml(tileQuery)}" spellcheck="false">
   <div id="tile-box" class="tile-box">${tilesHtml()}</div>
   <div id="add-url-row"><label for="add-url">Base URL</label><input id="add-url" class="field" type="url" placeholder="http://localhost:8000/v1" spellcheck="false"></div>
@@ -203,16 +203,16 @@ function draw(): void {
   <p class="hint">Keys are stored in a private file on this machine (0600) and only ever shown masked.</p>
   <div class="row-end"><span id="add-status" class="status" role="status"></span><button id="add-probe" class="ghost" title="Check the URL and key without saving">Test</button><button id="add-save" class="primary">Connect</button></div>
 </section>
-<section class="set-section"><h3>Approvals</h3>
+<section class="set-section" data-sec="approvals"><h3>Approvals</h3>
   <div class="seg wide" role="group" aria-label="Approval default">
     <button data-approval-default="ask" aria-pressed="${String(!autoApproveDefault)}">Ask first</button>
     <button data-approval-default="auto" aria-pressed="${String(autoApproveDefault)}">Auto-approve</button>
   </div>
   <p class="hint">How new chats start. Auto-approve lets omnexx go outside the repo and run guarded commands without asking; hard-blocked commands stay blocked.</p>
 </section>
-<section class="set-section"><h3>MCP servers</h3><div id="mcp-box">${mcp.html()}</div></section>
-<section class="set-section"><h3>Browser</h3><div id="browser-box">${browserHtml()}</div></section>
-<section class="set-section"><h3>Advanced</h3>
+<section class="set-section" data-sec="mcp"><h3>MCP servers</h3><div id="mcp-box">${mcp.html()}</div></section>
+<section class="set-section" data-sec="browser"><h3>Browser</h3><div id="browser-box">${browserHtml()}</div></section>
+<section class="set-section" data-sec="advanced"><h3>Advanced</h3>
   <div id="engine-box" class="engine">${engineHtml()}</div>
   <div class="links">
     <button class="ghost" data-action-ext="editToml">Edit project settings (omnexx.toml)</button>
