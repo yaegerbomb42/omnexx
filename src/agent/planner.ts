@@ -84,7 +84,8 @@ function effortNote(run: Run, mode: PlannerMode): string {
 
 function effortOnly(run: Run, mode: PlannerMode): string {
   if (mode.kind !== 'initial') return '';
-  const { helpers, milestones } = run.config.plan;
+  const { helpers } = run.config.plan;
+  const milestones = run.config.plan.milestones ?? run.config.plan.milestone_cap;
   const notes = [
     ...(milestones === undefined
       ? []

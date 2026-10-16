@@ -90,4 +90,21 @@ describe('agent settings file', () => {
     expect(layer).toMatchObject({ context: { compact_at: 92_480, budget_tokens: 108_800 } });
     expect(derivedAgentLayer({ agent: {} })).toBeUndefined();
   });
+
+  it('keeps the quick think-first loop for short goals at every effort level below full planning', async () => {
+    const { tryFastPath } = await import('../../../src/core/fast-path.js');
+    const { configSchema } = await import('../../../src/config/schema.js');
+    for (const level of [1, 3, 6, 7]) {
+      const layer = derivedAgentLayer({ agent: { task_effort: level } }) as {
+        plan: Record<string, unknown>;
+      };
+      expect(layer.plan.milestones).toBeUndefined();
+      const config = configSchema.parse({ plan: layer.plan });
+      expect(tryFastPath(config, 'Fix the two bugs in the monthly report.')).toBe(true);
+    }
+    const capped = derivedAgentLayer({ agent: { task_effort: 6 } }) as {
+      plan: Record<string, unknown>;
+    };
+    expect(capped.plan.milestone_cap).toBe(6);
+  });
 });
