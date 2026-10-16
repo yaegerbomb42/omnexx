@@ -18,9 +18,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # Pull requests run the full suite once (Ubuntu, Node 24, ~3 min); main and releases run
+      # every OS and Node version, so platform-specific breaks are still caught before shipping.
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        node: [22, 24]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest"]') }}
+        node: ${{ github.event_name == 'pull_request' && fromJSON('[24]') || fromJSON('[22,24]') }}
     env:
       # No workflow uses a real key or calls a paid API. Tests isolate state in temp dirs.
       OMNEXX_CHAOS_ITERATIONS: '20'
