@@ -247,7 +247,7 @@ export function contextBreakdown(ctx: {
   return out;
 }
 
-function toolContext(run: Run, edited: Set<string>): ToolContext {
+export function toolContext(run: Run, edited: Set<string>): ToolContext {
   let n = 0;
   const { judge } = run;
   const ctx: ToolContext = {
@@ -259,7 +259,11 @@ function toolContext(run: Run, edited: Set<string>): ToolContext {
     redactor: run.redactor,
     policy: run.policy(),
     cycle: run.state.cycle,
-    maxCmdTimeoutMs: run.maxCmdTimeoutMs,
+    // Read live: the time left in the run shrinks while the cycle works, and one long command
+    // must never carry the run far past --hours (a stress script once added 20 minutes).
+    get maxCmdTimeoutMs(): number {
+      return run.maxCmdTimeoutMs;
+    },
     notesMaxTokens: run.config.context.notes_max_tokens,
     today: new Date(run.clock.now()).toISOString().slice(0, 10),
     signal: run.signal,
