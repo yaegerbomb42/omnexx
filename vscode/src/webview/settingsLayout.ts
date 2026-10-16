@@ -27,89 +27,26 @@ export interface SectionMeta {
   icon: string;
 }
 
-type Row = [SectionId, string, string, string, string];
+/** One section per line: id | title | chip | subtitle | icon. */
+const TABLE = `
+agent|Agent|Agent|How hard omnexx works and how much it keeps in mind|<path d="M12 3l2.2 5.3L20 9l-4.4 3.8L17 19l-5-3-5 3 1.4-6.2L4 9l5.8-.7z"/>
+model|Chat model|Chat|The model this chat talks to right now|<path d="M4 5h16v11H9l-5 4z"/>
+models|Your models|Models|Which models answer, and in what order|<path d="M4 6h16M4 12h11M4 18h7"/>
+skills|Skills|Skills|Know-how the agent loads only when a task needs it|<path d="M5 4h11l3 3v13H5z"/><path d="M9 10h6M9 14h6"/>
+providers|Providers|Providers|Accounts and servers omnexx can reach|<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>
+add|Add a provider|Add|Connect a hosted account, a local server or any endpoint|<circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/>
+approvals|Approvals|Approvals|What omnexx may do without asking you first|<path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/>
+mcp|MCP servers|MCP|Extra tools: a browser, your database, GitHub…|<path d="M9 3v5M15 3v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v3"/>
+browser|Browser|Browser|The browser the agent drives for web tasks|<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c3 3 3 13 0 16M12 4c-3 3-3 13 0 16"/>
+advanced|Advanced|More|Config files, the engine, restart|<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>
+`;
 
-/** id, title, chip, subtitle, icon. */
-const ROWS: readonly Row[] = [
-  [
-    'agent',
-    'Agent',
-    'Agent',
-    'How hard omnexx works and how much it keeps in mind',
-    '<path d="M12 3l2.2 5.3L20 9l-4.4 3.8L17 19l-5-3-5 3 1.4-6.2L4 9l5.8-.7z"/>',
-  ],
-  [
-    'model',
-    'Chat model',
-    'Chat',
-    'The model this chat talks to right now',
-    '<path d="M4 5h16v11H9l-5 4z"/>',
-  ],
-  [
-    'models',
-    'Your models',
-    'Models',
-    'Which models answer, and in what order',
-    '<path d="M4 6h16M4 12h11M4 18h7"/>',
-  ],
-  [
-    'skills',
-    'Skills',
-    'Skills',
-    'Know-how the agent loads only when a task needs it',
-    '<path d="M5 4h11l3 3v13H5z"/><path d="M9 10h6M9 14h6"/>',
-  ],
-  [
-    'providers',
-    'Providers',
-    'Providers',
-    'Accounts and servers omnexx can reach',
-    '<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>',
-  ],
-  [
-    'add',
-    'Add a provider',
-    'Add',
-    'Connect a hosted account, a local server or any endpoint',
-    '<circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/>',
-  ],
-  [
-    'approvals',
-    'Approvals',
-    'Approvals',
-    'What omnexx may do without asking you first',
-    '<path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
-  ],
-  [
-    'mcp',
-    'MCP servers',
-    'MCP',
-    'Extra tools: a browser, your database, GitHub…',
-    '<path d="M9 3v5M15 3v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v3"/>',
-  ],
-  [
-    'browser',
-    'Browser',
-    'Browser',
-    'The browser the agent drives for web tasks',
-    '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c3 3 3 13 0 16M12 4c-3 3-3 13 0 16"/>',
-  ],
-  [
-    'advanced',
-    'Advanced',
-    'More',
-    'Config files, the engine, restart',
-    '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
-  ],
-];
-
-export const SECTIONS: readonly SectionMeta[] = ROWS.map(([id, title, chip, subtitle, icon]) => ({
-  id,
-  title,
-  chip,
-  subtitle,
-  icon,
-}));
+export const SECTIONS: readonly SectionMeta[] = TABLE.trim()
+  .split('\n')
+  .map((line) => {
+    const [id = '', title = '', chip = '', subtitle = '', icon = ''] = line.split('|');
+    return { id: id as SectionId, title, chip, subtitle, icon };
+  });
 
 /** Sections that start folded until the person opens them. */
 export const FOLDED_BY_DEFAULT: readonly SectionId[] = ['add', 'browser', 'advanced'];
