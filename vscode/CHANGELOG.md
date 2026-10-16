@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.2
+
+- Built on omnexx 0.18.2: Stop, Pause and sending a message act at once; falling back to
+  Ollama no longer fails with `invalid message content type`.
+
 ## 0.14.1
 
 - Built on omnexx 0.18.1: no idling after a rate limit, stops as soon as the work is done and

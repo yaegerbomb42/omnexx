@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.18.2
+
+- **Stop, pause and new messages act at once**: stop kills a running command too; pause cuts
+  the current step short and /resume carries on; a message sent while the agent works is
+  answered right away.
+- **Fix**: falling back to Ollama mid-chat failed with `invalid message content type: <nil>`.
+
 ## 0.18.1
 
 - **No idling after a rate limit**: a provider cooling down after a 429 is still tried when it is
