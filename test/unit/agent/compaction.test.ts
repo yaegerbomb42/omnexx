@@ -172,21 +172,23 @@ describe('manageContext', () => {
   it('compacts into the first message, keeps the tail, and carries an earlier summary forward', async () => {
     const tight = { ...settings, compactAt: 500 };
     const events: CompactionEvent[] = [];
-    const heads: Message[][] = [];
-    const summarize = (head: readonly Message[]) => {
-      heads.push([...head]);
+    const priors: (CycleSummary | undefined)[] = [];
+    const summarize = (_head: readonly Message[], prior?: CycleSummary) => {
+      priors.push(prior);
       return Promise.resolve(summary);
     };
     const once = await manageContext(convo(6), first, tight, summarize, (e) => events.push(e));
     expect(once[0]?.content).toHaveLength(2);
-    expect(JSON.stringify(once[0])).toContain('compacted summary');
+    expect(JSON.stringify(once[0])).toContain('# Working state');
     expect(once[1]?.role).toBe('assistant');
     expect(once).toHaveLength(5);
     expect(events.at(-1)).toMatchObject({ kind: 'compacted', turnsSummarized: 4 });
 
     const grown = [...once, ...convo(3).slice(1)];
     await manageContext(grown, first, tight, summarize, () => undefined);
-    expect(JSON.stringify(heads[1]?.[0])).toContain('compacted summary');
+    // The earlier state goes to the folder as `prior`, not as text to re-summarize.
+    expect(priors[0]).toBeUndefined();
+    expect(priors[1]?.inProgress).toBe(summary.inProgress);
   });
 
   it('reports a failed compaction and keeps the context usable', async () => {

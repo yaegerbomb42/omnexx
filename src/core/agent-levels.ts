@@ -10,7 +10,7 @@ export const MAX_LEVEL = 10;
 
 /** Context budgets in tokens, one per context level (1 = bare, 10 = keep everything). */
 export const CONTEXT_BUDGETS = [
-  5_000, 10_000, 20_000, 40_000, 64_000, 96_000, 128_000, 200_000, 300_000, 500_000,
+  5_000, 10_000, 20_000, 40_000, 64_000, 96_000, 128_000, 200_000, 500_000, 1_000_000,
 ] as const;
 
 /** Time choices: how long the person wants the agent on a task. */
@@ -198,12 +198,14 @@ export const CONTEXT_LABELS = [
   'roomy',
   'large',
   'very large',
-  'huge: most of the history',
-  'everything: whole history, every context',
+  'huge: long sessions on big repos',
+  'maximum: 1M-window models (Gemini, Claude, GPT-4.1)',
 ] as const;
 
 export interface ContextProfile {
-  /** Tokens: compact (summarize older turns) past this. */
+  /** Tokens: the hard cap, the budget clamped to the model's window. */
+  budget: number;
+  /** Tokens: fold (older turns into the working state) past this, FOLD_FRACTION of the budget. */
   compactAt: number;
   /** Tokens: clear old tool results past this. */
   clearAt: number;
@@ -220,6 +222,11 @@ const KEEP_TURNS = [1, 2, 3, 4, 4, 5, 6, 8, 12, 20];
 const KEEP_TOOL_RESULTS = [1, 2, 3, 4, 6, 6, 8, 10, 16, 24];
 const PROGRESS_TAIL = [1, 2, 3, 4, 5, 5, 6, 8, 10, 15];
 const CLEAR_FRACTION = 0.6;
+/**
+ * Fold near the budget, not at it: the fold call and the reply need room, and folding rewrites
+ * the cached prefix, so it should happen rarely (see test/unit/agent/cost-sim.test.ts).
+ */
+export const FOLD_FRACTION = 0.85;
 const NOTES_FRACTION = 0.05;
 const REPO_MAP_FRACTION = 0.05;
 const NOTES_CAP = 4_000;
@@ -240,7 +247,8 @@ export function contextProfile(level: number, window?: number): ContextProfile {
   const share = (f: number, cap: number): number =>
     Math.max(MIN_SECTION_TOKENS, Math.min(cap, Math.floor(budget * f)));
   return {
-    compactAt: budget,
+    budget,
+    compactAt: Math.floor(budget * FOLD_FRACTION),
     clearAt: Math.floor(budget * CLEAR_FRACTION),
     keepTurns: at(KEEP_TURNS, l),
     keepToolResults: at(KEEP_TOOL_RESULTS, l),
@@ -277,8 +285,9 @@ export function timeBrief(t: TimeChoice): string {
 export const isTimeChoice = (v: unknown): v is TimeChoice =>
   typeof v === 'string' && (TIME_CHOICES as readonly string[]).includes(v);
 
-/** "64k", "500k", "5k". */
-export const fmtK = (n: number): string => `${String(Math.round(n / 1_000))}k`;
+/** "64k", "500k", "5k", "1M". */
+export const fmtK = (n: number): string =>
+  n >= 1_000_000 ? `${String(Math.round(n / 100_000) / 10)}M` : `${String(Math.round(n / 1_000))}k`;
 
 /** The status bar's compact summary: "effort 6/4 · ctx 64k · 30m". */
 export function levelsSummary(l: AgentLevels): string {

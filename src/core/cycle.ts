@@ -48,6 +48,7 @@ import { readTextOr } from './atomic.js';
 import { applyRemember, renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
 import { getNode, type PlanNode } from './plan.js';
+import { foldPrompt } from './fold-prompt.js';
 import { MemoryHarness } from './memory/index.js';
 import { RunningContext } from './running-context.js';
 import { closeSession } from '../tools/extra/browser.js';
@@ -299,8 +300,9 @@ async function summarizeCycle(
   run: Run,
   task: PlanNode,
   head: readonly Message[],
+  prior?: CycleSummary,
 ): Promise<CycleSummary | undefined> {
-  const prompt = `Summarize this part of a coding agent's work on task ${task.id} ("${task.title}") so it can continue without the transcript. Be concrete: file paths, commands, exact error text. Reply only by calling the answer tool.\n\n${run.redactor.text(transcriptFor(head))}`;
+  const prompt = foldPrompt(task, run.redactor.text(transcriptFor(head)), prior);
   const done = await run.cheapComplete(
     {
       system: [{ text: 'You compress a coding agent transcript into a structured summary.' }],
@@ -483,9 +485,10 @@ export async function stepAct(run: Run): Promise<void> {
         keepToolResults: run.config.context.keep_tool_results,
         compactAt: run.config.context.compact_at,
         keepTurns: run.config.context.compact_keep_turns,
+        ...(run.config.context.budget_tokens ? { budget: run.config.context.budget_tokens } : {}),
       },
-      summarize: async (head) => {
-        const s = await summarizeCycle(run, task, head).catch(() => undefined);
+      summarize: async (head, prior) => {
+        const s = await summarizeCycle(run, task, head, prior).catch(() => undefined);
         if (!s) run.events.emit('context.fact_summary', { turns: head.length });
         return ensureFacts(s ?? factSummary(head), head, edited);
       },

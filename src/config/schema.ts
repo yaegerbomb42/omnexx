@@ -281,6 +281,11 @@ export const contextSchema = z.strictObject({
   compact_at: z.number().int().positive().default(100_000),
   /** Recent assistant turns kept verbatim through a compaction. */
   compact_keep_turns: z.number().int().positive().default(4),
+  /**
+   * The user's context budget (Memory slider, clamped to 85% of the model's window). History is
+   * never sent above it: the largest blocks become digests when a fold isn't enough. Unset: no cap.
+   */
+  budget_tokens: z.number().int().positive().optional(),
   /** `task` subagents: input+output tokens and turns each child may use. */
   subagent_max_tokens: z.number().int().positive().default(150_000),
   subagent_max_turns: z.number().int().positive().default(15),

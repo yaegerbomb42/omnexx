@@ -325,6 +325,8 @@ export async function runAgentLoop(
      * a think-loop session continues one conversation, so its opening context stays the anchor.
      */
     anchor?: Message;
+    /** Text a fold keeps word for word: the think phase's analysis. */
+    pinned?: string;
   },
   deps: LoopDeps,
 ): Promise<LoopResult> {
@@ -364,7 +366,7 @@ export async function runAgentLoop(
       messages = await manageContext(
         messages,
         ctx.anchor ?? ctx.first,
-        deps.compaction.settings,
+        ctx.pinned ? { ...deps.compaction.settings, pinned: ctx.pinned } : deps.compaction.settings,
         deps.compaction.summarize,
         ({ kind, ...rest }) => {
           // Earlier read results are gone from the context now; let `read` return them again.

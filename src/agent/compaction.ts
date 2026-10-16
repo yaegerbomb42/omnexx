@@ -1,6 +1,15 @@
 import { z } from 'zod';
 import { CHARS_PER_TOKEN, estimateTokens } from '../core/tokens.js';
 import type { ContentBlock, Message } from '../providers/types.js';
+import { enforceBudget } from './budget-guard.js';
+import { pruneRules } from './prune-rules.js';
+import {
+  analysisIn,
+  mergeWorkingState,
+  parseWorkingState,
+  renderWorkingState,
+  tombstonesIn,
+} from './working-state.js';
 
 /**
  * In-cycle context control (plan §3.6), provider-neutral so it works on every endpoint:
@@ -16,6 +25,13 @@ export interface CompactionSettings {
   keepTurns: number;
   /** Clear only when at least this many tokens would go (default: MIN_CLEAR_TOKENS or clearAt/10). */
   minClearTokens?: number;
+  /**
+   * The user's context budget (the Memory slider, clamped to the window). The history never
+   * leaves manageContext above it: the largest blocks become digests when folding isn't enough.
+   */
+  budget?: number;
+  /** Text the fold keeps word for word (the think phase's analysis). */
+  pinned?: string;
 }
 
 /** Below this a clear saves less than the cache miss it causes on the next turn. */
@@ -34,6 +50,12 @@ export const cycleSummarySchema = z.object({
   nextStep: z.string().max(600),
   /** Unfinished items of the agent's `todo` checklist, as "[status] text". */
   openTodos: z.array(z.string().max(220)).max(30).optional(),
+  /** Choices made and why, one line each. */
+  decisions: z.array(z.string().max(300)).max(20).optional(),
+  /** Approaches that failed and must not be repeated, one line each. */
+  failed: z.array(z.string().max(400)).max(20).optional(),
+  /** "path — what matters about it now" (not its contents). */
+  keyFiles: z.array(z.string().max(300)).max(60).optional(),
 });
 export type CycleSummary = z.infer<typeof cycleSummarySchema>;
 
@@ -278,6 +300,9 @@ export function coerceSummary(input: unknown): CycleSummary | undefined {
   if (inProgress === undefined && nextStep === undefined) return undefined;
   const lastError = clipTo(o.lastError, 1_000);
   const todos = listOf(o.openTodos, 30, 220);
+  const decisions = listOf(o.decisions, 20, 300);
+  const failed = listOf(o.failed, 20, 400);
+  const keyFiles = listOf(o.keyFiles, 60, 300);
   const r = cycleSummarySchema.safeParse({
     done: listOf(o.done, 30, 300),
     inProgress: inProgress ?? '',
@@ -285,6 +310,9 @@ export function coerceSummary(input: unknown): CycleSummary | undefined {
     nextStep: nextStep ?? '',
     ...(lastError ? { lastError } : {}),
     ...(todos.length ? { openTodos: todos } : {}),
+    ...(decisions.length ? { decisions } : {}),
+    ...(failed.length ? { failed } : {}),
+    ...(keyFiles.length ? { keyFiles } : {}),
   });
   return r.success ? r.data : undefined;
 }
@@ -310,16 +338,11 @@ export function factSummary(head: readonly Message[]): CycleSummary {
   };
 }
 
-export function renderSummary(s: CycleSummary): string {
-  const parts = ['# Earlier in this cycle (compacted summary)'];
-  if (s.done.length) parts.push(`Done:\n${s.done.map((d) => `- ${d}`).join('\n')}`);
-  parts.push(`In progress: ${s.inProgress}`);
-  if (s.filesTouched.length) parts.push(`Files touched: ${s.filesTouched.join(', ')}`);
-  if (s.lastError) parts.push(`Last error: ${s.lastError}`);
-  if (s.openTodos?.length)
-    parts.push(`${OPEN_TODOS_HEADER}\n${s.openTodos.map((t) => `- ${t}`).join('\n')}`);
-  parts.push(`Next step: ${s.nextStep}`);
-  return parts.join('\n\n');
+export function renderSummary(s: CycleSummary, pinned?: string, tombstones?: string[]): string {
+  return renderWorkingState(s, {
+    ...(pinned ? { analysis: pinned } : {}),
+    ...(tombstones?.length ? { tombstones } : {}),
+  });
 }
 
 const OPEN_TODOS_HEADER = 'Open todos (your todo list; send the whole list again to update it):';
@@ -388,74 +411,90 @@ export function applySummary(first: Message, summary: string, tail: readonly Mes
   return [{ role: 'user', content: [...first.content, { type: 'text', text: summary }] }, ...tail];
 }
 
-export type Summarize = (head: readonly Message[]) => Promise<CycleSummary | undefined>;
+/** Fold `head` (the turns since the last fold); `prior` is the working state they continue. */
+export type Summarize = (
+  head: readonly Message[],
+  prior?: CycleSummary,
+) => Promise<CycleSummary | undefined>;
 
 export type CompactionEvent =
   | { kind: 'pruned'; pruned: number; chars: number; tokensBefore: number; tokensAfter: number }
   | { kind: 'cleared'; cleared: number; chars: number; tokensBefore: number; tokensAfter: number }
   | { kind: 'compacted'; turnsSummarized: number; tokensBefore: number; tokensAfter: number }
-  | { kind: 'compact_failed'; reason: string; tokens: number };
+  | { kind: 'compact_failed'; reason: string; tokens: number }
+  | { kind: 'digested'; digested: number; tokensBefore: number; tokensAfter: number };
 
-/** Run both steps as needed before a turn. `first` is the cycle's original first message. */
-export async function manageContext(
-  messages: Message[],
+type Emit = (e: CompactionEvent) => void;
+
+/** After a fold, the kept tail is digested down to this share of the budget (newest turn spared). */
+export const SETTLE_FRACTION = 0.4;
+
+const minClearChars = (settings: CompactionSettings): number =>
+  (settings.minClearTokens ?? Math.min(MIN_CLEAR_TOKENS, settings.clearAt / 10)) * CHARS_PER_TOKEN;
+
+interface Step {
+  messages: Message[];
+  tokens: number;
+}
+
+/**
+ * Drop superseded material: always once past `clearAt`, and below it as soon as enough would go
+ * to pay for the cache miss the rewrite causes (continuous pruning, batched by size).
+ */
+function prune(messages: Message[], settings: CompactionSettings, emit: Emit): Step {
+  const tokens = contextTokens(messages);
+  const s = pruneSuperseded(messages);
+  const r = pruneRules(s.messages, settings.keepTurns);
+  const chars = s.chars + r.chars;
+  const count = s.pruned + r.pruned;
+  if (!count || (tokens <= settings.clearAt && chars < minClearChars(settings)))
+    return { messages, tokens };
+  const after = contextTokens(r.messages);
+  emit({ kind: 'pruned', pruned: count, chars, tokensBefore: tokens, tokensAfter: after });
+  return { messages: r.messages, tokens: after };
+}
+
+function clear(step: Step, settings: CompactionSettings, emit: Emit): Step {
+  if (step.tokens <= settings.clearAt) return step;
+  const r = clearOldToolResults(step.messages, settings.keepToolResults, minClearChars(settings));
+  if (!r.cleared) return step;
+  const after = contextTokens(r.messages);
+  emit({
+    kind: 'cleared',
+    cleared: r.cleared,
+    chars: r.chars,
+    tokensBefore: step.tokens,
+    tokensAfter: after,
+  });
+  return { messages: r.messages, tokens: after };
+}
+
+const textOf = (blocks: readonly ContentBlock[]): string =>
+  blocks.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n\n');
+
+/**
+ * Fold everything older than the last `keepTurns` turns into the working state, merged with the
+ * previous one (handed to the folder as `prior`, not re-summarized from its rendering). The goal
+ * (first message), the pinned analysis and the tombstones survive word for word.
+ */
+async function fold(
+  step: Step,
   first: Message,
   settings: CompactionSettings,
-  summarize: Summarize | undefined,
-  emit: (e: CompactionEvent) => void,
+  summarize: Summarize,
+  emit: Emit,
 ): Promise<Message[]> {
-  let current = messages;
-  let tokens = contextTokens(current);
-  if (tokens > settings.clearAt) {
-    // Superseded results go first: they are dead weight even when they are recent.
-    const p = pruneSuperseded(current);
-    if (p.pruned) {
-      const after = contextTokens(p.messages);
-      emit({
-        kind: 'pruned',
-        pruned: p.pruned,
-        chars: p.chars,
-        tokensBefore: tokens,
-        tokensAfter: after,
-      });
-      current = p.messages;
-      tokens = after;
-    }
-  }
-  if (tokens > settings.clearAt) {
-    const r = clearOldToolResults(
-      current,
-      settings.keepToolResults,
-      (settings.minClearTokens ?? Math.min(MIN_CLEAR_TOKENS, settings.clearAt / 10)) *
-        CHARS_PER_TOKEN,
-    );
-    if (r.cleared) {
-      const after = contextTokens(r.messages);
-      emit({
-        kind: 'cleared',
-        cleared: r.cleared,
-        chars: r.chars,
-        tokensBefore: tokens,
-        tokensAfter: after,
-      });
-      current = r.messages;
-      tokens = after;
-    }
-  }
-  if (tokens <= settings.compactAt || !summarize) return current;
+  const { messages: current, tokens } = step;
   const split = splitForCompaction(current, settings.keepTurns);
   if (!split) {
     emit({ kind: 'compact_failed', reason: 'too few turns to compact', tokens });
     return current;
   }
-  // An earlier compaction's summary lives in the first message; carry it into the new one.
-  const earlier = current[0]?.content.slice(first.content.length) ?? [];
-  const head: Message[] = earlier.length
-    ? [{ role: 'user', content: earlier }, ...split.head]
-    : split.head;
+  const earlier = textOf(current[0]?.content.slice(first.content.length) ?? []);
+  const prior = parseWorkingState(earlier);
   let summary: CycleSummary | undefined;
   try {
-    summary = await summarize(head);
+    summary = await summarize(split.head, prior);
   } catch (err) {
     emit({ kind: 'compact_failed', reason: (err as Error).message, tokens });
     return current;
@@ -464,13 +503,49 @@ export async function manageContext(
     emit({ kind: 'compact_failed', reason: 'no summary (budget or malformed answer)', tokens });
     return current;
   }
-  const next = applySummary(first, renderSummary(summary), split.tail);
-  const after = contextTokens(next);
+  const pinned = settings.pinned?.trim() ? settings.pinned : analysisIn(earlier);
+  const state = renderSummary(mergeWorkingState(prior, summary), pinned, tombstonesIn(split.head));
+  // The fold rewrites everything after the working state anyway, so shrinking the kept tail now
+  // costs no extra cache miss, and it keeps the next fold far away (cost-sim.test.ts).
+  const folded = applySummary(first, state, split.tail);
+  const next =
+    settings.budget === undefined
+      ? folded
+      : enforceBudget(folded, Math.floor(settings.budget * SETTLE_FRACTION), true).messages;
   emit({
     kind: 'compacted',
     turnsSummarized: split.head.filter((m) => m.role === 'assistant').length,
     tokensBefore: tokens,
-    tokensAfter: after,
+    tokensAfter: contextTokens(next),
   });
   return next;
+}
+
+/**
+ * Before a turn: prune superseded material, clear old tool results past `clearAt`, fold into the
+ * working state past `compactAt`, and never leave the history over `budget`. `first` is the
+ * cycle's original first message.
+ */
+export async function manageContext(
+  messages: Message[],
+  first: Message,
+  settings: CompactionSettings,
+  summarize: Summarize | undefined,
+  emit: Emit,
+): Promise<Message[]> {
+  const cleared = clear(prune(messages, settings, emit), settings, emit);
+  const current =
+    cleared.tokens > settings.compactAt && summarize
+      ? await fold(cleared, first, settings, summarize, emit)
+      : cleared.messages;
+  if (settings.budget === undefined) return current;
+  const g = enforceBudget(current, settings.budget);
+  if (g.digested)
+    emit({
+      kind: 'digested',
+      digested: g.digested,
+      tokensBefore: contextTokens(current),
+      tokensAfter: g.tokens,
+    });
+  return g.messages;
 }

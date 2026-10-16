@@ -63,6 +63,63 @@ The lock (`{pid, host, bootId}`, created with `O_EXCL`) is stale when the pid is
 
 The judge (advisory) and the worker lifecycle are described in [judge.md](judge.md) and [workers.md](workers.md).
 
+## Working state: context within a cycle and a chat
+
+The agent doesn't carry the raw conversation forward. It works from a concise **working state**
+plus the last K turns verbatim, and the history never goes over the user's context budget (the
+Memory slider, `context_level`: 5k … 1M, clamped to 85% of the worker model's window). Code:
+`src/agent/compaction.ts` (`manageContext`), `prune-rules.ts`, `working-state.ts`,
+`budget-guard.ts`, `chat-context.ts`; the cost model is `cost-sim.ts`.
+
+Before each turn, in order:
+
+1. **Prune (free, no model call).** Superseded material becomes a one-line stub, the call and its
+   result stay paired: a read covered by a later read, a command that failed and later passed
+   (`pruneSuperseded`), a read made stale by a later edit of that file, a failed edit followed by
+   a successful one, a search whose files were all read afterwards, and the narration text of
+   turns older than the last K (`pruneRules`). It runs continuously, batched: as soon as at least
+   `MIN_CLEAR_TOKENS` (4k) would go, and always once past `clear_tool_results_at`. Every stub
+   rewrites history, so a cache miss on everything after it; the batching pays for that.
+2. **Clear** old large tool results past `clear_tool_results_at` (60% of the budget), as before.
+3. **Fold** past `compact_at` (85% of the budget, `FOLD_FRACTION`): the cheap model gets the
+   previous working state and only the turns since, and returns what they add; omnexx merges the
+   two (lists accumulate, key files merge by path, where-the-work-stands comes from the newer
+   fold), so summaries are never re-summarized. The working state has: done steps, decisions,
+   what didn't work (the doom-loop breaker's tombstones word for word), open todos, key files
+   (path + what matters, not contents), in progress, last error, next step. The goal is the first
+   message, unchanged; the think phase's analysis is pinned and kept word for word across every
+   fold; verified facts stay in their own system block. The last K turns stay verbatim, and the
+   kept tail is then **settled** to 40% of the budget (`SETTLE_FRACTION`, newest turn spared):
+   the fold rewrites everything after the state anyway, so this costs no extra cache miss and
+   keeps the next fold far away.
+4. **Guard.** If the history is still over `budget_tokens` (a fold failed, one tool result is
+   huge), the largest blocks become digests (head and tail lines plus how to get it back: the
+   bash log id for `read_log`, or the same call again), older turns first, never the first
+   message.
+
+**Cache economics.** Between folds the working-state block is byte-identical and everything after
+it is append-only (pruning only touches the tail), so providers keep serving it from the cache
+(~10% of the input price). A fold rewrites the prefix once. `test/unit/agent/cost-sim.test.ts`
+replays 20 synthetic 150-turn sessions per budget (Sonnet-class worker, Haiku-class folder,
+12k-token system prefix) against a prefix-caching provider and asserts the new policy is never
+more expensive than the old one (compact at 100% of the budget, prune only past the clear line):
+
+| Budget | Before (USD/session) | Working state | Folds before → after | Input tokens |
+| ------ | -------------------- | ------------- | -------------------- | ------------ |
+| 40k    | 8.12                 | 6.54 (−20%)   | 24.6 → 24.1          | −20%         |
+| 96k    | 10.74                | 9.70 (−10%)   | 1.1 → 1.6            | −10%         |
+| 200k   | 9.17                 | 8.98 (−2%)    | 0 → 0                | −7%          |
+| 1M     | 16.45                | 13.24 (−20%)  | 0 → 0                | −33%         |
+
+Without settling, folding at 85% on a small budget folds about twice as often and costs more than
+before; pruning on every turn instead of batching costs more on large budgets. Folding earlier
+(70%) is cheaper still on small budgets but folds more often, so more is paraphrased; 85% is the
+default.
+
+In runs the loop gets the analysis from the think-loop session (`Segment.pinned`); in the chat
+(`code-chat.ts`), the same pruning and guard run between messages (`trimChatHistory`,
+`capChatHistory`).
+
 ## Edit tools
 
 Edits are built to survive small drift and to say right away when they broke something (`src/tools/edit.ts`, `replace-lines.ts`, `anchors.ts`, `fuzzy-match.ts`, `post-edit.ts`, `ts-check.ts`).

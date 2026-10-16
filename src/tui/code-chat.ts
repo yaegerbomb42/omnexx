@@ -6,12 +6,8 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildCodemap, renderCodemap } from '../agent/codemap.js';
-import {
-  clearOldToolResults,
-  contextTokens,
-  pruneSuperseded,
-  transcriptFor,
-} from '../agent/compaction.js';
+import { capChatHistory, trimChatHistory } from '../agent/chat-context.js';
+import { contextTokens, transcriptFor } from '../agent/compaction.js';
 import { runAgentLoop, type LoopDeps } from '../agent/loop.js';
 import type { CliIO } from '../cli/io.js';
 import { resolveRunDeps } from '../cli/run-deps.js';
@@ -844,22 +840,25 @@ export class CodeChat {
   ): Promise<void> {
     const limit = this.config.context.compact_at;
     if (!force && contextTokens(this.history) < this.config.context.clear_tool_results_at) return;
-    this.history = clearOldToolResults(
-      pruneSuperseded(this.history).messages,
-      this.config.context.keep_tool_results,
-    ).messages;
+    this.history = trimChatHistory(this.history, this.config.context);
     if (!force && contextTokens(this.history) < limit) return;
     // Keep the last few exchanges verbatim; an exchange starts at a user message with text.
     const starts = this.history.flatMap((m, i) =>
       m.role === 'user' && m.content.some((b) => b.type === 'text') ? [i] : [],
     );
     const cut = starts.at(-Math.max(1, keepTurns));
-    if (cut === undefined || cut === 0) return;
+    if (cut === undefined || cut === 0) {
+      this.history = capChatHistory(this.history, this.config.context);
+      return;
+    }
     const head = this.history.slice(0, cut);
     const summary = await this.summarize(head).catch(() => undefined);
     // Your own running context survives the summary verbatim: it's where the work stands.
     const running = (await this.ctx.runningContext?.forPrompt()) ?? '';
-    if (!summary) return;
+    if (!summary) {
+      this.history = capChatHistory(this.history, this.config.context);
+      return;
+    }
     this.history = [
       {
         role: 'user',
@@ -881,6 +880,7 @@ export class CodeChat {
         kind: 'feed',
         text: 'summarized the earlier conversation to free up context',
       });
+    this.history = capChatHistory(this.history, this.config.context);
     this.contextUsed = this.baseTokens() + contextTokens(this.history);
   }
 
