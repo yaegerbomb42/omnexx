@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { storeKey } from '../../../src/auth/keys.js';
-import { resolveRunDeps } from '../../../src/cli/run-deps.js';
+import { resolveRunDeps, stallTimeoutMs } from '../../../src/cli/run-deps.js';
 import { resolvePaths } from '../../../src/core/paths.js';
 import type { CliIO } from '../../../src/cli/io.js';
 import type { CompletionRequest } from '../../../src/providers/types.js';
@@ -57,6 +57,23 @@ const req: CompletionRequest = {
   maxTokens: 10,
   messageBreakpoints: [],
 };
+
+describe('stallTimeoutMs', () => {
+  it('cuts remote endpoints at 3 minutes and leaves local ones to request_timeout', () => {
+    expect(stallTimeoutMs(undefined, 'https://api.example.com/v1')).toBe(180_000);
+    for (const url of [
+      'http://localhost:11434/v1',
+      'http://127.0.0.1:8080/v1',
+      'http://[::1]:1234/v1',
+    ])
+      expect(stallTimeoutMs(undefined, url)).toBeUndefined();
+  });
+
+  it('follows an explicit setting either way', () => {
+    expect(stallTimeoutMs('90s', 'http://127.0.0.1:9/v1')).toBe(90_000);
+    expect(stallTimeoutMs('off', 'https://api.example.com/v1')).toBeUndefined();
+  });
+});
 
 describe('resolveRunDeps endpoint kinds', () => {
   it.each([

@@ -320,6 +320,46 @@ describe('M2: stuck handling, budget and judge', () => {
     expect((await t.run.store.readState()).acceptedCommits).toBe(1);
   });
 
+  it('max_hours passing inside a cycle ends the cycle and stops the run, without calling it hung', async () => {
+    // Arrange: the first worker call hangs while 61 minutes pass on a one-hour run.
+    const plan = planner([{ id: 'M1', title: 'First', tasks: [fileTask('M1.T01')] }]);
+    const inner = new ScriptedProvider(scenario(plan, fileWorker));
+    const box: { clock?: { advance: (ms: number) => void } } = {};
+    let hung = false;
+    const provider = {
+      name: 'hangs-past-deadline',
+      complete: (req: Parameters<typeof inner.complete>[0]) => {
+        const isWorker = !req.system.some((b) => b.text.includes('planner'));
+        if (isWorker && !hung) {
+          hung = true;
+          setTimeout(() => box.clock?.advance(61 * 60_000), 30);
+          return new Promise<never>((_resolve, reject) => {
+            req.signal?.addEventListener('abort', () => {
+              reject(new Error('aborted'));
+            });
+          });
+        }
+        return inner.complete(req);
+      },
+    };
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider,
+      config: { gates: [GATE], budget: { max_hours: 1 }, stuck: { max_silence: '10h' } },
+    });
+    box.clock = t.clock;
+
+    // Act
+    const out = await superviseTest(t);
+
+    // Assert
+    expect(out.status).toBe('budget-stop');
+    expect(out.reason).toMatch(/max_hours/);
+    const events = await readEvents(t.run.store.eventsPath);
+    expect(types(events, 'budget.deadline')).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'stuck.signal' && e.signal === 'hung')).toEqual([]);
+  });
+
   it('every model out of quota: stops with budget-stop after max_provider_wait instead of waiting for ever', async () => {
     // Arrange: the planner works; then every worker call fails as if quotas were gone.
     const plan = planner([{ id: 'M1', title: 'First', tasks: [fileTask('M1.T01')] }]);

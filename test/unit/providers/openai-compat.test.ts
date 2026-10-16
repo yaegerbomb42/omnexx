@@ -1,3 +1,4 @@
+import type { ServerResponse } from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { defaultConfig } from '../../../src/config/load.js';
 import { ProviderError } from '../../../src/errors.js';
@@ -412,5 +413,127 @@ describe('quota errors in odd shapes', () => {
     const err = await p.complete(req).catch((e: unknown) => e);
     expect((err as Error).message).toMatch(/exhausted its 1,000,000 token quota/);
     expect(shouldFailover(err)).toBe(true);
+  });
+});
+
+describe('stall cut-off', () => {
+  const usage = { prompt_tokens: 10, completion_tokens: 2 };
+  const sse = (res: ServerResponse, end = true) => {
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'hi' } }] })}\n\n`);
+    if (!end) return;
+    res.write(
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage })}\n\n`,
+    );
+    res.end('data: [DONE]\n\n');
+  };
+  const make = (url: string, stallTimeoutMs?: number) =>
+    new OpenAICompatProvider({
+      name: 'pool',
+      baseUrl: url,
+      apiKey: 'k',
+      timeoutMs: 10_000,
+      stallTimeoutMs,
+    });
+  const plain: CompletionRequest = { ...req };
+  delete plain.toolChoice;
+  const streamed = (r: { body: string }) => (JSON.parse(r.body) as { stream?: boolean }).stream;
+
+  it('streams a plain request when set, and assembles the same answer and usage', async () => {
+    const srv = await mockServer((_r, res) => {
+      sse(res);
+    });
+    const out = await make(srv.url, 1_000).complete(plain);
+    expect(srv.requests.map(streamed)).toEqual([true]);
+    expect(out.content).toEqual([{ type: 'text', text: 'hi' }]);
+    expect(out.usage).toMatchObject({ uncached: 10, output: 2 });
+  });
+
+  it('leaves plain requests alone without it', async () => {
+    const srv = await mockServer((_r, res) => {
+      json(res, 200, { choices: [{ message: { content: 'hi' } }], usage });
+    });
+    await make(srv.url).complete(plain);
+    expect(srv.requests.map(streamed)).toEqual([undefined]);
+  });
+
+  it('cuts a server that never answers, retryably, long before the request timeout', async () => {
+    const srv = await mockServer(() => undefined);
+    const start = Date.now();
+    const err = await make(srv.url, 150)
+      .complete(plain)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(err).toMatchObject({ retryable: true });
+    expect((err as Error).message).toMatch(/stalled before responding: no data for 150ms/);
+    expect(Date.now() - start).toBeLessThan(5_000);
+  });
+
+  it('cuts a stream that stops mid-answer', async () => {
+    const srv = await mockServer((_r, res) => {
+      sse(res, false);
+    });
+    const err = await make(srv.url, 150)
+      .complete(plain)
+      .catch((e: unknown) => e);
+    expect(err).toMatchObject({ retryable: true });
+    expect((err as Error).message).toMatch(/stalled mid-answer/);
+  });
+
+  it('keeps a slow but steady stream going past the window', async () => {
+    const srv = await mockServer((_r, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      let n = 0;
+      const tick = setInterval(() => {
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'x' } }] })}\n\n`);
+        if (++n === 5) {
+          clearInterval(tick);
+          res.write(
+            `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage })}\n\n`,
+          );
+          res.end('data: [DONE]\n\n');
+        }
+      }, 80);
+    });
+    const out = await make(srv.url, 150).complete(plain);
+    expect(out.content).toEqual([{ type: 'text', text: 'xxxxx' }]);
+  });
+
+  it('asks plainly from then on after a server answers a stream with JSON', async () => {
+    const srv = await mockServer((_r, res) => {
+      json(res, 200, { choices: [{ message: { content: 'hi' } }], usage });
+    });
+    const p = make(srv.url, 1_000);
+    expect((await p.complete(plain)).content).toEqual([{ type: 'text', text: 'hi' }]);
+    await p.complete(plain);
+    expect(srv.requests.map(streamed)).toEqual([true, undefined]);
+  });
+
+  it('falls back to plain requests for a server that refuses to stream, and remembers', async () => {
+    const srv = await mockServer((r, res) => {
+      if (streamed(r)) json(res, 400, { error: { message: 'stream is not supported' } });
+      else json(res, 200, { choices: [{ message: { content: 'hi' } }], usage });
+    });
+    const p = make(srv.url, 1_000);
+    await p.complete(plain);
+    await p.complete(plain);
+    expect(srv.requests.map(streamed)).toEqual([true, undefined, undefined]);
+  });
+
+  it('stops streaming plain requests when a stream leaves usage out', async () => {
+    const srv = await mockServer((r, res) => {
+      if (!streamed(r)) {
+        json(res, 200, { choices: [{ message: { content: 'hi' } }], usage });
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'hi' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+      );
+    });
+    const p = make(srv.url, 1_000);
+    await p.complete(plain);
+    await p.complete(plain);
+    expect(srv.requests.map(streamed)).toEqual([true, undefined]);
   });
 });

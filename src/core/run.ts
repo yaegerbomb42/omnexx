@@ -78,10 +78,11 @@ export class Run {
     return AbortSignal.any([this.abort.signal, this.cycleAbort.signal]);
   }
 
-  /** A fresh cycle: a new abort switch, and no hang recorded. */
+  /** A fresh cycle: a new abort switch, and no hang or deadline recorded. */
   newCycle(): void {
     this.cycleAbort = new AbortController();
     this.hang = undefined;
+    this.deadlineHit = false;
   }
 
   /** The watchdog's way out of a hung cycle: abort it, keep the run. */
@@ -89,6 +90,24 @@ export class Run {
     if (this.cycleAbort.signal.aborted) return;
     this.hang = reason;
     this.cycleAbort.abort(new Error(reason));
+  }
+
+  /**
+   * max_hours passed inside a cycle: end it now. Unlike a hang its partial work is verified as
+   * usual (kept if the gates pass), and the run stops at the next cycle boundary.
+   */
+  endCycleAtDeadline(): void {
+    if (this.cycleAbort.signal.aborted) return;
+    this.deadlineHit = true;
+    this.cycleAbort.abort(new Error('max_hours reached'));
+  }
+
+  /** Whether this cycle was ended by `endCycleAtDeadline`. */
+  deadlineHit = false;
+
+  /** max_hours in ms. */
+  get deadlineMs(): number {
+    return this.config.budget.max_hours * 3_600_000;
   }
 
   readonly startedAt: number;

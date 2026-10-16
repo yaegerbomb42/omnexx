@@ -203,7 +203,8 @@ async function benchConfigHome(
   }
   if (!o.judge) text = withoutTables(text, ['judge']);
   if (o.endpoint)
-    text += `\n[providers.endpoints.bench]\nkind = "openai"\nbase_url = ${JSON.stringify(o.endpoint)}\nfree = true\n`;
+    // The meter listens on 127.0.0.1, which would turn the stall cut-off off: the upstream is remote.
+    text += `\n[providers.endpoints.bench]\nkind = "openai"\nbase_url = ${JSON.stringify(o.endpoint)}\nfree = true\nstall_timeout = "3m"\n`;
   if (o.context === 'full')
     text += `\n[context.sections]\n${ALL_PINNED.map((s) => `${s} = "pinned"`).join('\n')}\n`;
   if (!/^\[beyond\]/m.test(text)) text += `\n[beyond]\nenabled = ${String(o.beyond)}\n`;

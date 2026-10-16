@@ -351,6 +351,10 @@ const budgetDailyResumeLine: Formatter = () => {
   return ['quiet', 'info', 'budget', 'daily window rolled; resuming'];
 };
 
+const budgetDeadlineLine: Formatter = () => {
+  return ['quiet', 'warn', 'budget', 'max_hours reached mid-task; checking the work so far'];
+};
+
 const controlPausedLine: Formatter = () => {
   return ['quiet', 'warn', 'paused', ''];
 };
@@ -481,6 +485,7 @@ const FORMATTERS: Partial<Record<string, Formatter>> = {
   'budget.preflight_stop': budgetStopLine,
   'budget.daily_pause': budgetDailyPauseLine,
   'budget.daily_resume': budgetDailyResumeLine,
+  'budget.deadline': budgetDeadlineLine,
   'control.paused': controlPausedLine,
   'control.resumed': controlResumedLine,
   'judge.next_move': judgeNextMoveLine,

@@ -134,6 +134,12 @@ export async function startMeter(ep: Endpoint, log?: string, tag?: string): Prom
       const dump = process.env.BENCH_METER_DUMP;
       if (dump && body !== undefined) await appendFile(dump, `${body}\n`);
       totals = { ...totals, requests: totals.requests + 1 };
+      // A client that gave up (stall cut-off, stop) ends the upstream call too: an abandoned
+      // request otherwise holds an upstream slot until the server's own timeout.
+      const gone = new AbortController();
+      res.on('close', () => {
+        if (!res.writableFinished) gone.abort();
+      });
       try {
         const up = await fetch(`${upstream}${path}`, {
           method: req.method ?? 'GET',
@@ -143,6 +149,7 @@ export async function startMeter(ep: Endpoint, log?: string, tag?: string): Prom
             'api-key': ep.apiKey,
           },
           ...(body === undefined ? {} : { body }),
+          signal: gone.signal,
         });
         res.writeHead(up.status, {
           'content-type': up.headers.get('content-type') ?? 'application/json',

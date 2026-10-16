@@ -107,6 +107,22 @@ removes idle time, or protects the pass rate.
 - **Verify:** a scripted run that stops calling the model is recorded `idle` within 3 min and
   the process has exited. A `runBash` whose child ignores the signal returns in 5 min. A rerun
   of jimmy10 tasks 03 and 04 shows no job whose wall time is the outer timeout.
+- **Status (2026-10-16), revised by evidence:** the 180 saved run logs under `bench/results/`
+  show what the silence was. Every uncovered gap over 2 min was a model request that hung
+  until a timeout: ~900 s ("operation was aborted due to timeout", the 10 min
+  `request_timeout` plus retries) or 300–500 s (the bench meter's upstream `fetch` hitting
+  Node's 300 s header timeout), then retry windows of ~1,000 s. Unattended worker calls didn't
+  stream, so nothing could tell a hung call from a slow one. A generic "3 min idle → stop"
+  would have killed legitimate long gates and still waited on the hung call, so it was not
+  built. What was built:
+  - `stall_timeout` per endpoint (default 3 min remote, off for localhost; the bench sets it
+    for its 127.0.0.1 meter). Requests stream, and one that sends no bytes for that long,
+    before headers or between chunks, is cut as a retryable error. A server that refuses
+    streams, answers with JSON, or omits usage in a stream is asked plainly from then on.
+  - max_hours enforced inside a cycle: the watchdog ends the cycle at the deadline, its partial
+    work is verified as usual (not counted as hung), and the run stops at the boundary.
+  - The bench meter cancels the upstream call when its client gives up.
+  - `runBash` settles at its timeout whether or not the child exits.
 
 ### 5. Bench efficiency columns and a correct summary row
 

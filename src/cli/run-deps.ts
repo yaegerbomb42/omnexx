@@ -24,6 +24,16 @@ export interface ResolvedDeps {
   deps: RunDeps;
 }
 
+const DEFAULT_STALL_MS = 3 * 60_000;
+const LOCAL_URL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])[:/]/i;
+
+/** An endpoint's stall cut-off: as configured, else 3 min for remote endpoints and off for local. */
+export function stallTimeoutMs(setting: string | undefined, baseUrl: string): number | undefined {
+  if (setting === 'off') return undefined;
+  if (setting !== undefined) return parseDuration(setting);
+  return LOCAL_URL.test(baseUrl) ? undefined : DEFAULT_STALL_MS;
+}
+
 /** "auto" = 1h for runs longer than an hour (gates between cycles outlast 5 minutes). */
 export function prefixTtl(setting: 'auto' | '5m' | '1h', maxHours: number): '5m' | '1h' {
   if (setting !== 'auto') return setting;
@@ -90,6 +100,7 @@ export async function resolveRunDeps(
       baseUrl: ep.base_url,
       apiKey,
       timeoutMs: parseDuration(ep.request_timeout),
+      stallTimeoutMs: stallTimeoutMs(ep.stall_timeout, ep.base_url),
       ...(ep.auth ? { auth: ep.auth } : {}),
       ...(ep.headers ? { headers: ep.headers } : {}),
       ...(io.fetch ? { fetch: io.fetch } : {}),

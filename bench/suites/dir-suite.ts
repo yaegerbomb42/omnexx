@@ -83,6 +83,7 @@ async function runBash(
   script: string | null,
   cwd: string,
   inline?: string,
+  timeoutMs = CHECK_TIMEOUT_MS,
 ): Promise<number | null> {
   const args = script ? [script] : ['-c', inline ?? 'true'];
   // node's own folder, then the system ones: a check never runs a binary from a folder the
@@ -97,14 +98,34 @@ async function runBash(
   // The PATH above is fixed on purpose: node's own folder (whichever node runs the bench) and
   // the system folders, nothing from the caller's environment.
   const child = spawn('bash', args, { cwd, env, stdio: 'ignore', detached: true }); // NOSONAR
-  const timer = setTimeout(() => {
+  return settleWithin(once(child, 'exit') as Promise<[number | null]>, timeoutMs, () => {
     try {
       if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
     } catch {
       // Already gone.
     }
-  }, CHECK_TIMEOUT_MS);
-  const [code] = (await once(child, 'exit')) as [number | null];
-  clearTimeout(timer);
-  return code;
+  });
+}
+
+/**
+ * The exit code, or null once `ms` pass: `kill` runs then and the wait ends whether or not the
+ * process actually exits (one stuck in uninterruptible I/O would otherwise hold the bench).
+ */
+export async function settleWithin(
+  exit: Promise<[number | null]>,
+  ms: number,
+  kill: () => void,
+): Promise<number | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      kill();
+      resolve(null);
+    }, ms);
+  });
+  try {
+    return await Promise.race([exit.then(([code]) => code), timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
 }

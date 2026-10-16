@@ -4,7 +4,30 @@ import { tmpdir } from 'node:os';
 import { cpSync, rmSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { getJimmy10Suite } from '../../../bench/suites/index.ts';
+import { settleWithin } from '../../../bench/suites/dir-suite.ts';
 import type { TaskDef } from '../../../bench/types.ts';
+
+describe('settleWithin', () => {
+  it('returns the exit code when the process ends in time', async () => {
+    let killed = false;
+    const code = await settleWithin(Promise.resolve([3]), 1_000, () => {
+      killed = true;
+    });
+    expect(code).toBe(3);
+    expect(killed).toBe(false);
+  });
+
+  it('kills and returns null at the deadline even if the process never exits', async () => {
+    let killed = false;
+    const start = Date.now();
+    const code = await settleWithin(new Promise<[number | null]>(() => undefined), 50, () => {
+      killed = true;
+    });
+    expect(code).toBeNull();
+    expect(killed).toBe(true);
+    expect(Date.now() - start).toBeLessThan(2_000);
+  });
+});
 
 const task01: TaskDef = {
   id: 'task-01-fix-typescript-errors',
