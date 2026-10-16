@@ -60,7 +60,11 @@ describe('agent settings file', () => {
     const { config } = await loadConfig({ cwd: await tempDir(), env });
     expect(config.agent).toMatchObject({ task_effort: 2, turn_effort: 7, context_level: 1 });
     expect(config.plan).toMatchObject({ mode: 'fast', loop_think_turns: 3, loop_rounds: 3 });
-    expect(config.context).toMatchObject({ compact_at: 5_000, compact_keep_turns: 1 });
+    expect(config.context).toMatchObject({
+      compact_at: 4_250,
+      budget_tokens: 5_000,
+      compact_keep_turns: 1,
+    });
     expect(config.context.sections.codemap).toBe('hidden');
     expect(config.budget.max_hours).toBe(0.5);
     expect(config.providers.anthropic.max_tokens).toBe(4_096);
@@ -83,7 +87,7 @@ describe('agent settings file', () => {
       agent: { context_level: 10 },
       models: { worker: ['groq:x'], profiles: { 'groq:x': { context: 128_000 } } },
     });
-    expect(layer).toMatchObject({ context: { compact_at: 108_800 } });
+    expect(layer).toMatchObject({ context: { compact_at: 92_480, budget_tokens: 108_800 } });
     expect(derivedAgentLayer({ agent: {} })).toBeUndefined();
   });
 });

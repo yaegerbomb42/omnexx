@@ -132,7 +132,13 @@ export async function actAsThinkLoop(
               },
             };
       return runAgentLoop(
-        { ...inputs.ctx, history: s.history, first: s.first, anchor: s.anchor },
+        {
+          ...inputs.ctx,
+          history: s.history,
+          first: s.first,
+          anchor: s.anchor,
+          ...(s.pinned ? { pinned: s.pinned } : {}),
+        },
         chain === 'think' || !watch ? rest : { ...rest, watch },
       );
     },

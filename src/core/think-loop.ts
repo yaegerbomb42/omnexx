@@ -61,6 +61,8 @@ export interface Segment {
   anchor: Message;
   /** Turn cap for this segment (think steps), below the cycle's own. */
   maxTurns?: number;
+  /** The analysis so far: a fold keeps it word for word. */
+  pinned?: string;
 }
 
 export interface CheckOutcome {
@@ -195,7 +197,12 @@ export async function runThinkLoop(
     const seg = step ? continueWith(messages, step.text) : { history: [], first: anchor };
     const maxTurns = step ? step.maxTurns : limits.thinkTurns;
     const r = await io.segment(
-      { ...seg, anchor, ...(maxTurns === undefined ? {} : { maxTurns }) },
+      {
+        ...seg,
+        anchor,
+        ...(maxTurns === undefined ? {} : { maxTurns }),
+        ...(analysis ? { pinned: analysis } : {}),
+      },
       step?.chain ?? 'think',
     );
     messages = r.messages;

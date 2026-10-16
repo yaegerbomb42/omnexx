@@ -1,3 +1,4 @@
+import { knownWindow } from '../providers/context-windows.js';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { OmnexxPaths } from '../core/paths.js';
@@ -131,14 +132,15 @@ function setLevels(agentTable: unknown): SetLevels {
   };
 }
 
-/** The first worker model's context window, when a profile names it. */
-function workerWindow(merged: Plain): number | undefined {
+/** The first worker model's context window: its profile's, else the family's documented one. */
+export function workerWindow(merged: Plain): number | undefined {
   const models = isPlain(merged.models) ? merged.models : {};
   const worker = models.worker;
   const ref = Array.isArray(worker) ? (worker[0] as unknown) : worker;
+  if (typeof ref !== 'string') return undefined;
   const profiles = isPlain(models.profiles) ? models.profiles : {};
-  const profile = typeof ref === 'string' ? profiles[ref] : undefined;
-  return isPlain(profile) ? num(profile.context) : undefined;
+  const profile = profiles[ref];
+  return (isPlain(profile) ? num(profile.context) : undefined) ?? knownWindow(ref);
 }
 
 /**
@@ -163,6 +165,7 @@ export function derivedAgentLayer(merged: Plain): Plain | undefined {
     const c = contextProfile(s.contextLevel, workerWindow(merged));
     out.context = {
       compact_at: c.compactAt,
+      budget_tokens: c.budget,
       clear_tool_results_at: c.clearAt,
       compact_keep_turns: c.keepTurns,
       keep_tool_results: c.keepToolResults,

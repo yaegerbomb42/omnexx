@@ -58,18 +58,30 @@ describe('agent levels', () => {
     expect(thinkingBudget(10)).toBe(32_000);
   });
 
-  it('gives ten context budgets from 5k to 500k', () => {
+  it('gives ten context budgets from 5k to 1M', () => {
     expect(contextBudget(1)).toBe(5_000);
     expect(contextBudget(5)).toBe(64_000);
-    expect(contextBudget(10)).toBe(500_000);
+    expect(contextBudget(10)).toBe(1_000_000);
+    expect(contextBudget(9)).toBe(500_000);
   });
 
-  it('keeps only the bare minimum at 5k and everything at 500k', () => {
+  it('keeps only the bare minimum at 5k and everything at 1M', () => {
     const bare = contextProfile(1);
-    expect(bare).toMatchObject({ compactAt: 5_000, clearAt: 3_000, keepTurns: 1, bare: true });
+    expect(bare).toMatchObject({
+      budget: 5_000,
+      compactAt: 4_250,
+      clearAt: 3_000,
+      keepTurns: 1,
+      bare: true,
+    });
     expect(bare.repoMapMaxTokens).toBeLessThanOrEqual(250);
     const all = contextProfile(10);
-    expect(all).toMatchObject({ compactAt: 500_000, keepTurns: 20, bare: false });
+    expect(all).toMatchObject({
+      budget: 1_000_000,
+      compactAt: 850_000,
+      keepTurns: 20,
+      bare: false,
+    });
     expect(all.repoMapMaxTokens).toBe(12_000);
   });
 
@@ -77,7 +89,7 @@ describe('agent levels', () => {
     expect(clampToWindow(500_000, 128_000)).toBe(108_800);
     expect(clampToWindow(5_000, 128_000)).toBe(5_000);
     expect(clampToWindow(64_000, undefined)).toBe(64_000);
-    expect(contextProfile(10, 200_000).compactAt).toBe(170_000);
+    expect(contextProfile(10, 200_000)).toMatchObject({ budget: 170_000, compactAt: 144_500 });
   });
 
   it('turns time into hours and a planning hint', () => {

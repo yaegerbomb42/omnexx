@@ -20,7 +20,8 @@ export type SliderId = 'taskEffort' | 'turnEffort' | 'contextLevel' | 'time' | '
 
 const LEVEL_STEPS = 10;
 
-const k = (n: number): string => `${String(Math.round(n / 1_000))}k`;
+const k = (n: number): string =>
+  n >= 1_000_000 ? `${String(Math.round(n / 100_000) / 10)}M` : `${String(Math.round(n / 1_000))}k`;
 
 /** The slider position (1-based) for a setting's value. */
 export function position(id: SliderId, l: AgentLevels, meta: AgentMeta): number {
