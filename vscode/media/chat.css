@@ -3179,3 +3179,97 @@ textarea.ci-edit {
   font-size: var(--fs-sm);
   color: var(--muted);
 }
+
+/* Settings: each section gets its own color from the theme's chart palette (light and dark). */
+.settings .set-section[data-sec='agent'] {
+  --sec: var(--vscode-charts-purple, #b180d7);
+}
+.settings .set-section[data-sec='model'] {
+  --sec: var(--vscode-charts-blue, #3794ff);
+}
+.settings .set-section[data-sec='models'] {
+  --sec: var(--vscode-charts-blue, #3794ff);
+}
+.settings .set-section[data-sec='skills'] {
+  --sec: var(--vscode-charts-yellow, #cca700);
+}
+.settings .set-section[data-sec='providers'] {
+  --sec: var(--vscode-charts-green, #89d185);
+}
+.settings .set-section[data-sec='add'] {
+  --sec: var(--vscode-charts-green, #89d185);
+}
+.settings .set-section[data-sec='approvals'] {
+  --sec: var(--vscode-charts-orange, #d18616);
+}
+.settings .set-section[data-sec='mcp'] {
+  --sec: var(--vscode-charts-red, #f14c4c);
+}
+.settings .set-section[data-sec='browser'] {
+  --sec: var(--vscode-terminal-ansiCyan, #29b8db);
+}
+.settings .set-section[data-sec='advanced'] {
+  --sec: var(--vscode-descriptionForeground, #9d9d9d);
+}
+
+.settings .set-section[data-sec] {
+  border: 1px solid color-mix(in srgb, var(--sec) 35%, var(--line));
+  border-left: 3px solid var(--sec);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--sec) 10%, var(--card)),
+    var(--card) 60%
+  );
+  accent-color: var(--sec);
+}
+
+.settings .set-section[data-sec] > h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  color: var(--sec);
+  -webkit-text-fill-color: var(--sec);
+}
+
+.settings .set-section[data-sec] > h3::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sec);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--sec) 60%, transparent);
+}
+
+.settings .set-section[data-sec] button.primary {
+  background: var(--sec);
+  border-color: var(--sec);
+  color: var(--vscode-button-foreground, #fff);
+}
+
+.settings .set-section[data-sec] .field:focus,
+.settings .set-section[data-sec] .seg button[aria-pressed='true'],
+.settings .set-section[data-sec] .ptile.on {
+  border-color: var(--sec);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--sec) 50%, transparent);
+}
+
+.settings .set-section[data-sec] .pill.ok {
+  border-color: color-mix(in srgb, var(--vscode-charts-green, #89d185) 60%, transparent);
+  color: var(--vscode-charts-green, #89d185);
+}
+
+.settings .set-section[data-sec] .pill.warn {
+  border-color: color-mix(in srgb, var(--vscode-charts-orange, #d18616) 60%, transparent);
+  color: var(--vscode-charts-orange, #d18616);
+}
+
+.settings .set-section[data-sec] input[type='range'] {
+  accent-color: var(--sec);
+}
+
+/* Dark text on the light section colors keeps the primary button readable. */
+.settings .set-section[data-sec] button.primary {
+  color: var(--vscode-editor-background, #1e1e1e);
+  font-weight: 600;
+}

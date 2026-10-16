@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.1
+
+- **More color in Settings**: each section has its own color (edge, tint, heading, sliders and
+  buttons), taken from your theme's palette.
+
 ## 0.12.0
 
 - Built on omnexx 0.16.0: `read_symbol`, verified repo facts, and checks that start while the
