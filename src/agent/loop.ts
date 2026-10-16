@@ -428,8 +428,16 @@ export async function runAgentLoop(
           let triedAny = false;
           const skipped: string[] = [];
           let onlyBudget = true;
-          for (const m of callOrder(deps.models, deps.strategy)) {
-            if (skipsOutModels(deps.strategy) && deps.modelExhausted?.(`${m.provider}:${m.id}`)) {
+          const order = callOrder(deps.models, deps.strategy);
+          // Benched models (out of quota, rate-limited) are skipped while another model can
+          // take the call. When every model is benched, they are tried anyway: one real retry
+          // beats sitting out the bench window with nothing to call (it cost 8 minutes a run).
+          const benched = (m: (typeof order)[number]): boolean =>
+            skipsOutModels(deps.strategy) &&
+            deps.modelExhausted?.(`${m.provider}:${m.id}`) === true;
+          const allBenched = order.every(benched);
+          for (const m of order) {
+            if (!allBenched && benched(m)) {
               onlyBudget = false;
               skipped.push(`${m.provider}:${m.id}: out of quota`);
               continue;

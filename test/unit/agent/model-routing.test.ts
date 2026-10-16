@@ -109,6 +109,14 @@ describe('fallback on quota', () => {
     expect(await f.call()).toEqual(['a']);
   });
 
+  it('still calls a model, without waiting, when every model in the list is benched', async () => {
+    const f = await fixture('fallback');
+    for (const p of ['a', 'b', 'c']) f.ledger.mark(`${p}:m`, RATE_LIMITED_FOR_MS);
+    const before = f.clock.now();
+    expect(await f.call()).toEqual(['a']);
+    expect(f.clock.now() - before).toBeLessThan(1_000);
+  });
+
   it('walks further down the list when #2 runs out too', async () => {
     const f = await fixture('fallback');
     f.outcome.a = 'quota';
