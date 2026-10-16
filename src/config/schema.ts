@@ -147,6 +147,13 @@ export const endpointSchema = z.strictObject({
   free: z.boolean().default(false),
   request_timeout: durationString.default('10m'),
   /**
+   * A request that sends nothing for this long (no headers, no next chunk) is cut and retried,
+   * instead of waiting out request_timeout. Requests stream so this shows. Unset: 3m for remote
+   * endpoints, off for localhost (a slow machine can take minutes to read a long prompt); "off"
+   * turns it off.
+   */
+  stall_timeout: z.union([durationString, z.literal('off')]).optional(),
+  /**
    * For pools that route a `*-random` model to a different model each request: omnexx picks one
    * real model itself and sticks to it (warm prompt cache) until it runs out of quota.
    */

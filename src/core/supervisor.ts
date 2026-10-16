@@ -1111,6 +1111,9 @@ export async function supervise(
     const silent = run.clock.now() - lastActivity;
     if (run.state.phase === 'act' && !run.paused && silent >= maxSilence)
       run.abortCycle(`no activity for ${formatDuration(silent)} while working`);
+    // Caps are checked between cycles; one long cycle must not carry the run past max_hours.
+    else if (run.state.phase === 'act' && !run.paused && run.elapsedMs() >= run.deadlineMs)
+      run.endCycleAtDeadline();
   }, opts.controlPollMs ?? 1_000);
   watcher.unref();
 

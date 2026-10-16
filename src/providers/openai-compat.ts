@@ -19,6 +19,41 @@ export interface OpenAICompatOptions {
   auth?: EndpointAuth | undefined;
   /** Extra headers on every request. */
   headers?: Readonly<Record<string, string>> | undefined;
+  /**
+   * With this set, every request streams and is cut (retryably) when no bytes arrive for this
+   * long, before the headers or between chunks: a hung call fails in minutes, not after
+   * `timeoutMs`. Unset: only requests with `onDelta` stream, and only `timeoutMs` applies.
+   */
+  stallTimeoutMs?: number | undefined;
+}
+
+/** Arms on creation; `touch` restarts the window; `fired` says whether it cut the request. */
+function stallWatch(ms: number): {
+  signal: AbortSignal;
+  touch: () => void;
+  stop: () => void;
+  fired: () => boolean;
+} {
+  const ctl = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const span = ms < 1_000 ? `${String(ms)}ms` : `${String(Math.round(ms / 1_000))}s`;
+      ctl.abort(new Error(`no data for ${span}`));
+    }, ms);
+  };
+  arm();
+  return {
+    signal: ctl.signal,
+    touch: () => {
+      if (!ctl.signal.aborted) arm();
+    },
+    stop: () => {
+      clearTimeout(timer);
+    },
+    fired: () => ctl.signal.aborted,
+  };
 }
 
 type ChatPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
@@ -138,6 +173,11 @@ export class OpenAICompatProvider implements Provider {
   private readonly completionTokens = new Set<string>();
   /** Off once the server refused `parallel_tool_calls` (some local servers reject unknown fields). */
   private parallelToolCalls = true;
+  /**
+   * Stream requests that didn't ask to, so stalls show (see `stallTimeoutMs`). Off once the
+   * server refuses a stream, answers one with plain JSON, or leaves usage out of it.
+   */
+  private streamForStall = true;
 
   constructor(private readonly opts: OpenAICompatOptions) {
     this.name = opts.name;
@@ -176,6 +216,10 @@ export class OpenAICompatProvider implements Provider {
           this.parallelToolCalls = false;
           continue;
         }
+        if (!req.onDelta && this.streamsForStall() && /stream/i.test(err.message)) {
+          this.streamForStall = false;
+          continue;
+        }
         // A model without reasoning knobs: drop the turn effort and send the plain request.
         if (sendEffort && req.turnEffort !== undefined && /reasoning/i.test(err.message)) {
           sendEffort = false;
@@ -187,10 +231,30 @@ export class OpenAICompatProvider implements Provider {
     }
   }
 
+  private streamsForStall(): boolean {
+    return this.streamForStall && (this.opts.stallTimeoutMs ?? 0) > 0;
+  }
+
   private async attempt(
     req: CompletionRequest,
     thinking: boolean | undefined,
     sendEffort = true,
+  ): Promise<CompletionResponse> {
+    const forStall = !req.onDelta && this.streamsForStall();
+    const stall = req.onDelta || forStall ? stallWatchFor(this.opts.stallTimeoutMs) : undefined;
+    try {
+      return await this.request(req, thinking, sendEffort, Boolean(req.onDelta) || forStall, stall);
+    } finally {
+      stall?.stop();
+    }
+  }
+
+  private async request(
+    req: CompletionRequest,
+    thinking: boolean | undefined,
+    sendEffort: boolean,
+    stream: boolean,
+    stall: ReturnType<typeof stallWatch> | undefined,
   ): Promise<CompletionResponse> {
     const effort = sendEffort ? openaiReasoning(req) : undefined;
     const body = {
@@ -214,11 +278,15 @@ export class OpenAICompatProvider implements Provider {
       ...(req.tools.length && !req.toolChoice && this.parallelToolCalls
         ? { parallel_tool_calls: true }
         : {}),
-      ...(req.onDelta ? { stream: true, stream_options: { include_usage: true } } : {}),
+      ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}),
       ...(thinking === undefined ? {} : { enable_thinking: thinking }),
       ...(effort ? { reasoning_effort: effort } : {}),
     };
-    const signals = [AbortSignal.timeout(this.opts.timeoutMs), ...(req.signal ? [req.signal] : [])];
+    const signals = [
+      AbortSignal.timeout(this.opts.timeoutMs),
+      ...(req.signal ? [req.signal] : []),
+      ...(stall ? [stall.signal] : []),
+    ];
     let res: Response;
     try {
       res = await (this.opts.fetch ?? fetch)(
@@ -236,20 +304,25 @@ export class OpenAICompatProvider implements Provider {
     } catch (err) {
       if (req.signal?.aborted)
         throw new ProviderError('request aborted', { retryable: false, cause: err });
+      if (stall?.fired()) throw this.stalled(stall, 'before responding', err);
       throw new ProviderError(`network error talking to ${this.name}: ${(err as Error).message}`, {
         retryable: true,
         cause: err,
       });
     }
+    stall?.touch();
+    const sse = stream && res.ok && res.body && !isJson(res);
+    if (stream && !req.onDelta && res.ok && !sse) this.streamForStall = false;
     let data: ChatResponse;
     try {
       data =
-        req.onDelta && res.ok && res.body
-          ? await readStream(res.body, req.onDelta)
+        sse && res.body
+          ? await readStream(res.body, req.onDelta ?? noDelta, () => stall?.touch())
           : ((await res.json()) as ChatResponse);
     } catch (err) {
       if (req.signal?.aborted)
         throw new ProviderError('request aborted', { retryable: false, cause: err });
+      if (stall?.fired()) throw this.stalled(stall, 'mid-answer', err);
       if (err instanceof ProviderError) throw err;
       throw new ProviderError(`${this.name} returned non-JSON (HTTP ${res.status})`, {
         retryable: res.status >= 500,
@@ -294,6 +367,8 @@ export class OpenAICompatProvider implements Provider {
       });
     }
     const reasoning = msg?.reasoning ?? msg?.reasoning_content ?? undefined;
+    // Without usage the run can't meter itself: later calls go back to plain requests.
+    if (sse && !req.onDelta && !data.usage) this.streamForStall = false;
     const prompt = data.usage?.prompt_tokens ?? 0;
     const cached = Math.min(prompt, data.usage?.prompt_tokens_details?.cached_tokens ?? 0);
     return {
@@ -313,6 +388,21 @@ export class OpenAICompatProvider implements Provider {
       },
     };
   }
+
+  private stalled(stall: { signal: AbortSignal }, when: string, cause: unknown): ProviderError {
+    const why = stall.signal.reason instanceof Error ? stall.signal.reason.message : 'no data';
+    return new ProviderError(`${this.name} stalled ${when}: ${why}`, { retryable: true, cause });
+  }
+}
+
+const noDelta = (): void => undefined;
+
+function stallWatchFor(ms: number | undefined): ReturnType<typeof stallWatch> | undefined {
+  return ms && ms > 0 ? stallWatch(ms) : undefined;
+}
+
+function isJson(res: Response): boolean {
+  return /application\/json/i.test(res.headers.get('content-type') ?? '');
 }
 
 interface StreamChunk {
@@ -364,6 +454,7 @@ function streamError(e: {
 async function readStream(
   body: ReadableStream<Uint8Array>,
   onDelta: NonNullable<CompletionRequest['onDelta']>,
+  onChunk: () => void = noDelta,
 ): Promise<ChatResponse> {
   let text = '';
   let reasoning = '';
@@ -374,6 +465,7 @@ async function readStream(
   const decoder = new TextDecoder();
   let buf = '';
   for await (const chunk of body) {
+    onChunk();
     buf += decoder.decode(chunk, { stream: true });
     let nl: number;
     while ((nl = buf.indexOf('\n')) !== -1) {

@@ -566,7 +566,9 @@ export async function stepVerify(run: Run): Promise<void> {
       `The last attempt hung (${run.hang}) and was aborted. Avoid whatever blocked: a command that waits for input or never exits, a server started in the foreground, or a request that never returns.`,
     );
     run.events.emit('stuck.signal', { signal: 'hung', task: task.id, detail: run.hang });
-  } else if (act.end === 'stop-now') reasons.push('stopped by user (--now)');
+  } else if (act.end === 'stop-now' && run.deadlineHit)
+    run.events.emit('budget.deadline', { task: task.id, files: changes.length });
+  else if (act.end === 'stop-now') reasons.push('stopped by user (--now)');
   // An attempt that wasn't cut short breaks any pattern of cut-short attempts.
   if (!act.stuck && !(act.end === 'stop-now' && run.hang)) task.lastCutShort = undefined;
   if (act.stuck) {
