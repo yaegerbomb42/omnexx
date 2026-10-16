@@ -34,6 +34,11 @@ export const plan = z
     /** Re-runs of a loop check's new test failures to tell flakes apart (flakes are quarantined). */
     loop_flaky_reruns: z.number().int().min(0).max(3).default(2),
     /**
+     * Loop checks run the tests related to the changed files first (vitest, jest, pytest, go
+     * test) and the full gates only when those pass, so a red round costs a subset, not the suite.
+     */
+    loop_related_tests: z.boolean().default(true),
+    /**
      * Turns a think step may explore before it must write its analysis (bench hard10: thinking
      * took 12-34 turns, half of each run, mostly experiments the execute phase repeated).
      */
