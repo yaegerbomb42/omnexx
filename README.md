@@ -49,7 +49,7 @@ rolled back. A public benchmark against other harnesses is in progress.
 </p>
 
 Chat, plan, or run for hours from the sidebar. Watch the step timeline, tokens, cost and a live
-log; approve or auto-approve guarded actions; switch models or add any of 30+ providers in one
+log; approve or auto-approve guarded actions; switch models or add any of 75+ providers in one
 click.
 
 > **Alpha.** Built in the open; expect rough edges. It spends your own API credits unless you
@@ -99,12 +99,12 @@ At the `omnexx` prompt:
   missing `/v1` and the model list are detected, and failures say why ("401: key rejected").
   `/provider azure KEY resource=my-res` for providers whose URL needs values.
 
-| Kind                | Providers                                                                                                                                                                |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Labs                | Anthropic, OpenAI, Google Gemini, xAI Grok, Mistral, DeepSeek, Moonshot Kimi, Z.ai / Zhipu GLM, Qwen (DashScope), MiniMax, Cohere, Perplexity                            |
-| Clouds              | Azure OpenAI, Azure AI Foundry, Amazon Bedrock, Google Vertex AI, Cloudflare Workers AI, NVIDIA NIM, Scaleway, Nebius                                                    |
-| Inference & routers | Groq, Cerebras, SambaNova, Together, Fireworks, DeepInfra, Novita, Hyperbolic, SiliconFlow, Hugging Face, OpenRouter, Vercel AI Gateway, Requesty, Venice, GitHub Models |
-| Local               | Ollama, LM Studio, llama.cpp, vLLM, LiteLLM, Jan, LocalAI                                                                                                                |
+| Kind                | Providers                                                                                                                                                                                                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Labs                | Anthropic, OpenAI, Google Gemini, xAI Grok, Mistral, DeepSeek, Moonshot Kimi, Z.ai / Zhipu GLM, Qwen (DashScope), MiniMax, Cohere, Perplexity, AI21, Upstage, Reka, StepFun, iFlytek Spark, SenseNova                                                                      |
+| Clouds              | Azure OpenAI, Azure AI Foundry, Amazon Bedrock, Google Vertex AI, Cloudflare Workers AI, NVIDIA NIM, Scaleway, Nebius, IONOS, nscale, Crusoe, Volcengine Ark, BytePlus ModelArk, Baidu Qianfan, Snowflake Cortex, Databricks                                               |
+| Inference & routers | Groq, Cerebras, SambaNova, Together, Fireworks, DeepInfra, Novita, Hyperbolic, SiliconFlow, Hugging Face, OpenRouter, Vercel AI Gateway, Requesty, Venice, GitHub Models, Baseten, Featherless, Chutes, Inference.net, Friendli, Parasail, Ollama Cloud, Helicone, Martian |
+| Local               | Ollama, LM Studio, llama.cpp, vLLM, LiteLLM, Jan, LocalAI, KoboldCpp, text-generation-webui, Llamafile, MLX-LM, Aphrodite, SGLang, Xinference, Docker Model Runner, Lemonade, GPT4All                                                                                      |
 
 Base URLs, key variables and the probe are in [docs/providers.md](docs/providers.md);
 `omnexx providers catalog` lists them in the terminal.

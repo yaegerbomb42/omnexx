@@ -16,7 +16,7 @@ describe('provider catalog', () => {
     const ids = PROVIDER_CATALOG.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const id of ids) expect(id).toMatch(/^[a-z][a-z0-9_-]*$/);
-    expect(ids.length).toBeGreaterThanOrEqual(40);
+    expect(ids.length).toBeGreaterThanOrEqual(75);
   });
 
   it('covers the major hosted, cloud and local providers', () => {
@@ -83,6 +83,72 @@ describe('provider catalog', () => {
       // Every placeholder has a field, and every field is used.
       expect(templateFields(e.baseUrl).sort(), e.id).toEqual(e.fields.map((f) => f.key).sort());
     }
+  });
+
+  it('includes the second-pass hosts, platforms, gateways and local servers', () => {
+    for (const id of [
+      'ai21',
+      'baseten',
+      'featherless',
+      'chutes',
+      'inference-net',
+      'friendli',
+      'parasail',
+      'nscale',
+      'crusoe',
+      'ionos',
+      'upstage',
+      'reka',
+      'stepfun',
+      'stepfun-cn',
+      'volcengine',
+      'byteplus',
+      'qianfan',
+      'spark',
+      'sensenova',
+      'ollama-cloud',
+      'snowflake',
+      'databricks',
+      'helicone',
+      'martian',
+      'koboldcpp',
+      'textgen',
+      'llamafile',
+      'mlx-lm',
+      'aphrodite',
+      'sglang',
+      'xinference',
+      'docker-model-runner',
+      'lemonade',
+      'gpt4all',
+    ])
+      expect(catalogEntry(id), id).toBeDefined();
+  });
+
+  it('gives every entry a known flavor and keeps local servers keyless and free', () => {
+    const flavors = ['openai-chat', 'openai-responses', 'anthropic', 'gemini'];
+    for (const e of PROVIDER_CATALOG) {
+      expect(flavors, e.id).toContain(e.flavor);
+      if (e.local) expect(e.freeTier, e.id).toBe(true);
+      if (e.modelsPath !== null) expect(e.modelsPath, e.id).not.toMatch(/^\//);
+    }
+  });
+
+  it('fills every templated URL from placeholder values into an https URL', () => {
+    for (const e of PROVIDER_CATALOG.filter((x) => x.fields.length > 0)) {
+      const values = Object.fromEntries(e.fields.map((f) => [f.key, f.default ?? 'abc-1']));
+      const url = new URL(fillBaseUrl(e, values));
+      expect(url.protocol, e.id).toBe('https:');
+      expect(url.href, e.id).not.toContain('{');
+    }
+    const dbx = catalogEntry('databricks');
+    if (!dbx) throw new Error('no databricks');
+    expect(fillBaseUrl(dbx, { workspace: 'dbc-1.cloud.databricks.com' })).toBe(
+      'https://dbc-1.cloud.databricks.com/serving-endpoints',
+    );
+    const dmr = catalogEntry('docker-model-runner');
+    if (!dmr) throw new Error('no docker-model-runner');
+    expect(modelsUrlFor(dmr, dmr.baseUrl)).toBe('http://localhost:12434/engines/v1/models');
   });
 
   it('fills templated base URLs and validates the values', () => {
