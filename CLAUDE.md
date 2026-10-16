@@ -10,5 +10,5 @@ Long-running autonomous coding agent CLI (TypeScript, Node ≥ 22).
 - Before committing: `npm run lint`, `npm run typecheck`, `npm run format:check` and
   `npm run test:quick` (all 780 unit tests, ~10s, plus the integration tests that touch files
   changed since `origin/main`). Don't run a bare `npx vitest run` locally: it also starts the
-  chaos and e2e suites (30- and 10-minute timeouts). CI runs the full `npm test` on every PR, and
-  nothing merges until CI is green; that's the full check.
+  chaos and e2e suites (30- and 10-minute timeouts). CI runs the full `npm test` on every PR (Ubuntu,
+  Node 24) and on every OS/Node pair for `main` and releases; nothing merges until CI is green.
