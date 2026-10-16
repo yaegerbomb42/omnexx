@@ -92,13 +92,25 @@ export async function checkTree(
   }
   const reruns = run.config.plan.loop_flaky_reruns;
   const early = await session.speculative?.take(treeHash);
-  const { results: raw, flaky } = await runGatesWithFlakyCheck(
+  const gatesStart = Date.now();
+  const {
+    results: raw,
+    flaky,
+    reruns: rerunsRan,
+  } = await runGatesWithFlakyCheck(
     run.config.gates.map((g) => ({ ...g, flaky_reruns: reruns })),
     gateContext(run, `c${run.state.cycle}-loop${round}`),
     run.state.baseline,
     session.persistent,
     new Map(early?.results.map((r) => [r.name, r])),
   );
+  run.events.emit('loop.gates', {
+    task: task.id,
+    round,
+    ms: Date.now() - gatesStart,
+    reruns: rerunsRan,
+    speculative: early?.results.length ?? 0,
+  });
   for (const f of flaky) for (const id of f.ids) session.quarantined.add(id);
   if (reruns > 0) for (const r of raw) for (const f of r.failures) session.persistent.add(f.id);
   if (flaky.length) run.events.emit('loop.flaky', { task: task.id, flaky });

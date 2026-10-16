@@ -243,6 +243,10 @@ describe('think-first loop (the default for the fast path)', () => {
       events.findIndex((e) => e.type === 'tool.call' && e.tool === 'write_file'),
     );
     expect(events.filter((e) => e.type === 'loop.check').map((e) => e.pass)).toEqual([false, true]);
+    // Every check round records how long its gates took.
+    const gates = events.filter((e) => e.type === 'loop.gates');
+    expect(gates).toHaveLength(2);
+    for (const g of gates) expect(g.ms).toBeGreaterThanOrEqual(0);
     // Fixed forward: no rollback, no fresh attempt, no planner.
     expect(types).not.toContain('rollback');
     expect(types).not.toContain('fast_path.fallback');

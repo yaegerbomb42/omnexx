@@ -1,5 +1,7 @@
 /** Benchmark types shared across runners, suites, and results. */
 
+import type { Efficiency } from './efficiency.ts';
+
 export interface BenchmarkResult {
   /** Whether the agent successfully resolved the task. */
   resolved: boolean;
@@ -19,6 +21,8 @@ export interface BenchmarkResult {
   requests?: number;
   /** Wall time spent waiting on a failing or stalled provider (see bench/outage.ts). */
   provider_outage_ms?: number;
+  /** Turns, tool calls per turn, gate and idle time; only for harnesses that log events. */
+  efficiency?: Efficiency;
 }
 
 /** What a runner returns: metrics (resolved is overwritten by the hidden check) and where the work is. */

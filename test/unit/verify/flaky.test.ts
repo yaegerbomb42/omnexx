@@ -46,12 +46,14 @@ describe('runGatesWithFlakyCheck', () => {
     const out = await runGatesWithFlakyCheck([gate()], ctx(r.exec), undefined);
     expect(r.calls()).toBe(1);
     expect(out.flaky).toEqual([]);
+    expect(out.reruns).toBe(0);
   });
 
   it('marks ids that pass on re-run as flaky and judges the last run', async () => {
     const r = replay(fail(['a']), { output: tap([]) });
     const out = await runGatesWithFlakyCheck([gate()], ctx(r.exec), undefined);
     expect(r.calls()).toBe(2);
+    expect(out.reruns).toBe(1);
     expect(out.flaky).toEqual([{ gate: 'test', ids: [expect.stringContaining('a')] }]);
     expect(out.results[0]?.exitCode).toBe(0);
   });
