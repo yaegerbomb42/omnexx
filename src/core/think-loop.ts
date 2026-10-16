@@ -32,6 +32,7 @@ Before you change anything, understand the problem. Read what you need in a few 
 3. The approach, and why it is right.
 4. Ordered steps.
 5. How you will verify each step (which tests or commands).
+6. Spec cases: for every rule and example in the goal and the docs it points to (README, issue), one concrete input → expected output, worked out from the spec text, not from the code. Include the cases where two rules meet (ordering, ties, priority among what is ready, empty input). Your tests check exactly these.
 Where the goal names something (a field, function, file, message, format or value), use exactly that name and shape: don't rename, nest or "improve" it. Do not edit files in this phase. The analysis stays in this conversation while you carry it out.`;
 
 export const DECIDE_PROMPT =
