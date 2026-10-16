@@ -45,6 +45,13 @@ removes idle time, or protects the pass rate.
 - **Files:** `src/tools/read.ts`, `search.ts`, `outline.ts`, `src/agent/loop.ts`,
   `src/agent/prompts.ts`.
 - **Verify:** bench task-03 three times; target ≥ 2.0 calls/turn in exploration, turns −30 %.
+- **Status (2026-10-16):** shipped as `read files: [{path, start, end}]` (up to 10, one shared
+  60k-char budget, a bad file reported in its own section) and `outline paths: []`. `search` got
+  no array: one regex with `|` already covers several terms, and the prompt now says so. The
+  hint is said once per loop, after the first lone read/search/outline/list/read_symbol turn
+  before anything changed, and logged as `loop.batch_hint`. Calls per turn were not added to
+  `status --json`: the bench efficiency columns (item 5) already compute them from `tool.call`
+  and `turn` events. Still to do: the three task-03 bench runs.
 
 ### 2. Take bookkeeping out of the turn loop
 

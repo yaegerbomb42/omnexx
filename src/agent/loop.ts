@@ -221,6 +221,19 @@ export interface LoopDeps {
 export const steeringText = (msgs: readonly string[]): string =>
   `The user sent ${msgs.length === 1 ? 'a message' : 'messages'} while you were working. Read ${msgs.length === 1 ? 'it' : 'them'} now and adjust:\n${msgs.map((m) => `> ${m}`).join('\n')}`;
 
+/** Look-around tools: a turn spent on just one of these, before any edit, is a wasted round trip. */
+const EXPLORE_TOOLS: ReadonlySet<string> = new Set([
+  'read',
+  'outline',
+  'search',
+  'list',
+  'read_symbol',
+]);
+
+/** Said once per loop, after the first turn that explored with a single call. */
+export const BATCH_HINT =
+  'Tip: each turn is a full round trip. Send every read, search and outline you need together in one turn, or use read with files: [{path, start, end}, ...] and outline with paths: [...]. Several search terms fit in one regex (a|b).';
+
 /** Extra tries for a 400 on one call (a pool may route the retry to another model). */
 const BAD_REQUEST_RETRIES = 2;
 
@@ -348,6 +361,8 @@ export async function runAgentLoop(
   };
 
   const nudged = new Set<string>();
+  let batchHinted = false;
+  let changedSomething = false;
   for (;;) {
     let signal = await deps.control();
     if (signal === 'pause') {
@@ -735,6 +750,13 @@ export async function runAgentLoop(
       ? chunk(calls, deps.parallelTasks ?? 1)
       : concurrentRuns(calls, (name) => resolveTool(byName, name)?.concurrent === true);
     for (const batch of batches) results.push(...(await Promise.all(batch.map(runCall))));
+    if (calls.some((c) => resolveTool(byName, c.name)?.readOnly !== true)) changedSomething = true;
+    const lone = calls.length === 1 ? calls[0] : undefined;
+    if (!batchHinted && !changedSomething && lone && EXPLORE_TOOLS.has(lone.name)) {
+      batchHinted = true;
+      results.push({ type: 'text', text: BATCH_HINT });
+      deps.events.emit('loop.batch_hint', { turn: turns, tool: lone.name });
+    }
     const steer = deps.pendingInput?.() ?? [];
     if (steer.length) {
       results.push({ type: 'text', text: steeringText(steer) });

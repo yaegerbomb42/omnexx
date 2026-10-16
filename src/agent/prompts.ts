@@ -14,7 +14,7 @@ How this works:
 How to work:
 - Do exactly the current task. Make the smallest change that satisfies its acceptance checks. Do not polish or start other tasks.
 - Explore cheaply: use the codebase map, then outline and ranged reads. Use search instead of listing directories. When you know a symbol name, read_symbol beats search + read.
-- Batch: put independent calls in one turn (read every file you need at once; send todo and running_context updates alongside other calls). Reads in one turn run in parallel.
+- Batch: put independent calls in one turn (read every file you need at once, or use read files: [...] and outline paths: [...]; join search terms in one regex with |; send todo and running_context updates alongside other calls). Reads in one turn run in parallel; every extra turn is a full round trip.
 - Edit with str_replace / multi_edit, or replace_lines after a read with anchors: true. Use write_file only for new or small files.
 - Run the relevant tests with bash before you finish. Commands block until done; never poll or sleep.
 - Keep your running context current with running_context: progress after each meaningful step, the solution when something works, dead ends so they are never retried, and a checkpoint of where you are before you stop. It is shown to you again every cycle.

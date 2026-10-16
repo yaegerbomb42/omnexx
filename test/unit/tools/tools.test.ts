@@ -53,6 +53,55 @@ describe('read / outline', () => {
     expect((await readTool.run({ path: 'bin.dat' }, ctx)).content).toMatch(/binary/);
   });
 
+  it('reads several files and ranges in one call, reporting a bad one in its own section', async () => {
+    const root = await repo();
+    const ctx = await toolContext(root);
+    const out = await readTool.run(
+      {
+        files: [
+          { path: 'src/a.ts' },
+          { path: 'src/big.ts', start: 3, end: 4 },
+          { path: 'nope.ts' },
+        ],
+      },
+      ctx,
+    );
+    expect(out.isError).toBeUndefined();
+    const sections = out.content.split('\n\n');
+    expect(sections[0]).toMatch(/^== src\/a\.ts ==\n {4}1 {2}export function add/);
+    expect(sections[1]).toMatch(/^== src\/big\.ts \(lines 3-4\) ==\n {4}3 {2}export const v2 = 2;/);
+    expect(sections[1]).not.toContain('v4 =');
+    expect(sections[2]).toMatch(/^== nope\.ts ==\n.*ENOENT/s);
+    const allBad = await readTool.run({ files: [{ path: 'nope.ts' }, { path: '.env' }] }, ctx);
+    expect(allBad.isError).toBe(true);
+  });
+
+  it('shares one size limit across the files of a call', async () => {
+    const root = await repo();
+    const row = 'x'.repeat(390);
+    for (const f of ['w1', 'w2', 'w3'])
+      await writeFile(join(root, `${f}.txt`), Array.from({ length: 100 }, () => row).join('\n'));
+    const out = await readTool.run(
+      { files: ['w1', 'w2', 'w3'].map((f) => ({ path: `${f}.txt` })) },
+      await toolContext(root),
+    );
+    expect(out.content.length).toBeLessThan(62_000);
+    expect(out.content).toMatch(/== w2\.txt ==\n[\s\S]*not shown/);
+    expect(out.content).toContain('== w3.txt ==\n(not read: this call reached its size limit');
+  });
+
+  it('read and outline take a single target or a list, not both or neither', async () => {
+    const ctx = await toolContext(await repo());
+    const both = await readTool.run({ path: 'src/a.ts', files: [{ path: 'src/a.ts' }] }, ctx);
+    expect(both.content).toMatch(/not both/);
+    expect((await readTool.run({}, ctx)).content).toMatch(/needs path/);
+    expect((await outlineTool.run({}, ctx)).isError).toBe(true);
+    const many = await outlineTool.run({ paths: ['src/a.ts', 'nope.ts'] }, ctx);
+    expect(many.isError).toBeUndefined();
+    expect(many.content).toMatch(/^== src\/a\.ts ==\n\d+ lines[\s\S]*function add/);
+    expect(many.content).toMatch(/== nope\.ts ==\n.*ENOENT/);
+  });
+
   it('extracts symbols across languages', () => {
     const syms = extractSymbols(
       [

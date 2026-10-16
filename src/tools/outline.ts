@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { openError } from './did-you-mean.js';
-import { fail, ok, type Tool } from './types.js';
+import { fail, ok, type Tool, type ToolContext, type ToolOutput } from './types.js';
 
 export interface Symbol {
   line: number;
@@ -63,22 +63,44 @@ export function renderOutline(symbols: readonly Symbol[], totalLines: number): s
   ].join('\n');
 }
 
-const schema = z.strictObject({ path: z.string().describe('File path relative to the repo root') });
+/** Files one outline call may take through `paths`. */
+export const MAX_OUTLINE_FILES = 20;
+
+const schema = z.strictObject({
+  path: z.string().optional().describe('File path relative to the repo root'),
+  paths: z
+    .array(z.string())
+    .min(1)
+    .max(MAX_OUTLINE_FILES)
+    .optional()
+    .describe(`Several files in one call, instead of path (up to ${MAX_OUTLINE_FILES})`),
+});
+
+async function outlineOne(path: string, ctx: ToolContext): Promise<ToolOutput> {
+  try {
+    const text = await readFile(ctx.jail.resolve(path, 'read'), 'utf8');
+    return ok(renderOutline(extractSymbols(text), text.split('\n').length));
+  } catch (err) {
+    return fail(await openError(ctx, path, err, '', 'outline'));
+  }
+}
 
 export const outlineTool: Tool<typeof schema> = {
   name: 'outline',
   description:
-    'List the symbols (functions, classes, types, exports) of a file with their line numbers. Use before reading large files.',
+    'List the symbols (functions, classes, types, exports) of a file with their line numbers. Use before reading large files. For several files, pass paths: [...] in one call.',
   schema,
   readOnly: true,
   concurrent: true,
   async run(input, ctx) {
-    try {
-      const abs = ctx.jail.resolve(input.path, 'read');
-      const text = await readFile(abs, 'utf8');
-      return ok(renderOutline(extractSymbols(text), text.split('\n').length));
-    } catch (err) {
-      return fail(await openError(ctx, input.path, err, '', 'outline'));
+    if (input.paths && input.path !== undefined)
+      return fail('outline takes either path or paths: [...], not both');
+    if (!input.paths) {
+      if (input.path === undefined) return fail('outline needs path, or paths: [...]');
+      return outlineOne(input.path, ctx);
     }
+    const outs = await Promise.all(input.paths.map((p) => outlineOne(p, ctx)));
+    const content = input.paths.map((p, i) => `== ${p} ==\n${outs[i]?.content ?? ''}`).join('\n\n');
+    return outs.every((o) => o.isError) ? fail(content) : ok(content);
   },
 };
