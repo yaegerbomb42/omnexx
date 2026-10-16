@@ -92,3 +92,17 @@ export const emptyUsage = (): Usage => ({
 
 export const totalInput = (u: Usage): number =>
   u.uncached + u.cacheWrite5m + u.cacheWrite1h + u.cacheRead;
+
+/** Cache reads cost about a tenth of fresh input on every major provider. */
+const CACHE_READ_WEIGHT = 0.1;
+
+/**
+ * Tokens as they count against a cycle's token cap: what they cost, so a long, mostly cached
+ * session isn't stopped early (a 82k-fresh session once hit the 400k cap on cache reads alone).
+ */
+export const budgetTokens = (u: Usage): number =>
+  u.uncached +
+  u.cacheWrite5m +
+  u.cacheWrite1h +
+  u.output +
+  Math.ceil(u.cacheRead * CACHE_READ_WEIGHT);

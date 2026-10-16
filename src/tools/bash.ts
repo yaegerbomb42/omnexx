@@ -58,6 +58,22 @@ function capChars(parts: string[], logId: string): string {
     : `${text.slice(0, MAX_OUTPUT_CHARS)}\n… [cut at ${String(MAX_OUTPUT_CHARS)} chars; read_log id="${logId}"]`;
 }
 
+/** `cmd <<'EOF'` … `EOF` (also <<-, unquoted or "quoted" tags), the whole command. */
+const HEREDOC =
+  /^([^\n]*?)\s*<<(-?)\s*(['"]?)([A-Za-z_]\w*)\3[ \t]*\n([\s\S]*?)\n?[ \t]*\4[ \t]*\n?$/;
+
+/**
+ * Models write `python3 - <<'EOF' … EOF`; the policy refuses `<<` (its body would parse as shell
+ * words). The body becomes the command's stdin and only the command line is checked.
+ */
+export function splitHeredoc(command: string): { command: string; stdin: string } | undefined {
+  const m = HEREDOC.exec(command);
+  if (!m?.[1]) return undefined;
+  const body = m[5] ?? '';
+  const stdin = m[2] === '-' ? body.replace(/^\t+/gm, '') : body;
+  return { command: m[1].trim(), stdin: stdin ? `${stdin}\n` : '' };
+}
+
 const schema = z.strictObject({
   command: z.string().min(1).describe('Shell command, run in the repo root'),
   timeout: z
@@ -143,7 +159,9 @@ export const bashTool: Tool<typeof schema> = {
       ? { ...input, timeout: String((input as { timeout: number }).timeout) }
       : input,
   async run(input, ctx) {
-    const verdict = checkCommand(input.command, ctx.policy);
+    const heredoc = splitHeredoc(input.command);
+    const command = heredoc?.command ?? input.command;
+    const verdict = checkCommand(command, ctx.policy);
     const allowed =
       verdict.allowed ||
       (ctx.ask !== undefined &&
@@ -174,7 +192,8 @@ export const bashTool: Tool<typeof schema> = {
     const devServer = isDevServer(input.command);
     if (devServer) timeoutMs = Math.min(timeoutMs, DEV_SERVER_PEEK_MS);
     const id = ctx.nextCommandId();
-    const r = await (ctx.exec ?? runShell)(input.command, {
+    const r = await (ctx.exec ?? runShell)(command, {
+      ...(heredoc ? { stdin: heredoc.stdin } : {}),
       cwd: ctx.jail.root,
       env: ctx.env,
       timeoutMs,

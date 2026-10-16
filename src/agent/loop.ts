@@ -17,6 +17,7 @@ import { shouldFailover } from '../providers/router.js';
 import { isQuotaError } from '../providers/sticky.js';
 import { ProviderError } from '../errors.js';
 import {
+  budgetTokens,
   totalInput,
   type CompletionRequest,
   type CompletionResponse,
@@ -591,7 +592,7 @@ export async function runAgentLoop(
     const cost = costUsd(res.usage, model.price);
     usd += cost;
     for (const k of Object.keys(usage) as (keyof Usage)[]) usage[k] += res.usage[k];
-    cycleTokens += totalInput(res.usage) + res.usage.output;
+    cycleTokens += budgetTokens(res.usage);
     await deps.onUsage(res.usage, cost, res.model, model.provider);
     const input = totalInput(res.usage);
     deps.events.emit('turn', {
