@@ -37,11 +37,13 @@ Where the goal names something (a field, function, file, message, format or valu
 export const DECIDE_PROMPT =
   "[harness] That's enough exploring. Write your analysis now, from what you have read (framing, root causes, approach, steps, verification). No tool calls in this step.";
 
-export const EXECUTE_PROMPT =
-  '[harness] Now carry out your analysis step by step, in this conversation. Run the relevant tests after each meaningful change and fix what fails. Delete any scratch files you create. When everything is done and verified, stop calling tools and summarize what you changed.';
+/** When to stop: the harness checks and reviews after the session, so extra proof is waste. */
+const STOP_RULE =
+  "Stop as soon as the tests pass and every point of the goal holds: the harness runs the project's checks and a review after you. Don't re-run tests that already passed, demonstrate old versus new behaviour, write scratch scripts or data, clean caches, or update todos, notes or memory unless the goal asks.";
 
-export const EXECUTE_REVISED_PROMPT =
-  '[harness] Now carry out the revised analysis. Run the relevant tests as you go; when everything is done and verified, stop calling tools and summarize.';
+export const EXECUTE_PROMPT = `[harness] Now carry out your analysis step by step, in this conversation. Batch independent edits in one turn. Run the relevant tests after each meaningful change and fix what fails. ${STOP_RULE} Then stop calling tools and summarize what you changed.`;
+
+export const EXECUTE_REVISED_PROMPT = `[harness] Now carry out the revised analysis. Run the relevant tests as you go. ${STOP_RULE} Then stop calling tools and summarize.`;
 
 export const fixPrompt = (failures: string): string =>
   `[harness] The project's checks fail on the current tree. Your work is kept (nothing was rolled back); fix forward:\n\n${failures}\n\nWhen they pass, stop calling tools and summarize.`;
