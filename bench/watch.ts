@@ -14,7 +14,7 @@ const TAIL_LINES = 60;
 const MAX_LINE = 300;
 
 // Built from a string so the escape character isn't a control character in a regex literal.
-const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, 'g');
+const ANSI = new RegExp(String.fromCodePoint(27) + String.raw`\[[0-9;?]*[A-Za-z]`, 'g');
 
 /** A readable line from agent output: Cline's --json events show their text, the rest as is. */
 export function readable(line: string): string | undefined {
@@ -27,8 +27,9 @@ export function readable(line: string): string | undefined {
         (v): v is string => typeof v === 'string' && v.trim().length > 0,
       );
       if (!text) return undefined;
-      const kind = typeof j.say === 'string' ? j.say : typeof j.type === 'string' ? j.type : '';
-      return `${kind ? `[${kind}] ` : ''}${text}`.slice(0, MAX_LINE);
+      const kind = [j.say, j.type].find((v): v is string => typeof v === 'string') ?? '';
+      const prefix = kind ? '[' + kind + '] ' : '';
+      return (prefix + text).slice(0, MAX_LINE);
     } catch {
       // Not JSON after all: show it as text.
     }
@@ -56,7 +57,7 @@ async function snapshot(dir: string): Promise<(LiveStatus & { lines: string[] })
   return runs.sort((a, b) => a.task.localeCompare(b.task) || a.agent.localeCompare(b.agent));
 }
 
-const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>omnexx bench · live</title>
+const PAGE = String.raw`<!doctype html><html><head><meta charset="utf-8"><title>omnexx bench · live</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root{--bg:#0f1115;--card:#171a21;--line:#262a33;--fg:#e6e6e6;--muted:#8a90a0;--omnexx:#00e676;--cline:#4da3ff;--openhands:#ffb74d;--pass:#00e676;--fail:#ff5252;--run:#ffd54f}
@@ -103,7 +104,7 @@ async function tick(){
     const s=secs(r.startedAt,r.finishedAt),t=r.tokens;
     return '<div class="card" style="--c:'+(color[r.agent]||'#ccc')+'"><div class="head"><div><div class="who"><span>'+r.agent+'</span> · r'+r.rep+'</div><div class="task">'+esc(r.task)+'</div></div><span class="state" style="--s:'+stateColor[r.state]+'">'+r.state.toUpperCase()+'</span></div>'
     +'<div class="meta"><span>time <b>'+fmt(s)+'</b></span><span>fresh <b>'+k(t?.fresh||0)+'</b></span><span>cached <b>'+k(t?.cached||0)+'</b></span><span>calls <b>'+(t?.requests||0)+'</b></span></div>'
-    +'<pre data-tag="'+esc(r.tag)+'">'+esc((r.lines||[]).join('\\n')||(r.state==='queued'?'queued…':'starting…'))+(r.error?'\\n\\n'+esc(r.error):'')+'</pre></div>';
+    +'<pre data-tag="'+esc(r.tag)+'">'+esc((r.lines||[]).join('\n')||(r.state==='queued'?'queued…':'starting…'))+(r.error?'\n\n'+esc(r.error):'')+'</pre></div>';
   }).join('');
   document.querySelectorAll('pre').forEach(p=>{const v=keep[p.dataset.tag];p.scrollTop=v==null?p.scrollHeight:v});
   document.getElementById('clock').textContent=new Date().toLocaleTimeString();
@@ -119,6 +120,9 @@ function main(): void {
     .parse();
   const opts = program.opts<{ out: string; port: string; open: boolean }>();
   const dir = liveDir(resolve(opts.out));
+  const port = Number.parseInt(opts.port, 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535)
+    throw new Error('--port must be 1-65535');
   const server = createServer((req, res) => {
     if (req.url === '/api') {
       snapshot(dir)
@@ -135,8 +139,9 @@ function main(): void {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(PAGE);
   });
-  server.listen(Number(opts.port), '127.0.0.1', () => {
-    const url = `http://127.0.0.1:${opts.port}`;
+  server.listen(port, '127.0.0.1', () => {
+    // Only a number reaches the opener, never text from the command line.
+    const url = `http://127.0.0.1:${String(port)}`;
     console.log(`Watching ${dir}\n${url}`);
     if (opts.open)
       execFile(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], () => undefined);

@@ -54,17 +54,47 @@ export async function writeStatus(out: string, status: LiveStatus): Promise<void
   await writeFile(join(dir, `${liveName(status.tag)}.json`), JSON.stringify(status));
 }
 
+/** Which task ids were asked for, or undefined for all. */
+function wantedTasks(opts: {
+  task?: string;
+  tasks?: string;
+  quick?: boolean;
+}): string[] | undefined {
+  if (opts.task) return [opts.task];
+  if (opts.tasks) return opts.tasks.split(',').map((t) => t.trim());
+  if (opts.quick) return [...QUICK_TASKS];
+  return undefined;
+}
+
 /** Which tasks to run: --task one, --tasks a,b,c, --quick the sample, else all. */
 export function pickTasks<T extends { id: string }>(
   all: readonly T[],
   opts: { task?: string; tasks?: string; quick?: boolean },
 ): T[] {
-  const wanted = opts.task
-    ? [opts.task]
-    : opts.tasks
-      ? opts.tasks.split(',').map((t) => t.trim())
-      : opts.quick
-        ? [...QUICK_TASKS]
-        : undefined;
+  const wanted = wantedTasks(opts);
   return wanted ? all.filter((t) => wanted.includes(t.id)) : [...all];
+}
+
+/** How a finished run shows on the watch page. */
+export function finalState(result: { error?: string; metrics: { resolved: boolean } }): LiveState {
+  if (result.error) return 'error';
+  return result.metrics.resolved ? 'pass' : 'fail';
+}
+
+/** Every run shows as queued before any starts, so the page has the whole line-up. */
+export async function writeQueued(
+  out: string,
+  jobs: readonly { tag: string; task: { id: string }; agent: string; rep: number }[],
+): Promise<void> {
+  await Promise.all(
+    jobs.map((job) =>
+      writeStatus(out, {
+        tag: job.tag,
+        task: job.task.id,
+        agent: job.agent,
+        rep: job.rep,
+        state: 'queued',
+      }),
+    ),
+  );
 }

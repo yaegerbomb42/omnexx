@@ -13,7 +13,16 @@ import { OpenHandsRunner } from './runners/openhands.ts';
 import { endpointFromEnv, startMeter, type Meter } from './meter.ts';
 import { cachedSetup, planJobs, runPool, tagLines, type Job } from './pool.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { liveDir, liveName, pickTasks, QUICK_HOURS, tokensFrom, writeStatus } from './live.ts';
+import {
+  finalState,
+  liveDir,
+  liveName,
+  pickTasks,
+  QUICK_HOURS,
+  tokensFrom,
+  writeQueued,
+  writeStatus,
+} from './live.ts';
 import { createResultsWriter, resultsDir } from './results.ts';
 import type { BenchConfig, Suite, TaskRunResult } from './types.ts';
 import type { AgentRunner } from './runners/base.ts';
@@ -234,7 +243,7 @@ async function main(): Promise<void> {
     await meter?.close();
     await writeStatus(config.out, {
       ...live,
-      state: result.error ? 'error' : result.metrics.resolved ? 'pass' : 'fail',
+      state: finalState(result),
       startedAt,
       finishedAt: result.finishedAt,
       ...(tokens ? { tokens } : {}),
@@ -242,14 +251,7 @@ async function main(): Promise<void> {
     });
     await writer.writeResult(result);
   };
-  for (const job of jobs)
-    await writeStatus(config.out, {
-      tag: job.tag,
-      task: job.task.id,
-      agent: job.agent,
-      rep: job.rep,
-      state: 'queued',
-    });
+  await writeQueued(config.out, jobs);
   console.log(`Watch live: npm run bench:watch -- --out ${config.out}`);
   await runPool(jobs, concurrency, runJob);
   console.log(`\nResults: ${writer.getOutDir()}/${writer.getRunId()}.md`);
