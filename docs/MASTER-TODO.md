@@ -69,6 +69,20 @@ removes idle time, or protects the pass rate.
   `src/agent/loop.ts`, `src/agent/prompts.ts`.
 - **Verify:** bookkeeping share < 8 % of tool calls on jimmy10; todo still shows live in TUI /
   VS Code.
+- **Status (2026-10-16):**
+  - **Todo from the analysis:** the think loop turns the analysis's "Ordered steps" into the
+    todo list (`todo.update` with `source: "analysis"`, no tool call). It re-seeds after a
+    re-think and ticks every step off when the loop ends green. If the model keeps its own list,
+    the harness stays out of it.
+  - **No `note` field:** I didn't add a `note` field to every tool schema. It would put ~600
+    tokens into the cached prefix that item 8 is cutting, and the harness already writes each
+    cycle's outcome, files and agent summary to the progress log the next cycle reads. Instead,
+    the prompt and the `running_context` description now say not to log progress or checkpoints:
+    the tool is for dead ends and hard-won solutions.
+  - **Prompt and hint:** the prompt says bookkeeping never gets a turn of its own, and drops the
+    todo list for one- or two-step tasks. A one-time hint after the first notes-only turn is
+    logged as `loop.bookkeeping_hint`. `PROMPT_VERSION` is now 4.
+  - **Still to do:** the jimmy10 bench check.
 
 ### 3. Gates: related tests on inner passes, full suite once
 

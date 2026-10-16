@@ -26,6 +26,7 @@ interface Reply {
 function fakeIO(replies: Reply[], checks: CheckOutcome[], findings: (string | undefined)[] = []) {
   const calls: { seg: Segment; chain: ChainKind }[] = [];
   const events: string[] = [];
+  const log: { type: string; data: Record<string, unknown> }[] = [];
   const restored: string[] = [];
   let checked = 0;
   const io: SessionIO = {
@@ -58,11 +59,12 @@ function fakeIO(replies: Reply[], checks: CheckOutcome[], findings: (string | un
       restored.push(tree);
       return Promise.resolve();
     },
-    emit: (type) => {
+    emit: (type, data) => {
       events.push(type);
+      log.push({ type, data });
     },
   };
-  return { io, calls, events, restored };
+  return { io, calls, events, restored, log };
 }
 
 const pass = (tree: string): CheckOutcome => ({ pass: true, failures: '', signature: '', tree });
@@ -76,6 +78,24 @@ const first: Message = { role: 'user', content: [{ type: 'text', text: 'Work on 
 const limits = { rounds: 6, rethinks: 2, thinkTurns: 8 };
 
 describe('think-first loop session', () => {
+  it('shows the analysis steps as the todo list and ticks them off once green', async () => {
+    const analysis =
+      '1. Framing: x\n4. Ordered steps:\n   - fix sum()\n   - add a test\n5. Verify: npm test';
+    const { io, log } = fakeIO([{ say: analysis }, { say: 'fixed' }], [pass('t1')]);
+    await runThinkLoop(first, io, limits);
+    const todos = log.filter((e) => e.type === 'todo.update').map((e) => e.data.items);
+    expect(todos).toEqual([
+      [
+        { text: 'fix sum()', status: 'in_progress' },
+        { text: 'add a test', status: 'pending' },
+      ],
+      [
+        { text: 'fix sum()', status: 'done' },
+        { text: 'add a test', status: 'done' },
+      ],
+    ]);
+  });
+
   it('thinks first with the strong chain, and the analysis stays in the conversation it executes in', async () => {
     const { io, calls } = fakeIO(
       [{ say: 'ANALYSIS: the bug is the off-by-one in sum()' }, { say: 'fixed' }],

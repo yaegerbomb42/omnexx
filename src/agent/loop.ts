@@ -234,6 +234,19 @@ const EXPLORE_TOOLS: ReadonlySet<string> = new Set([
 export const BATCH_HINT =
   'Tip: each turn is a full round trip. Send every read, search and outline you need together in one turn, or use read with files: [{path, start, end}, ...] and outline with paths: [...]. Several search terms fit in one regex (a|b).';
 
+/** Calls that keep notes rather than do the work. */
+const BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set([
+  'todo',
+  'running_context',
+  'remember',
+  'context',
+  'recall',
+]);
+
+/** Said once per loop, after the first turn of nothing but bookkeeping. */
+export const BOOKKEEPING_HINT =
+  'Tip: that turn only kept notes, and each turn is a full round trip. Send todo, running_context, remember and context alongside the reads, edits or commands of the same step.';
+
 /** Extra tries for a 400 on one call (a pool may route the retry to another model). */
 const BAD_REQUEST_RETRIES = 2;
 
@@ -362,6 +375,7 @@ export async function runAgentLoop(
 
   const nudged = new Set<string>();
   let batchHinted = false;
+  let bookkeepingHinted = false;
   let changedSomething = false;
   for (;;) {
     let signal = await deps.control();
@@ -756,6 +770,11 @@ export async function runAgentLoop(
       batchHinted = true;
       results.push({ type: 'text', text: BATCH_HINT });
       deps.events.emit('loop.batch_hint', { turn: turns, tool: lone.name });
+    }
+    if (!bookkeepingHinted && !finished.now && calls.every((c) => BOOKKEEPING_TOOLS.has(c.name))) {
+      bookkeepingHinted = true;
+      results.push({ type: 'text', text: BOOKKEEPING_HINT });
+      deps.events.emit('loop.bookkeeping_hint', { turn: turns });
     }
     const steer = deps.pendingInput?.() ?? [];
     if (steer.length) {
