@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { budgetSchema } from '../../../src/config/schema.js';
-import { runAgentLoop, type LoopDeps } from '../../../src/agent/loop.js';
+import { BATCH_HINT, runAgentLoop, type LoopDeps } from '../../../src/agent/loop.js';
 import type { Tool } from '../../../src/tools/types.js';
 import { ScriptedProvider, type ScriptedTurn } from '../../support/scripted-provider.js';
 import { FakeClock } from '../../support/clock.js';
@@ -34,9 +34,14 @@ function probe() {
 }
 
 async function runTurn(calls: NonNullable<ScriptedTurn['tools']>, tools: Tool[]) {
-  const provider = new ScriptedProvider(({ turn }) =>
-    turn === 0 ? { tools: calls } : { text: 'done' },
-  );
+  return runTurns([calls], tools);
+}
+
+async function runTurns(script: NonNullable<ScriptedTurn['tools']>[], tools: Tool[]) {
+  const provider = new ScriptedProvider(({ turn }) => {
+    const calls = script[turn];
+    return calls ? { tools: calls } : { text: 'done' };
+  });
   const toolCtx = await toolContext(await makeRepo());
   const deps: LoopDeps = {
     provider,
@@ -69,7 +74,10 @@ async function runTurn(calls: NonNullable<ScriptedTurn['tools']>, tools: Tool[])
   const results = (res.messages[2]?.content ?? []).flatMap((b) =>
     b.type === 'tool_result' ? [b.content] : [],
   );
-  return { res, results };
+  const hints = res.messages.flatMap((m, i) =>
+    m.content.some((b) => b.type === 'text' && b.text === BATCH_HINT) ? [i] : [],
+  );
+  return { res, results, hints };
 }
 
 function budgetFreePrice(): LoopDeps['models'][number]['price'] {
@@ -112,5 +120,34 @@ describe('parallel tool calls', () => {
       tools,
     );
     expect(state.maxActive).toBe(1);
+  });
+});
+
+describe('batching hint', () => {
+  const schema = z.strictObject({ id: z.string() });
+  const tool = (name: string, readOnly: boolean): Tool<typeof schema> => ({
+    name,
+    description: name,
+    schema,
+    readOnly,
+    concurrent: readOnly,
+    run: () => Promise.resolve({ content: 'ok' }),
+  });
+  const tools = [tool('read', true), tool('search', true), tool('edit', false)] as Tool[];
+  const one = (name: string) => [{ name, input: { id: name } }];
+
+  it('is said once, after the first turn that explored with a single call', async () => {
+    const both = [
+      { name: 'read', input: { id: 'a' } },
+      { name: 'search', input: { id: 'b' } },
+    ];
+    const { hints } = await runTurns([both, one('read'), one('search')], tools);
+    // messages: 0 task, 1 assistant, 2 results of the batched turn, 3 assistant, 4 results of the lone read.
+    expect(hints).toEqual([4]);
+  });
+
+  it('is not said once the model has started changing things', async () => {
+    const { hints } = await runTurns([one('edit'), one('read')], tools);
+    expect(hints).toEqual([]);
   });
 });
