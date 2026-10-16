@@ -1,9 +1,21 @@
 # Changelog
 
-## 0.16.1
+## 0.17.0
 
-- The VS Code settings page has a color per section (agent, models, skills, providers,
-  approvals, MCP, browser), from the theme's own palette so it suits light and dark themes.
+- **Chat keeps working when it runs out of room**: it summarizes the work so far and continues
+  (up to 3 times per message) instead of stopping at `max_tokens_per_cycle`.
+- **Several tool calls per turn** in chat, no re-reading lines it already saw, and search falls
+  back to the literal text for patterns like `test(`; clearer `replace_lines` errors and
+  `multi_edit` accepts common field names.
+- **Compact** (button and `/compact`) always compacts and says what it did.
+- **New chat** keeps the previous conversation in History.
+- **77 providers** (34 more: AI21, Baseten, Featherless, Chutes, Upstage, Reka, StepFun,
+  Volcengine Ark, Baidu Qianfan, iFlytek Spark, SenseNova, Ollama Cloud, Snowflake Cortex,
+  Databricks, Helicone, Martian, KoboldCpp, text-generation-webui, Llamafile, MLX-LM, SGLang,
+  Docker Model Runner, Lemonade, GPT4All and more).
+- **Settings**: a color per section, section chips to jump around, icons and one-line subtitles,
+  folding sections, every skill can be switched off, hidden or deleted, MCP servers show icons
+  and short descriptions, quiet "Saved ✓" instead of chat messages, and "Max reply length".
 
 ## 0.16.0
 

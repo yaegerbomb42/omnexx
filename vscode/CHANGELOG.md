@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.0
+
+- Built on omnexx 0.17.0. **Settings**: section chips, icons and subtitles, folding sections,
+  skill switch / hide / delete, MCP icons and descriptions, quiet "Saved ✓", "Max reply length".
+  **Chat**: keeps working when out of room, Compact always works, New chat keeps History.
+
 ## 0.12.1
 
 - **More color in Settings**: each section has its own color (edge, tint, heading, sliders and
