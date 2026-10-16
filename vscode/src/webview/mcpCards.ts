@@ -36,6 +36,11 @@ export function cardHtml(c: Card, on = false): string {
   return `<button class="mcp-card${on ? ' on' : ''}" data-mcp-card="${escapeHtml(c.via)}:${escapeHtml(c.id)}" title="${escapeHtml(c.description)}" aria-pressed="${String(on)}">${mcpIcon(c.via === 'gallery' ? c.id : c.name, c.name)}<span class="mc-text"><span class="mc-name">${escapeHtml(c.name)}${c.trusted ? ' <span class="mc-ok" title="Known publisher">✓</span>' : ''}</span><span class="mc-about">${escapeHtml(about)}</span><span class="mc-sub">${escapeHtml(c.sub)}</span></span></button>`;
 }
 
+function howItRuns(e: Record<string, unknown>): string {
+  if (e.oauth) return 'sign in';
+  return e.url ? 'remote' : asText(e.command);
+}
+
 export function toCards(m: Record<string, unknown>): Card[] {
   const entries = Array.isArray(m.entries) ? (m.entries as Record<string, unknown>[]) : [];
   return entries.map((e) => ({
@@ -43,7 +48,7 @@ export function toCards(m: Record<string, unknown>): Card[] {
     id: String(e.id),
     name: String(e.name),
     description: asText(e.description),
-    sub: e.oauth ? 'sign in' : e.url ? 'remote' : asText(e.command),
+    sub: howItRuns(e),
     needs: (e.needs as Need[] | undefined) ?? [],
     ...(typeof e.note === 'string' ? { note: e.note } : {}),
     oauth: e.oauth === true,

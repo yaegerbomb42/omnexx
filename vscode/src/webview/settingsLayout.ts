@@ -27,78 +27,89 @@ export interface SectionMeta {
   icon: string;
 }
 
-export const SECTIONS: readonly SectionMeta[] = [
-  {
-    id: 'agent',
-    title: 'Agent',
-    chip: 'Agent',
-    subtitle: 'How hard omnexx works and how much it keeps in mind',
-    icon: '<path d="M12 3l2.2 5.3L20 9l-4.4 3.8L17 19l-5-3-5 3 1.4-6.2L4 9l5.8-.7z"/>',
-  },
-  {
-    id: 'model',
-    title: 'Chat model',
-    chip: 'Chat',
-    subtitle: 'The model this chat talks to right now',
-    icon: '<path d="M4 5h16v11H9l-5 4z"/>',
-  },
-  {
-    id: 'models',
-    title: 'Your models',
-    chip: 'Models',
-    subtitle: 'Which models answer, and in what order',
-    icon: '<path d="M4 6h16M4 12h11M4 18h7"/>',
-  },
-  {
-    id: 'skills',
-    title: 'Skills',
-    chip: 'Skills',
-    subtitle: 'Know-how the agent loads only when a task needs it',
-    icon: '<path d="M5 4h11l3 3v13H5z"/><path d="M9 10h6M9 14h6"/>',
-  },
-  {
-    id: 'providers',
-    title: 'Providers',
-    chip: 'Providers',
-    subtitle: 'Accounts and servers omnexx can reach',
-    icon: '<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>',
-  },
-  {
-    id: 'add',
-    title: 'Add a provider',
-    chip: 'Add',
-    subtitle: 'Connect a hosted account, a local server or any endpoint',
-    icon: '<circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/>',
-  },
-  {
-    id: 'approvals',
-    title: 'Approvals',
-    chip: 'Approvals',
-    subtitle: 'What omnexx may do without asking you first',
-    icon: '<path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
-  },
-  {
-    id: 'mcp',
-    title: 'MCP servers',
-    chip: 'MCP',
-    subtitle: 'Extra tools: a browser, your database, GitHub…',
-    icon: '<path d="M9 3v5M15 3v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v3"/>',
-  },
-  {
-    id: 'browser',
-    title: 'Browser',
-    chip: 'Browser',
-    subtitle: 'The browser the agent drives for web tasks',
-    icon: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c3 3 3 13 0 16M12 4c-3 3-3 13 0 16"/>',
-  },
-  {
-    id: 'advanced',
-    title: 'Advanced',
-    chip: 'More',
-    subtitle: 'Config files, the engine, restart',
-    icon: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
-  },
+type Row = [SectionId, string, string, string, string];
+
+/** id, title, chip, subtitle, icon. */
+const ROWS: readonly Row[] = [
+  [
+    'agent',
+    'Agent',
+    'Agent',
+    'How hard omnexx works and how much it keeps in mind',
+    '<path d="M12 3l2.2 5.3L20 9l-4.4 3.8L17 19l-5-3-5 3 1.4-6.2L4 9l5.8-.7z"/>',
+  ],
+  [
+    'model',
+    'Chat model',
+    'Chat',
+    'The model this chat talks to right now',
+    '<path d="M4 5h16v11H9l-5 4z"/>',
+  ],
+  [
+    'models',
+    'Your models',
+    'Models',
+    'Which models answer, and in what order',
+    '<path d="M4 6h16M4 12h11M4 18h7"/>',
+  ],
+  [
+    'skills',
+    'Skills',
+    'Skills',
+    'Know-how the agent loads only when a task needs it',
+    '<path d="M5 4h11l3 3v13H5z"/><path d="M9 10h6M9 14h6"/>',
+  ],
+  [
+    'providers',
+    'Providers',
+    'Providers',
+    'Accounts and servers omnexx can reach',
+    '<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>',
+  ],
+  [
+    'add',
+    'Add a provider',
+    'Add',
+    'Connect a hosted account, a local server or any endpoint',
+    '<circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/>',
+  ],
+  [
+    'approvals',
+    'Approvals',
+    'Approvals',
+    'What omnexx may do without asking you first',
+    '<path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  ],
+  [
+    'mcp',
+    'MCP servers',
+    'MCP',
+    'Extra tools: a browser, your database, GitHub…',
+    '<path d="M9 3v5M15 3v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v3"/>',
+  ],
+  [
+    'browser',
+    'Browser',
+    'Browser',
+    'The browser the agent drives for web tasks',
+    '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c3 3 3 13 0 16M12 4c-3 3-3 13 0 16"/>',
+  ],
+  [
+    'advanced',
+    'Advanced',
+    'More',
+    'Config files, the engine, restart',
+    '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
+  ],
 ];
+
+export const SECTIONS: readonly SectionMeta[] = ROWS.map(([id, title, chip, subtitle, icon]) => ({
+  id,
+  title,
+  chip,
+  subtitle,
+  icon,
+}));
 
 /** Sections that start folded until the person opens them. */
 export const FOLDED_BY_DEFAULT: readonly SectionId[] = ['add', 'browser', 'advanced'];
@@ -125,7 +136,8 @@ export function navHtml(): string {
 export function sectionHtml(id: SectionId, body: string, folded: boolean, extraClass = ''): string {
   const s = meta(id);
   const open = String(!folded);
-  return `<section class="set-section${extraClass ? ` ${extraClass}` : ''}${folded ? ' folded' : ''}" data-sec="${id}" id="sec-${id}">
+  const classes = ['set-section', extraClass, folded ? 'folded' : ''].filter(Boolean).join(' ');
+  return `<section class="${classes}" data-sec="${id}" id="sec-${id}">
 <button class="sec-head" data-sec-toggle="${id}" aria-expanded="${open}" aria-controls="sec-body-${id}">${icon(s.icon)}<span class="sec-titles"><span class="sec-title">${escapeHtml(s.title)}</span><span class="sec-sub">${escapeHtml(s.subtitle)}</span></span><span class="sec-saved" data-saved-for="${id}" aria-live="polite"></span><span class="sec-chev" aria-hidden="true">▾</span></button>
 <div class="sec-body" id="sec-body-${id}"${folded ? ' hidden' : ''}>${body}</div>
 </section>`;

@@ -138,42 +138,42 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
 const data = (t: Element, key: string): string | undefined =>
   t.closest<HTMLElement>(`[data-${key}]`)?.getAttribute(`data-${key}`) ?? undefined;
 
+/** Remove, hide, delete, bring back and the empty state's button; true when handled. */
+function listClick(t: Element, p: Post): boolean {
+  const remove = data(t, 'sk-remove');
+  const pick = data(t, 'sk-hide') ?? data(t, 'sk-delete');
+  const unhide = data(t, 'sk-unhide');
+  if (remove) view = { ...view, confirming: view.confirming === remove ? undefined : remove };
+  else if (t.closest('[data-sk-remove-cancel]')) view = { ...view, confirming: undefined };
+  else if (pick) {
+    const s = installed.find((x) => x.name === pick);
+    view = { ...view, confirming: undefined };
+    if (s) p(removeMessage(s, t.closest('[data-sk-hide]') ? 'hide' : 'delete'));
+  } else if (unhide) p({ type: 'skillsUnhide', name: unhide });
+  else if (t.closest('[data-sk-show-hidden]')) view = { ...view, showHidden: !view.showHidden };
+  else if (t.closest('[data-sk-browse]')) {
+    search(p);
+    document.getElementById('sk-search')?.focus();
+    return true;
+  } else return false;
+  redraw();
+  return true;
+}
+
 /** Clicks inside the skills box; true when handled. */
 export function click(t: Element, p: Post): boolean {
   if (!t.closest('#skills-box')) return false;
   const toggle = t instanceof HTMLInputElement ? t.dataset.skToggle : undefined;
   const open = data(t, 'sk-open');
-  const remove = data(t, 'sk-remove');
-  const hide = data(t, 'sk-hide');
-  const del = data(t, 'sk-delete');
-  const unhide = data(t, 'sk-unhide');
   const show = data(t, 'sk-preview');
   const install = data(t, 'sk-install');
   const link = data(t, 'sk-link');
-  const skill = (name: string | undefined): Installed | undefined =>
-    installed.find((s) => s.name === name);
   if (toggle && t instanceof HTMLInputElement) {
     p({ type: 'skillsToggle', name: toggle, on: t.checked });
     flashSaved('skills');
   } else if (open) p({ type: 'open', path: open });
-  else if (remove) {
-    view = { ...view, confirming: view.confirming === remove ? undefined : remove };
-    redraw();
-  } else if (t.closest('[data-sk-remove-cancel]')) {
-    view = { ...view, confirming: undefined };
-    redraw();
-  } else if (hide || del) {
-    const s = skill(hide ?? del);
-    view = { ...view, confirming: undefined };
-    if (s) p(removeMessage(s, hide ? 'hide' : 'delete'));
-  } else if (unhide) p({ type: 'skillsUnhide', name: unhide });
-  else if (t.closest('[data-sk-show-hidden]')) {
-    view = { ...view, showHidden: !view.showHidden };
-    redraw();
-  } else if (t.closest('[data-sk-browse]')) {
-    search(p);
-    document.getElementById('sk-search')?.focus();
-  } else if (show) p({ type: 'skillsPreview', id: show });
+  else if (listClick(t, p)) return true;
+  else if (show) p({ type: 'skillsPreview', id: show });
   else if (install) {
     notice = 'Installing…';
     redraw();

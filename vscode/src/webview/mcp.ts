@@ -152,6 +152,8 @@ function listHtml(): string {
   return `<p class="hint">${summary}</p><ul class="providers mcp-list">${servers.map(serverHtml).join('')}</ul>`;
 }
 
+const searchLabel = (q: string): string => `Search the MCP registry for "${escapeHtml(q)}"`;
+
 const pickedCard = (c: Card): string => cardHtml(c, picked?.id === c.id && picked.via === c.via);
 
 function matches(c: Card): boolean {
@@ -177,7 +179,7 @@ function cardsHtml(): string {
     ? `<div class="t-group">MCP registry: "${escapeHtml(registry.query)}"</div><div class="mcp-cards">${registry.hits.map(pickedCard).join('')}</div>`
     : '';
   const searchBtn = query.trim()
-    ? `<button class="ghost" data-mcp-registry ${registry.busy ? 'disabled' : ''}>${registry.busy ? 'Searching the registry…' : `Search the MCP registry for "${escapeHtml(query.trim())}"`}</button>`
+    ? `<button class="ghost" data-mcp-registry ${registry.busy ? 'disabled' : ''}>${registry.busy ? 'Searching the registry…' : searchLabel(query.trim())}</button>`
     : '';
   return `${popular.length ? `<div class="t-group">Popular</div><div class="mcp-cards">${popular.map(pickedCard).join('')}</div>` : '<p class="hint">No popular server matches.</p>'}${reg}${searchBtn}${picked ? formHtml(picked) : ''}`;
 }

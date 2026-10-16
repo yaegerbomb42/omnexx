@@ -45,9 +45,10 @@ function confirmHtml(s: Installed): string {
 
 function rowHtml(s: Installed, view: ListView): string {
   const n = escapeHtml(s.name);
+  const cost = s.enabled ? `~${formatTokens(s.tokens)} tok` : 'off';
   const toggle = `<label class="mcp-switch" title="${s.enabled ? 'On: offered to the agent' : 'Off: never offered'}"><input type="checkbox" aria-label="Use ${n}" data-sk-toggle="${n}"${s.enabled ? ' checked' : ''}><span></span></label>`;
   const actions = `<button class="ghost small" data-sk-open="${escapeHtml(s.path)}" title="Open SKILL.md">Open</button><button class="ghost small" data-sk-remove="${n}" aria-expanded="${String(view.confirming === s.name)}">Remove</button>`;
-  return `<li class="sk${s.enabled ? '' : ' off'}"><div class="sk-main"><div class="sk-top"><span class="sk-name">${n}</span><span class="sk-badge">${escapeHtml(s.sourceLabel)}</span><span class="sk-tok">${s.enabled ? `~${formatTokens(s.tokens)} tok` : 'off'}</span></div><div class="sk-about">${escapeHtml(s.description)}</div><div class="sk-actions">${actions}</div>${view.confirming === s.name ? confirmHtml(s) : ''}</div>${toggle}</li>`;
+  return `<li class="sk${s.enabled ? '' : ' off'}"><div class="sk-main"><div class="sk-top"><span class="sk-name">${n}</span><span class="sk-badge">${escapeHtml(s.sourceLabel)}</span><span class="sk-tok">${cost}</span></div><div class="sk-about">${escapeHtml(s.description)}</div><div class="sk-actions">${actions}</div>${view.confirming === s.name ? confirmHtml(s) : ''}</div>${toggle}</li>`;
 }
 
 function hiddenHtml(hidden: Installed[], view: ListView): string {
