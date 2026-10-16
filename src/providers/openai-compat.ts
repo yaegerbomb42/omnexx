@@ -73,7 +73,8 @@ export function toChatMessages(req: CompletionRequest): ChatMessage[] {
       );
       out.push({
         role: 'assistant',
-        content: text || null,
+        // A string even when the turn only calls tools: Ollama rejects null content.
+        content: text,
         ...(calls.length ? { tool_calls: calls } : {}),
       });
       continue;
