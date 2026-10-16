@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
 import type { SpawnOptions } from 'node:child_process';
 import { once } from 'node:events';
 import type { AgentRunOutput, BenchmarkResult, TaskDef, TaskRunResult } from '../types.ts';
@@ -6,6 +7,8 @@ import type { AgentRunOutput, BenchmarkResult, TaskDef, TaskRunResult } from '..
 /** Abstract base class for agent runners. */
 export abstract class AgentRunner {
   protected readonly name: string;
+  /** When set, everything the agent prints is appended here as it happens (bench:watch). */
+  liveLog: string | undefined;
 
   protected constructor(name: string) {
     this.name = name;
@@ -46,11 +49,21 @@ export abstract class AgentRunner {
     let stdout = '';
     let stderr = '';
 
+    const tee = (text: string): void => {
+      if (!this.liveLog) return;
+      try {
+        appendFileSync(this.liveLog, text);
+      } catch {
+        // Watching is best-effort; the run never fails over its live log.
+      }
+    };
     child.stdout?.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
+      tee(chunk.toString());
     });
     child.stderr?.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
+      tee(chunk.toString());
     });
 
     let timer: NodeJS.Timeout | undefined;

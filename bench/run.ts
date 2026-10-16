@@ -12,7 +12,8 @@ import { ClineRunner } from './runners/cline.ts';
 import { OpenHandsRunner } from './runners/openhands.ts';
 import { endpointFromEnv, startMeter, type Meter } from './meter.ts';
 import { cachedSetup, planJobs, runPool, tagLines, type Job } from './pool.ts';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { liveDir, liveName, pickTasks, QUICK_HOURS, tokensFrom, writeStatus } from './live.ts';
 import { createResultsWriter, resultsDir } from './results.ts';
 import type { BenchConfig, Suite, TaskRunResult } from './types.ts';
 import type { AgentRunner } from './runners/base.ts';
@@ -71,6 +72,8 @@ interface Opts {
   agents: string;
   out: string;
   task?: string;
+  tasks?: string;
+  quick?: boolean;
   dryRun?: boolean;
   hours: string;
   budget: string;
@@ -95,6 +98,11 @@ async function main(): Promise<void> {
     .requiredOption('--agents <list>', `comma-separated: ${Object.keys(RUNNERS).join(',')}`)
     .requiredOption('--out <dir>', 'name for this result set: written to bench/results/<name>')
     .option('--task <id>', 'run only this task')
+    .option('--tasks <ids>', 'run only these tasks (comma-separated)')
+    .option(
+      '--quick',
+      'a 5-10 minute check: 4 varied tasks, every run at once, 8 minutes per run (hard10)',
+    )
     .option('--hours <n>', 'omnexx wall-clock cap per task', '0.5')
     .option('--budget <usd>', 'omnexx spend cap per task', '2')
     .option('--model <ref>', 'omnexx: one model for every role, e.g. ollama:gpt-oss:120b-cloud')
@@ -131,10 +139,11 @@ async function main(): Promise<void> {
   if (endpoint) await mkdir(resultsDir(config.out), { recursive: true });
   const callsLog = join(resultsDir(config.out), 'calls.jsonl');
   if (opts.context !== 'lean' && opts.context !== 'full') fail('--context is lean or full');
-  const concurrency = positiveInt('--concurrency', opts.concurrency);
+  const quick = opts.quick === true;
+  const concurrency = quick ? 64 : positiveInt('--concurrency', opts.concurrency);
   const reps = positiveInt('--reps', opts.reps);
   const runnerOpts: RunnerOpts = {
-    hours: Number(opts.hours),
+    hours: quick ? QUICK_HOURS : Number(opts.hours),
     budget: Number(opts.budget),
     model: endpoint?.model ?? opts.model,
     context: opts.context,
@@ -153,7 +162,7 @@ async function main(): Promise<void> {
     await probe?.close();
   }
 
-  const tasks = (await suite.loadTasks()).filter((t) => !opts.task || t.id === opts.task);
+  const tasks = pickTasks(await suite.loadTasks(), opts);
   if (!tasks.length) fail('No tasks to run');
   const jobs = planJobs(tasks, config.agents, reps);
 
@@ -181,10 +190,24 @@ async function main(): Promise<void> {
     const meter = endpoint ? await startMeter(endpoint, callsLog, tag) : undefined;
     const startedAt = new Date().toISOString();
     const base = { taskId: task.id, suite: config.suite, agent, rep, startedAt };
+    const live = { tag, task: task.id, agent, rep };
+    const logFile = join(liveDir(config.out), `${liveName(tag)}.log`);
+    await writeStatus(config.out, { ...live, state: 'running', startedAt });
+    await writeFile(logFile, '');
+    const ticker = setInterval(() => {
+      if (meter)
+        void writeStatus(config.out, {
+          ...live,
+          state: 'running',
+          startedAt,
+          tokens: tokensFrom(meter.totals()),
+        });
+    }, 2_000);
     let result: TaskRunResult;
     try {
       say('start');
       const runner = makeRunner(agent, { ...runnerOpts, meter });
+      runner.liveLog = logFile;
       await setup(task, workDir);
       const goal = await suite.getGoal(task);
       // The agent works; the suite's hidden check decides whether it resolved the task.
@@ -205,10 +228,29 @@ async function main(): Promise<void> {
         error: String(error),
       };
     } finally {
-      await meter?.close();
+      clearInterval(ticker);
     }
+    const tokens = meter ? tokensFrom(meter.totals()) : undefined;
+    await meter?.close();
+    await writeStatus(config.out, {
+      ...live,
+      state: result.error ? 'error' : result.metrics.resolved ? 'pass' : 'fail',
+      startedAt,
+      finishedAt: result.finishedAt,
+      ...(tokens ? { tokens } : {}),
+      ...(result.error ? { error: result.error } : {}),
+    });
     await writer.writeResult(result);
   };
+  for (const job of jobs)
+    await writeStatus(config.out, {
+      tag: job.tag,
+      task: job.task.id,
+      agent: job.agent,
+      rep: job.rep,
+      state: 'queued',
+    });
+  console.log(`Watch live: npm run bench:watch -- --out ${config.out}`);
   await runPool(jobs, concurrency, runJob);
   console.log(`\nResults: ${writer.getOutDir()}/${writer.getRunId()}.md`);
 }
