@@ -7,7 +7,7 @@ import type { CompletionRequest, CompletionResponse, Provider } from '../../src/
 import { emptyUsage } from '../../src/providers/types.js';
 import { makeRepo, startTestRun } from '../support/harness.js';
 import { planner, scenario } from '../support/scenarios.js';
-import { call, ScriptedProvider, say, type Script } from '../support/scripted-provider.js';
+import { asks, call, ScriptedProvider, say, type Script } from '../support/scripted-provider.js';
 
 /** A chapter task: its file must exist with at least `words` words and no placeholders. */
 const chapter = (id: string, file: string, words: number) => ({
@@ -65,8 +65,11 @@ describe('writing runs: a book with no tests', () => {
     const provider: Provider = {
       name: 'anthropic',
       complete(req: CompletionRequest): Promise<CompletionResponse> {
-        const sys = req.system.map((b) => b.text).join('\n');
-        if (!sys.includes('reviewing one piece') && !sys.includes('reviewing a change'))
+        const sys = [
+          ...req.system.map((b) => b.text),
+          ...(req.messages.at(-1)?.content ?? []).map((b) => (b.type === 'text' ? b.text : '')),
+        ].join('\n');
+        if (!asks(req, 'reviewing one piece') && !asks(req, 'reviewing a change'))
           return scripted.complete(req);
         reviewSystems.push(sys);
         return Promise.resolve({

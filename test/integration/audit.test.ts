@@ -6,6 +6,7 @@ import { emptyUsage } from '../../src/providers/types.js';
 import { makeRepo, startTestRun } from '../support/harness.js';
 import { fileTask, fileWorker, firstText, planner, scenario } from '../support/scenarios.js';
 import {
+  asks,
   call,
   ScriptedProvider,
   type Script,
@@ -29,8 +30,7 @@ function gapAuditor(scripted: ScriptedProvider): Provider & { audits: () => numb
     name: 'anthropic',
     audits: () => audits,
     complete(req: CompletionRequest): Promise<CompletionResponse> {
-      if (!req.system.some((b) => b.text.includes('You audit the result')))
-        return scripted.complete(req);
+      if (!asks(req, 'You audit the result')) return scripted.complete(req);
       audits++;
       const findings = [{ severity: 'major', problem: `gap ${audits}`, fix: 'close it' }];
       return Promise.resolve({
@@ -92,8 +92,7 @@ describe('earned done: audit before finishing', () => {
     const provider: Provider = {
       name: 'anthropic',
       complete(req: CompletionRequest): Promise<CompletionResponse> {
-        if (!req.system.some((b) => b.text.includes('You audit the result')))
-          return scripted.complete(req);
+        if (!asks(req, 'You audit the result')) return scripted.complete(req);
         audits++;
         const findings =
           audits === 1
@@ -200,8 +199,7 @@ describe('earned done: audit before finishing', () => {
     const provider: Provider = {
       name: 'anthropic',
       complete(req: CompletionRequest): Promise<CompletionResponse> {
-        if (!req.system.some((b) => b.text.includes('You audit the result')))
-          return scripted.complete(req);
+        if (!asks(req, 'You audit the result')) return scripted.complete(req);
         audits++;
         return Promise.resolve({
           content: [

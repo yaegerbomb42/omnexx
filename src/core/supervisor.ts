@@ -717,6 +717,7 @@ class Supervisor {
       goal,
       intent,
       `${map}\n\n# Everything this run changed (diff from the start)\n${clipDiff(diff, cfg.max_diff_chars * 2)}`,
+      r.workerPrefix,
     );
   }
 

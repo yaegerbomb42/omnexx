@@ -34,6 +34,18 @@ const firstText = (req: CompletionRequest): string => {
 };
 
 /**
+ * Whether a request is a review or audit. The rubric is the system prompt on the standalone
+ * path, and the last user turn when the call reuses the worker's cached prefix.
+ */
+export function asks(req: CompletionRequest, phrase: string): boolean {
+  if (req.system.some((b) => b.text.includes(phrase))) return true;
+  const last = req.messages.at(-1);
+  return (
+    last?.role === 'user' && last.content.some((b) => b.type === 'text' && b.text.includes(phrase))
+  );
+}
+
+/**
  * The backbone of the integration and chaos tests (plan §7.2): a Provider that answers from a
  * script keyed by task, attempt and turn. That makes replies a pure function of the request, so
  * a crash-and-resume replays the same way.

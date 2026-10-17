@@ -537,6 +537,7 @@ export async function stepAct(run: Run): Promise<void> {
   };
   if ('reviewed' in result && result.reviewed && task.id === FAST_TASK)
     run.state.loopReviewed = true;
+  run.workerPrefix = { system: ctx.system, messages: result.messages };
   await run.setPhase('verify');
 }
 
@@ -653,7 +654,7 @@ export async function stepVerify(run: Run): Promise<void> {
     // A loop session already had its one review, of the whole diff; findings were fixed in it.
     if (!reasons.length && run.config.review.enabled && !act.reviewed) {
       const goal = (await run.store.readGoal()).text;
-      const r = await reviewChange(run, task, goal, withoutVendored(patch));
+      const r = await reviewChange(run, task, goal, withoutVendored(patch), run.workerPrefix);
       if (r) {
         const block = blocking(r.findings, run.config.review.block_on);
         run.events.emit('review.result', {

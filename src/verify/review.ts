@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { PlanNode } from '../core/plan.js';
 import type { Run } from '../core/run.js';
 import { estimateTokens } from '../core/tokens.js';
+import type { Message, SystemBlock } from '../providers/types.js';
 
 export const findingSchema = z.object({
   severity: z.enum(['blocker', 'major', 'minor']),
@@ -78,7 +79,7 @@ export function coerceReview(input: unknown): z.infer<typeof reviewSchema> | und
   return { findings: findings.slice(0, 20), summary: str(o.summary, 600) };
 }
 
-const REVIEW_SYSTEM = `You are a strict senior engineer reviewing a change before it is committed by an autonomous coding agent. The tests already pass; your job is what tests miss.
+export const REVIEW_SYSTEM = `You are a strict senior engineer reviewing a change before it is committed by an autonomous coding agent. The tests already pass; your job is what tests miss.
 
 Report only real problems, each with a severity:
 - blocker: wrong behaviour; a requirement of the task or goal not actually met; a stub, placeholder or TODO where real code was needed; outputs hardcoded or special-cased to make tests pass; tests that don't exercise the behaviour they claim to; a security hole; data loss.
@@ -92,7 +93,7 @@ Never report style, naming or formatting. If the change is sound, return no find
 const REVIEW_MAX_TOKENS = 8_000;
 const AUDIT_MAX_TOKENS = 16_000;
 
-const AUDIT_SYSTEM = `You audit the result of a long autonomous coding run before it is allowed to finish. You get what the user asked for (the goal and its "done when" list) and the code as it is now.
+export const AUDIT_SYSTEM = `You audit the result of a long autonomous coding run before it is allowed to finish. You get what the user asked for (the goal and its "done when" list) and the code as it is now.
 
 List every gap between what was asked and what exists: a "done when" item or success criterion not met, a feature the goal asks for missing or only stubbed, documentation the goal asks for missing. Every change already passed the test gates and a per-change review. Judge only against what the goal and its "done when" list ask for: improvements, extra tests, hardening, cleanup of files the goal doesn't mention and stricter readings of the wording are not gaps (they belong to later improvement rounds). Each gap must be concrete and checkable, phrased as work to do, and severity major only when an explicit requirement is unmet. If what was asked for is done, return no findings. Reply only by calling the answer tool.`;
 
@@ -122,50 +123,135 @@ export function renderFindings(findings: readonly Finding[]): string {
 const ANSWER_SHAPE =
   '\n\nCall the answer tool with {"findings": [{"severity", "file", "problem", "fix"}, ...], "summary": "..."}. Use "findings": [] when nothing is wrong.';
 
+const answerTool = {
+  name: 'answer',
+  description: 'Submit the findings',
+  inputSchema: z.toJSONSchema(reviewSchema),
+};
+
+/**
+ * The worker's cached prefix. System blocks are sent unchanged; `messages` is the conversation
+ * so far, also unchanged. The rubric and the question go in one new user turn.
+ */
+export interface WorkerPrefix {
+  system: readonly SystemBlock[];
+  messages: readonly Message[];
+}
+
+/** Same estimate the agent loop uses before a model call (`system` + tools + messages). */
+function requestTokens(system: readonly SystemBlock[], messages: readonly Message[]): number {
+  return estimateTokens(JSON.stringify([system, [answerTool], messages]));
+}
+
+/**
+ * Whether appending the review turn stays inside the configured context budget
+ * (`context.budget_tokens`). Unset means no cap, so the cached prefix is used.
+ */
+function prefixFits(
+  run: Run,
+  system: readonly SystemBlock[],
+  messages: readonly Message[],
+): boolean {
+  const budget = run.config.context.budget_tokens;
+  return budget === undefined || requestTokens(system, messages) <= budget;
+}
+
+type AskSpec =
+  | { path: 'standalone'; system: SystemBlock[]; messages: Message[] }
+  | { path: 'prefix'; system: readonly SystemBlock[]; messages: Message[] };
+
+/** Breakpoints on the first message and the last message that was already in the worker turn. */
+function breakpoints(messages: readonly Message[], fresh: boolean): number[] {
+  if (fresh || messages.length < 2) return [];
+  const cachedLast = messages.length - 2;
+  return cachedLast > 0 ? [0, cachedLast] : [0];
+}
+
+function specFor(
+  run: Run,
+  rubric: string,
+  prompt: string,
+  worker: WorkerPrefix | undefined,
+): AskSpec {
+  const body = run.redactor.text(prompt);
+  if (worker) {
+    const messages: Message[] = [
+      ...worker.messages,
+      { role: 'user', content: [{ type: 'text', text: `${rubric}\n\n${body}` }] },
+    ];
+    if (prefixFits(run, worker.system, messages))
+      return { path: 'prefix', system: worker.system, messages };
+  }
+  return {
+    path: 'standalone',
+    system: [{ text: rubric }],
+    messages: [{ role: 'user', content: [{ type: 'text', text: body }] }],
+  };
+}
+
+/** The one retry spells the answer shape onto the user turn already chosen. */
+function withShape(spec: AskSpec): AskSpec {
+  const messages = spec.messages.map((m, i) =>
+    i === spec.messages.length - 1
+      ? {
+          ...m,
+          content: m.content.map((b, j) =>
+            j === m.content.length - 1 && b.type === 'text'
+              ? { ...b, text: b.text + ANSWER_SHAPE }
+              : b,
+          ),
+        }
+      : m,
+  );
+  return spec.path === 'prefix'
+    ? { path: 'prefix', system: spec.system, messages }
+    : { path: 'standalone', system: spec.system, messages };
+}
+
 async function ask(
   run: Run,
-  system: string,
+  rubric: string,
   prompt: string,
-  role: string,
+  role: 'review' | 'audit',
   chain: 'cheap' | 'worker' | 'planner',
-  maxTokens = 3_000,
+  maxTokens: number,
+  worker: WorkerPrefix | undefined,
+  extra: Record<string, unknown>,
   why?: (reason: string) => void,
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
+  const spec = specFor(run, rubric, prompt, worker);
+  run.events.emit(role === 'audit' ? 'audit.cache_path' : 'review.cache_path', {
+    path: spec.path,
+    ...extra,
+  });
   const last = { reason: '' };
-  const first = await askOnce(run, system, prompt, role, chain, maxTokens, (w) => {
+  const first = await askOnce(run, spec, role, chain, maxTokens, (w) => {
     last.reason = w;
     why?.(w);
   });
   if (first || !last.reason.startsWith('unusable findings')) return first;
-  return askOnce(run, system, prompt + ANSWER_SHAPE, role, chain, maxTokens, why);
+  return askOnce(run, withShape(spec), role, chain, maxTokens, why);
 }
 
 async function askOnce(
   run: Run,
-  system: string,
-  prompt: string,
+  spec: AskSpec,
   role: string,
   chain: 'cheap' | 'worker' | 'planner',
-  maxTokens = 3_000,
+  maxTokens: number,
   why?: (reason: string) => void,
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
   const done = await run.cheapComplete(
     {
-      system: [{ text: system }],
-      tools: [
-        {
-          name: 'answer',
-          description: 'Submit the findings',
-          inputSchema: z.toJSONSchema(reviewSchema),
-        },
-      ],
+      system: spec.system as SystemBlock[],
+      tools: [answerTool],
       toolChoice: { type: 'tool', name: 'answer' },
-      messages: [{ role: 'user', content: [{ type: 'text', text: run.redactor.text(prompt) }] }],
+      messages: spec.messages,
       maxTokens,
-      messageBreakpoints: [],
+      messageBreakpoints: breakpoints(spec.messages, spec.path === 'standalone'),
     },
     {
-      estimatedInputTokens: estimateTokens(prompt) + 800,
+      estimatedInputTokens: requestTokens(spec.system, spec.messages),
       maxOutputTokens: maxTokens,
       role,
       chain,
@@ -197,6 +283,7 @@ export async function reviewChange(
   task: PlanNode,
   goal: string,
   diff: string,
+  worker?: WorkerPrefix,
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
   // A writing review checks the piece against the bible the author keeps in its general notes.
   const bible = run.state.writing
@@ -219,6 +306,8 @@ export async function reviewChange(
       'review',
       run.config.review.review_models,
       REVIEW_MAX_TOKENS,
+      worker,
+      { task: task.id },
     );
   } catch (err) {
     run.events.emit('review.unavailable', { task: task.id, error: (err as Error).message });
@@ -232,6 +321,7 @@ export async function auditResult(
   goal: string,
   intent: string,
   codebase: string,
+  worker?: WorkerPrefix,
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
   const prompt = `# What the user asked for\n${goal.slice(0, 4_000)}\n\n${intent.slice(0, 4_000)}\n\n# The work now\n${codebase}`;
   try {
@@ -245,6 +335,8 @@ export async function auditResult(
       'audit',
       run.config.review.audit_models,
       AUDIT_MAX_TOKENS,
+      worker,
+      {},
       (w) => (reason = w),
     );
     if (!r) run.events.emit('audit.unavailable', { error: reason });

@@ -6,7 +6,7 @@ import type { CompletionRequest, CompletionResponse, Provider } from '../../src/
 import { emptyUsage } from '../../src/providers/types.js';
 import { makeRepo, startTestRun } from '../support/harness.js';
 import { fileTask, fileWorker, planner, scenario } from '../support/scenarios.js';
-import { call, ScriptedProvider, say, type Script } from '../support/scripted-provider.js';
+import { asks, call, ScriptedProvider, say, type Script } from '../support/scripted-provider.js';
 
 const GATE = {
   name: 'test',
@@ -128,8 +128,7 @@ describe('fast path: one pass on the whole goal before planning', () => {
     const provider: Provider = {
       name: 'anthropic',
       complete(req: CompletionRequest): Promise<CompletionResponse> {
-        if (!req.system.some((b) => b.text.includes('reviewing a change')))
-          return scripted.complete(req);
+        if (!asks(req, 'reviewing a change')) return scripted.complete(req);
         reviews++;
         const findings =
           reviews === 1
@@ -265,8 +264,8 @@ describe('think-first loop (the default for the fast path)', () => {
     const provider: Provider = {
       name: 'anthropic',
       complete(req: CompletionRequest): Promise<CompletionResponse> {
-        const reviewing = req.system.some((b) => b.text.includes('reviewing a change'));
-        const auditing = req.system.some((b) => b.text.includes('You audit the result'));
+        const reviewing = asks(req, 'reviewing a change');
+        const auditing = asks(req, 'You audit the result');
         if (!reviewing && !auditing) return scripted.complete(req);
         if (auditing) audits++;
         else reviews++;
