@@ -117,7 +117,6 @@ const conversation = el('log', HTMLElement);
 const input = el('input', HTMLTextAreaElement);
 const send = el('send', HTMLButtonElement);
 const pauseBtn = el('pause', HTMLButtonElement);
-const stopBtn = el('stop', HTMLButtonElement);
 const ask = el('ask', HTMLElement);
 const steps = el('steps', HTMLElement);
 const stepsBody = el('steps-body', HTMLElement);
@@ -330,11 +329,10 @@ function drawControls(s: State): void {
     : 'omnexx asks before going outside the repo or running guarded commands. Click to auto-approve.';
   pauseBtn.disabled = !s.busy;
   pauseBtn.hidden = !s.busy;
-  stopBtn.hidden = !s.busy;
   pauseBtn.dataset.action = s.paused ? 'resume' : 'pause';
   pauseBtn.title = s.paused ? 'Resume' : 'Pause after the current step';
   pauseBtn.classList.toggle('on', s.paused);
-  stopBtn.disabled = !s.busy;
+  drawSend();
   input.placeholder = placeholderFor(s);
   ask.hidden = s.pending === null;
   if (s.pending !== null) {
@@ -414,9 +412,21 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
   }
 });
 
-function submit(): void {
+/** While the agent works and the input is empty, Send is Stop. */
+function drawSend(): void {
+  const stop = Boolean(state?.busy) && !input.value.trim();
+  send.classList.toggle('as-stop', stop);
+  send.title = stop ? 'Stop (Esc)' : 'Send (Enter)';
+  send.setAttribute('aria-label', stop ? 'Stop' : 'Send');
+}
+
+/** Sends the input. Only a click on the button (shown as Stop) stops a run; Enter never does. */
+function submit(fromButton = false): void {
   const text = input.value.trim();
-  if (!text) return;
+  if (!text) {
+    if (fromButton && state?.busy) post({ type: 'stop' });
+    return;
+  }
   post({ type: 'send', text });
   if (sent.at(-1) !== text) sent.push(text);
   recall = -1;
@@ -490,6 +500,7 @@ const suggest = attachSuggest({
 input.addEventListener('input', () => {
   autosize();
   saveDraft();
+  drawSend();
   suggest.refresh();
 });
 input.addEventListener('click', () => {
@@ -534,7 +545,9 @@ window.addEventListener('focus', () => {
   const saved = vscode.getState() as { draft?: unknown } | undefined;
   if (typeof saved?.draft === 'string') fillInput(saved.draft);
 }
-send.addEventListener('click', submit);
+send.addEventListener('click', () => {
+  submit(true);
+});
 conversation.addEventListener('scroll', () => {
   stick.conversation =
     conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 40;

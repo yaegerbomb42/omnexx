@@ -379,7 +379,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   <div id="suggest" class="suggest" hidden role="listbox" aria-label="Suggestions"></div>
   <div class="input-wrap">
     <textarea id="input" rows="1" aria-label="Message omnexx"></textarea>
-    <button id="send" class="send" title="Send (Enter)" aria-label="Send"><svg viewBox="0 0 16 16"><path d="M2 8l11-5-3.5 11-2.2-4.3z M7.3 9.7 13 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button>
+    <button id="send" class="send" title="Send (Enter)" aria-label="Send"><svg class="stop-ico" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg><svg class="send-ico" viewBox="0 0 16 16"><path d="M2 8l11-5-3.5 11-2.2-4.3z M7.3 9.7 13 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button>
   </div>
   <div class="row">
     <div class="modes" role="group" aria-label="Mode">
@@ -393,7 +393,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     <button class="meter" data-action="inspect" title="Context in use; click to see, edit or delete what the model gets"><span class="track"><span class="fill" id="ctx-fill"></span></span><span id="ctx-text">—</span></button>
     <button class="chip cost" data-action="usage" aria-haspopup="true" title="Session usage"><span id="stat-cost">$0.00</span></button>
     <button id="pause" class="icon ctl" data-action="pause" title="Pause after the current step" aria-label="Pause or resume" disabled hidden><svg viewBox="0 0 16 16"><path d="M5.5 3.5v9M10.5 3.5v9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-    <button id="stop" class="icon ctl stop" data-action="stop" title="Stop (Esc)" aria-label="Stop" disabled hidden><svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button>
   </div>
   <div id="usage-pop" class="pop usage" hidden role="dialog" aria-label="Session usage">
     <div class="row"><span class="k">Uptime</span><span class="v" id="stat-uptime">00:00:00</span></div>

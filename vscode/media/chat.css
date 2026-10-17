@@ -3905,3 +3905,13 @@ body {
   color: var(--vscode-textLink-activeForeground, var(--accent));
   text-decoration: underline;
 }
+
+.send .stop-ico,
+.send.as-stop .send-ico {
+  display: none;
+}
+
+.send.as-stop .stop-ico {
+  display: block;
+  color: var(--vscode-errorForeground, var(--bad));
+}
