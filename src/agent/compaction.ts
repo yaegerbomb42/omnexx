@@ -34,6 +34,39 @@ export interface CompactionSettings {
   pinned?: string;
 }
 
+/** A cache read's price as a share of an uncached input token (Anthropic and DeepSeek: 0.1). */
+const CACHED_PRICE = 0.1;
+/** The miss rate the configured thresholds are tuned for. */
+const BASELINE_MISS_RATE = 0.02;
+/** Turns of prior weight on the baseline, so a single early miss doesn't halve the thresholds. */
+const MISS_PRIOR_TURNS = 30;
+const MIN_THRESHOLD_SCALE = 0.5;
+
+/**
+ * Every provider cache miss re-sends the whole prompt, so a resident token costs
+ * `CACHED_PRICE + (1 - CACHED_PRICE) * missRate` per turn. When misses run above the baseline,
+ * scale the clear and fold thresholds down to keep that expected cost where it was tuned.
+ */
+export function missAwareSettings(
+  settings: CompactionSettings,
+  misses: number,
+  turns: number,
+): CompactionSettings {
+  const rate =
+    (misses + BASELINE_MISS_RATE * MISS_PRIOR_TURNS) / (Math.max(0, turns) + MISS_PRIOR_TURNS);
+  const perToken = (m: number) => CACHED_PRICE + (1 - CACHED_PRICE) * m;
+  const scale = Math.min(
+    1,
+    Math.max(MIN_THRESHOLD_SCALE, perToken(BASELINE_MISS_RATE) / perToken(rate)),
+  );
+  if (scale === 1) return settings;
+  return {
+    ...settings,
+    clearAt: Math.floor(settings.clearAt * scale),
+    compactAt: Math.floor(settings.compactAt * scale),
+  };
+}
+
 /** Below this a clear saves less than the cache miss it causes on the next turn. */
 export const MIN_CLEAR_TOKENS = 4_000;
 

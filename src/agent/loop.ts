@@ -39,6 +39,7 @@ import type { Tool, ToolContext } from '../tools/types.js';
 import {
   contextTokens,
   manageContext,
+  missAwareSettings,
   type CompactionSettings,
   type Summarize,
 } from './compaction.js';
@@ -397,6 +398,7 @@ export async function runAgentLoop(
   const usage: Usage = { uncached: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0, output: 0 };
   let usd = 0;
   let turns = 0;
+  let cacheMisses = 0;
   let cycleTokens = 0;
   let finalText = '';
   let todos: readonly TodoItem[] = [];
@@ -433,10 +435,11 @@ export async function runAgentLoop(
     if (deps.signal?.aborted) return end('stop-now');
 
     if (deps.compaction && turns > 0) {
+      const settings = missAwareSettings(deps.compaction.settings, cacheMisses, turns - 1);
       messages = await manageContext(
         messages,
         ctx.anchor ?? ctx.first,
-        ctx.pinned ? { ...deps.compaction.settings, pinned: ctx.pinned } : deps.compaction.settings,
+        ctx.pinned ? { ...settings, pinned: ctx.pinned } : settings,
         deps.compaction.summarize,
         ({ kind, ...rest }) => {
           // Earlier read results are gone from the context now; let `read` return them again.
@@ -715,7 +718,10 @@ export async function runAgentLoop(
       usd: cost,
     });
     const miss = cacheShortfall(turns, previousPromptTokens, res.usage.cacheRead);
-    if (miss) deps.events.emit('cache.miss', miss);
+    if (miss) {
+      cacheMisses++;
+      deps.events.emit('cache.miss', miss);
+    }
     previousPromptTokens = input;
 
     messages.push({ role: 'assistant', content: res.content });
