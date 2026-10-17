@@ -10,7 +10,7 @@ const STEPS_HEADING =
 /** Sections the think prompt asks for after the steps; any of them ends the list. */
 const NEXT_SECTION =
   /^\s*(?:#+\s*)?(?:\*\*)?\s*(?:\d+[.)]\s*)?(?:\*\*)?\s*(?:how (?:you|i) will verify|verif(?:y|ication)|spec cases|risks?)\b/i;
-const ITEM = /^(\s*)(?:[-*+]|\d+[.)]|step\s+\d+[:.)]?)\s+(.*)$/i;
+const ITEM = /^(\s*)(?:#+\s*)?(?:[-*+]|\d+[.)]|step\s+\d+[:.)]?)\s+(.*)$/i;
 
 function clean(text: string): string {
   const t = text
@@ -32,9 +32,12 @@ export function analysisSteps(analysis: string): string[] {
   const steps: string[] = [];
   let indent: number | undefined;
   for (const line of lines.slice(start + 1)) {
-    if (NEXT_SECTION.test(line) || /^\s*#+\s/.test(line)) break;
+    if (NEXT_SECTION.test(line)) break;
     const m = ITEM.exec(line);
-    if (!m) continue;
+    if (!m) {
+      if (/^\s*#+\s/.test(line)) break;
+      continue;
+    }
     const depth = (m[1] ?? '').replace(/\t/g, '  ').length;
     indent ??= depth;
     if (depth > indent) continue;

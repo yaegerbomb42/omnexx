@@ -27,6 +27,18 @@ describe('analysisSteps', () => {
     expect(analysisSteps(analysis)).toEqual(['a', 'b']);
   });
 
+  it('reads markdown heading-style steps without stopping early', () => {
+    const analysis = [
+      '## Ordered steps',
+      '### Step 1: First action',
+      '### Step 2: Second action',
+      '### 3. Third action',
+      '## Verification',
+      '- verify things',
+    ].join('\n');
+    expect(analysisSteps(analysis)).toEqual(['First action', 'Second action', 'Third action']);
+  });
+
   it('gives nothing without a steps section or with a single step', () => {
     expect(analysisSteps('1. Framing\n- a\n- b')).toEqual([]);
     expect(analysisSteps('Ordered steps:\n- just one\nSpec cases:\n- x')).toEqual([]);
