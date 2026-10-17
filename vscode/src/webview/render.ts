@@ -305,6 +305,21 @@ export function toolKind(line: string): ToolKind {
   return TOOL_VERBS.find(([re]) => re.test(text))?.[1] ?? 'tool';
 }
 
+/** A narrated tool line as HTML, with each file path in it a link that opens the file. */
+export function toolLineHtml(line: string): string {
+  return line
+    .trim()
+    .split(/(\s+)/)
+    .map((word) => {
+      const path = word.replace(/^[`'"(]+|[`'",;:.)]+$/g, '');
+      if (!path || !looksLikePath(path)) return escapeHtml(word);
+      const at = word.indexOf(path);
+      const esc = escapeHtml(path);
+      return `${escapeHtml(word.slice(0, at))}<span class="path" data-open="${esc}" role="link" tabindex="0">${esc}</span>${escapeHtml(word.slice(at + path.length))}`;
+    })
+    .join('');
+}
+
 export type LogRole = 'agent' | 'think' | 'system' | 'error';
 
 /** Which tag a line gets in the live log; user messages and replies stay in the conversation. */
