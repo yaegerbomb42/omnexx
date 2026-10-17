@@ -290,6 +290,21 @@ export function stepsPercent(items: readonly TodoItem[]): number {
   return Math.round((items.filter((t) => t.status === 'done').length / items.length) * 100);
 }
 
+export type ToolKind = 'run' | 'read' | 'edit' | 'search' | 'tool';
+
+const TOOL_VERBS: readonly [RegExp, ToolKind][] = [
+  [/^running\b/i, 'run'],
+  [/^(reading|skimming|listing)\b/i, 'read'],
+  [/^(editing|writing code)\b/i, 'edit'],
+  [/^(looking|searching|recalling)\b/i, 'search'],
+];
+
+/** Which icon a narrated tool line gets, from its leading verb ("editing src/a.ts" is an edit). */
+export function toolKind(line: string): ToolKind {
+  const text = line.trimStart();
+  return TOOL_VERBS.find(([re]) => re.test(text))?.[1] ?? 'tool';
+}
+
 export type LogRole = 'agent' | 'think' | 'system' | 'error';
 
 /** Which tag a line gets in the live log; user messages and replies stay in the conversation. */

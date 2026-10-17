@@ -16,6 +16,7 @@ import {
   stepLabel,
   stepStates,
   stepsPercent,
+  toolKind,
   type TodoItem,
   type Usage,
 } from '../../vscode/src/webview/render.js';
@@ -201,5 +202,17 @@ describe('estimateHtml', () => {
     expect(estimateHtml('est. ~3 min, ~40k tokens, <$0.01')).toBe(
       '<div class="working"><span class="eta">est. ~3 min, ~40k tokens, &lt;$0.01</span></div>',
     );
+  });
+});
+
+describe('toolKind', () => {
+  it('sorts narrated tool lines by their leading verb', () => {
+    expect(toolKind('running `npm test`')).toBe('run');
+    expect(toolKind('  reading src/a.ts')).toBe('read');
+    expect(toolKind('skimming the structure of src')).toBe('read');
+    expect(toolKind('editing src/a.ts')).toBe('edit');
+    expect(toolKind('writing code to src/b.ts')).toBe('edit');
+    expect(toolKind('looking through the codebase for auth')).toBe('search');
+    expect(toolKind('updating the todo list')).toBe('tool');
   });
 });
