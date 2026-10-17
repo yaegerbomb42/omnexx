@@ -67,8 +67,13 @@ export function paginate(text: string, maxChars: number): string[] {
   return [...pages, rest];
 }
 
-function remember(url: string, text: string): void {
-  runCache.set(url, text);
+/** One run's cache never serves another run: a later run must see the current page. */
+function cacheKey(runId: string, url: string): string {
+  return `${runId}\n${url}`;
+}
+
+function remember(key: string, text: string): void {
+  runCache.set(key, text);
   const oldest = runCache.keys().next().value;
   if (runCache.size > MAX_CACHED_PAGES && oldest !== undefined) runCache.delete(oldest);
 }
@@ -160,7 +165,8 @@ export const webFetchTool: Tool<typeof schema> = {
       return fail(`Host "${parsedUrl.hostname}" is not allowed by policy.`);
     }
 
-    let text = runCache.get(rawUrl);
+    const key = cacheKey(ctx.store.runId, rawUrl);
+    let text = runCache.get(key);
     if (text === undefined) {
       if (!(await robotsAllows(parsedUrl))) {
         return fail(
@@ -175,7 +181,7 @@ export const webFetchTool: Tool<typeof schema> = {
         const msg = err instanceof Error ? err.message : String(err);
         return fail(`Failed to fetch ${rawUrl}: ${ctx.redactor.text(msg)}`);
       }
-      remember(rawUrl, text);
+      remember(key, text);
     }
 
     const pageTokens = input.maxTokens ?? DEFAULT_PAGE_TOKENS;
