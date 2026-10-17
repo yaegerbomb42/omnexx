@@ -63,6 +63,41 @@ function clip(s: string, n: number): string {
   return one.length > n ? `${one.slice(0, n - 1)}…` : one;
 }
 
+/**
+ * One-line summary of a multi-file `read files: [{path, start?, end?}]`: the count plus the
+ * first paths, each with its range. Undefined when the input isn't that shape.
+ */
+function filesSummary(v: unknown): string | undefined {
+  if (!Array.isArray(v) || !v.length) return undefined;
+  const parts: string[] = [];
+  for (const f of v) {
+    if (typeof f === 'string') {
+      parts.push(f);
+      continue;
+    }
+    if (!f || typeof f !== 'object') return undefined;
+    const p = (f as Record<string, unknown>).path;
+    if (typeof p !== 'string' || !p) return undefined;
+    const start = (f as Record<string, unknown>).start;
+    const end = (f as Record<string, unknown>).end;
+    const range =
+      typeof start === 'number' ? `:${start}-${typeof end === 'number' ? end : ''}` : '';
+    parts.push(`${p}${range}`);
+  }
+  const shown = parts.slice(0, 3).map((p) => clip(p, 40));
+  const rest = parts.length > shown.length ? ` +${parts.length - shown.length} more` : '';
+  return clip(`${parts.length} files: ${shown.join(', ')}${rest}`, 90);
+}
+
+/** One-line summary of a multi-path `outline paths: [...]`. Undefined when not that shape. */
+function pathsSummary(v: unknown): string | undefined {
+  if (!Array.isArray(v) || !v.length) return undefined;
+  if (!v.every((p) => typeof p === 'string' && p)) return undefined;
+  const shown = v.slice(0, 3).map((p) => clip(p as string, 40));
+  const rest = v.length > shown.length ? ` +${v.length - shown.length} more` : '';
+  return clip(`${v.length} files: ${shown.join(', ')}${rest}`, 90);
+}
+
 function toolLine(e: OmnexxEvent): Line {
   const name = str(e.tool);
   const input = toolInput(e) ?? {};
@@ -81,10 +116,13 @@ function toolLine(e: OmnexxEvent): Line {
         input.start !== undefined
           ? `:${str(input.start)}-${input.end !== undefined ? str(input.end) : ''}`
           : '';
-      return ['normal', glyph, 'read', `${path}${range}${err}`];
+      const files = filesSummary(input.files);
+      return ['normal', glyph, 'read', `${files ?? `${path}${range}`}${err}`];
     }
-    case 'outline':
-      return ['normal', glyph, 'outline', `${path}${err}`];
+    case 'outline': {
+      const paths = pathsSummary(input.paths);
+      return ['normal', glyph, 'outline', `${paths ?? path}${err}`];
+    }
     case 'search':
       return [
         'normal',
