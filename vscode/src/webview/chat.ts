@@ -197,6 +197,11 @@ function drawSteps(items: readonly TodoItem[]): void {
   const pct = stepsPercent(items);
   const done = items.filter((t) => t.status === 'done').length;
   el('steps-count', HTMLElement).textContent = `${String(done)}/${String(items.length)}`;
+  const current = states.indexOf('active');
+  const shown = current >= 0 ? current : Math.min(done, items.length - 1);
+  el('steps-now', HTMLElement).textContent =
+    done === items.length ? 'All steps done' : `${stepLabel(shown)}: ${items[shown]?.text ?? ''}`;
+  el('steps-bar', HTMLElement).style.width = `${String(pct)}%`;
   const recent = logLines
     .filter((l) => l.role === 'agent')
     .slice(-ACTIVE_STEP_ACTIONS)
@@ -239,9 +244,11 @@ function drawStats(s: State): void {
   const fill = el('ctx-fill', HTMLElement);
   fill.style.width = `${String(pct)}%`;
   fill.classList.toggle('hot', pct > 85);
-  el('ctx-text', HTMLElement).textContent = s.context
-    ? `${formatTokens(s.context.used)} / ${formatTokens(s.context.limit)}`
-    : '—';
+  const ctxText = el('ctx-text', HTMLElement);
+  ctxText.textContent = s.context ? `${String(pct)}%` : '—';
+  ctxText.title = s.context
+    ? `${formatTokens(s.context.used)} / ${formatTokens(s.context.limit)} tokens of context`
+    : '';
   const parts = s.context?.parts;
   const why = el('ctx-parts', HTMLElement);
   why.textContent = parts
@@ -278,14 +285,14 @@ function drawControls(s: State): void {
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode]'))
     b.setAttribute('aria-pressed', String(b.dataset.mode === s.mode));
   const approval = el('approval', HTMLButtonElement);
-  approval.textContent = s.autoApprove ? 'Auto-approve' : 'Ask first';
+  approval.textContent = s.autoApprove ? 'Approvals: auto-approve' : 'Approvals: ask first';
   approval.classList.toggle('danger', s.autoApprove);
   approval.title = s.autoApprove
     ? 'omnexx goes ahead without asking (hard-blocked commands stay blocked). Click to ask first.'
     : 'omnexx asks before going outside the repo or running guarded commands. Click to auto-approve.';
   const traceBtn = el('trace', HTMLButtonElement);
   const tracing = s.trace === true;
-  traceBtn.textContent = tracing ? 'Trace on' : 'Trace';
+  traceBtn.textContent = tracing ? 'Per-turn trace: on' : 'Per-turn trace: off';
   traceBtn.setAttribute('aria-pressed', String(tracing));
   traceBtn.title = tracing
     ? 'Per-turn trace is on (calls, tokens, latency, gates). Click to hide it.'
@@ -388,12 +395,21 @@ conversation.addEventListener('scroll', () => {
     conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 40;
 });
 
+function togglePop(which: 'usage' | 'menu' | null): void {
+  for (const id of ['usage', 'menu'] as const) {
+    const pop = el(`${id}-pop`, HTMLElement);
+    pop.hidden = id !== which || !pop.hidden;
+  }
+}
+
 document.addEventListener('click', (e) => {
   const target = e.target instanceof Element ? e.target : null;
   if (!target) return;
   const mode = target.closest<HTMLElement>('[data-mode]')?.dataset.mode;
   if (mode) post({ type: 'mode', mode });
   const action = target.closest<HTMLElement>('[data-action]')?.dataset.action;
+  if (!target.closest('.pop')) togglePop(action === 'usage' || action === 'menu' ? action : null);
+  if (action === 'usage' || action === 'menu') return;
   if (action === 'allow' || action === 'deny') post({ type: 'answer', yes: action === 'allow' });
   else if (action === 'approval') post({ type: 'yolo', on: !(state?.autoApprove ?? false) });
   else if (action === 'trace') post({ type: 'trace', on: !(state?.trace ?? false) });
