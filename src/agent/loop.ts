@@ -8,7 +8,14 @@ import {
 import type { OmnexxConfig } from '../config/schema.js';
 import type { Clock } from '../core/clock.js';
 import type { EventLog } from '../core/events.js';
-import { estimateTokens } from '../core/tokens.js';
+import {
+  loadTokenRatios,
+  observeTokenRatio,
+  saveTokenRatio,
+  tokenRatio,
+  type TokenRatios,
+} from '../core/token-calibration.js';
+import { applyTokenRatio, estimateTokens } from '../core/tokens.js';
 import { preflight, type BudgetStop } from '../guard/budget.js';
 import { costUsd, type ResolvedModel } from '../providers/pricing.js';
 import { ProvidersUnavailable, StopRequested, withRetry } from '../providers/retry.js';
@@ -216,6 +223,22 @@ export interface LoopDeps {
    * every step and added to the conversation right away, so they steer the current turn.
    */
   pendingInput?: () => string[];
+  /**
+   * `token-calibration.json` beside latency.json. Unset: every estimate stays at ratio 1.
+   * The loop loads it once and writes the EMA after each turn that reports prompt tokens.
+   */
+  calibrationFile?: string;
+}
+
+/** Uncalibrated size of the prompt the provider will see, and that size scaled by the model's ratio. */
+function pricedPrompt(
+  ratios: TokenRatios,
+  model: { provider: string; id: string },
+  req: { system: unknown; tools: unknown; messages: unknown },
+): { key: string; raw: number; estimate: number } {
+  const raw = estimateTokens(JSON.stringify([req.system, req.tools, req.messages]));
+  const key = `${model.provider}:${model.id}`;
+  return { key, raw, estimate: applyTokenRatio(raw, tokenRatio(ratios, key)) };
 }
 
 /** How messages typed mid-turn reach the model. */
@@ -368,6 +391,9 @@ export async function runAgentLoop(
     tools: estimateTokens(JSON.stringify(ctx.tools)),
   };
 
+  let tokenRatios: TokenRatios = deps.calibrationFile
+    ? await loadTokenRatios(deps.calibrationFile)
+    : {};
   const nudged = new Set<string>();
   let batchHinted = false;
   let bookkeepingHinted = false;
@@ -403,6 +429,7 @@ export async function runAgentLoop(
 
     let chosen: ResolvedModel | undefined;
     let res: CompletionResponse;
+    let learned: { model: string; raw: number } | undefined;
     const callStart = deps.clock.now();
     // Attempts in a row where some provider answered 5xx, and the last one that did.
     let serverFailures = 0;
@@ -433,12 +460,15 @@ export async function runAgentLoop(
             if (up) {
               // The provider is up: send the real request once more, cooling or not.
               try {
-                const r = await deps.provider.complete({
+                const req = {
                   ...turnRequest(ctx, messages, m.id, deps.maxTokens),
                   route: m.provider,
                   ...(deps.signal ? { signal: deps.signal } : {}),
-                });
+                };
+                const quote = pricedPrompt(tokenRatios, m, req);
+                const r = await deps.provider.complete(req);
                 chosen = m;
+                learned = { model: quote.key, raw: quote.raw };
                 return r;
               } catch (err) {
                 if (err instanceof ProviderError && (err.status ?? 0) >= 500)
@@ -488,7 +518,8 @@ export async function runAgentLoop(
               continue;
             }
             const req = turnRequest(ctx, messages, m.id, deps.maxTokens);
-            const estimate = estimateTokens(JSON.stringify([req.system, req.tools, req.messages]));
+            const quote = pricedPrompt(tokenRatios, m, req);
+            const estimate = quote.estimate;
             const pf = preflight(deps.budget, {
               spentUsd: deps.spentUsd(),
               ...(deps.spentTodayUsd ? { spentTodayUsd: deps.spentTodayUsd() } : {}),
@@ -510,6 +541,7 @@ export async function runAgentLoop(
                 ...(deps.signal ? { signal: deps.signal } : {}),
               });
               chosen = m;
+              learned = { model: quote.key, raw: quote.raw };
               deps.onResponse?.({
                 model: ref,
                 inputTokens: estimate,
@@ -623,6 +655,19 @@ export async function runAgentLoop(
         return end(err.stop);
       }
       throw err;
+    }
+    if (learned && deps.calibrationFile) {
+      const next = observeTokenRatio(
+        tokenRatios,
+        learned.model,
+        learned.raw,
+        totalInput(res.usage),
+      );
+      const ratio = next?.[learned.model];
+      if (next && ratio !== undefined) {
+        tokenRatios = next;
+        await saveTokenRatio(deps.calibrationFile, learned.model, ratio).catch(() => undefined);
+      }
     }
     const model = chosen ?? deps.models[0];
     if (!model) throw new ProviderError('empty model chain', { retryable: false });
