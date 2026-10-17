@@ -127,6 +127,10 @@ let logLines: LogLine[] = [];
 let state: State | undefined;
 /** Keep a scroller pinned to the bottom unless the person scrolled up to read. */
 const stick = { conversation: true };
+const jumpBtn = el('jump', HTMLButtonElement);
+/** Messages sent this session, newest last, for ↑/↓ recall in an empty composer. */
+const sent: string[] = [];
+let recall = -1;
 
 const ICON = {
   check:
@@ -151,17 +155,39 @@ function ingest(entries: readonly Entry[]): void {
   logLines = [...logLines, ...forLog.filter((l) => l.text)].slice(-MAX_LOG_LINES);
 }
 
+const THINK_PREVIEW_LINES = 2;
+const ICON_COPY =
+  '<svg viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M3 10.5V3.5A1 1 0 0 1 4 2.5h6.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
+const ICON_EDIT =
+  '<svg viewBox="0 0 16 16"><path d="M10.5 2.5l3 3L6 13H3v-3z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+
+/** Gives each fenced code block a language label and a copy button. */
+function withCopy(html: string): string {
+  return html.replace(
+    /<pre( data-lang="([^"]*)")?>/g,
+    (_m, attr: string | undefined, lang: string | undefined) =>
+      `<pre${attr ?? ''}><span class="code-bar"><span class="code-lang">${lang ?? ''}</span><button class="icon small" data-copy-code title="Copy code" aria-label="Copy code">${ICON_COPY}</button></span>`,
+  );
+}
+
 function messageHtml(b: Block): string {
   const body = b.lines.join('\n');
-  if (b.kind === 'out') return `<div class="msg reply">${renderMarkdown(body)}</div>`;
+  const id = String(b.id);
+  if (b.kind === 'out')
+    return `<div class="msg reply">${withCopy(renderMarkdown(body))}<div class="msg-actions"><button class="icon small" data-copy-block="${id}" title="Copy reply" aria-label="Copy reply">${ICON_COPY}</button></div></div>`;
   if (b.kind === 'user')
-    return `<div class="msg user"><div class="who">You</div><div class="text">${escapeHtml(body)}</div></div>`;
+    return `<div class="msg user"><div class="who">You<button class="icon small" data-reuse="${id}" title="Edit and resend" aria-label="Edit and resend">${ICON_EDIT}</button></div><div class="text">${escapeHtml(body)}</div></div>`;
   if (b.kind === 'act')
     return `<ul class="msg tools">${b.lines
       .filter((l) => l.trim())
       .map((l) => `<li class="tool k-${toolKind(l)}">${escapeHtml(l.trim())}</li>`)
       .join('')}</ul>`;
-  if (b.kind === 'think') return `<div class="msg think">${escapeHtml(body)}</div>`;
+  if (b.kind === 'think') {
+    const lines = body.split('\n');
+    if (lines.length <= THINK_PREVIEW_LINES)
+      return `<div class="msg think">${escapeHtml(body)}</div>`;
+    return `<details class="msg think"><summary>${escapeHtml(lines.slice(0, THINK_PREVIEW_LINES).join('\n'))}</summary>${escapeHtml(lines.slice(THINK_PREVIEW_LINES).join('\n'))}</details>`;
+  }
   if (b.kind === 'system' || b.kind === 'feed')
     return `<div class="msg note">${escapeHtml(body)}</div>`;
   const text = b.lines.map((l) => l.trimStart().replace(/^✗ ?/, '')).join('\n');
@@ -182,6 +208,7 @@ function drawConversation(): void {
   html.push(estimateHtml(state?.estimate));
   conversation.innerHTML = html.join('');
   if (stick.conversation) conversation.scrollTop = conversation.scrollHeight;
+  else jumpBtn.hidden = false;
 }
 
 function stepDetail(s: string, states: readonly string[], pct: number, recent: string): string {
@@ -276,7 +303,9 @@ function drawUptime(): void {
 function placeholderFor(s: State): string {
   if (s.mode === 'run') return 'Describe a goal; omnexx works on it in the background…';
   if (s.mode === 'plan') return 'Describe the change; omnexx plans it without editing…';
-  return s.busy ? 'Steer the agent (e.g. "use the existing helper")…' : 'Message omnexx…';
+  return s.busy
+    ? 'Steer the agent (e.g. "use the existing helper")…'
+    : 'Message omnexx  (↑ history · Shift+Enter new line)';
 }
 
 function drawControls(s: State): void {
@@ -376,9 +405,47 @@ function submit(): void {
   const text = input.value.trim();
   if (!text) return;
   post({ type: 'send', text });
+  if (sent.at(-1) !== text) sent.push(text);
+  recall = -1;
   input.value = '';
+  saveDraft();
   autosize();
   stick.conversation = true;
+}
+
+function saveDraft(): void {
+  const prev = vscode.getState();
+  vscode.setState({ ...(typeof prev === 'object' && prev ? prev : {}), draft: input.value });
+}
+
+function fillInput(text: string): void {
+  input.value = text;
+  autosize();
+  input.focus();
+  input.setSelectionRange(text.length, text.length);
+}
+
+/** ↑/↓ walk the messages sent this session while the composer is empty or showing one. */
+function recallSent(dir: -1 | 1): boolean {
+  if (!sent.length || (input.value && input.value !== sent[recall])) return false;
+  const next = recall < 0 ? (dir < 0 ? sent.length - 1 : -1) : recall + dir;
+  if (next < 0 || next >= sent.length) {
+    recall = -1;
+    fillInput('');
+    return true;
+  }
+  recall = next;
+  fillInput(sent[next] ?? '');
+  return true;
+}
+
+/** Copies through the extension host (`vscode.env.clipboard`), which webviews can't block. */
+function copyText(text: string, button: HTMLElement): void {
+  post({ type: 'copy', text });
+  button.classList.add('copied');
+  setTimeout(() => {
+    button.classList.remove('copied');
+  }, 1200);
 }
 
 function autosize(): void {
@@ -386,17 +453,35 @@ function autosize(): void {
   input.style.height = `${String(Math.min(input.scrollHeight, 200))}px`;
 }
 
-input.addEventListener('input', autosize);
+input.addEventListener('input', () => {
+  autosize();
+  saveDraft();
+});
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     submit();
+  } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.isComposing) {
+    if (recallSent(e.key === 'ArrowUp' ? -1 : 1)) e.preventDefault();
   }
 });
+jumpBtn.addEventListener('click', () => {
+  stick.conversation = true;
+  jumpBtn.hidden = true;
+  conversation.scrollTo({ top: conversation.scrollHeight, behavior: 'smooth' });
+});
+window.addEventListener('focus', () => {
+  if (!settings.isOpen() && !inspector.isOpen()) input.focus();
+});
+{
+  const saved = vscode.getState() as { draft?: unknown } | undefined;
+  if (typeof saved?.draft === 'string') fillInput(saved.draft);
+}
 send.addEventListener('click', submit);
 conversation.addEventListener('scroll', () => {
   stick.conversation =
     conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 40;
+  if (stick.conversation) jumpBtn.hidden = true;
 });
 
 /** A control's action, from a click in the panel or a command in the view's title bar. */
@@ -437,6 +522,15 @@ document.addEventListener('click', (e) => {
   if (action) runAction(action, target);
   const path = target.closest<HTMLElement>('[data-open]')?.dataset.open;
   if (path) post({ type: 'open', path });
+  const copyCode = target.closest<HTMLElement>('[data-copy-code]');
+  const code = copyCode?.closest('pre')?.querySelector('code')?.textContent;
+  if (copyCode && code) copyText(code, copyCode);
+  const copyBlock = target.closest<HTMLElement>('[data-copy-block]');
+  const reply = blocks.find((b) => String(b.id) === copyBlock?.dataset.copyBlock);
+  if (copyBlock && reply) copyText(reply.lines.join('\n'), copyBlock);
+  const reuse = target.closest<HTMLElement>('[data-reuse]')?.dataset.reuse;
+  const mine = blocks.find((b) => String(b.id) === reuse);
+  if (mine) fillInput(mine.lines.join('\n'));
   const suggestion = target.closest<HTMLElement>('[data-suggest]')?.dataset.suggest;
   if (suggestion) {
     input.value = suggestion;
@@ -448,7 +542,12 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   const target = e.target instanceof HTMLElement ? e.target : null;
   if (e.key === 'Enter' && target?.dataset.open) post({ type: 'open', path: target.dataset.open });
-  if (e.key === 'Escape' && !settings.isOpen() && !modelPicker.isOpen() && state?.busy)
+  const asking = !el('ask', HTMLElement).hidden;
+  if (asking && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    runAction('allow', null);
+  } else if (asking && e.key === 'Escape') runAction('deny', null);
+  else if (e.key === 'Escape' && !settings.isOpen() && !modelPicker.isOpen() && state?.busy)
     post({ type: 'stop' });
 });
 

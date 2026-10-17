@@ -117,7 +117,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       this.server.send({ ...m, type });
       return;
     }
-    if (type === 'pickModel') await this.pickModel();
+    if (type === 'copy' && typeof m.text === 'string') await vscode.env.clipboard.writeText(m.text);
+    else if (type === 'pickModel') await this.pickModel();
     else if (type === 'open' && typeof m.path === 'string') await openPath(m.path);
     else if (type === 'restart') this.server.restart();
     else if (type === 'setApprovalDefault') await this.setApprovalDefault(m.on === true);
@@ -336,6 +337,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 </details>
 <section id="agent-start" class="agent-start" hidden aria-label="Agent settings"></section>
 <main id="log" class="conversation" aria-live="polite"></main>
+<button id="jump" class="jump" hidden title="Jump to latest" aria-label="Jump to latest"><svg viewBox="0 0 16 16"><path d="M8 3v9M4 8.5 8 12.5 12 8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
 <section id="settings" class="settings" hidden aria-label="Settings"></section>
 <section id="ctxpage" class="settings" hidden aria-label="Context files"></section>
 <section id="inspector" class="settings" hidden aria-label="Context inspector"></section>
@@ -343,8 +345,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   <div id="ask-title" class="ask-title">Approval needed</div>
   <div id="ask-text"></div>
   <div class="ask-buttons">
-    <button id="ask-yes" class="primary" data-action="allow">Allow</button>
-    <button id="ask-no" class="secondary" data-action="deny">Deny</button>
+    <button id="ask-yes" class="primary" data-action="allow" title="Allow (⌘/Ctrl+Enter)">Allow</button>
+    <button id="ask-no" class="secondary" data-action="deny" title="Deny (Esc)">Deny</button>
+    <span class="ask-keys">⌘/Ctrl+Enter allow · Esc deny</span>
   </div>
 </section>
 <footer class="composer">
