@@ -103,6 +103,36 @@ export interface SessionLimits {
   thinkTurns: number;
   /** Doom-loop rewinds allowed per session (0 or unset: no breaker). */
   rewinds?: number;
+  /** A small goal writes its analysis from the exploring turns and skips the extra decide step. */
+  skipDecide?: boolean;
+}
+
+/** A goal this short, naming at most this many mapped files, does not get a full think round. */
+const SMALL_GOAL_WORDS = 60;
+const SMALL_GOAL_HITS = 2;
+const SMALL_THINK_TURNS = 3;
+
+/**
+ * Think budget for one goal. A short goal that names at most two files in the codemap gets 3
+ * exploring turns and no extra decide step. Anything else keeps the configured turn cap.
+ */
+export function thinkSizing(
+  goal: string,
+  codemap: string,
+  thinkTurns: number,
+): { thinkTurns: number; skipDecide: boolean } {
+  const words = goal.trim().split(/\s+/).filter(Boolean);
+  const hits = new Set(
+    words.filter((w) => {
+      const name = w.replace(/^[`'"(]+|[`'"),.:]+$/g, '');
+      return name.includes('.') && name.length > 2 && codemap.includes(name);
+    }),
+  );
+  const small =
+    words.length > 0 && words.length <= SMALL_GOAL_WORDS && hits.size <= SMALL_GOAL_HITS;
+  return small
+    ? { thinkTurns: SMALL_THINK_TURNS, skipDecide: true }
+    : { thinkTurns, skipDecide: false };
 }
 
 type Node = StateNode & { failures: string };
@@ -267,12 +297,18 @@ export async function runThinkLoop(
 
   // Thinking that ran out of exploring turns writes its analysis from what it has read.
   const decide = async (r: LoopResult): Promise<LoopResult> =>
-    r.end === 'max_turns_per_cycle'
+    r.end === 'max_turns_per_cycle' && !limits.skipDecide
       ? run({ text: DECIDE_PROMPT, chain: 'think', thinking: true, maxTurns: 1 })
       : r;
 
   const thought = await decide(await run(undefined));
-  io.emit('loop.think', { turns, chars: analysis.length, end: thought.end });
+  io.emit('loop.think', {
+    turns,
+    chars: analysis.length,
+    end: thought.end,
+    thinkTurns: limits.thinkTurns,
+    skipDecide: limits.skipDecide === true,
+  });
   if (TERMINAL.has(thought.end)) return finish(thought.end);
   seedTodo();
 
