@@ -69,6 +69,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.server.send({ type: 'resumeChat', id });
   }
 
+  /** Runs a panel control from a title-bar command (settings, approvals, trace…). */
+  uiAction(action: string): void {
+    this.post({ type: 'ui', action });
+  }
+
   restart(): void {
     this.server.restart();
   }
@@ -305,25 +310,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 <link rel="stylesheet" href="${settingsCss.toString()}">
 <title>omnexx</title>
 </head>
-<body>
-<header class="top">
-  <img class="logo" src="${logo.toString()}" alt="omnexx" width="16" height="16">
-  <button id="model" class="chip model" data-action="pickModel" title="Chat model: click to switch or add a provider">Pick a model</button>
-  <button class="meter" data-action="inspect" title="Context in use; omnexx compacts the conversation when it fills. Click to see, edit or delete what the model gets."><span class="track"><span class="fill" id="ctx-fill"></span></span><span id="ctx-text">—</span></button>
-  <button class="chip cost" data-action="usage" aria-haspopup="true" title="Session usage"><span id="stat-cost">$0.00</span></button>
-  <button class="icon" data-action="menu" aria-haspopup="true" title="More" aria-label="More"><svg viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.3" fill="currentColor"/><circle cx="8" cy="8" r="1.3" fill="currentColor"/><circle cx="12.5" cy="8" r="1.3" fill="currentColor"/></svg></button>
-  <div id="usage-pop" class="pop usage" hidden role="dialog" aria-label="Session usage">
-    <div class="row"><span class="k">Uptime</span><span class="v" id="stat-uptime">00:00:00</span></div>
-    <div class="row"><span class="k">Turns</span><span class="v" id="stat-turns">0</span></div>
-    <div class="row"><span class="k">Tokens</span><span class="v" id="stat-tokens">0</span></div>
-    <div id="ctx-parts" class="ctx-parts"></div>
-  </div>
-  <div id="menu-pop" class="pop menu" hidden role="menu">
-    <button id="approval" role="menuitem" data-action="approval">Ask first</button>
-    <button id="trace" role="menuitem" data-action="trace" aria-pressed="false">Trace</button>
-    <button role="menuitem" data-action="settings"><svg viewBox="0 0 16 16"><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zm6 3.3V7.2l-1.7-.4a4.6 4.6 0 0 0-.5-1.2l.9-1.5-1.1-1.1-1.5.9c-.4-.2-.8-.4-1.2-.5L8.8 1.7H7.2l-.4 1.7c-.4.1-.8.3-1.2.5l-1.5-.9-1.1 1.1.9 1.5c-.2.4-.4.8-.5 1.2L1.7 7.2v1.6l1.7.4c.1.4.3.8.5 1.2l-.9 1.5 1.1 1.1 1.5-.9c.4.2.8.4 1.2.5l.4 1.7h1.6l.4-1.7c.4-.1.8-.3 1.2-.5l1.5.9 1.1-1.1-.9-1.5c.2-.4.4-.8.5-1.2z" fill="none" stroke="currentColor" stroke-width="1.1"/></svg><span>Settings</span></button>
-  </div>
-</header>
+<body data-logo="${logo.toString()}">
 <div id="banner" class="banner" hidden role="status"></div>
 <details id="steps" class="mission" hidden>
   <summary><span class="chev" aria-hidden="true"></span><span id="steps-now" class="now"></span><span id="steps-count" class="count"></span><span class="track"><span id="steps-bar" class="fill"></span></span></summary>
@@ -371,12 +358,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       <button data-mode="plan" aria-pressed="false" title="Investigate and propose a plan; no edits">Plan</button>
       <button data-mode="run" aria-pressed="false" title="Autonomous: start a long run in the background">Run</button>
     </div>
+    <button id="model" class="chip model" data-action="pickModel" title="Chat model: click to switch or add a provider">Pick a model</button>
     <span class="grow"></span>
-    <button class="icon" data-action="clear" title="New chat" aria-label="New chat"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-    <button class="icon" data-action="undo" title="Undo: put the files back as they were before your last message" aria-label="Undo"><svg viewBox="0 0 16 16"><path d="M5 4 2 7l3 3M2.5 7H10a3.5 3.5 0 0 1 0 7H7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-    <button class="icon" data-action="compact" title="Compact: summarize the conversation to free context" aria-label="Compact"><svg viewBox="0 0 16 16"><path d="M4 2.5 8 6l4-3.5M4 13.5 8 10l4 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-    <button id="pause" class="icon ctl" data-action="pause" title="Pause after the current step" aria-label="Pause or resume" disabled><svg viewBox="0 0 16 16"><path d="M5.5 3.5v9M10.5 3.5v9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-    <button id="stop" class="icon ctl stop" data-action="stop" title="Stop (Esc)" aria-label="Stop" disabled><svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button>
+    <button id="approval" class="chip danger" data-action="approval" hidden title="omnexx goes ahead without asking; click to ask first again">Auto-approve</button>
+    <button class="meter" data-action="inspect" title="Context in use; click to see, edit or delete what the model gets"><span class="track"><span class="fill" id="ctx-fill"></span></span><span id="ctx-text">—</span></button>
+    <button class="chip cost" data-action="usage" aria-haspopup="true" title="Session usage"><span id="stat-cost">$0.00</span></button>
+    <button id="pause" class="icon ctl" data-action="pause" title="Pause after the current step" aria-label="Pause or resume" disabled hidden><svg viewBox="0 0 16 16"><path d="M5.5 3.5v9M10.5 3.5v9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+    <button id="stop" class="icon ctl stop" data-action="stop" title="Stop (Esc)" aria-label="Stop" disabled hidden><svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button>
+  </div>
+  <div id="usage-pop" class="pop usage" hidden role="dialog" aria-label="Session usage">
+    <div class="row"><span class="k">Uptime</span><span class="v" id="stat-uptime">00:00:00</span></div>
+    <div class="row"><span class="k">Turns</span><span class="v" id="stat-turns">0</span></div>
+    <div class="row"><span class="k">Tokens</span><span class="v" id="stat-tokens">0</span></div>
+    <div id="ctx-parts" class="ctx-parts"></div>
   </div>
 </footer>
 <script nonce="${nonce}" src="${js.toString()}"></script>

@@ -76,6 +76,7 @@ type Incoming =
         | 'agentSettings';
     } & Record<string, unknown>)
   | ({ type: 'browserFrame' } & crew.BrowserFrameMsg)
+  | { type: 'ui'; action: string }
   | { type: 'ready'; version: string }
   | { type: 'error'; message: string }
   | { type: 'down'; message: string };
@@ -118,8 +119,8 @@ const steps = el('steps', HTMLElement);
 const stepsBody = el('steps-body', HTMLElement);
 const banner = el('banner', HTMLElement);
 const welcome = el('welcome', HTMLElement);
-/** The head agent's avatar in the crew view: the logo the header already shows. */
-const logoSrc = document.querySelector<HTMLImageElement>('.brand .logo')?.src ?? '';
+/** The head agent's avatar in the crew view: the extension logo. */
+const logoSrc = document.body.dataset.logo ?? '';
 
 let blocks: Block[] = [];
 let logLines: LogLine[] = [];
@@ -289,19 +290,14 @@ function drawControls(s: State): void {
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode]'))
     b.setAttribute('aria-pressed', String(b.dataset.mode === s.mode));
   const approval = el('approval', HTMLButtonElement);
-  approval.textContent = s.autoApprove ? 'Approvals: auto-approve' : 'Approvals: ask first';
+  approval.hidden = !s.autoApprove;
   approval.classList.toggle('danger', s.autoApprove);
   approval.title = s.autoApprove
     ? 'omnexx goes ahead without asking (hard-blocked commands stay blocked). Click to ask first.'
     : 'omnexx asks before going outside the repo or running guarded commands. Click to auto-approve.';
-  const traceBtn = el('trace', HTMLButtonElement);
-  const tracing = s.trace === true;
-  traceBtn.textContent = tracing ? 'Per-turn trace: on' : 'Per-turn trace: off';
-  traceBtn.setAttribute('aria-pressed', String(tracing));
-  traceBtn.title = tracing
-    ? 'Per-turn trace is on (calls, tokens, latency, gates). Click to hide it.'
-    : 'Show a line per turn: calls, fresh and cached tokens, latency, gates.';
   pauseBtn.disabled = !s.busy;
+  pauseBtn.hidden = !s.busy;
+  stopBtn.hidden = !s.busy;
   pauseBtn.dataset.action = s.paused ? 'resume' : 'pause';
   pauseBtn.title = s.paused ? 'Resume' : 'Pause after the current step';
   pauseBtn.classList.toggle('on', s.paused);
@@ -340,6 +336,10 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
   // origin; anything else (another frame or window) is ignored.
   if (event.origin !== window.location.origin) return;
   const m = event.data;
+  if (m.type === 'ui') {
+    runAction(m.action, null);
+    return;
+  }
   if (m.type === 'browserFrame') {
     crew.drawBrowser(m);
     return;
@@ -399,28 +399,15 @@ conversation.addEventListener('scroll', () => {
     conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 40;
 });
 
-function togglePop(which: 'usage' | 'menu' | null): void {
-  for (const id of ['usage', 'menu'] as const) {
-    const pop = el(`${id}-pop`, HTMLElement);
-    pop.hidden = id !== which || !pop.hidden;
-  }
-}
-
-document.addEventListener('click', (e) => {
-  const target = e.target instanceof Element ? e.target : null;
-  if (!target) return;
-  const mode = target.closest<HTMLElement>('[data-mode]')?.dataset.mode;
-  if (mode) post({ type: 'mode', mode });
-  const action = target.closest<HTMLElement>('[data-action]')?.dataset.action;
-  if (!target.closest('.pop')) togglePop(action === 'usage' || action === 'menu' ? action : null);
-  if (action === 'usage' || action === 'menu') return;
+/** A control's action, from a click in the panel or a command in the view's title bar. */
+function runAction(action: string, target: Element | null): void {
   if (action === 'allow' || action === 'deny') post({ type: 'answer', yes: action === 'allow' });
   else if (action === 'approval') post({ type: 'yolo', on: !(state?.autoApprove ?? false) });
   else if (action === 'trace') post({ type: 'trace', on: !(state?.trace ?? false) });
   else if (action === 'pickModel') {
-    const chip = target.closest<HTMLElement>('[data-action]');
+    const chip = target?.closest<HTMLElement>('[data-action]') ?? el('model', HTMLElement);
     if (modelPicker.isOpen()) modelPicker.close();
-    else if (chip) modelPicker.open(chip, post);
+    else modelPicker.open(chip, post);
   } else if (action === 'inspect') {
     settings.close();
     contextPage.close();
@@ -432,6 +419,22 @@ document.addEventListener('click', (e) => {
     if (settings.isOpen()) settings.close();
     else settings.open(post);
   } else if (action) post({ type: action });
+}
+
+function toggleUsage(open: boolean): void {
+  const pop = el('usage-pop', HTMLElement);
+  pop.hidden = !open || !pop.hidden;
+}
+
+document.addEventListener('click', (e) => {
+  const target = e.target instanceof Element ? e.target : null;
+  if (!target) return;
+  const mode = target.closest<HTMLElement>('[data-mode]')?.dataset.mode;
+  if (mode) post({ type: 'mode', mode });
+  const action = target.closest<HTMLElement>('[data-action]')?.dataset.action;
+  if (!target.closest('.pop')) toggleUsage(action === 'usage');
+  if (action === 'usage') return;
+  if (action) runAction(action, target);
   const path = target.closest<HTMLElement>('[data-open]')?.dataset.open;
   if (path) post({ type: 'open', path });
   const suggestion = target.closest<HTMLElement>('[data-suggest]')?.dataset.suggest;

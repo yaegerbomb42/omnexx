@@ -130,6 +130,40 @@
         "title": "Restart Chat",
         "category": "omnexx",
         "icon": "$(debug-restart)"
+      },
+      {
+        "command": "omnexx.openSettings",
+        "title": "Settings",
+        "category": "omnexx",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "omnexx.inspectContext",
+        "title": "Inspect Context",
+        "category": "omnexx",
+        "icon": "$(layers)"
+      },
+      {
+        "command": "omnexx.toggleApproval",
+        "title": "Toggle Auto-Approve",
+        "category": "omnexx"
+      },
+      {
+        "command": "omnexx.toggleTrace",
+        "title": "Toggle Per-Turn Trace",
+        "category": "omnexx"
+      },
+      {
+        "command": "omnexx.undoLast",
+        "title": "Undo Last Message's Edits",
+        "category": "omnexx",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "omnexx.compactChat",
+        "title": "Compact Conversation",
+        "category": "omnexx",
+        "icon": "$(fold)"
       }
     ],
     "menus": {
@@ -173,6 +207,36 @@
           "command": "omnexx.openChat",
           "when": "view == omnexx.chat",
           "group": "overflow@2"
+        },
+        {
+          "command": "omnexx.inspectContext",
+          "when": "view == omnexx.chat",
+          "group": "navigation@3"
+        },
+        {
+          "command": "omnexx.openSettings",
+          "when": "view == omnexx.chat",
+          "group": "navigation@4"
+        },
+        {
+          "command": "omnexx.toggleApproval",
+          "when": "view == omnexx.chat",
+          "group": "overflow@0"
+        },
+        {
+          "command": "omnexx.toggleTrace",
+          "when": "view == omnexx.chat",
+          "group": "overflow@0"
+        },
+        {
+          "command": "omnexx.undoLast",
+          "when": "view == omnexx.chat",
+          "group": "overflow@1"
+        },
+        {
+          "command": "omnexx.compactChat",
+          "when": "view == omnexx.chat",
+          "group": "overflow@1"
         }
       ],
       "view/item/context": [
