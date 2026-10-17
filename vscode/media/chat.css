@@ -3482,3 +3482,213 @@ textarea.ci-edit {
 .conversation > .tools:last-child .tool:last-child::before {
   color: var(--violet);
 }
+
+/*
+ * Native layer: the panel draws with the workbench's own tokens so it reads as part of VS Code,
+ * not a page inside it. No glows, gradients or boxed cards; controls look like toolbar actions.
+ */
+:root,
+body.vscode-light {
+  --accent: var(--vscode-textLink-foreground, #3794ff);
+  --violet: var(--vscode-charts-purple, var(--accent));
+  --brand: var(--vscode-progressBar-background, var(--accent));
+  --ok: var(--vscode-testing-iconPassed, #73c991);
+  --warn: var(--vscode-editorWarning-foreground, #cca700);
+  --glow: none;
+  --radius: 4px;
+  --line: var(--vscode-widget-border, var(--vscode-panel-border, rgb(128 128 128 / 25%)));
+  --card: var(--vscode-list-hoverBackground, rgb(128 128 128 / 10%));
+}
+
+.mission {
+  border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, var(--line));
+}
+
+.mission > summary {
+  padding: 4px 12px 3px 8px;
+}
+
+.mission > summary:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.mission .fill {
+  background: var(--vscode-progressBar-background, var(--accent));
+}
+
+.step .card,
+.step.active .card,
+.step.waiting .card,
+.step.done .card {
+  border: 0;
+  background: none;
+  box-shadow: none;
+  padding: 1px 4px;
+}
+
+.step.active .card {
+  background: var(--vscode-list-inactiveSelectionBackground, var(--card));
+  border-radius: var(--radius);
+}
+
+.msg.user {
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--vscode-input-background);
+  box-shadow: none;
+}
+
+.msg.user .who {
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
+.msg.think {
+  border-left-color: var(--line);
+  color: var(--muted);
+}
+
+.composer {
+  padding: 6px 8px 8px;
+  border-top: 0;
+}
+
+textarea {
+  border-radius: var(--radius);
+  border-color: var(--vscode-input-border, transparent);
+}
+
+textarea:focus {
+  border-color: var(--vscode-focusBorder);
+  box-shadow: none;
+}
+
+.send,
+.send:not(:disabled) {
+  background: none;
+  box-shadow: none;
+  color: var(--vscode-icon-foreground, var(--fg));
+}
+
+.composer .meter .track {
+  width: 22px;
+}
+
+.composer .grow {
+  flex: 0 1 4px;
+}
+
+.send:hover:not(:disabled) {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.composer .chip,
+.composer .meter {
+  border: 0;
+  background: none;
+  border-radius: var(--radius);
+  padding: 1px 5px;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.composer .chip:hover,
+.composer .meter:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--fg);
+}
+
+.composer .chip.model {
+  flex: 1 1 0;
+  min-width: 48px;
+  max-width: max-content;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+}
+
+.composer .chip.model::after {
+  content: ' ▾';
+}
+
+.composer .chip.danger {
+  color: var(--warn);
+}
+
+#stat-cost {
+  color: inherit;
+}
+
+.modes {
+  background: none;
+  padding: 0;
+  gap: 1px;
+}
+
+.modes button {
+  border-radius: var(--radius);
+  padding: 1px 7px;
+}
+
+.modes button:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.modes button[aria-pressed='true'] {
+  background: var(--vscode-toolbar-activeBackground, var(--vscode-toolbar-hoverBackground));
+  color: var(--fg);
+}
+
+.pop {
+  border-radius: var(--radius);
+  border-color: var(--vscode-editorWidget-border, var(--line));
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgb(0 0 0 / 36%));
+}
+
+.pop.usage {
+  top: auto;
+  bottom: calc(100% - 4px);
+}
+
+.composer {
+  position: relative;
+}
+
+.welcome h2 {
+  background: none;
+  color: var(--fg);
+  -webkit-text-fill-color: currentColor;
+}
+
+.composer [hidden] {
+  display: none;
+}
+
+.welcome {
+  border-bottom: 0;
+}
+
+.suggestions button {
+  border: 0;
+  background: none;
+  border-radius: var(--radius);
+  padding: 3px 6px;
+  color: var(--accent);
+  text-align: left;
+}
+
+.suggestions button::before {
+  display: none;
+}
+
+.suggestions button:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.conversation {
+  border-top: 0;
+}

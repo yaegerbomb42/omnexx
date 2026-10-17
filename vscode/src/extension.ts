@@ -40,6 +40,24 @@ export function activate(context: vscode.ExtensionContext): void {
       chat.newChat();
     }),
     cmd('omnexx.pickModel', () => chat.pickModel()),
+    cmd('omnexx.openSettings', () => {
+      chat.uiAction('settings');
+    }),
+    cmd('omnexx.inspectContext', () => {
+      chat.uiAction('inspect');
+    }),
+    cmd('omnexx.toggleApproval', () => {
+      chat.uiAction('approval');
+    }),
+    cmd('omnexx.undoLast', () => {
+      chat.uiAction('undo');
+    }),
+    cmd('omnexx.compactChat', () => {
+      chat.uiAction('compact');
+    }),
+    cmd('omnexx.toggleTrace', () => {
+      chat.uiAction('trace');
+    }),
     vscode.commands.registerCommand('omnexx.openChatSession', async (id?: unknown) => {
       if (typeof id !== 'string') return;
       await chat.focus();
