@@ -6,7 +6,7 @@ import { workingTreeDiff } from '../git/repo.js';
 import { rollbackTo } from '../git/rollback.js';
 import type { ResolvedModel } from '../providers/pricing.js';
 import type { SystemBlock, ToolSpec } from '../providers/types.js';
-import { blocking, renderFindings, reviewChange } from '../verify/review.js';
+import { blocking, renderFindings, reviewChange, type WorkerPrefix } from '../verify/review.js';
 import type { GateResult } from '../verify/gates.js';
 import type { judgeGate } from '../verify/ratchet.js';
 import { FAST_TASK } from './fast-path.js';
@@ -81,13 +81,18 @@ async function rememberFix(run: Run, signature: string, summary: string): Promis
 }
 
 /** The end review: the whole diff against the goal and the agent's analysis. */
-async function reviewDiff(run: Run, task: PlanNode, analysis: string): Promise<string | undefined> {
+async function reviewDiff(
+  run: Run,
+  task: PlanNode,
+  analysis: string,
+  worker?: WorkerPrefix,
+): Promise<string | undefined> {
   const goal = (await run.store.readGoal()).text;
   const { patch } = await workingTreeDiff(run.worktree, run.state.lastGreen);
   const withAnalysis = analysis
     ? `${goal}\n\n# The agent's analysis (what it set out to do)\n${analysis.slice(0, 4_000)}`
     : goal;
-  const r = await reviewChange(run, task, withAnalysis, withoutVendored(patch));
+  const r = await reviewChange(run, task, withAnalysis, withoutVendored(patch), worker);
   if (!r) return undefined;
   const block = blocking(r.findings, run.config.review.block_on);
   run.events.emit('review.result', {
@@ -146,7 +151,10 @@ export async function actAsThinkLoop(
     check: () => checkTree(run, task, inputs.runChecks, session, ++round),
     onFixed: (signature, summary) => rememberFix(run, signature, summary),
     ...(run.config.review.enabled
-      ? { review: (analysis: string) => reviewDiff(run, task, analysis) }
+      ? {
+          review: (analysis: string, messages) =>
+            reviewDiff(run, task, analysis, { system: inputs.ctx.system, messages }),
+        }
       : {}),
     restore: (tree) => restoreTree(run, tree),
     emit: (type, data) => {

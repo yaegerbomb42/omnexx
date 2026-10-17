@@ -4,7 +4,7 @@ import { readEvents } from '../../src/core/events.js';
 import type { CompletionRequest, CompletionResponse, Provider } from '../../src/providers/types.js';
 import { emptyUsage } from '../../src/providers/types.js';
 import { startTestRun } from '../support/harness.js';
-import { call, say, ScriptedProvider, type Script } from '../support/scripted-provider.js';
+import { asks, call, say, ScriptedProvider, type Script } from '../support/scripted-provider.js';
 
 const plan = {
   milestones: [
@@ -29,8 +29,7 @@ function withReviewer(review: unknown): Provider & { reviews: number; models: st
     reviews: 0,
     models: [] as string[],
     complete(req: CompletionRequest): Promise<CompletionResponse> {
-      if (!req.system.some((b) => b.text.includes('strict senior engineer')))
-        return worker.complete(req);
+      if (!asks(req, 'strict senior engineer')) return worker.complete(req);
       p.reviews++;
       p.models.push(req.model);
       return Promise.resolve({

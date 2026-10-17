@@ -84,8 +84,11 @@ export interface CheckOutcome {
 export interface SessionIO {
   segment: (s: Segment, chain: ChainKind) => Promise<LoopResult>;
   check: () => Promise<CheckOutcome>;
-  /** Blocking findings of the end review, rendered; undefined when there are none (or it is off). */
-  review?: (analysis: string) => Promise<string | undefined>;
+  /**
+   * Blocking findings of the end review, rendered; undefined when there are none (or it is off).
+   * `messages` is the worker conversation at the green check, unchanged.
+   */
+  review?: (analysis: string, messages: readonly Message[]) => Promise<string | undefined>;
   /** Put the working tree back to a tree a check passed on. */
   restore: (tree: string) => Promise<void>;
   emit: (type: string, data: Record<string, unknown>) => void;
@@ -326,7 +329,7 @@ export async function runThinkLoop(
       lastSignature = '';
       if (reviewed || !io.review) return finish('done');
       reviewed = true;
-      const findings = await io.review(analysis);
+      const findings = await io.review(analysis, messages);
       io.emit('loop.review', { blocking: Boolean(findings) });
       if (!findings) return finish('done');
       findingsOpen = true;

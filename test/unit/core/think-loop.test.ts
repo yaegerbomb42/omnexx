@@ -233,6 +233,19 @@ describe('think-first loop session: bounded thinking', () => {
     expect(out.analysis).toBe('ANALYSIS now');
   });
 
+  it('passes the worker conversation, unchanged, into the end review', async () => {
+    let seen: readonly Message[] | undefined;
+    const { io } = fakeIO([{ say: 'the analysis' }, { say: 'shipped' }], [pass('t1')]);
+    io.review = (_analysis, messages) => {
+      seen = messages;
+      return Promise.resolve(undefined);
+    };
+    await runThinkLoop(first, io, limits);
+    expect(seen?.map((m) => text(m)).join('\n')).toContain('Work on M1.T01');
+    expect(seen?.map((m) => text(m)).join('\n')).toContain('the analysis');
+    expect(seen?.at(-1)?.role).toBe('assistant');
+  });
+
   it('caps a re-think the same way', async () => {
     const { io, calls } = fakeIO(
       [
