@@ -4,7 +4,14 @@ import { readEvents } from '../../src/core/events.js';
 import type { CompletionRequest, CompletionResponse, Provider } from '../../src/providers/types.js';
 import { emptyUsage } from '../../src/providers/types.js';
 import { startTestRun } from '../support/harness.js';
-import { asks, call, say, ScriptedProvider, type Script } from '../support/scripted-provider.js';
+import {
+  asks,
+  call,
+  reviewAnswer,
+  say,
+  ScriptedProvider,
+  type Script,
+} from '../support/scripted-provider.js';
 
 const plan = {
   milestones: [
@@ -36,7 +43,7 @@ function withReviewer(review: unknown): Provider & { reviews: number; models: st
         content:
           review === 'garbage'
             ? [{ type: 'text', text: 'looks fine to me' }]
-            : [{ type: 'tool_use', id: 'r1', name: 'answer', input: review }],
+            : reviewAnswer(req, review),
         stopReason: 'tool_use',
         usage: emptyUsage(),
         model: req.model,
@@ -93,7 +100,8 @@ describe('review before commit', () => {
 
   it('fails open: a reviewer that answers nonsense never blocks work', async () => {
     const { v, provider } = await cycleWith('garbage');
-    expect(provider.reviews).toBe(1);
+    // The cached-prefix try, then one standalone try on the answer tool; neither blocks.
+    expect(provider.reviews).toBe(2);
     expect(v.verdict).toBe('accept');
   });
 

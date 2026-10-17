@@ -551,7 +551,7 @@ export async function stepAct(run: Run): Promise<void> {
   };
   if ('reviewed' in result && result.reviewed && task.id === FAST_TASK)
     run.state.loopReviewed = true;
-  run.workerPrefix = { system: ctx.system, messages: result.messages };
+  run.workerPrefix = { system: ctx.system, tools: ctx.tools, messages: result.messages };
   await run.setPhase('verify');
 }
 

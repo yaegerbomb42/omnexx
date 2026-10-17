@@ -8,6 +8,7 @@ import { fileTask, fileWorker, firstText, planner, scenario } from '../support/s
 import {
   asks,
   call,
+  reviewAnswer,
   ScriptedProvider,
   type Script,
   type ScriptMeta,
@@ -34,7 +35,7 @@ function gapAuditor(scripted: ScriptedProvider): Provider & { audits: () => numb
       audits++;
       const findings = [{ severity: 'major', problem: `gap ${audits}`, fix: 'close it' }];
       return Promise.resolve({
-        content: [{ type: 'tool_use', id: `a${audits}`, name: 'answer', input: { findings } }],
+        content: reviewAnswer(req, { findings }, `a${audits}`),
         stopReason: 'tool_use',
         usage: emptyUsage(),
         model: req.model,
@@ -105,7 +106,7 @@ describe('earned done: audit before finishing', () => {
               ]
             : [];
         return Promise.resolve({
-          content: [{ type: 'tool_use', id: `a${audits}`, name: 'answer', input: { findings } }],
+          content: reviewAnswer(req, { findings }, `a${audits}`),
           stopReason: 'tool_use',
           usage: emptyUsage(),
           model: req.model,
@@ -202,9 +203,7 @@ describe('earned done: audit before finishing', () => {
         if (!asks(req, 'You audit the result')) return scripted.complete(req);
         audits++;
         return Promise.resolve({
-          content: [
-            { type: 'tool_use', id: `a${audits}`, name: 'answer', input: { findings: [] } },
-          ],
+          content: reviewAnswer(req, { findings: [] }, `a${audits}`),
           stopReason: 'tool_use',
           usage: emptyUsage(),
           model: req.model,

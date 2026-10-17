@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PlanNode } from '../../../src/core/plan.js';
 import type { Run } from '../../../src/core/run.js';
 import { WRITING_REVIEW_SYSTEM } from '../../../src/core/writing.js';
-import type { Message, SystemBlock } from '../../../src/providers/types.js';
+import type { Message, SystemBlock, ToolSpec } from '../../../src/providers/types.js';
 import {
   AUDIT_SYSTEM,
   REVIEW_SYSTEM,
@@ -10,7 +10,7 @@ import {
   coerceReview,
   reviewChange,
 } from '../../../src/verify/review.js';
-import { call, ScriptedProvider } from '../../support/scripted-provider.js';
+import { call, say, ScriptedProvider } from '../../support/scripted-provider.js';
 
 describe('coerceReview', () => {
   it('maps a model’s own field names and severities onto the schema', () => {
@@ -88,6 +88,10 @@ const workerMessages: Message[] = [
   { role: 'assistant', content: [{ type: 'text', text: 'analysis stays here' }] },
 ];
 
+const workerTools: ToolSpec[] = [
+  { name: 'read', description: 'Read a file', inputSchema: { type: 'object' } },
+];
+
 const userText = (m: Message | undefined): string => {
   const b = m?.content[0];
   return b?.type === 'text' ? b.text : '';
@@ -95,7 +99,13 @@ const userText = (m: Message | undefined): string => {
 
 function scriptedRun(budget: number | undefined, answers: unknown[], writing = false) {
   const events: { type: string; data: Record<string, unknown> }[] = [];
-  const provider = new ScriptedProvider(() => call('answer', answers.shift() ?? { findings: [] }));
+  // With tools disabled (the worker prefix) the answer is JSON text, else the answer tool.
+  const provider = new ScriptedProvider(({ request: req }) => {
+    const a = answers.shift() ?? { findings: [] };
+    return req.toolChoice?.type === 'none'
+      ? say(typeof a === 'string' ? a : JSON.stringify(a))
+      : call('answer', a);
+  });
   const run = {
     state: { writing },
     config: {
@@ -117,7 +127,7 @@ function scriptedRun(budget: number | undefined, answers: unknown[], writing = f
 }
 
 describe('cached review prefix', () => {
-  const worker = { system: workerSystem, messages: workerMessages };
+  const worker = { system: workerSystem, tools: workerTools, messages: workerMessages };
 
   it('sends the worker system bytes and puts the rubric in the new user turn', async () => {
     const { run, provider, events } = scriptedRun(undefined, [{ findings: [], summary: 'sound' }]);
@@ -125,6 +135,8 @@ describe('cached review prefix', () => {
     expect(r).toEqual({ findings: [], summary: 'sound' });
     const req = provider.requests[0];
     expect(req?.system).toBe(workerSystem);
+    expect(req?.tools).toEqual(workerTools);
+    expect(req?.toolChoice).toEqual({ type: 'none' });
     expect(req?.messages.slice(0, -1)).toEqual(workerMessages);
     const text = userText(req?.messages.at(-1));
     expect(text.startsWith(REVIEW_SYSTEM)).toBe(true);
@@ -148,14 +160,33 @@ describe('cached review prefix', () => {
     });
   });
 
-  it('returns undefined when both review answers are unusable', async () => {
-    const { run, provider } = scriptedRun(undefined, [{ verdict: 'fine' }, { nope: true }]);
+  it('falls back to the standalone answer tool when the cached turn gives no usable JSON', async () => {
+    const { run, provider, events } = scriptedRun(undefined, [
+      'looks fine to me',
+      { findings: [], summary: 'sound' },
+    ]);
+    const r = await reviewChange(run, task, 'ship sum', 'diff --git a/sum.ts', worker);
+    expect(r).toEqual({ findings: [], summary: 'sound' });
+    expect(provider.requests[1]?.system).toEqual([{ text: REVIEW_SYSTEM }]);
+    expect(provider.requests[1]?.toolChoice).toEqual({ type: 'tool', name: 'answer' });
+    expect(events.map((e) => e.data)).toEqual([
+      { path: 'prefix', task: 'M1.T01' },
+      { path: 'standalone', fallback: true, task: 'M1.T01' },
+    ]);
+  });
+
+  it('returns undefined when every answer is unusable', async () => {
+    const { run, provider } = scriptedRun(undefined, [
+      'no json',
+      { verdict: 'fine' },
+      { nope: true },
+    ]);
     const r = await reviewChange(run, task, 'ship sum', 'diff --git a/sum.ts', worker);
     expect(r).toBeUndefined();
-    expect(provider.requests).toHaveLength(2);
+    expect(provider.requests).toHaveLength(3);
     expect(provider.requests[0]?.system).toBe(workerSystem);
-    expect(provider.requests[1]?.system).toBe(workerSystem);
-    expect(userText(provider.requests[1]?.messages.at(-1))).toContain('"findings": []');
+    expect(provider.requests[2]?.system).toEqual([{ text: REVIEW_SYSTEM }]);
+    expect(userText(provider.requests[2]?.messages.at(-1))).toContain('"findings": []');
   });
 
   it('keeps the writing rubric in the user turn, on the worker system blocks', async () => {
@@ -168,17 +199,11 @@ describe('cached review prefix', () => {
     expect(text).toContain('diff --git a/book/03.md');
   });
 
-  it('audits on the worker prefix and falls back when that turn is over budget', async () => {
-    const fit = scriptedRun(undefined, [{ findings: [], summary: 'done' }]);
-    const ok = await auditResult(fit.run, 'goal', 'done when: sums', 'code', worker);
+  it('audits standalone: the planner chain has its own cache, so the worker prefix would miss', async () => {
+    const { run, provider, events } = scriptedRun(undefined, [{ findings: [], summary: 'done' }]);
+    const ok = await auditResult(run, 'goal', 'done when: sums', 'code', worker);
     expect(ok).toEqual({ findings: [], summary: 'done' });
-    expect(fit.provider.requests[0]?.system).toBe(workerSystem);
-    expect(userText(fit.provider.requests[0]?.messages.at(-1)).startsWith(AUDIT_SYSTEM)).toBe(true);
-    expect(fit.events[0]?.data).toEqual({ path: 'prefix' });
-
-    const over = scriptedRun(1, [{ findings: [] }]);
-    await auditResult(over.run, 'goal', 'done when: sums', 'code', worker);
-    expect(over.provider.requests[0]?.system).toEqual([{ text: AUDIT_SYSTEM }]);
-    expect(over.events[0]?.data).toEqual({ path: 'standalone' });
+    expect(provider.requests[0]?.system).toEqual([{ text: AUDIT_SYSTEM }]);
+    expect(events[0]?.data).toEqual({ path: 'standalone' });
   });
 });

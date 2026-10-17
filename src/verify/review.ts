@@ -4,7 +4,8 @@ import { z } from 'zod';
 import type { PlanNode } from '../core/plan.js';
 import type { Run } from '../core/run.js';
 import { estimateTokens } from '../core/tokens.js';
-import type { Message, SystemBlock } from '../providers/types.js';
+import type { ContentBlock, Message, SystemBlock, ToolSpec } from '../providers/types.js';
+import { extractJson } from './parsers/types.js';
 
 export const findingSchema = z.object({
   severity: z.enum(['blocker', 'major', 'minor']),
@@ -135,30 +136,41 @@ const answerTool = {
  */
 export interface WorkerPrefix {
   system: readonly SystemBlock[];
+  /** Sent unchanged: providers cache tools ahead of the system prompt, so swapping them misses. */
+  tools: readonly ToolSpec[];
   messages: readonly Message[];
 }
 
+/** On the worker prefix the tools are the worker's, so the answer comes back as JSON text. */
+const TEXT_ANSWER_SHAPE =
+  '\n\nTools are disabled for this turn. Reply with only a JSON object: {"findings": [{"severity", "file", "problem", "fix"}, ...], "summary": "..."}. Use "findings": [] when nothing is wrong.';
+
 /** Same estimate the agent loop uses before a model call (`system` + tools + messages). */
-function requestTokens(system: readonly SystemBlock[], messages: readonly Message[]): number {
-  return estimateTokens(JSON.stringify([system, [answerTool], messages]));
+function requestTokens(
+  system: readonly SystemBlock[],
+  messages: readonly Message[],
+  tools: readonly ToolSpec[] = [answerTool],
+): number {
+  return estimateTokens(JSON.stringify([system, tools, messages]));
 }
 
 /**
  * Whether appending the review turn stays inside the configured context budget
  * (`context.budget_tokens`). Unset means no cap, so the cached prefix is used.
  */
-function prefixFits(
-  run: Run,
-  system: readonly SystemBlock[],
-  messages: readonly Message[],
-): boolean {
+function prefixFits(run: Run, worker: WorkerPrefix, messages: readonly Message[]): boolean {
   const budget = run.config.context.budget_tokens;
-  return budget === undefined || requestTokens(system, messages) <= budget;
+  return budget === undefined || requestTokens(worker.system, messages, worker.tools) <= budget;
 }
 
 type AskSpec =
   | { path: 'standalone'; system: SystemBlock[]; messages: Message[] }
-  | { path: 'prefix'; system: readonly SystemBlock[]; messages: Message[] };
+  | {
+      path: 'prefix';
+      system: readonly SystemBlock[];
+      tools: readonly ToolSpec[];
+      messages: Message[];
+    };
 
 /** Breakpoints on the first message and the last message that was already in the worker turn. */
 function breakpoints(messages: readonly Message[], fresh: boolean): number[] {
@@ -167,26 +179,35 @@ function breakpoints(messages: readonly Message[], fresh: boolean): number[] {
   return cachedLast > 0 ? [0, cachedLast] : [0];
 }
 
+function standaloneSpec(run: Run, rubric: string, prompt: string): AskSpec {
+  return {
+    path: 'standalone',
+    system: [{ text: rubric }],
+    messages: [{ role: 'user', content: [{ type: 'text', text: run.redactor.text(prompt) }] }],
+  };
+}
+
+/**
+ * The worker's cache only pays off on the worker's model: another chain has its own cache, and
+ * re-sending the whole conversation uncached costs far more than the short standalone prompt.
+ */
 function specFor(
   run: Run,
   rubric: string,
   prompt: string,
+  chain: 'cheap' | 'worker' | 'planner',
   worker: WorkerPrefix | undefined,
 ): AskSpec {
-  const body = run.redactor.text(prompt);
-  if (worker) {
+  if (worker && chain === 'worker') {
+    const text = `${rubric}\n\n${run.redactor.text(prompt)}${TEXT_ANSWER_SHAPE}`;
     const messages: Message[] = [
       ...worker.messages,
-      { role: 'user', content: [{ type: 'text', text: `${rubric}\n\n${body}` }] },
+      { role: 'user', content: [{ type: 'text', text }] },
     ];
-    if (prefixFits(run, worker.system, messages))
-      return { path: 'prefix', system: worker.system, messages };
+    if (prefixFits(run, worker, messages))
+      return { path: 'prefix', system: worker.system, tools: worker.tools, messages };
   }
-  return {
-    path: 'standalone',
-    system: [{ text: rubric }],
-    messages: [{ role: 'user', content: [{ type: 'text', text: body }] }],
-  };
+  return standaloneSpec(run, rubric, prompt);
 }
 
 /** The one retry spells the answer shape onto the user turn already chosen. */
@@ -203,9 +224,7 @@ function withShape(spec: AskSpec): AskSpec {
         }
       : m,
   );
-  return spec.path === 'prefix'
-    ? { path: 'prefix', system: spec.system, messages }
-    : { path: 'standalone', system: spec.system, messages };
+  return { ...spec, messages };
 }
 
 async function ask(
@@ -219,11 +238,15 @@ async function ask(
   extra: Record<string, unknown>,
   why?: (reason: string) => void,
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
-  const spec = specFor(run, rubric, prompt, worker);
-  run.events.emit(role === 'audit' ? 'audit.cache_path' : 'review.cache_path', {
-    path: spec.path,
-    ...extra,
-  });
+  const event = role === 'audit' ? 'audit.cache_path' : 'review.cache_path';
+  let spec = specFor(run, rubric, prompt, chain, worker);
+  run.events.emit(event, { path: spec.path, ...extra });
+  if (spec.path === 'prefix') {
+    const cached = await askOnce(run, spec, role, chain, maxTokens, why);
+    if (cached) return cached;
+    spec = standaloneSpec(run, rubric, prompt);
+    run.events.emit(event, { path: spec.path, fallback: true, ...extra });
+  }
   const last = { reason: '' };
   const first = await askOnce(run, spec, role, chain, maxTokens, (w) => {
     last.reason = w;
@@ -241,17 +264,18 @@ async function askOnce(
   maxTokens: number,
   why?: (reason: string) => void,
 ): Promise<z.infer<typeof reviewSchema> | undefined> {
+  const tools = spec.path === 'prefix' ? [...spec.tools] : [answerTool];
   const done = await run.cheapComplete(
     {
       system: spec.system as SystemBlock[],
-      tools: [answerTool],
-      toolChoice: { type: 'tool', name: 'answer' },
+      tools,
+      toolChoice: spec.path === 'prefix' ? { type: 'none' } : { type: 'tool', name: 'answer' },
       messages: spec.messages,
       maxTokens,
       messageBreakpoints: breakpoints(spec.messages, spec.path === 'standalone'),
     },
     {
-      estimatedInputTokens: requestTokens(spec.system, spec.messages),
+      estimatedInputTokens: requestTokens(spec.system, spec.messages, tools),
       maxOutputTokens: maxTokens,
       role,
       chain,
@@ -261,17 +285,24 @@ async function askOnce(
     why?.('the budget preflight refused the call');
     return undefined;
   }
-  const call = done.res.content.find((b) => b.type === 'tool_use');
-  if (call?.type !== 'tool_use') {
-    why?.(
-      `${done.model.provider}:${done.model.id} answered without the tool (stop: ${done.res.stopReason})`,
-    );
+  const answer = answerIn(done.res.content, spec.path);
+  if (answer === undefined) {
+    why?.(`${done.model.provider}:${done.model.id} gave no answer (stop: ${done.res.stopReason})`);
     return undefined;
   }
-  const r = coerceReview(call.input);
-  if (!r)
-    why?.(`unusable findings from ${done.model.id}: ${JSON.stringify(call.input).slice(0, 200)}`);
+  const r = coerceReview(answer);
+  if (!r) why?.(`unusable findings from ${done.model.id}: ${JSON.stringify(answer).slice(0, 200)}`);
   return r;
+}
+
+/** The answer tool's input, or on the worker prefix the JSON object in the reply text. */
+function answerIn(content: readonly ContentBlock[], path: AskSpec['path']): unknown {
+  if (path === 'standalone') {
+    const call = content.find((b) => b.type === 'tool_use');
+    return call?.type === 'tool_use' ? call.input : undefined;
+  }
+  const text = content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n');
+  return extractJson(text, '{');
 }
 
 /**

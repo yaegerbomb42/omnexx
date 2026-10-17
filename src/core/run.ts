@@ -1,3 +1,4 @@
+import type { WorkerPrefix } from '../verify/review.js';
 import {
   callOrder,
   orderForStrategy,
@@ -18,14 +19,7 @@ import { costUsd, resolveChain, type ResolvedModel } from '../providers/pricing.
 import { shouldFailover } from '../providers/router.js';
 import { QuotaLedger } from '../providers/quota-ledger.js';
 import { isQuotaError } from '../providers/sticky.js';
-import type {
-  CompletionRequest,
-  CompletionResponse,
-  Message,
-  Provider,
-  SystemBlock,
-  Usage,
-} from '../providers/types.js';
+import type { CompletionRequest, CompletionResponse, Provider, Usage } from '../providers/types.js';
 import { scrubEnv } from '../security/env-scrub.js';
 import type { PolicyContext } from '../security/command-policy.js';
 import { Redactor } from '../security/redact.js';
@@ -115,7 +109,7 @@ export class Run {
    * System blocks and messages of the latest worker turn. Review and audit append one user
    * message so the cached prefix is reused. Not persisted.
    */
-  workerPrefix: { system: SystemBlock[]; messages: Message[] } | undefined = undefined;
+  workerPrefix: WorkerPrefix | undefined = undefined;
 
   /** max_hours in ms. */
   get deadlineMs(): number {

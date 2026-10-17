@@ -43,7 +43,8 @@ export interface CompletionRequest {
   maxTokens: number;
   /** Indices into `messages` whose last block gets a cache breakpoint. */
   messageBreakpoints: number[];
-  toolChoice?: { type: 'auto' } | { type: 'tool'; name: string };
+  /** `none` keeps the tools in the request (and its cached prefix) but forbids calling them. */
+  toolChoice?: { type: 'auto' } | { type: 'none' } | { type: 'tool'; name: string };
   /** Which configured provider serves this call (default "anthropic"). */
   route?: string;
   signal?: AbortSignal;
