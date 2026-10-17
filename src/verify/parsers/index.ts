@@ -279,6 +279,55 @@ export function parseGoTest(output: string, ctx: ParseContext): ParsedOutput {
   };
 }
 
+const CARGO_RESULT =
+  /^test result: \w+\. (\d+) passed; (\d+) failed; (\d+) ignored(?:; (\d+) measured)?/;
+const CARGO_FAILED = /^test (\S+) \.\.\. FAILED$/;
+const CARGO_STDOUT = /^---- (\S+) stdout ----$/;
+
+/**
+ * `cargo test` (libtest's default output): one `test result:` line per test binary, summed;
+ * failing names from `test x ... FAILED`, messages from their `---- x stdout ----` blocks. A
+ * build that never ran a test (a compile error) falls back to the generic parser.
+ */
+export function parseCargo(output: string, ctx: ParseContext): ParsedOutput {
+  const lines = output.replace(/\r/g, '').split('\n');
+  const counts = { passed: 0, failed: 0, skipped: 0 };
+  let sawResult = false;
+  const failed = new Set<string>();
+  const stdout = new Map<string, string[]>();
+  let block: string[] | undefined;
+  for (const line of lines) {
+    const result = CARGO_RESULT.exec(line);
+    if (result) {
+      sawResult = true;
+      counts.passed += Number(result[1]);
+      counts.failed += Number(result[2]);
+      counts.skipped += Number(result[3]) + Number(result[4] ?? 0);
+      block = undefined;
+      continue;
+    }
+    const name = CARGO_FAILED.exec(line)?.[1];
+    if (name) failed.add(name);
+    const opened = CARGO_STDOUT.exec(line)?.[1];
+    if (opened) {
+      block = [];
+      stdout.set(opened, block);
+    } else if (/^failures:$/.test(line)) block = undefined;
+    else block?.push(line);
+  }
+  // No results, or a red exit no test explains (a doctest that failed to build): exit code only.
+  if (!sawResult || (ctx.exitCode !== 0 && !failed.size)) return parseGeneric(output, ctx);
+  const failures: Failure[] = [...failed].map((id) => ({
+    id,
+    message: clip((stdout.get(id) ?? []).join('\n').trim() || `${id} failed`),
+  }));
+  return {
+    failures,
+    tests: { total: counts.passed + counts.failed + counts.skipped, ...counts },
+    structured: true,
+  };
+}
+
 export function parseGateOutput(
   parser: GateParser,
   output: string,
@@ -298,6 +347,8 @@ export function parseGateOutput(
       return parsePytest(output, ctx);
     case 'gotest':
       return parseGoTest(output, ctx);
+    case 'cargo':
+      return parseCargo(output, ctx);
     case 'generic':
       return parseGeneric(output, ctx);
   }

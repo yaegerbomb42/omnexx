@@ -15,7 +15,7 @@ export interface DetectedGate {
 }
 
 export interface Detection {
-  language: 'node' | 'python' | 'go' | 'unknown';
+  language: 'node' | 'python' | 'go' | 'rust' | 'unknown';
   packageManager: PackageManager | undefined;
   setup: string[];
   gates: DetectedGate[];
@@ -156,6 +156,16 @@ export async function detectProject(root: string): Promise<Detection> {
           parser: 'gotest',
           timeout: '20m',
         },
+      ],
+    };
+  }
+  if (await exists(join(root, 'Cargo.toml'))) {
+    return {
+      language: 'rust',
+      packageManager: undefined,
+      setup: ['cargo fetch'],
+      gates: [
+        { name: 'test', run: 'cargo test', level: 'ratchet', parser: 'cargo', timeout: '20m' },
       ],
     };
   }
