@@ -6,23 +6,13 @@ import { readAgentSettings } from '../../src/config/agent-settings.js';
 import { resolvePaths } from '../../src/core/paths.js';
 import { makeRepo } from '../support/harness.js';
 import { say, ScriptedProvider } from '../support/scripted-provider.js';
+import { jsonPipes, type Out } from '../support/chat-pipes.js';
 import { isolatedEnv } from '../support/tmp.js';
-
-type Out = { type: string } & Record<string, unknown>;
 
 describe('chat-server agent settings (the VS Code "Agent" card)', () => {
   it('reads the defaults, saves the levels and the ask-at-start choice', async () => {
     const repo = await makeRepo();
-    const stdin = new PassThrough();
-    const stdout = new PassThrough();
-    const out: Out[] = [];
-    let buf = '';
-    stdout.on('data', (c: Buffer) => {
-      buf += c.toString();
-      const lines = buf.split('\n');
-      buf = lines.pop() ?? '';
-      for (const l of lines) if (l.trim()) out.push(JSON.parse(l) as Out);
-    });
+    const { stdin, stdout, out } = jsonPipes();
     const env = await isolatedEnv({ ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000' });
     const io: CliIO = {
       stdout,

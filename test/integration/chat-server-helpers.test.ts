@@ -6,9 +6,8 @@ import { serveChat, type ChatState } from '../../src/cli/chat-server.js';
 import type { CliIO } from '../../src/cli/io.js';
 import { makeRepo } from '../support/harness.js';
 import { call, say, ScriptedProvider, type Script } from '../support/scripted-provider.js';
+import { jsonPipes } from '../support/chat-pipes.js';
 import { isolatedEnv } from '../support/tmp.js';
-
-type Out = { type: string } & Record<string, unknown>;
 
 /** The main agent asks the "scout" card; the scout answers in one turn. */
 const script: Script = ({ turn, request }) => {
@@ -27,16 +26,7 @@ describe('chat-server: helpers (subagents) in the panel state', () => {
       join(repo, '.omnexx', 'agents', 'scout.md'),
       '---\nname: scout\ndescription: Finds files.\n---\nYou look around the repo and report.\n',
     );
-    const stdin = new PassThrough();
-    const stdout = new PassThrough();
-    const out: Out[] = [];
-    let buf = '';
-    stdout.on('data', (c: Buffer) => {
-      buf += c.toString();
-      const lines = buf.split('\n');
-      buf = lines.pop() ?? '';
-      for (const l of lines) if (l.trim()) out.push(JSON.parse(l) as Out);
-    });
+    const { stdin, stdout, out } = jsonPipes();
     const provider = new ScriptedProvider(script);
     const io: CliIO = {
       stdout,

@@ -3,22 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { serveChat } from '../../src/cli/chat-server.js';
 import type { CliIO } from '../../src/cli/io.js';
 import { makeRepo } from '../support/harness.js';
+import { jsonPipes, type Out } from '../support/chat-pipes.js';
 import { isolatedEnv } from '../support/tmp.js';
-
-type Out = { type: string } & Record<string, unknown>;
 
 /** The chat server on in-memory pipes, with a fake fetch that serves one model list. */
 async function start() {
-  const stdin = new PassThrough();
-  const stdout = new PassThrough();
-  const out: Out[] = [];
-  let buf = '';
-  stdout.on('data', (c: Buffer) => {
-    buf += c.toString();
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-    for (const l of lines) if (l.trim()) out.push(JSON.parse(l) as Out);
-  });
+  const { stdin, stdout, out } = jsonPipes();
   const io: CliIO = {
     stdout,
     stderr: new PassThrough(),

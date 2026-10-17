@@ -7,9 +7,8 @@ import { isolatedEnv } from './tmp.js';
 
 export type Out = { type: string } & Record<string, unknown>;
 
-/** The chat server on in-memory pipes: `send` writes one command, `until` waits for output. */
-export async function chatOnPipes<P extends Provider>(provider: P) {
-  const repo = await makeRepo();
+/** In-memory stdin/stdout for the chat server; `out` collects each JSON line it writes. */
+export function jsonPipes(): { stdin: PassThrough; stdout: PassThrough; out: Out[] } {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
   const out: Out[] = [];
@@ -20,6 +19,13 @@ export async function chatOnPipes<P extends Provider>(provider: P) {
     buf = lines.pop() ?? '';
     for (const l of lines) if (l.trim()) out.push(JSON.parse(l) as Out);
   });
+  return { stdin, stdout, out };
+}
+
+/** The chat server on in-memory pipes: `send` writes one command, `until` waits for output. */
+export async function chatOnPipes<P extends Provider>(provider: P) {
+  const repo = await makeRepo();
+  const { stdin, stdout, out } = jsonPipes();
   const io: CliIO = {
     stdout,
     stderr: new PassThrough(),
