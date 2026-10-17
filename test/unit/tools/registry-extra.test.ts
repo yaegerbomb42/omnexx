@@ -50,12 +50,11 @@ describe('extra tool sources', () => {
     expect(await workerTools(config, undefined, {})).toEqual(WORKER_TOOLS);
   });
 
-  it('the default barrel contributes the integrations and skill tools after the core tools', async () => {
+  it('the default barrel adds the integrations tools after the core tools, and no skill tool without skills', async () => {
     expect((await workerTools(config)).map((t) => t.name)).toEqual([
       ...WORKER_TOOLS.map((t) => t.name),
       'integrations_install',
       'integrations_search',
-      'skill',
     ]);
   });
 });
