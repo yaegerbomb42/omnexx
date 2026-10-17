@@ -68,6 +68,8 @@ export interface ToolOutput {
   isError?: boolean;
   /** The tool did the loop's job (e.g. the plan is written): end the loop after this turn. */
   final?: boolean;
+  /** `str_replace` matched nothing. The loop copies this onto the `tool.call` event. */
+  miss?: boolean;
 }
 
 export interface Tool<S extends z.ZodType = z.ZodType> {
