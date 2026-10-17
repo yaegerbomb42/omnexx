@@ -7,6 +7,7 @@ import {
   EXECUTE_PROMPT,
   runThinkLoop,
   THINK_PROMPT,
+  thinkSizing,
   type ChainKind,
   type CheckOutcome,
   type Segment,
@@ -77,6 +78,26 @@ const fail = (why: string, tree = 't-red'): CheckOutcome => ({
 const first: Message = { role: 'user', content: [{ type: 'text', text: 'Work on M1.T01' }] };
 const limits = { rounds: 6, rethinks: 2, thinkTurns: 8 };
 
+describe('thinkSizing', () => {
+  it('gives a short goal three turns and skips the decide step', () => {
+    expect(thinkSizing('Fix the off-by-one in src/sum.ts', '', 8)).toEqual({
+      thinkTurns: 3,
+      skipDecide: true,
+    });
+  });
+
+  it('keeps the configured budget once the goal names three mapped files', () => {
+    const map = ['src/a.ts', 'src/b.ts', 'src/c.ts'].join('\n');
+    const goal = 'Update src/a.ts, src/b.ts and src/c.ts so the three agree.';
+    expect(thinkSizing(goal, map, 8)).toEqual({ thinkTurns: 8, skipDecide: false });
+  });
+
+  it('keeps the configured budget for a long goal', () => {
+    const goal = Array.from({ length: 61 }, () => 'word').join(' ');
+    expect(thinkSizing(goal, '', 8).skipDecide).toBe(false);
+  });
+});
+
 describe('think-first loop session', () => {
   it('shows the analysis steps as the todo list and ticks them off once green', async () => {
     const analysis =
@@ -94,6 +115,15 @@ describe('think-first loop session', () => {
         { text: 'add a test', status: 'done' },
       ],
     ]);
+  });
+
+  it('does not spend a decide step when the goal was sized as small', async () => {
+    const { io, calls } = fakeIO(
+      [{ say: 'partial', end: 'max_turns_per_cycle' }, { say: 'fixed' }],
+      [pass('t1')],
+    );
+    await runThinkLoop(first, io, { ...limits, thinkTurns: 3, skipDecide: true });
+    expect(calls.map((c) => c.chain)).toEqual(['think', 'work']);
   });
 
   it('thinks first with the strong chain, and the analysis stays in the conversation it executes in', async () => {
@@ -202,7 +232,22 @@ describe('think-first loop session', () => {
     const out = await runThinkLoop(first, io, { rounds: 3, rethinks: 0, thinkTurns: 8 });
     expect(restored).toEqual(['green-1']);
     expect(events).toContain('loop.restore_green');
-    expect(out).toMatchObject({ green: true, rounds: 3 });
+    expect(out).toMatchObject({ end: 'rounds_spent', green: true, rounds: 3 });
+  });
+
+  it('never reports rounds spent on red checks as done, with no green tree to fall back to', async () => {
+    const analysis = '4. Ordered steps:\n   - fix sum()\n   - add a test\n5. Verify: npm test';
+    const { io, restored, log } = fakeIO(
+      [{ say: analysis }, { say: 'b' }, { say: 'c' }],
+      [fail('x'), fail('y')],
+    );
+    const out = await runThinkLoop(first, io, { rounds: 2, rethinks: 0, thinkTurns: 8 });
+    expect(out).toMatchObject({ end: 'rounds_spent', green: false, rounds: 2 });
+    expect(restored).toEqual([]);
+    expect(log.find((e) => e.type === 'loop.end')?.data.end).toBe('rounds_spent');
+    // The checklist is not ticked off for work that never passed.
+    const todos = log.filter((e) => e.type === 'todo.update');
+    expect(todos).toHaveLength(1);
   });
 
   it('stops at once on a stop request or the money running out', async () => {
@@ -231,6 +276,19 @@ describe('think-first loop session: bounded thinking', () => {
     // Execution runs without a think cap.
     expect(calls[2]?.seg.maxTurns).toBeUndefined();
     expect(out.analysis).toBe('ANALYSIS now');
+  });
+
+  it('passes the worker conversation, unchanged, into the end review', async () => {
+    let seen: readonly Message[] | undefined;
+    const { io } = fakeIO([{ say: 'the analysis' }, { say: 'shipped' }], [pass('t1')]);
+    io.review = (_analysis, messages) => {
+      seen = messages;
+      return Promise.resolve(undefined);
+    };
+    await runThinkLoop(first, io, limits);
+    expect(seen?.map((m) => text(m)).join('\n')).toContain('Work on M1.T01');
+    expect(seen?.map((m) => text(m)).join('\n')).toContain('the analysis');
+    expect(seen?.at(-1)?.role).toBe('assistant');
   });
 
   it('caps a re-think the same way', async () => {

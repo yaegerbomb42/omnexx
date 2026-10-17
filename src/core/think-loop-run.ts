@@ -1,4 +1,5 @@
 import { withoutVendored } from '../agent/codemap.js';
+import { readTextOr } from './atomic.js';
 import { runAgentLoop, type LoopDeps, type LoopResult } from '../agent/loop.js';
 import { plannerCandidates } from '../agent/planner.js';
 import { git } from '../git/git.js';
@@ -6,7 +7,7 @@ import { workingTreeDiff } from '../git/repo.js';
 import { rollbackTo } from '../git/rollback.js';
 import type { ResolvedModel } from '../providers/pricing.js';
 import type { SystemBlock, ToolSpec } from '../providers/types.js';
-import { blocking, renderFindings, reviewChange } from '../verify/review.js';
+import { blocking, renderFindings, reviewChange, type WorkerPrefix } from '../verify/review.js';
 import type { GateResult } from '../verify/gates.js';
 import type { judgeGate } from '../verify/ratchet.js';
 import { FAST_TASK } from './fast-path.js';
@@ -16,7 +17,13 @@ import type { PlanNode } from './plan.js';
 import type { Run } from './run.js';
 import { checkTree, type CheckSession, type TaskCheck } from './think-loop-check.js';
 import { speculativeChecks, withSpeculation } from './think-loop-speculative.js';
-import { runThinkLoop, type ChainKind, type SessionIO, type SessionResult } from './think-loop.js';
+import {
+  runThinkLoop,
+  thinkSizing,
+  type ChainKind,
+  type SessionIO,
+  type SessionResult,
+} from './think-loop.js';
 
 /** Whether this task runs as a think-loop session under `[plan] loop`. */
 export function usesThinkLoop(run: Run, task: PlanNode): boolean {
@@ -81,13 +88,18 @@ async function rememberFix(run: Run, signature: string, summary: string): Promis
 }
 
 /** The end review: the whole diff against the goal and the agent's analysis. */
-async function reviewDiff(run: Run, task: PlanNode, analysis: string): Promise<string | undefined> {
+async function reviewDiff(
+  run: Run,
+  task: PlanNode,
+  analysis: string,
+  worker?: WorkerPrefix,
+): Promise<string | undefined> {
   const goal = (await run.store.readGoal()).text;
   const { patch } = await workingTreeDiff(run.worktree, run.state.lastGreen);
   const withAnalysis = analysis
     ? `${goal}\n\n# The agent's analysis (what it set out to do)\n${analysis.slice(0, 4_000)}`
     : goal;
-  const r = await reviewChange(run, task, withAnalysis, withoutVendored(patch));
+  const r = await reviewChange(run, task, withAnalysis, withoutVendored(patch), worker);
   if (!r) return undefined;
   const block = blocking(r.findings, run.config.review.block_on);
   run.events.emit('review.result', {
@@ -146,7 +158,10 @@ export async function actAsThinkLoop(
     check: () => checkTree(run, task, inputs.runChecks, session, ++round),
     onFixed: (signature, summary) => rememberFix(run, signature, summary),
     ...(run.config.review.enabled
-      ? { review: (analysis: string) => reviewDiff(run, task, analysis) }
+      ? {
+          review: (analysis: string, messages) =>
+            reviewDiff(run, task, analysis, { system: inputs.ctx.system, messages }),
+        }
       : {}),
     restore: (tree) => restoreTree(run, tree),
     emit: (type, data) => {
@@ -154,10 +169,19 @@ export async function actAsThinkLoop(
     },
   };
   try {
+    const goal = await run.store.readGoal();
+    const codemap = await readTextOr(run.store.file('codemap.json'), '');
+    const sized = thinkSizing(goal.text, codemap, run.config.plan.loop_think_turns);
+    io.emit('phase', {
+      phase: 'act',
+      thinkTurns: sized.thinkTurns,
+      skipDecide: sized.skipDecide,
+    });
     return await runThinkLoop(inputs.ctx.first, io, {
       rounds: run.config.plan.loop_rounds,
       rethinks: run.config.plan.loop_rethinks,
-      thinkTurns: run.config.plan.loop_think_turns,
+      thinkTurns: sized.thinkTurns,
+      skipDecide: sized.skipDecide,
       rewinds: run.config.plan.loop_rewinds,
     });
   } finally {

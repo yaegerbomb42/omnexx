@@ -4,14 +4,16 @@ import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { readTextOr, writeJsonAtomic } from './atomic.js';
 import type { OmnexxPaths } from './paths.js';
+import { probeRepo, type RepoProbe } from './repo-probe.js';
 import { repoMemoryFile } from './repo-memory.js';
 import { estimateTokens } from './tokens.js';
 
 /**
- * Verified repo facts: how to build, test, lint and run this repo, each backed by a run that
- * actually exited 0 and bound to the files that decide it (package.json, lockfiles, ...). When a
- * bound file changes, the fact is shown as unverified until the command passes again. Stored
- * next to the repo's lessons, outside the repo (never committed).
+ * Verified repo facts: how to build, test, lint and run this repo. A run that exited 0 records
+ * one bound to the files that decide it (package.json, lockfiles, ...). When a bound file
+ * changes, that fact is shown as unverified until the command passes again. A session start also
+ * records probe facts (`source: "probe"`) from the worktree files, keyed by a hash of those
+ * inputs. Stored next to the repo's lessons, outside the repo (never committed).
  */
 export const FACT_KINDS = [
   'build',
@@ -58,7 +60,12 @@ const factSchema = z.object({
   kind: z.enum(FACT_KINDS),
   statement: z.string().min(1).max(400),
   command: z.string().max(400).optional(),
-  source: z.enum(['gate', 'command', 'remember']),
+  source: z.enum(['gate', 'command', 'remember', 'probe']),
+  /** Hash of the probe inputs. Set only on `source: "probe"` facts. */
+  probeHash: z
+    .string()
+    .regex(/^[a-f0-9]{16}$/)
+    .optional(),
   verified: z.object({ exitCode: z.number(), at: z.string(), durationMs: z.number() }),
   boundTo: z.array(z.object({ path: z.string(), hash: z.string() })),
   stale: z.boolean().optional(),
@@ -254,7 +261,7 @@ const KIND_ORDER: readonly FactKind[] = [
   'path',
   'convention',
 ];
-const SOURCE_ORDER: readonly Fact['source'][] = ['gate', 'remember', 'command'];
+const SOURCE_ORDER: readonly Fact['source'][] = ['gate', 'remember', 'probe', 'command'];
 
 /** Most useful first: verified before stale, gates before ad-hoc commands, then kind, newest. */
 export function rankFacts(facts: readonly Fact[]): Fact[] {
@@ -297,6 +304,47 @@ export function renderFactsBlock(
   return lines.length ? [head, ...lines].join('\n') : '';
 }
 
+/**
+ * Fold a repo probe into stored facts. The same probe hash keeps probe facts byte-for-byte; a new
+ * hash replaces them. Facts from `remember`, gates, and passed commands are left in place, so a
+ * hand-written command is never dropped because the probe disagrees.
+ */
+export function applyProbe(facts: readonly Fact[], probe: RepoProbe, at: string): Fact[] {
+  const probed = facts.filter((f) => f.source === 'probe');
+  if (probed.length > 0 && probed.every((f) => f.probeHash === probe.hash)) return [...facts];
+  const kept = facts.filter((f) => f.source !== 'probe');
+  const commands = new Set(kept.flatMap((f) => (f.command ? [f.command] : [])));
+  const statements = new Set(kept.map((f) => f.statement));
+  let acc = [...kept];
+  for (const draft of probe.facts) {
+    if ((draft.command && commands.has(draft.command)) || statements.has(draft.statement)) continue;
+    const fact: Fact = {
+      id: nextId(acc),
+      kind: draft.kind,
+      statement: draft.statement,
+      ...(draft.command !== undefined ? { command: draft.command } : {}),
+      source: 'probe',
+      probeHash: probe.hash,
+      verified: { exitCode: 0, at, durationMs: 0 },
+      boundTo: [],
+    };
+    acc = [...acc, fact];
+    if (draft.command) commands.add(draft.command);
+    statements.add(draft.statement);
+  }
+  return capFacts(acc);
+}
+
+/** Remembered and gate facts stay when a probe would otherwise push the list past the cap. */
+function capFacts(facts: readonly Fact[]): Fact[] {
+  if (facts.length <= MAX_FACTS) return [...facts];
+  const pinned = facts.filter((f) => f.source === 'remember' || f.source === 'gate');
+  const rest = facts.filter((f) => f.source !== 'remember' && f.source !== 'gate');
+  const keptPinned = pinned.slice(-MAX_FACTS);
+  const room = MAX_FACTS - keptPinned.length;
+  return [...keptPinned, ...rest.slice(-Math.max(0, room))];
+}
+
 /** The facts block for `repoRoot`, staleness checked against `workdir` (a run's worktree). */
 export async function factsBlockFor(
   paths: Pick<OmnexxPaths, 'home'>,
@@ -305,10 +353,17 @@ export async function factsBlockFor(
   lessons: readonly string[] = [],
 ): Promise<string> {
   try {
-    return renderFactsBlock(
-      await withStaleness(await readFacts(paths, repoRoot), workdir),
-      lessons,
-    );
+    const existing = await readFacts(paths, repoRoot);
+    let facts = existing;
+    try {
+      const next = applyProbe(existing, await probeRepo(workdir), new Date().toISOString());
+      if (JSON.stringify(next) !== JSON.stringify(existing))
+        await writeFacts(paths, repoRoot, next);
+      facts = next;
+    } catch {
+      // Probe or write failed: still show facts already recorded for this repo.
+    }
+    return renderFactsBlock(await withStaleness(facts, workdir), lessons);
   } catch {
     return '';
   }

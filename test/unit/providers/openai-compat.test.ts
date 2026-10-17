@@ -311,6 +311,22 @@ describe('model limits and refusals', () => {
     expect(sent).toEqual([32_000, 8192, 8192]);
   });
 
+  it('sends prompt_cache_key for the run, and drops it after the server refuses the field', async () => {
+    const srv = await mockServer((r, res) => {
+      if ('prompt_cache_key' in (JSON.parse(r.body) as object))
+        json(res, 400, { error: { message: 'Unrecognized request argument: prompt_cache_key' } });
+      else json(res, 200, ok);
+    });
+    const p = make(srv.url);
+    const keyed: CompletionRequest = { ...req, promptCacheKey: 'run-1' };
+    await p.complete(keyed);
+    await p.complete(keyed);
+    const keys = srv.requests.map(
+      (r) => (JSON.parse(r.body) as { prompt_cache_key?: string }).prompt_cache_key,
+    );
+    expect(keys).toEqual(['run-1', undefined, undefined]);
+  });
+
   it('asks for parallel tool calls when tools are offered and the choice is free', async () => {
     const srv = await mockServer((_r, res) => {
       json(res, 200, ok);

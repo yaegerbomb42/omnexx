@@ -326,6 +326,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     <button data-mode="run" aria-pressed="false" title="Autonomous: start a long run in the background"><span class="long">Autonomous</span><span class="short">Auto</span></button>
   </div>
   <button id="approval" class="chip" data-action="approval">Ask first</button>
+  <button id="trace" class="chip" data-action="trace" aria-pressed="false" title="Per-turn line: calls, fresh and cached tokens, latency, gates">Trace</button>
 </div>
 <div id="banner" class="banner" hidden role="status"></div>
 <details id="steps" class="section steps" open hidden>

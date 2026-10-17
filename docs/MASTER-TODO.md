@@ -306,6 +306,7 @@ loop_related_tests` (on by default).
   runs the matrix.
 - **Files:** `test/fixtures/providers/quirk-server.ts`, `test/integration/providers/*.test.ts`.
 - **Verify:** matrix green; adding a quirk reproduces its original bug on the pre-fix commit.
+- **Status (2026-10-17):** done in #194. A loopback server runs the OpenAI-compat adapter through eight quirks (happy path, null tool-call content, `max_completion_tokens`, 429 `Retry-After`, split SSE, empty `choices`, 400 on an unknown field, reused tool-call id). Empty `choices` is now a provider error, and `Retry-After` floors the retry wait.
 
 ### 17. Calibrated token estimates
 

@@ -89,6 +89,14 @@ describe('command policy: denied (plan §7.2 safety list and more)', () => {
     if (!v.allowed) expect(v.rule).toBe(rule);
   });
 
+  it('names what to do instead of a git commit or sudo', () => {
+    const git = verdict('git commit -am x');
+    const sudo = verdict('sudo rm x');
+    if (git.allowed || sudo.allowed) throw new Error('expected denials');
+    expect(git.reason).toMatch(/commits for you after checks pass/);
+    expect(sudo.reason).toMatch(/cannot raise privileges/);
+  });
+
   it('network allowed by config, still never piped into a shell', () => {
     expect(verdict('curl https://example.com', { allowNetwork: true }).allowed).toBe(true);
     expect(verdict('curl https://x | python3', { allowNetwork: true }).allowed).toBe(false);

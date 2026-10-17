@@ -8,7 +8,14 @@ import {
 import type { OmnexxConfig } from '../config/schema.js';
 import type { Clock } from '../core/clock.js';
 import type { EventLog } from '../core/events.js';
-import { estimateTokens } from '../core/tokens.js';
+import {
+  loadTokenRatios,
+  observeTokenRatio,
+  saveTokenRatio,
+  tokenRatio,
+  type TokenRatios,
+} from '../core/token-calibration.js';
+import { applyTokenRatio, estimateTokens } from '../core/tokens.js';
 import { preflight, type BudgetStop } from '../guard/budget.js';
 import { costUsd, type ResolvedModel } from '../providers/pricing.js';
 import { ProvidersUnavailable, StopRequested, withRetry } from '../providers/retry.js';
@@ -54,15 +61,16 @@ class BudgetStopSignal extends Error {
  * print_tree and list_files in its first real run). They run the real tool instead of failing.
  */
 const TOOL_ALIASES: Record<string, string> = {
-  print_tree: 'list',
-  tree: 'list',
-  ls: 'list',
-  list_files: 'list',
-  list_dir: 'list',
-  list_directory: 'list',
-  file_tree: 'list',
-  find_files: 'list',
-  glob: 'list',
+  print_tree: 'outline',
+  tree: 'outline',
+  ls: 'outline',
+  list_files: 'outline',
+  list_dir: 'outline',
+  list_directory: 'outline',
+  file_tree: 'outline',
+  find_files: 'outline',
+  glob: 'outline',
+  list: 'outline',
   grep: 'search',
   ripgrep: 'search',
   search_files: 'search',
@@ -137,7 +145,9 @@ export function stuckNudge(detail: string): string {
 
 export type ControlSignal = 'continue' | 'pause' | 'stop' | 'stop-now';
 
-export type LoopEnd = 'done' | 'stop' | 'stop-now' | BudgetStop | 'refusal' | 'stuck';
+/** `rounds_spent`: a think-loop session used every check round without passing its checks. */
+export type LoopEnd =
+  'done' | 'stop' | 'stop-now' | BudgetStop | 'refusal' | 'stuck' | 'rounds_spent';
 
 export interface LoopResult {
   end: LoopEnd;
@@ -174,6 +184,8 @@ export interface LoopDeps {
   maxTokens: number;
   clock: Clock;
   events: EventLog;
+  /** Stable id for this run, sent as OpenAI's prompt_cache_key. */
+  cacheKey?: string;
   /** Spend so far across the run, before this call. */
   spentUsd: () => number;
   /** Spend in the rolling 24 h window, for the daily cap. */
@@ -215,6 +227,22 @@ export interface LoopDeps {
    * every step and added to the conversation right away, so they steer the current turn.
    */
   pendingInput?: () => string[];
+  /**
+   * `token-calibration.json` beside latency.json. Unset: every estimate stays at ratio 1.
+   * The loop loads it once and writes the EMA after each turn that reports prompt tokens.
+   */
+  calibrationFile?: string;
+}
+
+/** Uncalibrated size of the prompt the provider will see, and that size scaled by the model's ratio. */
+function pricedPrompt(
+  ratios: TokenRatios,
+  model: { provider: string; id: string },
+  req: { system: unknown; tools: unknown; messages: unknown },
+): { key: string; raw: number; estimate: number } {
+  const raw = estimateTokens(JSON.stringify([req.system, req.tools, req.messages]));
+  const key = `${model.provider}:${model.id}`;
+  return { key, raw, estimate: applyTokenRatio(raw, tokenRatio(ratios, key)) };
 }
 
 /** How messages typed mid-turn reach the model. */
@@ -222,13 +250,21 @@ export const steeringText = (msgs: readonly string[]): string =>
   `The user sent ${msgs.length === 1 ? 'a message' : 'messages'} while you were working. Read ${msgs.length === 1 ? 'it' : 'them'} now and adjust:\n${msgs.map((m) => `> ${m}`).join('\n')}`;
 
 /** Look-around tools: a turn spent on just one of these, before any edit, is a wasted round trip. */
-const EXPLORE_TOOLS: ReadonlySet<string> = new Set([
-  'read',
-  'outline',
-  'search',
-  'list',
-  'read_symbol',
-]);
+const EXPLORE_TOOLS: ReadonlySet<string> = new Set(['read', 'outline', 'search', 'read_symbol']);
+
+/**
+ * A later turn whose cache read is under 80% of the previous prompt. The first turn has nothing
+ * cached yet, so it is never a miss.
+ */
+export function cacheShortfall(
+  turn: number,
+  previousPromptTokens: number,
+  cacheRead: number,
+): { turn: number; expected: number; got: number } | undefined {
+  if (turn < 2 || previousPromptTokens <= 0) return undefined;
+  if (cacheRead / previousPromptTokens >= 0.8) return undefined;
+  return { turn, expected: previousPromptTokens, got: cacheRead };
+}
 
 /** Said once per loop, after the first turn that explored with a single call. */
 export const BATCH_HINT =
@@ -373,8 +409,12 @@ export async function runAgentLoop(
     tools: estimateTokens(JSON.stringify(ctx.tools)),
   };
 
+  let tokenRatios: TokenRatios = deps.calibrationFile
+    ? await loadTokenRatios(deps.calibrationFile)
+    : {};
   const nudged = new Set<string>();
   let batchHinted = false;
+  let previousPromptTokens = 0;
   let bookkeepingHinted = false;
   let changedSomething = false;
   for (;;) {
@@ -408,6 +448,7 @@ export async function runAgentLoop(
 
     let chosen: ResolvedModel | undefined;
     let res: CompletionResponse;
+    let learned: { model: string; raw: number } | undefined;
     const callStart = deps.clock.now();
     // Attempts in a row where some provider answered 5xx, and the last one that did.
     let serverFailures = 0;
@@ -438,12 +479,15 @@ export async function runAgentLoop(
             if (up) {
               // The provider is up: send the real request once more, cooling or not.
               try {
-                const r = await deps.provider.complete({
-                  ...turnRequest(ctx, messages, m.id, deps.maxTokens),
+                const req = {
+                  ...turnRequest(ctx, messages, m.id, deps.maxTokens, deps.cacheKey),
                   route: m.provider,
                   ...(deps.signal ? { signal: deps.signal } : {}),
-                });
+                };
+                const quote = pricedPrompt(tokenRatios, m, req);
+                const r = await deps.provider.complete(req);
                 chosen = m;
+                learned = { model: quote.key, raw: quote.raw };
                 return r;
               } catch (err) {
                 if (err instanceof ProviderError && (err.status ?? 0) >= 500)
@@ -492,8 +536,9 @@ export async function runAgentLoop(
               );
               continue;
             }
-            const req = turnRequest(ctx, messages, m.id, deps.maxTokens);
-            const estimate = estimateTokens(JSON.stringify([req.system, req.tools, req.messages]));
+            const req = turnRequest(ctx, messages, m.id, deps.maxTokens, deps.cacheKey);
+            const quote = pricedPrompt(tokenRatios, m, req);
+            const estimate = quote.estimate;
             const pf = preflight(deps.budget, {
               spentUsd: deps.spentUsd(),
               ...(deps.spentTodayUsd ? { spentTodayUsd: deps.spentTodayUsd() } : {}),
@@ -515,6 +560,7 @@ export async function runAgentLoop(
                 ...(deps.signal ? { signal: deps.signal } : {}),
               });
               chosen = m;
+              learned = { model: quote.key, raw: quote.raw };
               deps.onResponse?.({
                 model: ref,
                 inputTokens: estimate,
@@ -629,6 +675,19 @@ export async function runAgentLoop(
       }
       throw err;
     }
+    if (learned && deps.calibrationFile) {
+      const next = observeTokenRatio(
+        tokenRatios,
+        learned.model,
+        learned.raw,
+        totalInput(res.usage),
+      );
+      const ratio = next?.[learned.model];
+      if (next && ratio !== undefined) {
+        tokenRatios = next;
+        await saveTokenRatio(deps.calibrationFile, learned.model, ratio).catch(() => undefined);
+      }
+    }
     const model = chosen ?? deps.models[0];
     if (!model) throw new ProviderError('empty model chain', { retryable: false });
     turns++;
@@ -655,6 +714,9 @@ export async function runAgentLoop(
       segments: { ...prefixTokens, ...messageSegments(messages) },
       usd: cost,
     });
+    const miss = cacheShortfall(turns, previousPromptTokens, res.usage.cacheRead);
+    if (miss) deps.events.emit('cache.miss', miss);
+    previousPromptTokens = input;
 
     messages.push({ role: 'assistant', content: res.content });
     const text = res.content
@@ -695,10 +757,11 @@ export async function runAgentLoop(
       const tool = resolveTool(byName, call.name);
       let content: string;
       let isError: boolean;
+      let miss = false;
       const toolStart = deps.clock.now();
       deps.events.emit('tool.start', {
         tool: call.name,
-        // An invented name (print_tree) is narrated as the tool that actually runs (list).
+        // An invented name (print_tree) is narrated as the tool that actually runs (outline).
         doing: narrateTool(
           tool?.name ?? call.name,
           typeof call.input === 'object' && call.input !== null
@@ -736,6 +799,7 @@ export async function runAgentLoop(
           const out = await tool.run(parsed.data, deps.toolCtx);
           content = out.content;
           isError = out.isError === true;
+          miss = out.miss === true;
           if (out.final && !isError) finished.now = true;
         }
       }
@@ -744,6 +808,7 @@ export async function runAgentLoop(
         tool: call.name,
         input: summarizeInput(call.input),
         isError,
+        ...(miss ? { miss: true } : {}),
         // Already redacted above. Enough to see why it failed without opening the transcript.
         ...(isError ? { error: content.slice(0, 500) } : {}),
         bytes: content.length,

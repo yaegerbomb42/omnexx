@@ -78,6 +78,7 @@ export async function statusData(store: RunStore, now: number) {
         gatePassRate: tel.gateRuns ? tel.gatePasses / tel.gateRuns : undefined,
         rollbacks: tel.rollbacks,
         compactions: tel.compactions,
+        cacheMisses: tel.cacheMisses,
         tokensPerCommit: tokensPerCommit(tel),
         model: tel.model,
         provider: tel.provider,

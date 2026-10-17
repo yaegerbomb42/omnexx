@@ -35,7 +35,7 @@ import {
   sameFailureQuestion,
   toolSafetyQuestion,
 } from '../judge/uses.js';
-import { toolSpec, workerTools } from '../tools/registry.js';
+import { exposedTools, toolSpec, workerTools } from '../tools/registry.js';
 import { cycleRoute } from '../router/classify.js';
 import { readIntent } from '../agent/intent.js';
 import type { ToolContext } from '../tools/types.js';
@@ -55,6 +55,7 @@ import { closeSession } from '../tools/extra/browser.js';
 import { subagentRunner } from '../agent/subagent.js';
 import type { PendingVerdict } from './run-store.js';
 import type { Run } from './run.js';
+import { tokenCalibrationFile } from './token-calibration.js';
 import { estimateTokens } from './tokens.js';
 import type { Message } from '../providers/types.js';
 
@@ -409,9 +410,13 @@ export async function stepAct(run: Run): Promise<void> {
   const assembled = memory.assemble();
 
   // One agent with the whole context: helper agents (`task`) only when `[context] subagents` is on.
-  const tools = (
-    await workerTools(run.config, { repoRoot: run.worktree, env: run.deps.env })
-  ).filter((t) => run.config.context.subagents || t.name !== 'task');
+  // `recall` only once an earlier cycle left history to search.
+  const hasRecallableHistory =
+    notes.length > 0 || task.evidence.length > 0 || progressTail.trim().length > 0;
+  const tools = exposedTools(
+    await workerTools(run.config, { repoRoot: run.worktree, env: run.deps.env }),
+    { subagents: run.config.context.subagents, hasHistory: hasRecallableHistory },
+  );
   const route = await run.router.pick(cycleRoute(task, run.budgetLeftFraction()));
   const ctx = buildCycleContext({
     systemPrompt: WORKER_SYSTEM,
@@ -464,6 +469,7 @@ export async function stepAct(run: Run): Promise<void> {
     maxTokens: run.config.providers.anthropic.max_tokens,
     clock: run.clock,
     events: run.events,
+    cacheKey: run.state.runId,
     // Quotas gone or every provider down: stop after a while instead of waiting for ever.
     retry: { giveUpAfterMs: parseDuration(run.config.budget.max_provider_wait) },
     spentUsd: () => run.state.spend.usd,
@@ -474,6 +480,7 @@ export async function stepAct(run: Run): Promise<void> {
       run.paused = p;
     },
     signal: run.signal,
+    calibrationFile: tokenCalibrationFile(run.deps.paths),
     parallelTasks: run.config.context.subagent_parallel,
     watch: new InCycleWatch(
       {
@@ -537,6 +544,7 @@ export async function stepAct(run: Run): Promise<void> {
   };
   if ('reviewed' in result && result.reviewed && task.id === FAST_TASK)
     run.state.loopReviewed = true;
+  run.workerPrefix = { system: ctx.system, messages: result.messages };
   await run.setPhase('verify');
 }
 
@@ -653,7 +661,7 @@ export async function stepVerify(run: Run): Promise<void> {
     // A loop session already had its one review, of the whole diff; findings were fixed in it.
     if (!reasons.length && run.config.review.enabled && !act.reviewed) {
       const goal = (await run.store.readGoal()).text;
-      const r = await reviewChange(run, task, goal, withoutVendored(patch));
+      const r = await reviewChange(run, task, goal, withoutVendored(patch), run.workerPrefix);
       if (r) {
         const block = blocking(r.findings, run.config.review.block_on);
         run.events.emit('review.result', {

@@ -1,5 +1,6 @@
 import type { Brand } from '../cli/brand.js';
 import type { OmnexxEvent } from '../core/events.js';
+import { turnWarning, type GateStatus, type TurnTrace } from './turn-trace.js';
 
 /**
  * One short, brand-styled line per event: what the agent is doing right now. Pure, so the
@@ -63,6 +64,41 @@ function clip(s: string, n: number): string {
   return one.length > n ? `${one.slice(0, n - 1)}…` : one;
 }
 
+/**
+ * One-line summary of a multi-file `read files: [{path, start?, end?}]`: the count plus the
+ * first paths, each with its range. Undefined when the input isn't that shape.
+ */
+function filesSummary(v: unknown): string | undefined {
+  if (!Array.isArray(v) || !v.length) return undefined;
+  const parts: string[] = [];
+  for (const f of v) {
+    if (typeof f === 'string') {
+      parts.push(f);
+      continue;
+    }
+    if (!f || typeof f !== 'object') return undefined;
+    const p = (f as Record<string, unknown>).path;
+    if (typeof p !== 'string' || !p) return undefined;
+    const start = (f as Record<string, unknown>).start;
+    const end = (f as Record<string, unknown>).end;
+    const range =
+      typeof start === 'number' ? `:${start}-${typeof end === 'number' ? end : ''}` : '';
+    parts.push(`${p}${range}`);
+  }
+  const shown = parts.slice(0, 3).map((p) => clip(p, 40));
+  const rest = parts.length > shown.length ? ` +${parts.length - shown.length} more` : '';
+  return clip(`${parts.length} files: ${shown.join(', ')}${rest}`, 90);
+}
+
+/** One-line summary of a multi-path `outline paths: [...]`. Undefined when not that shape. */
+function pathsSummary(v: unknown): string | undefined {
+  if (!Array.isArray(v) || !v.length) return undefined;
+  if (!v.every((p) => typeof p === 'string' && p)) return undefined;
+  const shown = v.slice(0, 3).map((p) => clip(p as string, 40));
+  const rest = v.length > shown.length ? ` +${v.length - shown.length} more` : '';
+  return clip(`${v.length} files: ${shown.join(', ')}${rest}`, 90);
+}
+
 function toolLine(e: OmnexxEvent): Line {
   const name = str(e.tool);
   const input = toolInput(e) ?? {};
@@ -81,10 +117,13 @@ function toolLine(e: OmnexxEvent): Line {
         input.start !== undefined
           ? `:${str(input.start)}-${input.end !== undefined ? str(input.end) : ''}`
           : '';
-      return ['normal', glyph, 'read', `${path}${range}${err}`];
+      const files = filesSummary(input.files);
+      return ['normal', glyph, 'read', `${files ?? `${path}${range}`}${err}`];
     }
-    case 'outline':
-      return ['normal', glyph, 'outline', `${path}${err}`];
+    case 'outline': {
+      const paths = pathsSummary(input.paths);
+      return ['normal', glyph, 'outline', `${paths ?? path}${err}`];
+    }
     case 'search':
       return [
         'normal',
@@ -468,6 +507,12 @@ const FORMATTERS: Partial<Record<string, Formatter>> = {
   'ladder.rung': ladderRungLine,
   'stuck.signal': stuckSignalLine,
   'stuck.in_cycle': stuckSignalLine,
+  'cache.miss': (e) => [
+    'normal',
+    'warn',
+    'cache',
+    `turn ${num(e.turn)} read ${num(e.got)} cached tokens, under 80% of the previous prompt (${num(e.expected)})`,
+  ],
   'cycle.context': cycleContextLine,
   'context.pruned': contextPrunedLine,
   'context.cleared': contextClearedLine,
@@ -512,6 +557,20 @@ function lineFor(e: OmnexxEvent): Line | undefined {
   if (HIDDEN.has(e.type)) return undefined;
   const format = FORMATTERS[e.type];
   return format ? format(e) : ['debug', 'info', clip(e.type, 10), ''];
+}
+
+const GATE_WORD: Record<GateStatus, string> = {
+  none: '—',
+  ran: 'ran',
+  ok: 'ok',
+  fail: 'fail',
+};
+
+/** The `/trace` line. Not an event formatter: the default feed never includes it. */
+export function turnTraceLine(t: TurnTrace): string {
+  const n = t.calls.length;
+  const body = `turn ${String(t.turn)}  ${String(n)} call${n === 1 ? '' : 's'}  fresh ${fmtTokens(t.fresh)}  cached ${fmtTokens(t.cached)}  ${fmtMs(t.ms)}  gates ${GATE_WORD[t.gates]}`;
+  return turnWarning(t.calls) ? `! ${body}` : body;
 }
 
 export function humanize(e: OmnexxEvent, opts: HumanizeOptions): string | undefined {

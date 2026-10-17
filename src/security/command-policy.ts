@@ -15,6 +15,20 @@ export interface PolicyContext {
   scratch: readonly string[];
 }
 
+/** What to do instead, named on the denial so the next turn is not a repeat. */
+const INSTEAD: Record<string, string> = {
+  sudo: 'Ask the person; an unattended run cannot raise privileges.',
+  su: 'Ask the person; an unattended run cannot raise privileges.',
+  doas: 'Ask the person; an unattended run cannot raise privileges.',
+  ssh: 'Stay in this repo. Remote access is refused.',
+  scp: 'Stay in this repo. Remote copy is refused.',
+  sftp: 'Stay in this repo. Remote copy is refused.',
+  gh: 'The harness opens pull requests. Read the repo instead of calling the GitHub API.',
+  docker: "Use the repo's own scripts. Container control is refused.",
+  podman: "Use the repo's own scripts. Container control is refused.",
+  kubectl: "Use the repo's own scripts. Cluster control is refused.",
+};
+
 const ALWAYS_DENY: Record<string, string> = {
   sudo: 'privilege escalation',
   su: 'privilege escalation',
@@ -229,7 +243,11 @@ class Checker {
     if (this.ctx.extraDeny.includes(name))
       return deny('config-deny', `${name} is denied by [policy].deny`);
     const always = ALWAYS_DENY[name];
-    if (always) return deny(`deny:${name}`, `${name} is not allowed (${always})`);
+    if (always)
+      return deny(
+        `deny:${name}`,
+        `${name} is not allowed (${always}). ${INSTEAD[name] ?? 'Stay inside the repo and use the tools already here.'}`,
+      );
     if (NETWORK.has(name)) {
       if (pipedTo && INTERPRETERS.has(basename(pipedTo[0] ?? ''))) {
         return deny('curl-pipe-shell', `${name} piped into ${pipedTo[0] ?? 'a shell'}`);
@@ -248,7 +266,7 @@ class Checker {
       if (!sub || !GIT_READ.has(sub)) {
         return deny(
           'git-write',
-          `git ${sub ?? ''} is not allowed; only the harness changes git state`.trim(),
+          `git ${sub ?? 'write'} is denied: omnexx commits for you after checks pass. git status, diff, and log are allowed.`.trim(),
         );
       }
     }

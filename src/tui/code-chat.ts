@@ -1,3 +1,5 @@
+import { turnTraceLine } from '../telemetry/humanize.js';
+import { emptyTrace, pushTrace, type TraceAcc } from '../telemetry/turn-trace.js';
 import { thinkingGist } from '../telemetry/narrate.js';
 import { agentBriefFor } from '../config/agent-settings.js';
 import { InCycleWatch } from '../guard/stuck.js';
@@ -28,6 +30,7 @@ import { FactRecorder } from '../core/fact-recorder.js';
 import { factsBlockFor } from '../core/facts.js';
 import { runShell } from '../core/exec.js';
 import { realClock, type Clock } from '../core/clock.js';
+import { tokenCalibrationFile } from '../core/token-calibration.js';
 import { estimateTokens } from '../core/tokens.js';
 import { loadInstructions, renderInstructions } from '../instructions/load.js';
 import type { ResolvedModel } from '../providers/pricing.js';
@@ -223,6 +226,15 @@ export class CodeChat {
   usd = 0;
   /** Token, tool and turn totals for this conversation, folded from its events. */
   telemetry: Telemetry = emptyTelemetry();
+  /** `/trace`: fold turn events into a compact line. Off until the session turns it on. */
+  private showTrace = false;
+  private traceAcc: TraceAcc = emptyTrace();
+
+  /** Session toggle. Resets the open turn so a late enable does not print a partial history. */
+  setTrace(on: boolean): void {
+    this.showTrace = on;
+    this.traceAcc = emptyTrace();
+  }
   /** Every successful edit, repeat edits to one file included (the no-edits watch counts these). */
   private editOps = 0;
   /** Estimated tokens the next request starts with (system + tools + conversation). */
@@ -540,8 +552,10 @@ export class CodeChat {
   }
 
   private onEvent(e: OmnexxEvent): void {
+    const closed = this.showTrace ? pushTrace(this.traceAcc, e) : undefined;
     const v = this.view;
     if (!v) return;
+    if (closed) v.line({ kind: 'feed', text: turnTraceLine(closed) });
     const str = (x: unknown): string => (typeof x === 'string' ? x : '');
     const num = (x: unknown): number => (typeof x === 'number' ? x : 0);
     switch (e.type) {
@@ -643,6 +657,7 @@ export class CodeChat {
         provider: this.provider,
         models: this.models,
         strategy: this.strategy,
+        ...(this.paths ? { calibrationFile: tokenCalibrationFile(this.paths) } : {}),
         ...(this.paths
           ? (() => {
               const quota = new QuotaLedger(join(this.paths.configHome, 'quota.json'));

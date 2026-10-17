@@ -1263,6 +1263,10 @@ body.vscode-light .live-log {
   color: var(--amber);
   background: color-mix(in srgb, var(--amber) 10%, transparent);
 }
+#trace[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 .ask {
   border-color: var(--amber);

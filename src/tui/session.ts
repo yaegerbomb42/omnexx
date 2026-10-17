@@ -54,7 +54,8 @@ import { estimateForStore, PROGRESS_EVENTS, remainingForRun } from '../core/run-
 import { describeError } from '../errors.js';
 import { emptyTelemetry, fold, type Telemetry } from '../telemetry/aggregate.js';
 import { EventTail } from '../telemetry/feed.js';
-import { humanize, type Verbosity } from '../telemetry/humanize.js';
+import { humanize, turnTraceLine, type Verbosity } from '../telemetry/humanize.js';
+import { emptyTrace, pushTrace, type TraceAcc } from '../telemetry/turn-trace.js';
 import { AgentSettingsHost } from './agent-settings-host.js';
 import type { PanelKey } from './agent-panel.js';
 
@@ -109,6 +110,10 @@ export const SLASH: readonly SlashCommand[] = [
   { name: 'agents', help: 'every long run on this machine: watch, attach, pause, stop' },
   { name: 'yolo', help: 'approve every "allow this?" question automatically (toggle)' },
   { name: 'card', help: 'show or hide the live run card (health, progress, models, quota)' },
+  {
+    name: 'trace',
+    help: 'per-turn line: calls, fresh and cached tokens, latency, gates (toggle)',
+  },
   { name: 'pause', help: 'pause the agent after its current step (/resume to continue)' },
   { name: 'resume', help: 'continue where the agent paused' },
   { name: 'stop', help: 'stop the agent now (same as esc)' },
@@ -238,6 +243,8 @@ export class Session {
 
   private nextId = 0;
   private tail: EventTail | undefined;
+  /** Open turn while `/trace` is on. Reset when tracing toggles or a run is attached. */
+  private traceAcc: TraceAcc = emptyTrace();
   private listeners = new Set<() => void>();
   private lastPlanAt = 0;
   private readonly b: Brand;
@@ -397,6 +404,7 @@ export class Session {
     const store = await pickRun(resolvePaths(this.io.env), runId);
     this.runId = store.runId;
     this.tail = new EventTail(store.eventsPath);
+    this.traceAcc = emptyTrace();
     this.telemetry = emptyTelemetry();
     this.plan = '';
     this.lastPlanAt = 0;
@@ -506,6 +514,10 @@ export class Session {
       await this.trackRunEstimate(e);
       const line = humanize(e, { brand: this.b, verbosity: this.verbosity });
       if (line) this.push('feed', line);
+      if (this.trace) {
+        const closed = pushTrace(this.traceAcc, e);
+        if (closed) this.push('feed', turnTraceLine(closed));
+      }
       this.reactToRun(e);
     }
     this.digest();
@@ -675,7 +687,10 @@ export class Session {
     }
   }
 
-  /** Session toggles (/yolo, /card): handled outside the big command switch. */
+  /** Per-turn trace lines in the run feed and the chat (`/trace`). Off by default. */
+  trace = false;
+
+  /** Session toggles (/yolo, /card, /trace): handled outside the big command switch. */
   private toggle(cmd: string): boolean {
     if (cmd === 'yolo') {
       this.autoApprove = !this.autoApprove;
@@ -694,6 +709,13 @@ export class Session {
     if (cmd === 'card') {
       this.showRunCard = !this.showRunCard;
       this.push('system', `run card ${this.showRunCard ? 'on' : 'off'}`);
+      return true;
+    }
+    if (cmd === 'trace') {
+      this.trace = !this.trace;
+      this.traceAcc = emptyTrace();
+      this.code?.setTrace(this.trace);
+      this.push('system', `turn trace ${this.trace ? 'on' : 'off'}`);
       return true;
     }
     return false;
@@ -1113,6 +1135,7 @@ export class Session {
     this.opening ??= CodeChat.open(this.io, (q) => this.ask(q), this.chatModel);
     try {
       this.code = await this.opening;
+      this.code.setTrace(this.trace);
       return this.code;
     } finally {
       this.opening = undefined;

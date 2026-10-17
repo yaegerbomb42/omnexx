@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import { z } from 'zod';
 import { OmnexxError } from '../errors.js';
 import { openError } from './did-you-mean.js';
+import { missText } from './edit-recovery.js';
 import { fuzzyReplace } from './fuzzy-match.js';
 import { afterEdit } from './post-edit.js';
 import { fail, ok, resolvePath, type Tool, type ToolContext, type ToolOutput } from './types.js';
@@ -28,7 +29,7 @@ function countOccurrences(hay: string, needle: string): number {
   return n;
 }
 
-type OneResult = { text: string; note?: string } | { error: string };
+type OneResult = { text: string; note?: string } | { error: string; miss?: true };
 
 /** One edit: an exact unique match, else a unique whitespace-insensitive one, else an error. */
 function applyOne(
@@ -39,21 +40,25 @@ function applyOne(
 ): OneResult {
   const n = countOccurrences(text, e.old_str);
   if (n === 1) return { text: text.replace(e.old_str, () => e.new_str) };
-  let lines: number[] = [];
-  let count = `${n} times`;
-  if (n > 1) lines = linesOf(text, e.old_str);
-  else {
+  if (n === 0) {
     const fuzzy = fuzzyReplace(text, e.old_str, e.new_str);
     if (fuzzy.found === 1) {
       const re = fuzzy.reindented ? ', new_str re-indented' : '';
       const note = `edit ${index} matched lines ${fuzzy.start}-${fuzzy.end} ignoring whitespace${re}`;
       return { text: fuzzy.text, note };
     }
-    if (fuzzy.found === 'many') {
-      lines = fuzzy.lines;
-      count = `${lines.length} times ignoring whitespace`;
-    }
+    if (fuzzy.found === 0) return { error: missText(index, path, text, e.old_str), miss: true };
+    return ambiguous(index, path, `${fuzzy.lines.length} times ignoring whitespace`, fuzzy.lines);
   }
+  return ambiguous(index, path, `${n} times`, linesOf(text, e.old_str));
+}
+
+function ambiguous(
+  index: number,
+  path: string,
+  count: string,
+  lines: readonly number[],
+): OneResult {
   const where = lines.length ? ` (at lines ${lines.join(', ')})` : '';
   return {
     error: `edit ${index}: old_str found ${count} in ${path}${where}; it must match exactly once: add a line before or after that only the one you mean has. No changes were written.`,
@@ -78,7 +83,8 @@ async function applyEdits(
   const notes: string[] = [];
   for (const [i, e] of edits.entries()) {
     const r = applyOne(text, e, i + 1, path);
-    if ('error' in r) return fail(r.error);
+    if ('error' in r)
+      return r.miss ? { content: r.error, isError: true, miss: true } : fail(r.error);
     text = r.text;
     if (r.note) notes.push(r.note);
   }

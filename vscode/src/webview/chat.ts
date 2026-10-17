@@ -44,6 +44,8 @@ interface State {
   busy: boolean;
   paused: boolean;
   autoApprove: boolean;
+  /** Per-turn trace lines. Absent on an older omnexx: treated as off. */
+  trace?: boolean;
   model: string | null;
   /** How the chat's ranked models are used, when it has several ("Fallback on quota"). */
   routing?: string | null;
@@ -281,6 +283,13 @@ function drawControls(s: State): void {
   approval.title = s.autoApprove
     ? 'omnexx goes ahead without asking (hard-blocked commands stay blocked). Click to ask first.'
     : 'omnexx asks before going outside the repo or running guarded commands. Click to auto-approve.';
+  const traceBtn = el('trace', HTMLButtonElement);
+  const tracing = s.trace === true;
+  traceBtn.textContent = tracing ? 'Trace on' : 'Trace';
+  traceBtn.setAttribute('aria-pressed', String(tracing));
+  traceBtn.title = tracing
+    ? 'Per-turn trace is on (calls, tokens, latency, gates). Click to hide it.'
+    : 'Show a line per turn: calls, fresh and cached tokens, latency, gates.';
   pauseBtn.disabled = !s.busy;
   pauseBtn.dataset.action = s.paused ? 'resume' : 'pause';
   pauseBtn.title = s.paused ? 'Resume' : 'Pause after the current step';
@@ -387,6 +396,7 @@ document.addEventListener('click', (e) => {
   const action = target.closest<HTMLElement>('[data-action]')?.dataset.action;
   if (action === 'allow' || action === 'deny') post({ type: 'answer', yes: action === 'allow' });
   else if (action === 'approval') post({ type: 'yolo', on: !(state?.autoApprove ?? false) });
+  else if (action === 'trace') post({ type: 'trace', on: !(state?.trace ?? false) });
   else if (action === 'pickModel') {
     const chip = target.closest<HTMLElement>('[data-action]');
     if (modelPicker.isOpen()) modelPicker.close();
