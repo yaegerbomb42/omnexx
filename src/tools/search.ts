@@ -161,6 +161,20 @@ export const searchTool: Tool<typeof schema> = {
   schema,
   readOnly: true,
   concurrent: true,
+  normalize: (input) => {
+    if (typeof input !== 'object' || input === null) return input;
+    const raw = input as Record<string, unknown>;
+    const rest = { ...raw };
+    delete rest.query;
+    delete rest.regex;
+    delete rest.dir;
+    delete rest.directory;
+    return {
+      ...rest,
+      pattern: raw.pattern ?? raw.query ?? raw.regex,
+      path: raw.path ?? raw.dir ?? raw.directory,
+    };
+  },
   async run(input, ctx) {
     let dir: string;
     try {

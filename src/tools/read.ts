@@ -148,6 +148,21 @@ export const readTool: Tool<typeof schema> = {
   schema,
   readOnly: true,
   concurrent: true,
+  normalize: (input) => {
+    if (typeof input !== 'object' || input === null) return input;
+    const raw = input as Record<string, unknown>;
+    const rest = { ...raw };
+    delete rest.paths;
+    delete rest.start_line;
+    delete rest.end_line;
+    const files = raw.files ?? raw.paths;
+    return {
+      ...rest,
+      start: raw.start ?? raw.start_line,
+      end: raw.end ?? raw.end_line,
+      ...(files !== undefined ? { files } : {}),
+    };
+  },
   async run(input, ctx) {
     if (input.files && input.path !== undefined)
       return fail('read takes either path (with start/end) or files: [...], not both');
