@@ -99,6 +99,16 @@ export async function workingTreeHash(cwd: string, base: string): Promise<string
 }
 
 /**
+ * Paths that differ between `base` and the working tree and still exist, untracked files
+ * included. Safe beside `workingTreeDiff`: it shares no index with it.
+ */
+export async function changedPaths(cwd: string, base: string): Promise<string[]> {
+  const tree = await workingTreeHash(cwd, base);
+  const out = await git(cwd, ['diff-tree', '-r', '--name-only', '--diff-filter=d', base, tree]);
+  return out.stdout.split('\n').filter(Boolean);
+}
+
+/**
  * Everything that differs between `base` and the working tree, untracked files included.
  * Uses a throwaway index so the real index is never touched.
  */

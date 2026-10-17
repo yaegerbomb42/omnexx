@@ -115,6 +115,7 @@ export async function actAsThinkLoop(
   const session: CheckSession = {
     quarantined: new Set(),
     persistent: new Set(),
+    fullPassed: new Map(),
     ...(speculative ? { speculative } : {}),
   };
   const io: SessionIO = {

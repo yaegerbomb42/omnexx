@@ -100,6 +100,24 @@ removes idle time, or protects the pass rate.
   `src/verify/related-tests.ts`.
 - **Verify:** task-02 and task-03 wall under 4 min; the integration test proves the full suite
   still runs before a session is called green.
+- **Status (2026-10-16):** done in `src/verify/related-tests.ts`, behind `[plan]
+loop_related_tests` (on by default).
+  - **Narrowing:** each check narrows the gates' own commands. vitest becomes `related --run`,
+    jest gets `--findRelatedTests`, pytest runs the changed test files, and go test the changed
+    packages. `npm test` and friends are read through to their script, and compound commands
+    are left alone.
+  - **Red and green:** a red related run ends the round. A green or inconclusive one (no tests
+    found, unreadable output) runs the full gates, so a round is only green on the whole suite.
+    `test/integration/related-tests.test.ts` proves it: a test unrelated by import fails only
+    in the full run.
+  - **Background runs:** speculative checks do the same in the background, stopping at a red
+    related pass.
+  - **Flaky reruns:** they stay on every red pass, but on a narrowed one they re-run only the
+    related subset, which is the cost the item was after.
+  - **Doom-breaker scoring:** a narrowed pass scores the last full pass count less its
+    failures, so the doom-breaker doesn't read a subset as a regression.
+  - **Events:** `loop.gates` carries `settled: related|full`.
+  - **Still to do:** the task-02 and task-03 bench timings.
 
 ### 4. Stop a run that has gone quiet, and fail a hung bench setup
 

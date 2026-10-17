@@ -19,6 +19,8 @@ export interface GateResult {
   tests?: TestCounts;
   structured: boolean;
   logFile: string;
+  /** Ran only the tests related to the changed files (a red loop check settled early). */
+  narrowed?: boolean;
 }
 
 export interface GateRunContext {

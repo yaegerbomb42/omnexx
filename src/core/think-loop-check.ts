@@ -1,6 +1,8 @@
+import type { GateConfig } from '../config/schema.js';
 import { workingTreeDiff } from '../git/repo.js';
 import { antiCheat } from '../verify/anticheat.js';
 import { runGatesWithFlakyCheck } from '../verify/flaky.js';
+import { readScripts, relatedGate, relatedGreen, relatedRed } from '../verify/related-tests.js';
 import type { GateResult, GateRunContext } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
 import type { SpeculativeChecks } from '../verify/speculative.js';
@@ -27,6 +29,64 @@ export interface CheckSession {
   persistent: Set<string>;
   /** Gate runs started in the background after edits; reused only for the exact same tree. */
   speculative?: SpeculativeChecks;
+  /** Tests each gate passed on its last full run, to score rounds checked on related tests. */
+  fullPassed: Map<string, number>;
+}
+
+/**
+ * Gates narrowed to the tests related to what changed since the last green commit, by name;
+ * empty when `[plan] loop_related_tests` is off or nothing narrows.
+ */
+export async function relatedGates(
+  run: Run,
+  gates: readonly GateConfig[],
+  files: readonly string[],
+): Promise<Map<string, GateConfig>> {
+  const out = new Map<string, GateConfig>();
+  if (!run.config.plan.loop_related_tests || !files.length) return out;
+  const scripts = await readScripts(run.worktree);
+  for (const g of gates) {
+    const narrowed = relatedGate(g, files, scripts);
+    if (narrowed) out.set(g.name, narrowed);
+  }
+  return out;
+}
+
+/** Whether a pass with narrowed gates settles the check red: a narrowed or full gate is red. */
+export const settlesRed = (
+  results: readonly GateResult[],
+  related: ReadonlyMap<string, GateConfig>,
+  baseline: Run['state']['baseline'],
+): boolean =>
+  results.some((r) =>
+    related.has(r.name) ? relatedRed(r, baseline) : !judgeGate(r, baseline).pass,
+  );
+
+/**
+ * A red narrowed pass as reported: narrowed gates tagged, and the ones that settled nothing
+ * (no tests found, unreadable output) left out, since their output isn't the suite's.
+ */
+export const asNarrowed = (
+  results: readonly GateResult[],
+  related: ReadonlyMap<string, GateConfig>,
+  baseline: Run['state']['baseline'],
+): GateResult[] =>
+  results.flatMap((r) =>
+    !related.has(r.name)
+      ? [r]
+      : relatedRed(r, baseline) || relatedGreen(r)
+        ? [{ ...r, narrowed: true }]
+        : [],
+  );
+
+/**
+ * A narrowed run's pass count read as the whole gate's: the last full count (or the
+ * baseline's) less what failed here, so the doom-breaker doesn't see a subset as a regression.
+ */
+function estimatePassed(r: GateResult, session: CheckSession, run: Run): number {
+  const full = session.fullPassed.get(r.name) ?? run.state.baseline?.[r.name]?.tests?.passed;
+  if (full === undefined) return r.tests?.passed ?? 0;
+  return Math.max(0, full - (r.tests?.failed ?? r.failures.length));
 }
 
 /** Where and how the loop's gates run; `label` names their log files. */
@@ -93,23 +153,59 @@ export async function checkTree(
   const reruns = run.config.plan.loop_flaky_reruns;
   const early = await session.speculative?.take(treeHash);
   const gatesStart = Date.now();
-  const {
-    results: raw,
-    flaky,
-    reruns: rerunsRan,
-  } = await runGatesWithFlakyCheck(
-    run.config.gates.map((g) => ({ ...g, flaky_reruns: reruns })),
-    gateContext(run, `c${run.state.cycle}-loop${round}`),
-    run.state.baseline,
-    session.persistent,
-    new Map(early?.results.map((r) => [r.name, r])),
+  const gates = run.config.gates.map((g) => ({ ...g, flaky_reruns: reruns }));
+  const label = `c${run.state.cycle}-loop${round}`;
+  const baseline = run.state.baseline;
+  // A background run either settled red on related tests or ran the full gates for this tree.
+  const earlyNarrowed = early?.results.some((r) => r.narrowed) ?? false;
+  const related =
+    early && !earlyNarrowed
+      ? new Map<string, GateConfig>()
+      : await relatedGates(
+          run,
+          gates,
+          changes.filter((c) => c.status !== 'D').map((c) => c.path),
+        );
+  // Related tests first: a red there is the answer for this round (flakes re-run on the same
+  // narrowed command). Otherwise the full gates run, so a check only comes back green on the
+  // whole suite.
+  const inner = related.size
+    ? await runGatesWithFlakyCheck(
+        gates.map((g) => related.get(g.name) ?? g),
+        gateContext(run, `${label}-related`),
+        baseline,
+        session.persistent,
+        new Map(earlyNarrowed ? early?.results.map((r) => [r.name, r] as const) : []),
+      )
+    : undefined;
+  const innerRed = inner ? settlesRed(inner.results, related, baseline) : false;
+  const firstRuns = new Map<string, GateResult>(
+    inner
+      ? inner.results.filter((r) => !related.has(r.name)).map((r) => [r.name, r])
+      : (early?.results.map((r) => [r.name, r]) ?? []),
   );
+  const gateRun =
+    inner && innerRed
+      ? { ...inner, results: asNarrowed(inner.results, related, baseline) }
+      : await runGatesWithFlakyCheck(
+          gates,
+          gateContext(run, label),
+          baseline,
+          session.persistent,
+          firstRuns,
+        );
+  const { results: raw, flaky } = gateRun;
+  const narrowed = new Set(raw.filter((r) => r.narrowed).map((r) => r.name));
+  if (!narrowed.size)
+    for (const r of raw) if (r.tests) session.fullPassed.set(r.name, r.tests.passed);
   run.events.emit('loop.gates', {
     task: task.id,
     round,
     ms: Date.now() - gatesStart,
-    reruns: rerunsRan,
+    reruns: gateRun.reruns + (inner && !innerRed ? inner.reruns : 0),
     speculative: early?.results.length ?? 0,
+    settled: narrowed.size ? 'related' : 'full',
+    ...(related.size ? { related: [...related.keys()] } : {}),
   });
   for (const f of flaky) for (const id of f.ids) session.quarantined.add(id);
   if (reruns > 0) for (const r of raw) for (const f of r.failures) session.persistent.add(f.id);
@@ -158,7 +254,11 @@ export async function checkTree(
     if (fix) failures.push(`From this repo's memory: ${fix}`);
   }
   const state: PassState = {
-    passed: results.reduce((n, r) => n + (r.tests?.passed ?? 0), 0),
+    passed: results.reduce(
+      (n, r) =>
+        n + (narrowed.has(r.name) ? estimatePassed(r, session, run) : (r.tests?.passed ?? 0)),
+      0,
+    ),
     failingChecks: reasons.length,
     failIds,
     diagnostics: live.filter((t) => DIAGNOSTIC_ID.test(t.failure.id)).length,
