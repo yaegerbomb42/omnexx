@@ -4,7 +4,6 @@ import { bashTool, readLogTool } from './bash.js';
 import { multiEditTool, strReplaceTool, writeFileTool } from './edit.js';
 import { outlineTool } from './outline.js';
 import { readSymbolTool } from './read-symbol.js';
-import { listTool } from './list.js';
 import { readTool } from './read.js';
 import { replaceLinesTool } from './replace-lines.js';
 import { contextTool } from './context.js';
@@ -21,7 +20,6 @@ import type { Tool } from './types.js';
 
 export const WORKER_TOOLS: readonly Tool[] = [
   readTool,
-  listTool,
   outlineTool,
   readSymbolTool,
   searchTool,

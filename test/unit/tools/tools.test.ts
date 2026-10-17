@@ -1,4 +1,5 @@
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { writeJsonAtomic } from '../../../src/core/atomic.js';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { readEvents } from '../../../src/core/events.js';
@@ -10,7 +11,7 @@ import {
   splitHeredoc,
 } from '../../../src/tools/bash.js';
 import { multiEditTool, strReplaceTool, writeFileTool } from '../../../src/tools/edit.js';
-import { extractSymbols, outlineTool } from '../../../src/tools/outline.js';
+import { extractSymbols, MAX_DIR_FILES, outlineTool } from '../../../src/tools/outline.js';
 import { readTool } from '../../../src/tools/read.js';
 import { READ_ONLY_TOOLS, sortKeys, toolSpec, WORKER_TOOLS } from '../../../src/tools/registry.js';
 import { rememberTool } from '../../../src/tools/remember.js';
@@ -134,6 +135,48 @@ describe('read / outline', () => {
     const ctx = await toolContext(await repo());
     expect((await outlineTool.run({ path: 'src/a.ts' }, ctx)).content).toContain('function add');
     expect((await outlineTool.run({ path: '../x' }, ctx)).isError).toBe(true);
+  });
+
+  it('outlines a directory as a codebase-map slice and leaves file outlines unchanged', async () => {
+    const root = await repo();
+    const ctx = await toolContext(root);
+    const fromDisk = await outlineTool.run({ path: 'src' }, ctx);
+    expect(fromDisk.isError).toBeUndefined();
+    expect(fromDisk.content).toContain('src/a.ts');
+    expect(fromDisk.content).toContain('function add');
+
+    await writeJsonAtomic(ctx.store.file('codemap.json'), {
+      version: 1,
+      entries: [
+        { path: 'src/a.ts', kind: 'source', lines: 4, symbols: ['function onlyInMap'] },
+        { path: 'src/big.ts', kind: 'source', lines: 500, symbols: ['const v0'] },
+        { path: 'other.ts', kind: 'source', lines: 1, symbols: ['function outside'] },
+        ...Array.from({ length: MAX_DIR_FILES + 5 }, (_, i) => ({
+          path: `src/extra/f${String(i).padStart(3, '0')}.ts`,
+          kind: 'source' as const,
+          lines: 1,
+          symbols: ['function f'],
+        })),
+      ],
+    });
+    const dir = await outlineTool.run({ path: 'src' }, ctx);
+    expect(dir.isError).toBeUndefined();
+    expect(dir.content).toContain('src/a.ts');
+    expect(dir.content).toContain('function onlyInMap');
+    expect(dir.content).not.toContain('function outside');
+    expect(dir.content).not.toContain('const PI');
+    expect(dir.content).toContain('outline a subdirectory');
+    expect(dir.content).not.toContain(`f${String(MAX_DIR_FILES + 4).padStart(3, '0')}.ts`);
+
+    const file = await outlineTool.run({ path: 'src/a.ts' }, ctx);
+    expect(file.isError).toBeUndefined();
+    expect(file.content).toMatch(/^\d+ lines\n\s+1 {2}function add/);
+    expect(file.content).toContain('const PI');
+
+    const missing = await outlineTool.run({ path: 'missing-dir' }, ctx);
+    expect(missing.isError).toBe(true);
+    expect(missing.content).toMatch(/ENOENT/);
+    expect(missing.content).not.toBe('(no files under missing-dir)');
   });
 });
 
@@ -356,7 +399,6 @@ describe('registry', () => {
     expect(a).not.toContain('$schema');
     expect(READ_ONLY_TOOLS.map((t) => t.name).sort()).toEqual([
       'context',
-      'list',
       'outline',
       'read',
       'read_log',
