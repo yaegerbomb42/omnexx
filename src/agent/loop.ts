@@ -690,6 +690,7 @@ export async function runAgentLoop(
       const tool = resolveTool(byName, call.name);
       let content: string;
       let isError: boolean;
+      let miss = false;
       const toolStart = deps.clock.now();
       deps.events.emit('tool.start', {
         tool: call.name,
@@ -731,6 +732,7 @@ export async function runAgentLoop(
           const out = await tool.run(parsed.data, deps.toolCtx);
           content = out.content;
           isError = out.isError === true;
+          miss = out.miss === true;
           if (out.final && !isError) finished.now = true;
         }
       }
@@ -739,6 +741,7 @@ export async function runAgentLoop(
         tool: call.name,
         input: summarizeInput(call.input),
         isError,
+        ...(miss ? { miss: true } : {}),
         // Already redacted above. Enough to see why it failed without opening the transcript.
         ...(isError ? { error: content.slice(0, 500) } : {}),
         bytes: content.length,
