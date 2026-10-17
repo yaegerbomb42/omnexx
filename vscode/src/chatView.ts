@@ -69,6 +69,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.server.send({ type: 'resumeChat', id });
   }
 
+  /** Workspace files for `@` mentions, relative to their folder; build output and deps skipped. */
+  private async postFiles(): Promise<void> {
+    const uris = await vscode.workspace.findFiles(
+      '**/*',
+      '{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/build/**,**/target/**,**/.next/**}',
+      FILE_MENTION_LIMIT,
+    );
+    const items = uris.map((u) => vscode.workspace.asRelativePath(u, false)).sort();
+    this.post({ type: 'files', items });
+  }
+
+  /** Dropped file URIs as `@path` mentions; anything that isn't a URI is ignored. */
+  private postMention(uris: readonly unknown[]): void {
+    const paths: string[] = [];
+    for (const u of uris) {
+      if (typeof u !== 'string' || !URI_SCHEME.test(u)) continue;
+      paths.push(vscode.workspace.asRelativePath(vscode.Uri.parse(u), false));
+    }
+    if (paths.length)
+      this.post({ type: 'insert', text: `${paths.map((p) => `@${p}`).join(' ')} ` });
+  }
+
   /** Runs a panel control from a title-bar command (settings, approvals, trace…). */
   uiAction(action: string): void {
     this.post({ type: 'ui', action });
@@ -117,7 +139,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       this.server.send({ ...m, type });
       return;
     }
-    if (type === 'copy' && typeof m.text === 'string') await vscode.env.clipboard.writeText(m.text);
+    if (type === 'files') await this.postFiles();
+    else if (type === 'mention' && Array.isArray(m.uris)) this.postMention(m.uris);
+    else if (type === 'copy' && typeof m.text === 'string')
+      await vscode.env.clipboard.writeText(m.text);
     else if (type === 'pickModel') await this.pickModel();
     else if (type === 'open' && typeof m.path === 'string') await openPath(m.path);
     else if (type === 'restart') this.server.restart();
@@ -351,9 +376,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   </div>
 </section>
 <footer class="composer">
+  <div id="suggest" class="suggest" hidden role="listbox" aria-label="Suggestions"></div>
   <div class="input-wrap">
     <textarea id="input" rows="1" aria-label="Message omnexx"></textarea>
-    <button id="send" class="send" title="Send (Enter)" aria-label="Send"><svg viewBox="0 0 16 16"><path d="M2 8l11-5-3.5 11-2.2-4.3z M7.3 9.7 13 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button>
+    <button id="send" class="send" title="Send (Enter)" aria-label="Send"><svg class="stop-ico" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg><svg class="send-ico" viewBox="0 0 16 16"><path d="M2 8l11-5-3.5 11-2.2-4.3z M7.3 9.7 13 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button>
   </div>
   <div class="row">
     <div class="modes" role="group" aria-label="Mode">
@@ -367,7 +393,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     <button class="meter" data-action="inspect" title="Context in use; click to see, edit or delete what the model gets"><span class="track"><span class="fill" id="ctx-fill"></span></span><span id="ctx-text">—</span></button>
     <button class="chip cost" data-action="usage" aria-haspopup="true" title="Session usage"><span id="stat-cost">$0.00</span></button>
     <button id="pause" class="icon ctl" data-action="pause" title="Pause after the current step" aria-label="Pause or resume" disabled hidden><svg viewBox="0 0 16 16"><path d="M5.5 3.5v9M10.5 3.5v9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-    <button id="stop" class="icon ctl stop" data-action="stop" title="Stop (Esc)" aria-label="Stop" disabled hidden><svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button>
   </div>
   <div id="usage-pop" class="pop usage" hidden role="dialog" aria-label="Session usage">
     <div class="row"><span class="k">Uptime</span><span class="v" id="stat-uptime">00:00:00</span></div>
@@ -385,6 +410,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     for (const s of this.subscriptions) s.dispose();
   }
 }
+
+/** A dropped string that is a URI (`file:///…`, `vscode-remote://…`), not plain dragged text. */
+const URI_SCHEME = /^[a-z][\w+.-]*:\/\//i;
+
+/** Files offered for `@` mentions; past this a big repo is sampled, not listed in full. */
+const FILE_MENTION_LIMIT = 5000;
 
 const PROJECT_STARTER = '# omnexx project settings: see `omnexx init`\n';
 const USER_STARTER = '# omnexx user settings\n';

@@ -17,6 +17,7 @@ import {
   stepStates,
   stepsPercent,
   toolKind,
+  toolLineHtml,
   type TodoItem,
   type Usage,
 } from '../../vscode/src/webview/render.js';
@@ -214,5 +215,17 @@ describe('toolKind', () => {
     expect(toolKind('writing code to src/b.ts')).toBe('edit');
     expect(toolKind('looking through the codebase for auth')).toBe('search');
     expect(toolKind('updating the todo list')).toBe('tool');
+  });
+});
+
+describe('toolLineHtml', () => {
+  it('links each path in a narrated line and escapes the rest', () => {
+    expect(toolLineHtml('editing src/a.ts')).toBe(
+      'editing <span class="path" data-open="src/a.ts" role="link" tabindex="0">src/a.ts</span>',
+    );
+    expect(toolLineHtml('running `cat <x> ./b.json`')).toBe(
+      'running `cat &lt;x&gt; <span class="path" data-open="./b.json" role="link" tabindex="0">./b.json</span>`',
+    );
+    expect(toolLineHtml('updating the todo list')).toBe('updating the todo list');
   });
 });

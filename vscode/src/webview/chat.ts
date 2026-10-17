@@ -25,8 +25,10 @@ import {
   type Entry,
   type TodoItem,
   toolKind,
+  toolLineHtml,
   type Usage,
 } from './render.js';
+import { attachSuggest } from './suggestBox.js';
 import * as agentCard from './agentCard.js';
 import * as contextPage from './contextPage.js';
 import * as crew from './crew.js';
@@ -77,6 +79,8 @@ type Incoming =
     } & Record<string, unknown>)
   | ({ type: 'browserFrame' } & crew.BrowserFrameMsg)
   | { type: 'ui'; action: string }
+  | { type: 'files'; items: string[] }
+  | { type: 'insert'; text: string }
   | { type: 'ready'; version: string }
   | { type: 'error'; message: string }
   | { type: 'down'; message: string };
@@ -113,7 +117,6 @@ const conversation = el('log', HTMLElement);
 const input = el('input', HTMLTextAreaElement);
 const send = el('send', HTMLButtonElement);
 const pauseBtn = el('pause', HTMLButtonElement);
-const stopBtn = el('stop', HTMLButtonElement);
 const ask = el('ask', HTMLElement);
 const steps = el('steps', HTMLElement);
 const stepsBody = el('steps-body', HTMLElement);
@@ -180,7 +183,7 @@ function messageHtml(b: Block): string {
   if (b.kind === 'act')
     return `<ul class="msg tools">${b.lines
       .filter((l) => l.trim())
-      .map((l) => `<li class="tool k-${toolKind(l)}">${escapeHtml(l.trim())}</li>`)
+      .map((l) => `<li class="tool k-${toolKind(l)}">${toolLineHtml(l)}</li>`)
       .join('')}</ul>`;
   if (b.kind === 'think') {
     const lines = body.split('\n');
@@ -305,7 +308,7 @@ function placeholderFor(s: State): string {
   if (s.mode === 'plan') return 'Describe the change; omnexx plans it without editing…';
   return s.busy
     ? 'Steer the agent (e.g. "use the existing helper")…'
-    : 'Message omnexx  (↑ history · Shift+Enter new line)';
+    : 'Message omnexx  (@ files · / commands · ↑ history)';
 }
 
 function drawControls(s: State): void {
@@ -326,11 +329,10 @@ function drawControls(s: State): void {
     : 'omnexx asks before going outside the repo or running guarded commands. Click to auto-approve.';
   pauseBtn.disabled = !s.busy;
   pauseBtn.hidden = !s.busy;
-  stopBtn.hidden = !s.busy;
   pauseBtn.dataset.action = s.paused ? 'resume' : 'pause';
   pauseBtn.title = s.paused ? 'Resume' : 'Pause after the current step';
   pauseBtn.classList.toggle('on', s.paused);
-  stopBtn.disabled = !s.busy;
+  drawSend();
   input.placeholder = placeholderFor(s);
   ask.hidden = s.pending === null;
   if (s.pending !== null) {
@@ -369,6 +371,15 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
     runAction(m.action, null);
     return;
   }
+  if (m.type === 'insert') {
+    insertAtCaret(m.text);
+    return;
+  }
+  if (m.type === 'files') {
+    workspaceFiles = m.items;
+    suggest.refresh();
+    return;
+  }
   if (m.type === 'browserFrame') {
     crew.drawBrowser(m);
     return;
@@ -401,9 +412,21 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
   }
 });
 
-function submit(): void {
+/** While the agent works and the input is empty, Send is Stop. */
+function drawSend(): void {
+  const stop = Boolean(state?.busy) && !input.value.trim();
+  send.classList.toggle('as-stop', stop);
+  send.title = stop ? 'Stop (Esc)' : 'Send (Enter)';
+  send.setAttribute('aria-label', stop ? 'Stop' : 'Send');
+}
+
+/** Sends the input. Only a click on the button (shown as Stop) stops a run; Enter never does. */
+function submit(fromButton = false): void {
   const text = input.value.trim();
-  if (!text) return;
+  if (!text) {
+    if (fromButton && state?.busy) post({ type: 'stop' });
+    return;
+  }
   post({ type: 'send', text });
   if (sent.at(-1) !== text) sent.push(text);
   recall = -1;
@@ -416,6 +439,14 @@ function submit(): void {
 function saveDraft(): void {
   const prev = vscode.getState();
   vscode.setState({ ...(typeof prev === 'object' && prev ? prev : {}), draft: input.value });
+}
+
+function insertAtCaret(text: string): void {
+  const at = input.selectionStart;
+  const before = input.value.slice(0, at);
+  const pad = before && !/\s$/.test(before) ? ' ' : '';
+  fillInput(`${before}${pad}${text}${input.value.slice(input.selectionEnd)}`);
+  saveDraft();
 }
 
 function fillInput(text: string): void {
@@ -453,11 +484,48 @@ function autosize(): void {
   input.style.height = `${String(Math.min(input.scrollHeight, 200))}px`;
 }
 
+let workspaceFiles: readonly string[] = [];
+const suggest = attachSuggest({
+  input,
+  box: el('suggest', HTMLElement),
+  files: () => workspaceFiles,
+  requestFiles: () => {
+    post({ type: 'files' });
+  },
+  runCommand: (c) => {
+    if ('mode' in c.run) post({ type: 'mode', mode: c.run.mode });
+    else runAction(c.run.action, null);
+  },
+});
 input.addEventListener('input', () => {
   autosize();
   saveDraft();
+  drawSend();
+  suggest.refresh();
+});
+input.addEventListener('click', () => {
+  suggest.refresh();
+});
+// Files dragged in from the Explorer or an editor tab become @mentions (hold Shift in VS Code).
+input.addEventListener('dragover', (e) => {
+  e.preventDefault();
+});
+input.addEventListener('drop', (e) => {
+  const dt = e.dataTransfer;
+  const list = [dt?.getData('text/uri-list'), dt?.getData('text/plain')].find(Boolean) ?? '';
+  const uris = list
+    .split(/\r?\n/)
+    .map((u) => u.trim())
+    .filter((u) => u && !u.startsWith('#'));
+  if (!uris.length) return;
+  e.preventDefault();
+  post({ type: 'mention', uris });
+});
+input.addEventListener('blur', () => {
+  el('suggest', HTMLElement).hidden = true;
 });
 input.addEventListener('keydown', (e) => {
+  if (suggest.onKey(e)) return;
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     submit();
@@ -477,7 +545,9 @@ window.addEventListener('focus', () => {
   const saved = vscode.getState() as { draft?: unknown } | undefined;
   if (typeof saved?.draft === 'string') fillInput(saved.draft);
 }
-send.addEventListener('click', submit);
+send.addEventListener('click', () => {
+  submit(true);
+});
 conversation.addEventListener('scroll', () => {
   stick.conversation =
     conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 40;
