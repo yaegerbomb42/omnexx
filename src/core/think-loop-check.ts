@@ -2,7 +2,13 @@ import type { GateConfig } from '../config/schema.js';
 import { workingTreeDiff } from '../git/repo.js';
 import { antiCheat } from '../verify/anticheat.js';
 import { runGatesWithFlakyCheck } from '../verify/flaky.js';
-import { readScripts, relatedGate, relatedGreen, relatedRed } from '../verify/related-tests.js';
+import {
+  readCrates,
+  readScripts,
+  relatedGate,
+  relatedGreen,
+  relatedRed,
+} from '../verify/related-tests.js';
 import type { GateResult, GateRunContext } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
 import type { SpeculativeChecks } from '../verify/speculative.js';
@@ -44,9 +50,12 @@ export async function relatedGates(
 ): Promise<Map<string, GateConfig>> {
   const out = new Map<string, GateConfig>();
   if (!run.config.plan.loop_related_tests || !files.length) return out;
-  const scripts = await readScripts(run.worktree);
+  const [scripts, crates] = await Promise.all([
+    readScripts(run.worktree),
+    readCrates(run.worktree, files),
+  ]);
   for (const g of gates) {
-    const narrowed = relatedGate(g, files, scripts);
+    const narrowed = relatedGate(g, files, scripts, crates);
     if (narrowed) out.set(g.name, narrowed);
   }
   return out;

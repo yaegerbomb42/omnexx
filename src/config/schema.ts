@@ -20,6 +20,7 @@ export const GATE_PARSERS = [
   'eslint',
   'pytest',
   'gotest',
+  'cargo',
 ] as const;
 export type GateParser = (typeof GATE_PARSERS)[number];
 
