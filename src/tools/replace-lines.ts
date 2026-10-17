@@ -30,6 +30,23 @@ export const replaceLinesTool: Tool<typeof schema> = {
     'Replace a line range without repeating the old text. Read the range with anchors: true first and pass expected_hash (start tag + end tag).',
   schema,
   readOnly: false,
+  normalize: (input) => {
+    if (typeof input !== 'object' || input === null) return input;
+    const raw = input as Record<string, unknown>;
+    const rest = { ...raw };
+    delete rest.start_line;
+    delete rest.end_line;
+    delete rest.new_str;
+    delete rest.replacement;
+    delete rest.text;
+    delete rest.content;
+    return {
+      ...rest,
+      start: raw.start ?? raw.start_line,
+      end: raw.end ?? raw.end_line,
+      new_text: raw.new_text ?? raw.new_str ?? raw.replacement ?? raw.text ?? raw.content,
+    };
+  },
   async run(input, ctx) {
     let abs: string;
     let text: string;

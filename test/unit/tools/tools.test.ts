@@ -13,6 +13,7 @@ import {
 import { multiEditTool, strReplaceTool, writeFileTool } from '../../../src/tools/edit.js';
 import { extractSymbols, MAX_DIR_FILES, outlineTool } from '../../../src/tools/outline.js';
 import { readTool } from '../../../src/tools/read.js';
+import { replaceLinesTool } from '../../../src/tools/replace-lines.js';
 import { READ_ONLY_TOOLS, sortKeys, toolSpec, WORKER_TOOLS } from '../../../src/tools/registry.js';
 import { rememberTool } from '../../../src/tools/remember.js';
 import { _internal, searchTool } from '../../../src/tools/search.js';
@@ -500,5 +501,92 @@ describe('bash heredoc', () => {
     const r = await bashTool.run({ command: "python3 - <<'EOF'\nprint(6 * 7)\nEOF" }, ctx);
     expect(r.isError).toBeFalsy();
     expect(r.content).toContain('42');
+  });
+});
+
+describe('tool argument normalization', () => {
+  it('str_replace normalizes parameter aliases and hoisted edits', () => {
+    const n1 = strReplaceTool.normalize?.({
+      path: 'foo.ts',
+      old_string: 'a',
+      new_string: 'b',
+    }) as Record<string, unknown>;
+    expect(n1).toEqual({ path: 'foo.ts', old_str: 'a', new_str: 'b' });
+
+    const n2 = strReplaceTool.normalize?.({
+      path: 'foo.ts',
+      search: 'a',
+      replace: 'b',
+    }) as Record<string, unknown>;
+    expect(n2).toEqual({ path: 'foo.ts', old_str: 'a', new_str: 'b' });
+
+    const n3 = strReplaceTool.normalize?.({
+      path: 'foo.ts',
+      edits: [{ old_str: 'a', new_str: 'b' }],
+    }) as Record<string, unknown>;
+    expect(n3).toEqual({ path: 'foo.ts', old_str: 'a', new_str: 'b' });
+  });
+
+  it('write_file normalizes content aliases', () => {
+    expect(writeFileTool.normalize?.({ path: 'f.ts', contents: 'x' })).toEqual({
+      path: 'f.ts',
+      content: 'x',
+    });
+    expect(writeFileTool.normalize?.({ path: 'f.ts', text: 'x' })).toEqual({
+      path: 'f.ts',
+      content: 'x',
+    });
+    expect(writeFileTool.normalize?.({ path: 'f.ts', code: 'x' })).toEqual({
+      path: 'f.ts',
+      content: 'x',
+    });
+  });
+
+  it('replace_lines normalizes line and text aliases', () => {
+    expect(
+      replaceLinesTool.normalize?.({
+        path: 'f.ts',
+        start_line: 1,
+        end_line: 5,
+        replacement: 'new',
+      }),
+    ).toMatchObject({
+      path: 'f.ts',
+      start: 1,
+      end: 5,
+      new_text: 'new',
+    });
+  });
+
+  it('search normalizes query/regex and directory aliases', () => {
+    expect(searchTool.normalize?.({ query: 'hello', directory: 'src' })).toMatchObject({
+      pattern: 'hello',
+      path: 'src',
+    });
+    expect(searchTool.normalize?.({ regex: 'hi', dir: 'test' })).toMatchObject({
+      pattern: 'hi',
+      path: 'test',
+    });
+  });
+
+  it('read normalizes paths and start_line/end_line aliases', () => {
+    expect(
+      readTool.normalize?.({
+        paths: [{ path: 'a.ts' }],
+      }),
+    ).toMatchObject({
+      files: [{ path: 'a.ts' }],
+    });
+    expect(
+      readTool.normalize?.({
+        path: 'a.ts',
+        start_line: 10,
+        end_line: 20,
+      }),
+    ).toMatchObject({
+      path: 'a.ts',
+      start: 10,
+      end: 20,
+    });
   });
 });

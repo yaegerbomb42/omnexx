@@ -106,14 +106,6 @@ const strReplaceSchema = z.strictObject({
   new_str: z.string(),
 });
 
-export const strReplaceTool: Tool<typeof strReplaceSchema> = {
-  name: 'str_replace',
-  description: 'Replace one exact, unique snippet in a file. Prefer this over rewriting files.',
-  schema: strReplaceSchema,
-  readOnly: false,
-  run: (input, ctx) => applyEdits(input.path, [input], ctx),
-};
-
 /** Names models use for an edit's old and new text, mapped to old_str / new_str. */
 const EDIT_KEY_ALIASES: Readonly<Record<string, string>> = {
   old_string: 'old_str',
@@ -130,6 +122,28 @@ const EDIT_KEY_ALIASES: Readonly<Record<string, string>> = {
   replace: 'new_str',
   replacement: 'new_str',
   after: 'new_str',
+};
+
+export const strReplaceTool: Tool<typeof strReplaceSchema> = {
+  name: 'str_replace',
+  description: 'Replace one exact, unique snippet in a file. Prefer this over rewriting files.',
+  schema: strReplaceSchema,
+  readOnly: false,
+  normalize: (input) => {
+    if (typeof input !== 'object' || input === null) return input;
+    const raw = input as Record<string, unknown>;
+    const inner =
+      Array.isArray(raw.edits) && raw.edits[0] && typeof raw.edits[0] === 'object'
+        ? (raw.edits[0] as Record<string, unknown>)
+        : undefined;
+    const source = inner ? { ...raw, ...inner } : raw;
+    return Object.fromEntries(
+      Object.entries(source)
+        .filter(([k]) => k !== 'edits')
+        .map(([k, v]) => [EDIT_KEY_ALIASES[k] ?? k, v]),
+    );
+  },
+  run: (input, ctx) => applyEdits(input.path, [input], ctx),
 };
 
 const multiSchema = z.strictObject({ path: z.string(), edits: z.array(editSchema).min(1).max(30) });
@@ -171,6 +185,20 @@ export const writeFileTool: Tool<typeof writeSchema> = {
   description: `Create a new file, or overwrite a file shorter than ${WRITE_MAX_LINES} lines. Use str_replace for edits to larger files.`,
   schema: writeSchema,
   readOnly: false,
+  normalize: (input) => {
+    if (typeof input !== 'object' || input === null) return input;
+    const raw = input as Record<string, unknown>;
+    const content =
+      raw.content ?? raw.contents ?? raw.text ?? raw.code ?? raw.file_text ?? raw.body;
+    if (content === undefined) return input;
+    const rest = { ...raw };
+    delete rest.contents;
+    delete rest.text;
+    delete rest.code;
+    delete rest.file_text;
+    delete rest.body;
+    return { ...rest, content };
+  },
   async run(input, ctx) {
     let abs: string;
     try {
