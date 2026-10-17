@@ -1,5 +1,6 @@
 import type { Brand } from '../cli/brand.js';
 import type { OmnexxEvent } from '../core/events.js';
+import { turnWarning, type GateStatus, type TurnTrace } from './turn-trace.js';
 
 /**
  * One short, brand-styled line per event: what the agent is doing right now. Pure, so the
@@ -512,6 +513,20 @@ function lineFor(e: OmnexxEvent): Line | undefined {
   if (HIDDEN.has(e.type)) return undefined;
   const format = FORMATTERS[e.type];
   return format ? format(e) : ['debug', 'info', clip(e.type, 10), ''];
+}
+
+const GATE_WORD: Record<GateStatus, string> = {
+  none: '—',
+  ran: 'ran',
+  ok: 'ok',
+  fail: 'fail',
+};
+
+/** The `/trace` line. Not an event formatter: the default feed never includes it. */
+export function turnTraceLine(t: TurnTrace): string {
+  const n = t.calls.length;
+  const body = `turn ${String(t.turn)}  ${String(n)} call${n === 1 ? '' : 's'}  fresh ${fmtTokens(t.fresh)}  cached ${fmtTokens(t.cached)}  ${fmtMs(t.ms)}  gates ${GATE_WORD[t.gates]}`;
+  return turnWarning(t.calls) ? `! ${body}` : body;
 }
 
 export function humanize(e: OmnexxEvent, opts: HumanizeOptions): string | undefined {
