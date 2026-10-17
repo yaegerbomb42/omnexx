@@ -290,6 +290,12 @@ export const contextSchema = z.strictObject({
   /** Recent assistant turns kept verbatim through a compaction. */
   compact_keep_turns: z.number().int().positive().default(4),
   /**
+   * Serve rarely called read-only tools (remember, running_context, recall, outline, read_symbol)
+   * through one `more_tools` tool, keeping their schemas out of the cached prefix. Off by default
+   * until a bench shows the model still reaches for them when it should.
+   */
+  lazy_tools: z.boolean().default(false),
+  /**
    * The user's context budget (Memory slider, clamped to 85% of the model's window). History is
    * never sent above it: the largest blocks become digests when a fold isn't enough. Unset: no cap.
    */
