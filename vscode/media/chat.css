@@ -3692,3 +3692,152 @@ textarea:focus {
 .conversation {
   border-top: 0;
 }
+
+/* Code blocks: a quiet bar with the language and a copy button, like the editor's own hovers. */
+.msg pre {
+  position: relative;
+  padding-top: 0;
+}
+
+.code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 -8px 4px;
+  padding: 1px 4px 1px 8px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--vscode-font-family);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.code-lang:empty::before {
+  content: 'text';
+}
+
+.icon.copied {
+  color: var(--ok);
+}
+
+/* Per-message actions appear on hover or keyboard focus, so the transcript stays clean. */
+.msg.reply {
+  position: relative;
+}
+
+.msg-actions {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  display: flex;
+  border-radius: var(--radius);
+  background: var(--surface);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.msg.reply:hover .msg-actions,
+.msg-actions:focus-within {
+  opacity: 1;
+}
+
+.msg.user .who {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.msg.user .who .icon {
+  opacity: 0;
+}
+
+.msg.user:hover .who .icon,
+.msg.user .who .icon:focus-visible {
+  opacity: 1;
+}
+
+details.msg.think > summary {
+  cursor: pointer;
+  list-style: none;
+  white-space: pre-wrap;
+}
+
+details.msg.think > summary::after {
+  content: ' …';
+  color: var(--accent);
+}
+
+details.msg.think[open] > summary::after {
+  content: '';
+}
+
+details.msg.think {
+  white-space: pre-wrap;
+}
+
+.jump {
+  position: absolute;
+  right: 14px;
+  bottom: 86px;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--vscode-widget-border, var(--line));
+  background: var(--vscode-editorWidget-background, var(--surface));
+  color: var(--fg);
+  box-shadow: 0 2px 6px var(--vscode-widget-shadow, rgb(0 0 0 / 30%));
+}
+
+.jump[hidden] {
+  display: none;
+}
+
+body {
+  position: relative;
+}
+
+.ask {
+  border-radius: var(--radius);
+  border: 1px solid var(--vscode-inputValidation-warningBorder, var(--warn));
+  background: var(--vscode-inputValidation-warningBackground, var(--surface));
+  box-shadow: none;
+}
+
+.ask-title {
+  color: var(--vscode-editorWarning-foreground, var(--warn));
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
+.ask-buttons {
+  align-items: center;
+}
+
+.ask .primary {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-radius: 2px;
+  padding: 3px 12px;
+  box-shadow: none;
+}
+
+.ask .primary:hover {
+  background: var(--vscode-button-hoverBackground, var(--vscode-button-background));
+}
+
+.ask .secondary {
+  background: var(--vscode-button-secondaryBackground, transparent);
+  color: var(--vscode-button-secondaryForeground, var(--fg));
+  border-radius: 2px;
+  padding: 3px 12px;
+}
+
+.ask-keys {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
