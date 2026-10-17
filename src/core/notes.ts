@@ -34,6 +34,17 @@ export function renderNotes(notes: readonly Note[]): string {
   return notes.map((n) => `- [${n.id}] (${n.type}, ${n.date}) ${n.text}`).join('\n');
 }
 
+/** The newest notes that fit `maxTokens` when rendered; the newest one is always kept. */
+export function keepNewestNotes(notes: readonly Note[], maxTokens: number): Note[] {
+  let kept = notes.slice(-1);
+  for (let i = notes.length - 2; i >= 0; i--) {
+    const next = [notes[i] as Note, ...kept];
+    if (estimateTokens(renderNotes(next)) > maxTokens) break;
+    kept = next;
+  }
+  return kept;
+}
+
 export type RememberResult =
   { ok: true; notes: Note[]; message: string } | { ok: false; message: string };
 

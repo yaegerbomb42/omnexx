@@ -213,6 +213,12 @@ loop_related_tests` (on by default).
   path.
 - **Files:** `src/agent/context.ts`, `src/tools/*.ts` descriptions, `src/agent/prompts.ts`.
 - **Verify:** a unit test asserts the fresh-repo first call ≤ 3.5k estimated tokens.
+- **Status (2026-10-17):** done. The fresh fast-path first call, with the default extra tool
+  sources, went from 5,163 to 3,415 estimated tokens (tools 2,446, system 723, state 212, goal 18,
+  notes 16), pinned by `test/unit/agent/first-call-budget.test.ts`. The worker prompt is rewritten
+  (`omnexx-prompts-5`), tool descriptions are shorter, `skill` is only exposed when skills exist,
+  `integrations_*` only under `auto_approve`, zod's safe-integer bounds are dropped from schemas,
+  and fast-path lessons are capped at 1k tokens (newest kept).
 
 ### 9. Retire `list`
 

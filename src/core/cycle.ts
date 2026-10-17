@@ -45,7 +45,7 @@ import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
 import { runGates, toBaseline } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
 import { readTextOr } from './atomic.js';
-import { applyRemember, renderNotes } from './notes.js';
+import { applyRemember, keepNewestNotes, renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
 import { getNode, type PlanNode } from './plan.js';
 import { foldPrompt } from './fold-prompt.js';
@@ -60,6 +60,8 @@ import { estimateTokens } from './tokens.js';
 import type { Message } from '../providers/types.js';
 
 const CHECK_TIMEOUT_MS = 10 * 60_000;
+/** Fast-path cycles show at most this many tokens of lessons, the newest first. */
+const FAST_NOTES_TOKENS = 1_000;
 
 /** Rejection reason for a cycle a budget cap cut short before it changed anything: not an attempt. */
 export const INTERRUPTED_BY_BUDGET = 'interrupted by a budget cap before any change';
@@ -415,15 +417,20 @@ export async function stepAct(run: Run): Promise<void> {
     notes.length > 0 || task.evidence.length > 0 || progressTail.trim().length > 0;
   const tools = exposedTools(
     await workerTools(run.config, { repoRoot: run.worktree, env: run.deps.env }),
-    { subagents: run.config.context.subagents, hasHistory: hasRecallableHistory },
+    {
+      subagents: run.config.context.subagents,
+      hasHistory: hasRecallableHistory,
+      autoApprove: run.config.policy.auto_approve,
+    },
   );
   const route = await run.router.pick(cycleRoute(task, run.budgetLeftFraction()));
+  const shownNotes = task.id === FAST_TASK ? keepNewestNotes(notes, FAST_NOTES_TOKENS) : notes;
   const ctx = buildCycleContext({
     systemPrompt: WORKER_SYSTEM,
     codemap,
     goal: goal.text,
     intent,
-    notes: renderNotes(notes),
+    notes: renderNotes(shownNotes),
     plan,
     task,
     progressTail,
@@ -437,7 +444,7 @@ export async function stepAct(run: Run): Promise<void> {
       run.deps.paths,
       run.state.repoRoot,
       run.worktree,
-      notes.map((n) => n.text),
+      shownNotes.map((n) => n.text),
     ),
     tools: tools.map(toolSpec),
   });

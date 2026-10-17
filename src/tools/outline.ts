@@ -83,15 +83,13 @@ const schema = z.strictObject({
   path: z
     .string()
     .optional()
-    .describe(
-      "File or directory relative to the repo root. A directory returns the codebase-map slice (files and top symbols); a file returns that file's symbols with line numbers.",
-    ),
+    .describe('File or directory; a directory returns its codebase-map slice'),
   paths: z
     .array(z.string())
     .min(1)
     .max(MAX_OUTLINE_FILES)
     .optional()
-    .describe(`Several files in one call, instead of path (up to ${MAX_OUTLINE_FILES})`),
+    .describe(`Several files in one call (up to ${MAX_OUTLINE_FILES})`),
 });
 
 interface SliceEntry {
@@ -264,7 +262,7 @@ async function outlineTarget(path: string, ctx: ToolContext): Promise<ToolOutput
 export const outlineTool: Tool<typeof schema> = {
   name: 'outline',
   description:
-    "Symbols of a file (functions, classes, types, exports) with their line numbers, or, for a directory, the codebase-map slice: files under it and each file's top symbols. Use before reading large files. For several files, pass paths: [...] in one call.",
+    "A file's symbols with line numbers, or a directory's codebase-map slice. Use before reading large files.",
   schema,
   readOnly: true,
   concurrent: true,

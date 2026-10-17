@@ -6,7 +6,7 @@ const schema = z.strictObject({
   kind: z
     .enum(CONTEXT_KINDS)
     .describe(
-      'progress: what you just did · solution: what worked and why · dead_end: what failed and why not to retry it · checkpoint: where the task stands now · summary: the state in a few lines',
+      'solution: what worked and why · dead_end: not worth retrying · progress, checkpoint, summary: where things stand',
     ),
   text: z.string().min(3).max(2_000),
 });
@@ -18,7 +18,7 @@ const schema = z.strictObject({
 export const runningContextTool: Tool<typeof schema> = {
   name: 'running_context',
   description:
-    "Add to your running context for this task: a living memory shown to you again at the start of every cycle and after the context is trimmed. The harness already records each cycle's outcome and your summary, so use this for dead ends you must not retry and solutions that took real digging. Short, concrete, with file paths; send it alongside other calls.",
+    "Add a short entry to this task's running context, shown again every cycle and after trimming. Send it alongside other calls.",
   schema,
   readOnly: true,
   async run(input, ctx) {

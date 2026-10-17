@@ -17,22 +17,17 @@ export const MAX_READ_FILES = 10;
 /** Below this much of a multi-file read's budget, a file isn't started: a few lines only cost a re-read. */
 const MIN_SECTION_CHARS = 2_000;
 
-const start = z.number().int().positive().optional().describe('First line (1-based, inclusive)');
-const end = z
-  .number()
-  .int()
-  .positive()
-  .optional()
-  .describe(`Last line (inclusive); at most ${MAX_READ_LINES} lines per file`);
+const start = z.number().int().positive().optional();
+const end = z.number().int().positive().optional();
 
 const schema = z.strictObject({
-  path: z.string().optional().describe('File path relative to the repo root'),
+  path: z.string().optional().describe('Path relative to the repo root'),
   start,
   end,
   files: z
     .array(
       z.strictObject({
-        path: z.string().describe('File path relative to the repo root'),
+        path: z.string(),
         start,
         end,
       }),
@@ -40,13 +35,8 @@ const schema = z.strictObject({
     .min(1)
     .max(MAX_READ_FILES)
     .optional()
-    .describe(
-      `Several files or ranges in one call, instead of path (up to ${MAX_READ_FILES}): one round trip instead of many`,
-    ),
-  anchors: z
-    .boolean()
-    .optional()
-    .describe('Tag each line with a 2-char content hash, for replace_lines expected_hash'),
+    .describe(`Several files or ranges in one call (up to ${MAX_READ_FILES})`),
+  anchors: z.boolean().optional().describe('Tag lines with a content hash, for replace_lines'),
 });
 
 interface ReadTarget {
@@ -144,7 +134,7 @@ async function readMany(
 
 export const readTool: Tool<typeof schema> = {
   name: 'read',
-  description: `Read a file with line numbers, at most ${MAX_READ_LINES} lines per file. Files over ${MAX_READ_LINES} lines must be read by range; reading one without a range returns its outline. To read several files or ranges, pass them all in files: [...] in one call.`,
+  description: `Read files with line numbers, at most ${MAX_READ_LINES} lines each; a longer file needs a range (without one you get its outline).`,
   schema,
   readOnly: true,
   concurrent: true,

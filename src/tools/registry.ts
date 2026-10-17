@@ -44,6 +44,11 @@ export interface ExposureOptions {
   subagents: boolean;
   /** Whether earlier cycles left anything for `recall` to search (progress, evidence or lessons). */
   hasHistory: boolean;
+  /**
+   * `[policy] auto_approve`: whether an install can happen without a person. Without it an
+   * unattended run can only suggest one, so the integrations tools are left out.
+   */
+  autoApprove?: boolean;
 }
 
 /**
@@ -55,6 +60,7 @@ export function exposedTools(tools: readonly Tool[], opts: ExposureOptions): rea
   return tools.filter((t) => {
     if (t.name === 'task') return opts.subagents;
     if (t.name === 'recall') return opts.hasHistory;
+    if (t.name.startsWith('integrations_')) return opts.autoApprove === true;
     return true;
   });
 }
@@ -104,8 +110,18 @@ export function sortKeys(v: unknown): unknown {
     return Object.fromEntries(
       Object.keys(v)
         .sort()
+        // zod writes the safe-integer range on every int: tokens in every call, no constraint.
+        .filter(
+          (k) =>
+            !(SAFE_BOUND[k] !== undefined && (v as Record<string, unknown>)[k] === SAFE_BOUND[k]),
+        )
         .map((k) => [k, sortKeys((v as Record<string, unknown>)[k])]),
     );
   }
   return v;
 }
+
+const SAFE_BOUND: Readonly<Record<string, number>> = {
+  maximum: Number.MAX_SAFE_INTEGER,
+  minimum: Number.MIN_SAFE_INTEGER,
+};

@@ -93,6 +93,7 @@ export const source: ToolSource = {
       importClaude: config.skills.import_claude,
       disabled: (await readSkillsState(where?.env ?? process.env)).disabled,
     });
-    return [skillTool(config, skillCatalog(skills))];
+    // No skills: the tool could only fail, so its schema stays out of the prefix.
+    return skills.length ? [skillTool(config, skillCatalog(skills))] : [];
   },
 };

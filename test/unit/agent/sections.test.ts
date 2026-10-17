@@ -86,7 +86,7 @@ describe('context sections', () => {
     expect(all).toContain('Intent: what the finished product should be');
     const old = buildCycleContext(inputs);
     expect(old.labels).toEqual(['system', 'codemap', 'goal', 'notes']);
-    expect(text(old)).not.toContain('More context, when you need it');
+    expect(text(old)).not.toContain('More context, on request');
   });
 
   it('renders the cached prefix as the same bytes every time', () => {

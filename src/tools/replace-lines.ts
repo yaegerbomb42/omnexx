@@ -8,8 +8,8 @@ import { fail, ok, resolvePath, type Tool } from './types.js';
 
 const schema = z.strictObject({
   path: z.string(),
-  start: z.number().int().positive().describe('First line to replace (1-based)'),
-  end: z.number().int().positive().describe('Last line to replace (inclusive)'),
+  start: z.number().int().positive(),
+  end: z.number().int().positive(),
   expected_hash: z
     .string()
     .regex(
@@ -18,16 +18,16 @@ const schema = z.strictObject({
     )
     .optional()
     .describe(
-      'Anchor tags from read with anchors: true: the start line tag then the end line tag (e.g. "k3pq"). Refuses if those lines changed; follows them if they moved.',
+      'Start then end line tag from read with anchors: true (e.g. "k3pq"); refuses if those lines changed',
     ),
-  new_text: z.string().describe('Replacement lines (empty deletes the range)'),
+  new_text: z.string().describe('Replacement lines; empty deletes the range'),
 });
 
 /** Replace lines start..end with new_text, checked against the anchors the model read. */
 export const replaceLinesTool: Tool<typeof schema> = {
   name: 'replace_lines',
   description:
-    'Replace a line range without repeating the old text. Read the range with anchors: true first and pass expected_hash (start tag + end tag).',
+    'Replace a line range without repeating the old text; read it with anchors: true first.',
   schema,
   readOnly: false,
   normalize: (input) => {

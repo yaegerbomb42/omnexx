@@ -26,8 +26,8 @@ const schema = z.strictObject({
   pattern: z
     .string()
     .describe('Regular expression (ripgrep syntax); empty lists the files instead'),
-  glob: z.string().optional().describe('Only files matching this glob, e.g. "src/**/*.ts"'),
-  path: z.string().optional().describe('Directory to search, relative to the repo root'),
+  glob: z.string().optional().describe('File glob, e.g. "src/**/*.ts"'),
+  path: z.string().optional().describe('Directory to search'),
 });
 
 /**
@@ -157,7 +157,7 @@ async function viaJs(
 
 export const searchTool: Tool<typeof schema> = {
   name: 'search',
-  description: `Search file contents with a regex (ripgrep). Returns matches grouped by file: with 2 lines of context when there are few, match lines only when there are more, and an overview of files and counts when there are over ${LIST_MAX}. Scope it: pass path (a folder) and glob (e.g. "**/*.ts") whenever you know where to look; dependency, build and cache folders are skipped.`,
+  description: `Regex search (ripgrep) over file contents, grouped by file; over ${LIST_MAX} files gives counts. Scope it with path and glob.`,
   schema,
   readOnly: true,
   concurrent: true,
