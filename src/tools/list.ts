@@ -44,7 +44,7 @@ export async function listTree(root: string, base: string, depth: number): Promi
 export const listTool: Tool<typeof schema> = {
   name: 'list',
   description:
-    'List files and folders as a tree (folders end in "/"; dependency and build folders are left out). Use it to find your way around before reading.',
+    'List files and folders as a tree (folders end in "/"; dependency and build folders are left out). Prefer outline: a directory path returns the codebase-map slice (files and each file\'s top symbols).',
   schema,
   readOnly: true,
   concurrent: true,

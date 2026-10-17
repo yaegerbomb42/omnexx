@@ -96,7 +96,6 @@ describe('run --plan-only', () => {
     expect((await store.readPlan())?.nodes.map((n) => n.id)).toEqual(['M1', 'M1.T01', 'M2']);
     expect(provider.requests[0]?.tools.map((t) => t.name).sort()).toEqual([
       'context',
-      'list',
       'outline',
       'read',
       'read_log',
@@ -324,7 +323,7 @@ describe('agent loop limits and control inside a cycle', () => {
       if (last?.type === 'tool_result') results.push(JSON.stringify(last.content));
       return (
         [
-          call('print_tree', {}),
+          call('print_tree', { path: '.' }),
           call('search', { pattern: '' }),
           call('str_replace', {
             path: 'src/math.js',

@@ -54,15 +54,16 @@ class BudgetStopSignal extends Error {
  * print_tree and list_files in its first real run). They run the real tool instead of failing.
  */
 const TOOL_ALIASES: Record<string, string> = {
-  print_tree: 'list',
-  tree: 'list',
-  ls: 'list',
-  list_files: 'list',
-  list_dir: 'list',
-  list_directory: 'list',
-  file_tree: 'list',
-  find_files: 'list',
-  glob: 'list',
+  print_tree: 'outline',
+  tree: 'outline',
+  ls: 'outline',
+  list_files: 'outline',
+  list_dir: 'outline',
+  list_directory: 'outline',
+  file_tree: 'outline',
+  find_files: 'outline',
+  glob: 'outline',
+  list: 'outline',
   grep: 'search',
   ripgrep: 'search',
   search_files: 'search',
@@ -222,13 +223,7 @@ export const steeringText = (msgs: readonly string[]): string =>
   `The user sent ${msgs.length === 1 ? 'a message' : 'messages'} while you were working. Read ${msgs.length === 1 ? 'it' : 'them'} now and adjust:\n${msgs.map((m) => `> ${m}`).join('\n')}`;
 
 /** Look-around tools: a turn spent on just one of these, before any edit, is a wasted round trip. */
-const EXPLORE_TOOLS: ReadonlySet<string> = new Set([
-  'read',
-  'outline',
-  'search',
-  'list',
-  'read_symbol',
-]);
+const EXPLORE_TOOLS: ReadonlySet<string> = new Set(['read', 'outline', 'search', 'read_symbol']);
 
 /** Said once per loop, after the first turn that explored with a single call. */
 export const BATCH_HINT =
@@ -698,7 +693,7 @@ export async function runAgentLoop(
       const toolStart = deps.clock.now();
       deps.events.emit('tool.start', {
         tool: call.name,
-        // An invented name (print_tree) is narrated as the tool that actually runs (list).
+        // An invented name (print_tree) is narrated as the tool that actually runs (outline).
         doing: narrateTool(
           tool?.name ?? call.name,
           typeof call.input === 'object' && call.input !== null
