@@ -7,6 +7,7 @@ import {
   EXECUTE_PROMPT,
   runThinkLoop,
   THINK_PROMPT,
+  thinkSizing,
   type ChainKind,
   type CheckOutcome,
   type Segment,
@@ -77,6 +78,26 @@ const fail = (why: string, tree = 't-red'): CheckOutcome => ({
 const first: Message = { role: 'user', content: [{ type: 'text', text: 'Work on M1.T01' }] };
 const limits = { rounds: 6, rethinks: 2, thinkTurns: 8 };
 
+describe('thinkSizing', () => {
+  it('gives a short goal three turns and skips the decide step', () => {
+    expect(thinkSizing('Fix the off-by-one in src/sum.ts', '', 8)).toEqual({
+      thinkTurns: 3,
+      skipDecide: true,
+    });
+  });
+
+  it('keeps the configured budget once the goal names three mapped files', () => {
+    const map = ['src/a.ts', 'src/b.ts', 'src/c.ts'].join('\n');
+    const goal = 'Update src/a.ts, src/b.ts and src/c.ts so the three agree.';
+    expect(thinkSizing(goal, map, 8)).toEqual({ thinkTurns: 8, skipDecide: false });
+  });
+
+  it('keeps the configured budget for a long goal', () => {
+    const goal = Array.from({ length: 61 }, () => 'word').join(' ');
+    expect(thinkSizing(goal, '', 8).skipDecide).toBe(false);
+  });
+});
+
 describe('think-first loop session', () => {
   it('shows the analysis steps as the todo list and ticks them off once green', async () => {
     const analysis =
@@ -94,6 +115,15 @@ describe('think-first loop session', () => {
         { text: 'add a test', status: 'done' },
       ],
     ]);
+  });
+
+  it('does not spend a decide step when the goal was sized as small', async () => {
+    const { io, calls } = fakeIO(
+      [{ say: 'partial', end: 'max_turns_per_cycle' }, { say: 'fixed' }],
+      [pass('t1')],
+    );
+    await runThinkLoop(first, io, { ...limits, thinkTurns: 3, skipDecide: true });
+    expect(calls.map((c) => c.chain)).toEqual(['think', 'work']);
   });
 
   it('thinks first with the strong chain, and the analysis stays in the conversation it executes in', async () => {

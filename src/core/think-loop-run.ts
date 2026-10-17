@@ -1,4 +1,5 @@
 import { withoutVendored } from '../agent/codemap.js';
+import { readTextOr } from './atomic.js';
 import { runAgentLoop, type LoopDeps, type LoopResult } from '../agent/loop.js';
 import { plannerCandidates } from '../agent/planner.js';
 import { git } from '../git/git.js';
@@ -16,7 +17,13 @@ import type { PlanNode } from './plan.js';
 import type { Run } from './run.js';
 import { checkTree, type CheckSession, type TaskCheck } from './think-loop-check.js';
 import { speculativeChecks, withSpeculation } from './think-loop-speculative.js';
-import { runThinkLoop, type ChainKind, type SessionIO, type SessionResult } from './think-loop.js';
+import {
+  runThinkLoop,
+  thinkSizing,
+  type ChainKind,
+  type SessionIO,
+  type SessionResult,
+} from './think-loop.js';
 
 /** Whether this task runs as a think-loop session under `[plan] loop`. */
 export function usesThinkLoop(run: Run, task: PlanNode): boolean {
@@ -162,10 +169,19 @@ export async function actAsThinkLoop(
     },
   };
   try {
+    const goal = await run.store.readGoal();
+    const codemap = await readTextOr(run.store.file('codemap.json'), '');
+    const sized = thinkSizing(goal.text, codemap, run.config.plan.loop_think_turns);
+    io.emit('phase', {
+      phase: 'act',
+      thinkTurns: sized.thinkTurns,
+      skipDecide: sized.skipDecide,
+    });
     return await runThinkLoop(inputs.ctx.first, io, {
       rounds: run.config.plan.loop_rounds,
       rethinks: run.config.plan.loop_rethinks,
-      thinkTurns: run.config.plan.loop_think_turns,
+      thinkTurns: sized.thinkTurns,
+      skipDecide: sized.skipDecide,
       rewinds: run.config.plan.loop_rewinds,
     });
   } finally {
