@@ -1,4 +1,3 @@
-import { applyTokenRatio } from '../core/tokens.js';
 import type { ContentBlock, Message } from '../providers/types.js';
 import { contextTokens } from './compaction.js';
 
@@ -84,10 +83,8 @@ export function enforceBudget(
   messages: readonly Message[],
   budget: number,
   spareNewest = false,
-  ratio = 1,
 ): GuardOutcome {
-  const size = (msgs: readonly Message[]): number => applyTokenRatio(contextTokens(msgs), ratio);
-  let tokens = size(messages);
+  let tokens = contextTokens(messages);
   if (tokens <= budget) return { messages: [...messages], digested: 0, tokens };
   let current = [...messages];
   let digested = 0;
@@ -99,7 +96,7 @@ export function enforceBudget(
       i === s.i ? { ...m, content: m.content.map((b, j) => (j === s.j ? shrink(b) : b)) } : m,
     );
     digested++;
-    tokens = size(current);
+    tokens = contextTokens(current);
   }
   return { messages: current, digested, tokens };
 }

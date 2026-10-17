@@ -419,16 +419,10 @@ export async function runAgentLoop(
     if (deps.signal?.aborted) return end('stop-now');
 
     if (deps.compaction && turns > 0) {
-      const lead = deps.models[0];
-      const foldRatio = lead ? tokenRatio(tokenRatios, `${lead.provider}:${lead.id}`) : 1;
-      const foldSettings =
-        foldRatio === 1
-          ? deps.compaction.settings
-          : { ...deps.compaction.settings, tokenRatio: foldRatio };
       messages = await manageContext(
         messages,
         ctx.anchor ?? ctx.first,
-        ctx.pinned ? { ...foldSettings, pinned: ctx.pinned } : foldSettings,
+        ctx.pinned ? { ...deps.compaction.settings, pinned: ctx.pinned } : deps.compaction.settings,
         deps.compaction.summarize,
         ({ kind, ...rest }) => {
           // Earlier read results are gone from the context now; let `read` return them again.
