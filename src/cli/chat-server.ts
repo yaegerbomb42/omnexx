@@ -15,7 +15,7 @@ import { println, type CliIO } from './io.js';
  * commands, approvals, model switching and plan mode behave the same way.
  *
  * In (one JSON object per line): send {text} · answer {yes} · stop · pause · resume · mode {mode} ·
- * yolo {on} ·
+ * yolo {on} · trace {on} ·
  * model {ref} · models · connect {value, name?} · undo · clear · compact · sync (resend all) ·
  * settings · addProvider {provider?, key?, url?, fields?, headers?, flavor?} ·
  * probeProvider {provider?, url?, key?, fields?, headers?, flavor?} · removeProvider {name} · testProvider {name} ·
@@ -56,6 +56,8 @@ export interface ChatState {
   busy: boolean;
   paused: boolean;
   autoApprove: boolean;
+  /** Per-turn trace lines (`/trace`). Off by default. */
+  trace: boolean;
   model: string | null;
   /** How the chat's ranked models are used ("Fallback on quota"), when it has several. */
   routing: string | null;
@@ -162,6 +164,7 @@ export async function serveChat(
       busy: session.busy !== undefined || session.chatBusy,
       paused: session.chatPaused,
       autoApprove: session.autoApprove,
+      trace: session.trace,
       model: session.chatModelName ?? null,
       routing: session.chatRouting ?? null,
       context: session.context ?? null,
@@ -298,6 +301,9 @@ export async function serveChat(
         // /yolo toggles; only run it when the state differs from what was asked, and without
         // echoing it as a message.
         if ((c.on === true) !== session.autoApprove) run(session.command('yolo'));
+        return;
+      case 'trace':
+        if ((c.on === true) !== session.trace) run(session.command('trace'));
         return;
       case 'model':
         run(session.switchModel(text(c, 'ref')));

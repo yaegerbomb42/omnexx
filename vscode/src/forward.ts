@@ -9,6 +9,7 @@ export const FORWARD: ReadonlySet<string> = new Set([
   'resume',
   'mode',
   'yolo',
+  'trace',
   'undo',
   'clear',
   'compact',
