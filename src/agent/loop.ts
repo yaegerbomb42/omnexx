@@ -175,6 +175,8 @@ export interface LoopDeps {
   maxTokens: number;
   clock: Clock;
   events: EventLog;
+  /** Stable id for this run, sent as OpenAI's prompt_cache_key. */
+  cacheKey?: string;
   /** Spend so far across the run, before this call. */
   spentUsd: () => number;
   /** Spend in the rolling 24 h window, for the daily cap. */
@@ -224,6 +226,20 @@ export const steeringText = (msgs: readonly string[]): string =>
 
 /** Look-around tools: a turn spent on just one of these, before any edit, is a wasted round trip. */
 const EXPLORE_TOOLS: ReadonlySet<string> = new Set(['read', 'outline', 'search', 'read_symbol']);
+
+/**
+ * A later turn whose cache read is under 80% of the previous prompt. The first turn has nothing
+ * cached yet, so it is never a miss.
+ */
+export function cacheShortfall(
+  turn: number,
+  previousPromptTokens: number,
+  cacheRead: number,
+): { turn: number; expected: number; got: number } | undefined {
+  if (turn < 2 || previousPromptTokens <= 0) return undefined;
+  if (cacheRead / previousPromptTokens >= 0.8) return undefined;
+  return { turn, expected: previousPromptTokens, got: cacheRead };
+}
 
 /** Said once per loop, after the first turn that explored with a single call. */
 export const BATCH_HINT =
@@ -370,6 +386,7 @@ export async function runAgentLoop(
 
   const nudged = new Set<string>();
   let batchHinted = false;
+  let previousPromptTokens = 0;
   let bookkeepingHinted = false;
   let changedSomething = false;
   for (;;) {
@@ -434,7 +451,7 @@ export async function runAgentLoop(
               // The provider is up: send the real request once more, cooling or not.
               try {
                 const r = await deps.provider.complete({
-                  ...turnRequest(ctx, messages, m.id, deps.maxTokens),
+                  ...turnRequest(ctx, messages, m.id, deps.maxTokens, deps.cacheKey),
                   route: m.provider,
                   ...(deps.signal ? { signal: deps.signal } : {}),
                 });
@@ -487,7 +504,7 @@ export async function runAgentLoop(
               );
               continue;
             }
-            const req = turnRequest(ctx, messages, m.id, deps.maxTokens);
+            const req = turnRequest(ctx, messages, m.id, deps.maxTokens, deps.cacheKey);
             const estimate = estimateTokens(JSON.stringify([req.system, req.tools, req.messages]));
             const pf = preflight(deps.budget, {
               spentUsd: deps.spentUsd(),
@@ -650,6 +667,9 @@ export async function runAgentLoop(
       segments: { ...prefixTokens, ...messageSegments(messages) },
       usd: cost,
     });
+    const miss = cacheShortfall(turns, previousPromptTokens, res.usage.cacheRead);
+    if (miss) deps.events.emit('cache.miss', miss);
+    previousPromptTokens = input;
 
     messages.push({ role: 'assistant', content: res.content });
     const text = res.content

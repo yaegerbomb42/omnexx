@@ -111,6 +111,7 @@ export function turnRequest(
   messages: Message[],
   model: string,
   maxTokens: number,
+  cacheKey?: string,
 ): Omit<CompletionRequest, 'signal'> {
   const last = messages.length - 1;
   return {
@@ -120,5 +121,6 @@ export function turnRequest(
     messages,
     maxTokens,
     messageBreakpoints: last > 0 ? [0, last] : [0],
+    ...(cacheKey ? { promptCacheKey: cacheKey } : {}),
   };
 }

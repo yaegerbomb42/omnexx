@@ -464,6 +464,7 @@ export async function stepAct(run: Run): Promise<void> {
     maxTokens: run.config.providers.anthropic.max_tokens,
     clock: run.clock,
     events: run.events,
+    cacheKey: run.state.runId,
     // Quotas gone or every provider down: stop after a while instead of waiting for ever.
     retry: { giveUpAfterMs: parseDuration(run.config.budget.max_provider_wait) },
     spentUsd: () => run.state.spend.usd,

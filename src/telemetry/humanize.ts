@@ -507,6 +507,12 @@ const FORMATTERS: Partial<Record<string, Formatter>> = {
   'ladder.rung': ladderRungLine,
   'stuck.signal': stuckSignalLine,
   'stuck.in_cycle': stuckSignalLine,
+  'cache.miss': (e) => [
+    'normal',
+    'warn',
+    'cache',
+    `turn ${num(e.turn)} read ${num(e.got)} cached tokens, under 80% of the previous prompt (${num(e.expected)})`,
+  ],
   'cycle.context': cycleContextLine,
   'context.pruned': contextPrunedLine,
   'context.cleared': contextClearedLine,
