@@ -122,6 +122,8 @@ export const stateSchema = z.object({
   beyondRounds: z.number().int().default(0),
   /** Autonomous mode: improvement rounds in a row that added nothing. */
   idleRounds: z.number().int().default(0),
+  /** Paths earlier improvement rounds were shown as evidence, so each round gets fresh ones. */
+  evidenceShown: z.array(z.string()).default([]),
   /** The PR `[git] open_pr` opened for this run's branch. */
   prUrl: z.string().optional(),
   /** Pre-finish audits run so far (each may add a milestone of gaps to close). */

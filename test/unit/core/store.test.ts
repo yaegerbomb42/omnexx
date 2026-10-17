@@ -43,6 +43,7 @@ export function sampleState(over: Partial<RunState> = {}): RunState {
     acceptedCommits: 0,
     beyondRounds: 0,
     idleRounds: 0,
+    evidenceShown: [],
     auditRounds: 0,
     rejectedCycles: 0,
     lastProgressCycle: 0,

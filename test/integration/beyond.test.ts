@@ -44,9 +44,10 @@ function beyondPlanner(): Script {
 
 describe('intent and beyond mode', () => {
   it('records intent, meets the goal, runs one improvement round, and stops when nothing is left', async () => {
+    const provider = new ScriptedProvider(scenario(beyondPlanner(), fileWorker));
     const t = await startTestRun({
-      repo: await makeRepo(),
-      provider: new ScriptedProvider(scenario(beyondPlanner(), fileWorker)),
+      repo: await makeRepo({ 'src/engine.js': 'export const step = 1;\n'.repeat(60) }),
+      provider,
       config: { gates: [GATE], beyond: { enabled: true, max_rounds: 3 } },
     });
     const out = await supervise(t.run.deps, t.run.state.runId, opts);
@@ -58,6 +59,17 @@ describe('intent and beyond mode', () => {
     const state = await t.run.store.readState();
     expect(state.acceptedCommits).toBe(3);
     expect(state.beyondRounds).toBe(2);
+    // Round 1 is pointed at the untested module; round 2 is not shown it again.
+    const rounds = provider.requests
+      .map((r) => JSON.stringify(r.messages))
+      .filter((m) => m.includes('improvement round'));
+    const shown = (n: number) =>
+      rounds
+        .find((m) => m.includes(`improvement round ${String(n)} `))
+        ?.includes('`src/engine.js`');
+    expect(shown(1)).toBe(true);
+    expect(shown(2)).toBe(false);
+    expect(state.evidenceShown).toEqual(['src/engine.js']);
     const events = await readEvents(t.run.store.eventsPath);
     expect(events.filter((e) => e.type === 'beyond.round').map((e) => e.added)).toEqual([3, 0]);
     expect(events.some((e) => e.type === 'intent.update')).toBe(true);

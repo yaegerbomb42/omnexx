@@ -61,6 +61,7 @@ import {
   runnableTasks,
   type Plan,
 } from './plan.js';
+import { evidenceText, mineEvidence } from './evidence.js';
 import { writeReport } from './report.js';
 import { recordFinishedRun, repoFileCount, sampleForRun, workerRef } from './run-estimate-io.js';
 import type { RunStatus } from './run-store.js';
@@ -763,9 +764,18 @@ class Supervisor {
     const scope = auto
       ? { focus: autonomousFocus(r.config.autonomous.focus, round) }
       : { maxRounds: cfg.max_rounds };
-    r.events.emit('beyond.start', { round, ...scope });
+    const findings = await mineEvidence(r.worktree, new Set(r.state.evidenceShown));
+    r.state.evidenceShown = [...r.state.evidenceShown, ...findings.map((f) => f.path)].slice(
+      -EVIDENCE_MEMORY,
+    );
+    r.events.emit('beyond.start', { round, ...scope, evidence: findings.length });
     try {
-      await runPlanner(r, { kind: 'beyond', round, ...scope });
+      await runPlanner(r, {
+        kind: 'beyond',
+        round,
+        ...scope,
+        ...(findings.length ? { evidence: evidenceText(findings) } : {}),
+      });
     } catch (err) {
       // One bad planning round must not end a day-long run; it counts as a round with no work.
       if (!auto || !(err instanceof PlannerIncomplete)) throw err;
@@ -1192,6 +1202,9 @@ async function notifierSafe(fn: () => Promise<void>): Promise<void> {
     // Notifications are best effort; NtfyNotifier already logs its own failures.
   }
 }
+
+/** How many shown evidence paths a run remembers before it may show one again. */
+const EVIDENCE_MEMORY = 200;
 
 /** Autonomous round n's focus: the user's areas first, then the beyond rubric, round robin. */
 export function autonomousFocus(extra: readonly string[], round: number): string {
