@@ -81,6 +81,9 @@ async function readOne(
     );
   }
   const first = t.start ?? 1;
+  if (t.end !== undefined && t.end < first) {
+    return fail(`${t.path}: start line (${first}) cannot be greater than end line (${t.end})`);
+  }
   let last = Math.min(t.end ?? lines.length, first + MAX_READ_LINES - 1, lines.length);
   if (first > lines.length) return fail(`${t.path} has only ${lines.length} lines`);
   const shown: string[] = [];
