@@ -108,7 +108,7 @@ function narrowCargo(
     if (!pkg) return undefined;
     pkgs.add(pkg);
   }
-  return [head, ...[...pkgs].sort().flatMap((p) => ['-p', quote(p)]), ...opts].join(' ');
+  return [head, ...[...pkgs].sort((a, b) => a.localeCompare(b)).flatMap((p) => ['-p', quote(p)]), ...opts].join(' ');
 }
 
 const PACKAGE_NAME = /^\[package\][^[]*?^\s*name\s*=\s*["']([^"']+)["']/ms;
