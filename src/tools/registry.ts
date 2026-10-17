@@ -9,6 +9,7 @@ import { replaceLinesTool } from './replace-lines.js';
 import { contextTool } from './context.js';
 import { recallTool } from './recall.js';
 import { todoTool } from './todo.js';
+import { DEFERRED_TOOLS, moreToolsTool } from './more-tools.js';
 import { rememberTool } from './remember.js';
 import { searchTool } from './search.js';
 import { taskTool } from './task.js';
@@ -49,6 +50,8 @@ export interface ExposureOptions {
    * unattended run can only suggest one, so the integrations tools are left out.
    */
   autoApprove?: boolean;
+  /** `[context] lazy_tools`: serve the rarely called read-only tools through `more_tools`. */
+  lazyTools?: boolean;
 }
 
 /**
@@ -57,12 +60,16 @@ export interface ExposureOptions {
  * return a cut log at any time and its output tells the model to page it.
  */
 export function exposedTools(tools: readonly Tool[], opts: ExposureOptions): readonly Tool[] {
-  return tools.filter((t) => {
+  const live = tools.filter((t) => {
     if (t.name === 'task') return opts.subagents;
     if (t.name === 'recall') return opts.hasHistory;
     if (t.name.startsWith('integrations_')) return opts.autoApprove === true;
     return true;
   });
+  if (!opts.lazyTools) return live;
+  const deferred = live.filter((t) => DEFERRED_TOOLS.has(t.name) && t.readOnly);
+  if (!deferred.length) return live;
+  return [...live.filter((t) => !deferred.includes(t)), moreToolsTool(deferred)];
 }
 
 const EXTRA_SOURCES: Record<string, ToolSource> = extraSources;

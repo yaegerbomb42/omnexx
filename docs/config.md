@@ -237,19 +237,20 @@ The fast path is one worker cycle with the whole goal as its task, done when eve
 
 ## `[context]`
 
-| Key                     | Default                                                                   |
-| ----------------------- | ------------------------------------------------------------------------- |
-| `progress_tail`         | `5` progress entries in each cycle's context                              |
-| `notes_max_tokens`      | `1500` (lessons file cap)                                                 |
-| `repo_map_max_tokens`   | `3000` (codebase map cap)                                                 |
-| `clear_tool_results_at` | `60000` estimated context tokens: elide old tool results over 1,000 chars |
-| `keep_tool_results`     | `6` newest tool results never cleared                                     |
-| `compact_at`            | `100000` estimated context tokens: summarize older turns                  |
-| `compact_keep_turns`    | `4` recent assistant turns kept verbatim                                  |
-| `budget_tokens`         | unset (no cap); set by `context_level`: history is never sent above it    |
-| `subagents`             | `false`: run agents get no `task` tool (one agent reads for itself)       |
+| Key                     | Default                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| `progress_tail`         | `5` progress entries in each cycle's context                                                            |
+| `notes_max_tokens`      | `1500` (lessons file cap)                                                                               |
+| `repo_map_max_tokens`   | `3000` (codebase map cap)                                                                               |
+| `clear_tool_results_at` | `60000` estimated context tokens: elide old tool results over 1,000 chars                               |
+| `keep_tool_results`     | `6` newest tool results never cleared                                                                   |
+| `compact_at`            | `100000` estimated context tokens: summarize older turns                                                |
+| `compact_keep_turns`    | `4` recent assistant turns kept verbatim                                                                |
+| `lazy_tools`            | `false`; serve remember, running_context, recall, outline and read_symbol through one `more_tools` tool |
+| `budget_tokens`         | unset (no cap); set by `context_level`: history is never sent above it                                  |
+| `subagents`             | `false`: run agents get no `task` tool (one agent reads for itself)                                     |
 
-In-cycle context control runs before each turn and works on every provider (details and measured costs: [architecture.md](architecture.md#working-state-context-within-a-cycle-and-a-chat)). Superseded material (re-reads, reads made stale by an edit, failed edits and commands later fixed, searches whose files were read, old narration) is pruned as soon as at least 4k tokens would go, and always past `clear_tool_results_at`, where old large tool results also become a one-line note telling the model how to get them back. Past `compact_at`, the cheap chain folds the older turns into the **working state** (done, decisions, what didn't work, open todos, key files, in progress, last error, next step), merged with the previous one; the think phase's analysis and the doom-loop tombstones are kept word for word, and the last `compact_keep_turns` turns verbatim. At least two older turns are needed, so it never re-folds on consecutive turns. With `budget_tokens` set, the kept tail is settled to 40% of it after a fold, and if the context is still over the budget the largest blocks become digests (head and tail lines, plus the `read_log` id). A failed or budget-refused fold leaves the context as is (then the digests keep it in budget), and `max_tokens_per_cycle` still ends a cycle that outgrows both. Events: `context.pruned`, `context.cleared`, `context.compacted`, `context.compact_failed`, `context.digested`. Keep `compact_at` under the smallest context window in your worker chain.
+In-cycle context control runs before each turn and works on every provider (details and measured costs: [architecture.md](architecture.md#working-state-context-within-a-cycle-and-a-chat)). Superseded material (re-reads, reads made stale by an edit, failed edits and commands later fixed, searches whose files were read, old narration) is pruned as soon as at least 4k tokens would go, and always past `clear_tool_results_at`, where old large tool results also become a one-line note telling the model how to get them back. Past `compact_at`, the cheap chain folds the older turns into the **working state** (done, decisions, what didn't work, open todos, key files, in progress, last error, next step), merged with the previous one; the think phase's analysis and the doom-loop tombstones are kept word for word, and the last `compact_keep_turns` turns verbatim. At least two older turns are needed, so it never re-folds on consecutive turns. With `budget_tokens` set, the kept tail is settled to 40% of it after a fold, and if the context is still over the budget the largest blocks become digests (head and tail lines, plus the `read_log` id). A failed or budget-refused fold leaves the context as is (then the digests keep it in budget), and `max_tokens_per_cycle` still ends a cycle that outgrows both. Events: `context.pruned`, `context.cleared`, `context.compacted`, `context.compact_failed`, `context.digested`. Keep `compact_at` under the smallest context window in your worker chain. When the provider's prompt cache keeps missing (a `cache.miss` event: a turn read under 80% of the previous prompt from cache), both `clear_tool_results_at` and `compact_at` scale down with the observed miss rate, to no less than half, because every miss re-sends the whole prompt. A command run again supersedes its older output. `lazy_tools` keeps five rarely called tool schemas out of the cached prefix (about 15% of the tool definitions); it stays off until a bench confirms the model still uses them.
 
 ## `[policy]`
 
