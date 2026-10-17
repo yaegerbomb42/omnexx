@@ -190,6 +190,7 @@ loop_related_tests` (on by default).
   the user message. Keep the separate-prompt path only when the conversation exceeds the budget.
 - **Files:** `src/verify/review.ts`, `src/core/think-loop.ts`, `src/core/audit*.ts`.
 - **Verify:** `calls.jsonl` shows review calls at ≥ 80 % cached on jimmy10.
+- **Status (2026-10-17):** shipped in #200.
 
 ### 7. Cache-miss detector and `prompt_cache_key`
 
@@ -201,6 +202,7 @@ loop_related_tests` (on by default).
   test that renders the prefix twice in one cycle and asserts byte equality.
 - **Files:** `src/agent/loop.ts`, `src/providers/openai-compat.ts`, `src/agent/context.ts`.
 - **Verify:** unit test with a scripted provider; bench cache % never dips mid-conversation.
+- **Status (2026-10-17):** shipped in #206 (cache-miss report; `prompt_cache_key` pinned per run).
 
 ### 8. First-call budget: 5k → 3.5k tokens
 
@@ -229,6 +231,7 @@ loop_related_tests` (on by default).
     outline".
 - **Files:** `src/tools/list.ts`, `src/tools/outline.ts`, `src/tools/registry.ts`.
 - **Verify:** zero `list` calls on jimmy10; tool tests updated.
+- **Status (2026-10-17):** shipped in #198 (`outline` takes a directory and returns its codemap slice).
 
 ### 10. Test-output digests for `bash`
 
@@ -243,6 +246,8 @@ loop_related_tests` (on by default).
 
 ---
 
+- **Status (2026-10-17):** shipped in #201.
+
 ## Pass rate and recovery (11–15)
 
 ### 11. Right-size the think phase
@@ -254,6 +259,7 @@ loop_related_tests` (on by default).
 - **Files:** `src/core/think-loop.ts`, `src/core/think-loop-run.ts`,
   `src/config/sections/plan.ts`.
 - **Verify:** task-01/04/05 turns −25 % with no pass-rate change over 3 runs.
+- **Status (2026-10-17):** shipped in #207.
 
 ### 12. Conditional native tools
 
@@ -265,6 +271,7 @@ loop_related_tests` (on by default).
   browser gate or a web task is detected. The system prompt lists only exposed tools.
 - **Files:** `src/tools/registry.ts`, `src/agent/context.ts`.
 - **Verify:** schema tokens on a fresh repo −35 %; existing tool tests pass with explicit opt-in.
+- **Status (2026-10-17):** shipped in #213 (`recall` only with history) and #215 (`skill` only with skills, `integrations_*` only under `auto_approve`).
 
 ### 13. Self-correcting denials and shell errors
 
@@ -276,6 +283,7 @@ loop_related_tests` (on by default).
   `src/tools/did-you-mean.ts`.
 - **Files:** `src/security/command-policy.ts`, `src/tools/bash.ts`, `src/tools/did-you-mean.ts`.
 - **Verify:** unit tests for the top 10 denials and errors; zero repeated denials in bench events.
+- **Status (2026-10-17):** shipped in #208.
 
 ### 14. Pre-probed repo facts in the first state block
 
@@ -286,6 +294,7 @@ loop_related_tests` (on by default).
   into the state block. Record them as verified facts with the probe hash.
 - **Files:** `src/core/facts.ts`, new `src/core/repo-probe.ts`, `src/agent/context.ts`.
 - **Verify:** first-turn `bash` discovery calls → 0 on jimmy10; facts survive hash invalidation.
+- **Status (2026-10-17):** shipped in #196.
 
 ### 15. One-turn edit recovery for `str_replace`
 
@@ -298,6 +307,8 @@ loop_related_tests` (on by default).
 - **Verify:** fixture misses resolve in one follow-up turn; miss rate visible in `status`.
 
 ---
+
+- **Status (2026-10-17):** shipped in #199.
 
 ## Reliability (16–18)
 
@@ -324,6 +335,7 @@ loop_related_tests` (on by default).
 - **Files:** `src/core/tokens.ts`, `src/agent/loop.ts`, `src/core/run-history.ts`.
 - **Verify:** property test that the ratio converges on a scripted provider; `cost-sim.test.ts`
   fold counts unchanged within 5 %.
+- **Status (2026-10-17):** shipped in #195.
 
 ### 18. Chat-server flow tests
 
@@ -336,6 +348,8 @@ loop_related_tests` (on by default).
 - **Verify:** in `test:quick`; each flow asserts the events the VS Code panel relies on.
 
 ---
+
+- **Status (2026-10-17):** shipped in #202.
 
 ## Observability for live testing (19–20)
 
@@ -350,6 +364,7 @@ loop_related_tests` (on by default).
 - **Files:** `src/cli/commands/doctor.ts`, new `src/telemetry/efficiency.ts`.
 - **Verify:** unit test on the three task-03 event files reproduces the numbers in the table
   above.
+- **Status (2026-10-17):** shipped in #204.
 
 ### 20. Turn-level trace in the TUI and VS Code
 
@@ -361,6 +376,8 @@ loop_related_tests` (on by default).
 - **Verify:** snapshot test of the rendered line; no change to the default view.
 
 ---
+
+- **Status (2026-10-17):** shipped in #197 (TUI); the VS Code panel has a title-bar trace toggle (#221).
 
 ## Order of operations
 

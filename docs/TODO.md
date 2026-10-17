@@ -37,6 +37,15 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-16/17 (single agent, other agents stopped), PRs #195–#221:** finished the master
+  todo; all 20 items shipped (status lines in `docs/MASTER-TODO.md`). Highlights: first call
+  5,163 → 3,415 tokens (#215); `web_fetch` refuses private/metadata addresses through redirects
+  (#216); Cargo related tests, parser and Rust detection (#217); a think loop that spends its
+  rounds red is no longer `done` (#212); shared chat-server pipe harness (#202). VS Code panel
+  redesigned (#218, #220, #221): native title-bar actions, workbench theme tokens, a one-line
+  mission strip, tool calls as glyph rows, mode/model/context/cost under the input. Lesson: a
+  root-owned `.git/objects` blocks every commit across worktrees; `find .git -user root` first.
+  Nothing published; no benches run.
 - **2026-10-15 (single agent), branch `feat/mcp-easy`:** MCP servers made easy. `src/mcp/manage.ts`
   is the one place that adds (command, URL with OAuth auto-detect, gallery, import, pasted JSON),
   lists (starts each server: status, tool count, approx tool-schema tokens), enables/disables
