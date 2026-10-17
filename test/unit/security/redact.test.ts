@@ -39,6 +39,13 @@ describe('Redactor', () => {
     expect(new Redactor().withValues(['supersecretvalue']).text('supersecretvalue')).toBe(MASK);
   });
 
+  it('masks Stripe and HuggingFace keys the commit scanner knows', () => {
+    // secret-scan.ts detects these; the redactor must mask them too, or they leak into logs.
+    const corpus = secretCorpus();
+    expect(new Redactor().text(`key=${corpus.stripe}`)).toBe(`key=${MASK}`);
+    expect(new Redactor().text(`token ${corpus.huggingface} used`)).toBe(`token ${MASK} used`);
+  });
+
   it('corpus helper exposes every value', () => {
     expect(secretValues()).toHaveLength(Object.keys(secretCorpus()).length);
   });

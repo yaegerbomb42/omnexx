@@ -7,6 +7,10 @@ const PATTERNS: readonly RegExp[] = [
   /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g,
   /\bsk-ant-[A-Za-z0-9_-]{16,}/g,
   /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}/g,
+  // Stripe secret/restricted keys, HuggingFace tokens: the commit scanner knows them
+  // (secret-scan.ts) but this filter did not, so they leaked into logs in plaintext.
+  /\b(?:sk|rk)_(?:test|live)_[0-9a-zA-Z]{24,}/g,
+  /\bhf_[A-Za-z0-9]{34,}/g,
   /\bgh[pousr]_[A-Za-z0-9]{30,}/g,
   /\bgithub_pat_[A-Za-z0-9_]{22,}/g,
   /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
