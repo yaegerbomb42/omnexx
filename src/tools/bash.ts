@@ -6,6 +6,7 @@ import { runShell } from '../core/exec.js';
 import { checkCommand } from '../security/command-policy.js';
 import { compressOutput } from './output-compress.js';
 import { testSummary } from './output-summary.js';
+import { testDigest } from './test-digest.js';
 import { fail, ok, type Tool } from './types.js';
 
 export const HEAD_LINES = 20;
@@ -203,8 +204,9 @@ export const bashTool: Tool<typeof schema> = {
     });
     const peeked = devServer && r.timedOut;
     const status = commandStatus(r, timeoutMs, peeked);
+    // A recognized test failure becomes a short digest; anything else stays on trimOutput.
     const body =
-      trimOutput(compressOutput(r.output), id) +
+      (testDigest(command, r.output, id) ?? trimOutput(compressOutput(r.output), id)) +
       (await missingScriptHint(r.output, input.command, ctx.jail.root));
     const text = `[${status}, ${Math.round(r.durationMs)}ms, log ${id}]\n${body}`;
     return peeked || (r.exitCode === 0 && !r.timedOut) ? ok(text) : fail(text);
