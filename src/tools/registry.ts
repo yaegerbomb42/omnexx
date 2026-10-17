@@ -39,6 +39,26 @@ export const WORKER_TOOLS: readonly Tool[] = [
 
 export const READ_ONLY_TOOLS: readonly Tool[] = WORKER_TOOLS.filter((t) => t.readOnly);
 
+export interface ExposureOptions {
+  /** `[context] subagents`: whether the worker may start `task` helper agents. */
+  subagents: boolean;
+  /** Whether earlier cycles left anything for `recall` to search (progress, evidence or lessons). */
+  hasHistory: boolean;
+}
+
+/**
+ * Drops native tools that cannot do anything this cycle, so their JSON schemas stay out of the
+ * cached prefix and the model isn't invited to call a dead tool. `read_log` is kept: `bash` may
+ * return a cut log at any time and its output tells the model to page it.
+ */
+export function exposedTools(tools: readonly Tool[], opts: ExposureOptions): readonly Tool[] {
+  return tools.filter((t) => {
+    if (t.name === 'task') return opts.subagents;
+    if (t.name === 'recall') return opts.hasHistory;
+    return true;
+  });
+}
+
 const EXTRA_SOURCES: Record<string, ToolSource> = extraSources;
 
 /** Core tools first, in their fixed order, then every extra source's tools sorted by name. */

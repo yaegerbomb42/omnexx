@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { defaultConfig } from '../../../src/config/load.js';
-import { readOnlyTools, WORKER_TOOLS, workerTools } from '../../../src/tools/registry.js';
+import {
+  exposedTools,
+  readOnlyTools,
+  WORKER_TOOLS,
+  workerTools,
+} from '../../../src/tools/registry.js';
 import type { Tool } from '../../../src/tools/types.js';
 
 const fake = (name: string, readOnly = false): Tool => ({
@@ -52,5 +57,34 @@ describe('extra tool sources', () => {
       'integrations_search',
       'skill',
     ]);
+  });
+});
+
+describe('exposedTools', () => {
+  const names = (tools: readonly Tool[]): string[] => tools.map((t) => t.name);
+
+  it('hides task until subagents are on and recall until there is history', () => {
+    expect(
+      names(exposedTools(WORKER_TOOLS, { subagents: false, hasHistory: false })),
+    ).not.toContain('task');
+    expect(
+      names(exposedTools(WORKER_TOOLS, { subagents: false, hasHistory: false })),
+    ).not.toContain('recall');
+    expect(names(exposedTools(WORKER_TOOLS, { subagents: true, hasHistory: true }))).toEqual(
+      expect.arrayContaining(['task', 'recall']),
+    );
+  });
+
+  it('keeps read_log: bash can cut a log at any time and points the model at it', () => {
+    expect(names(exposedTools(WORKER_TOOLS, { subagents: false, hasHistory: false }))).toContain(
+      'read_log',
+    );
+  });
+
+  it('drops only the gated tools and leaves every other tool in order', () => {
+    const kept = exposedTools(WORKER_TOOLS, { subagents: false, hasHistory: false });
+    expect(names(kept)).toEqual(
+      WORKER_TOOLS.map((t) => t.name).filter((n) => n !== 'task' && n !== 'recall'),
+    );
   });
 });
