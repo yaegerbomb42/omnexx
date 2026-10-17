@@ -340,13 +340,20 @@ export class OpenAICompatProvider implements Provider {
           status: s,
           contentFilter: true,
         });
+      const retryAfterMs = s === 429 ? retryAfterHeader(res.headers.get('retry-after')) : undefined;
       throw new ProviderError(`${this.name} error ${s}: ${message || 'request failed'}`, {
         retryable: s === 408 || s === 409 || s === 429 || s >= 500,
         status: s,
+        ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
         ...(s === 401 || s === 403 ? { hint: `check the key for ${this.name}` } : {}),
       });
     }
-    const choice = data.choices?.[0];
+    if (!data.choices?.length)
+      throw new ProviderError(`${this.name} returned no choices`, {
+        retryable: false,
+        status: res.status,
+      });
+    const choice = data.choices[0];
     const msg = choice?.message;
     const content: ContentBlock[] = [];
     if (msg?.content) content.push({ type: 'text', text: msg.content });
@@ -403,6 +410,16 @@ function stallWatchFor(ms: number | undefined): ReturnType<typeof stallWatch> | 
 
 function isJson(res: Response): boolean {
   return /application\/json/i.test(res.headers.get('content-type') ?? '');
+}
+
+/** `Retry-After` as delta-seconds or an HTTP-date. Anything else is ignored. */
+function retryAfterHeader(header: string | null, now = Date.now()): number | undefined {
+  if (!header) return undefined;
+  const trimmed = header.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000;
+  const at = Date.parse(trimmed);
+  if (Number.isNaN(at)) return undefined;
+  return Math.max(0, at - now);
 }
 
 interface StreamChunk {

@@ -52,6 +52,8 @@ export class ProviderError extends OmnexxError {
   readonly status: number | undefined;
   /** The provider's content filter refused this request; another model may take it. */
   readonly contentFilter: boolean;
+  /** `Retry-After` on a 429, in milliseconds. The retry helper treats it as a floor. */
+  readonly retryAfterMs: number | undefined;
 
   constructor(
     message: string,
@@ -61,12 +63,14 @@ export class ProviderError extends OmnexxError {
       hint?: string;
       cause?: unknown;
       contentFilter?: boolean;
+      retryAfterMs?: number;
     },
   ) {
     super('provider', message, opts.hint, { cause: opts.cause });
     this.retryable = opts.retryable;
     this.status = opts.status;
     this.contentFilter = opts.contentFilter ?? false;
+    this.retryAfterMs = opts.retryAfterMs;
   }
 }
 
