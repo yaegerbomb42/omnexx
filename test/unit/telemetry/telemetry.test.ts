@@ -61,6 +61,26 @@ describe('humanize', () => {
     ).toBe('12:04:31 ▸ read     src/a.ts:40-120');
     expect(
       h(
+        ev('tool.call', {
+          tool: 'read',
+          input: '{"files":[{"path":"src/a.ts"},{"path":"src/b.ts","start":10,"end":20}]}',
+        }),
+      ),
+    ).toBe('12:04:31 ▸ read     2 files: src/a.ts, src/b.ts:10-20');
+    expect(
+      h(
+        ev('tool.call', {
+          tool: 'read',
+          input:
+            '{"files":[{"path":"src/a.ts"},{"path":"src/b.ts"},{"path":"src/c.ts"},{"path":"src/d.ts"}]}',
+        }),
+      ),
+    ).toBe('12:04:31 ▸ read     4 files: src/a.ts, src/b.ts, src/c.ts +1 more');
+    expect(
+      h(ev('tool.call', { tool: 'outline', input: '{"paths":["src/a.ts","src/b.ts"]}' })),
+    ).toBe('12:04:31 ▸ outline  2 files: src/a.ts, src/b.ts');
+    expect(
+      h(
         ev('tool.call', { tool: 'bash', input: '{"command":"npm test"}', ms: 6100, isError: true }),
       ),
     ).toBe('12:04:31 ✗ bash     npm test  6.1s  ✗');
