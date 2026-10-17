@@ -1,7 +1,7 @@
 import { dirname, join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { serveChat, type ChatState } from '../../src/cli/chat-server.js';
 import type { CliIO } from '../../src/cli/io.js';
 import { BUILTIN_PRICING } from '../../src/providers/pricing.js';
@@ -149,9 +149,24 @@ async function settled(t: Awaited<ReturnType<typeof start>>, needle: string): Pr
   }, needle);
 }
 
+/** One in-flight completion, held until `release`. */
+async function holdOne(t: Awaited<ReturnType<typeof start>>, text: string): Promise<() => void> {
+  const release = t.provider.holdNext();
+  t.send({ type: 'send', text });
+  await t.until(() => (t.provider.requests.length === 1 ? true : undefined), 'in-flight request');
+  return release;
+}
+
 describe('chat-server flows (what the VS Code panel drives)', () => {
+  let t: Awaited<ReturnType<typeof start>>;
+  beforeEach(async () => {
+    t = await start();
+  });
+  afterEach(async () => {
+    await close(t);
+  });
+
   it('model: the picked ref is the model id on the next completion', async () => {
-    const t = await start();
     t.send({ type: 'models' });
     const models = await t.next('models');
     const items = models.items as { ref: string }[];
@@ -174,25 +189,19 @@ describe('chat-server flows (what the VS Code panel drives)', () => {
     expect(req.model).toBe(haikuId);
     await settled(t, 'ack:hello from haiku');
     expect(t.exited()).toBe(false);
-    await close(t);
   });
 
   it('send: the assistant reply arrives as a state entry the panel renders', async () => {
-    const t = await start();
     t.send({ type: 'send', text: 'paint the fence' });
     const s = await settled(t, 'ack:paint the fence');
     const reply = t.entries().find((e) => e.kind === 'out');
     expect(reply?.text).toContain('ack:paint the fence');
     expect(s.live).toBe('');
     expect(s.busy).toBe(false);
-    await close(t);
   });
 
   it('stop: the in-flight turn ends and a later send still gets a reply', async () => {
-    const t = await start();
-    const release = t.provider.holdNext();
-    t.send({ type: 'send', text: 'start a long turn' });
-    await t.until(() => (t.provider.requests.length === 1 ? true : undefined), 'in-flight request');
+    const release = await holdOne(t, 'start a long turn');
     t.send({ type: 'stop' });
     await t.until(() => {
       const s = t.states().at(-1);
@@ -208,14 +217,10 @@ describe('chat-server flows (what the VS Code panel drives)', () => {
     await settled(t, 'ack:after the stop');
     expect(t.provider.requests.length).toBeGreaterThan(during);
     expect(t.exited()).toBe(false);
-    await close(t);
   });
 
   it('pause then resume: no completion while held, then the turn continues', async () => {
-    const t = await start();
-    const release = t.provider.holdNext();
-    t.send({ type: 'send', text: 'work until paused' });
-    await t.until(() => (t.provider.requests.length === 1 ? true : undefined), 'in-flight request');
+    const release = await holdOne(t, 'work until paused');
     t.send({ type: 'pause' });
     await t.until(() => {
       const s = t.states().at(-1);
@@ -236,17 +241,13 @@ describe('chat-server flows (what the VS Code panel drives)', () => {
     expect(messageText(req)).toContain('Continue where you left off.');
     await settled(t, 'ack:Continue where you left off.');
     expect(t.entries().some((e) => e.text === 'resumed')).toBe(true);
-    await close(t);
   });
 
   it('steer mid-turn via send: the next completion contains the steering text', async () => {
     // CodeChat holds a mid-turn send aside and aborts the step, then answers it as the next
     // turn. `pendingInput` / `steer.applied` only fire for the loop queue, which this path
     // never fills, so the panel's line is "switching to your message now".
-    const t = await start();
-    const release = t.provider.holdNext();
-    t.send({ type: 'send', text: 'original task' });
-    await t.until(() => (t.provider.requests.length === 1 ? true : undefined), 'in-flight request');
+    const release = await holdOne(t, 'original task');
     t.send({ type: 'send', text: STEER });
     const req = await t.until(
       () => t.provider.requests.find((r) => messageText(r).includes(STEER)),
@@ -256,11 +257,9 @@ describe('chat-server flows (what the VS Code panel drives)', () => {
     expect(t.entries().some((e) => e.text.includes('switching to your message now'))).toBe(true);
     await settled(t, `ack:${STEER}`);
     release();
-    await close(t);
   });
 
   it('compact: context shrinks and the next turn still knows the task', async () => {
-    const t = await start();
     t.send({ type: 'send', text: 'paint-long the fence' });
     await settled(t, TASK);
     t.send({ type: 'send', text: 'note the gate' });
@@ -287,11 +286,9 @@ describe('chat-server flows (what the VS Code panel drives)', () => {
     );
     expect(messageText(req)).toContain(`Summary: the task is ${TASK}`);
     await settled(t, 'ack:what is still open?');
-    await close(t);
   });
 
   it('clear: a new saved chat id, and the previous messages stay readable', async () => {
-    const t = await start();
     t.send({ type: 'send', text: 'remember the blue fence' });
     await settled(t, 'ack:remember the blue fence');
 
@@ -325,11 +322,9 @@ describe('chat-server flows (what the VS Code panel drives)', () => {
           : undefined,
       'reopened transcript',
     );
-    await close(t);
   });
 
   it('mcp enable: toggling on and off is reflected in mcpServers', async () => {
-    const t = await start();
     const mcp = (op: Record<string, unknown>): void => {
       t.send({ type: 'mcp', ...op });
     };
@@ -357,6 +352,5 @@ describe('chat-server flows (what the VS Code panel drives)', () => {
 
     mcp({ op: 'remove', name: 'demo' });
     expect(await t.next('mcpResult')).toMatchObject({ ok: true });
-    await close(t);
   });
 });
