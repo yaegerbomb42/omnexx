@@ -172,16 +172,15 @@ function supersededBy(
   )
     return `${String(field(call.input, 'path'))} was read again later; that read is current`;
   const command = field(call.input, 'command');
-  if (
-    call.name === 'bash' &&
-    isError &&
-    typeof command === 'string' &&
-    later.some(
-      (l) => l.call.name === 'bash' && !l.isError && field(l.call.input, 'command') === command,
-    )
-  )
-    return `\`${clip(command, 120)}\` failed here and passed later; the failure is resolved`;
-  return undefined;
+  if (call.name !== 'bash' || typeof command !== 'string') return undefined;
+  const reruns = later.filter(
+    (l) => l.call.name === 'bash' && field(l.call.input, 'command') === command,
+  );
+  if (!reruns.length) return undefined;
+  const shown = clip(command, 120);
+  if (isError && reruns.some((l) => !l.isError))
+    return `\`${shown}\` failed here and passed later; the failure is resolved`;
+  return `\`${shown}\` ${isError ? 'failed' : 'passed'} here and ran again later; that run is current`;
 }
 
 /**
