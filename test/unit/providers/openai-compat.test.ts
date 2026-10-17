@@ -94,6 +94,27 @@ describe('assistant turns that only call tools', () => {
 });
 
 describe('OpenAICompatProvider against a loopback mock', () => {
+  it('keeps the tools but forbids calls when toolChoice is none', async () => {
+    const srv = await mockServer((_r, res) => {
+      json(res, 200, {
+        model: 'some/model',
+        choices: [{ finish_reason: 'stop', message: { content: '{"findings":[]}' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+    });
+    const p = new OpenAICompatProvider({
+      name: 'or',
+      baseUrl: `${srv.url}/v1/`,
+      apiKey: 'test-key',
+      timeoutMs: 5_000,
+    });
+    await p.complete({ ...req, toolChoice: { type: 'none' } });
+    const body = JSON.parse(srv.requests[0]?.body ?? '{}') as Record<string, unknown>;
+    expect(body.tool_choice).toBe('none');
+    expect((body.tools as unknown[]).length).toBe(req.tools.length);
+    expect(body.parallel_tool_calls).toBeUndefined();
+  });
+
   it('sends Chat Completions with tools and auth; maps tool calls, finish reason and cached usage', async () => {
     const srv = await mockServer((_r, res) => {
       json(res, 200, {

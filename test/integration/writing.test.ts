@@ -7,7 +7,14 @@ import type { CompletionRequest, CompletionResponse, Provider } from '../../src/
 import { emptyUsage } from '../../src/providers/types.js';
 import { makeRepo, startTestRun } from '../support/harness.js';
 import { planner, scenario } from '../support/scenarios.js';
-import { asks, call, ScriptedProvider, say, type Script } from '../support/scripted-provider.js';
+import {
+  asks,
+  call,
+  reviewAnswer,
+  ScriptedProvider,
+  say,
+  type Script,
+} from '../support/scripted-provider.js';
 
 /** A chapter task: its file must exist with at least `words` words and no placeholders. */
 const chapter = (id: string, file: string, words: number) => ({
@@ -73,7 +80,7 @@ describe('writing runs: a book with no tests', () => {
           return scripted.complete(req);
         reviewSystems.push(sys);
         return Promise.resolve({
-          content: [{ type: 'tool_use', id: 'r', name: 'answer', input: { findings: [] } }],
+          content: reviewAnswer(req, { findings: [] }),
           stopReason: 'tool_use',
           usage: emptyUsage(),
           model: req.model,

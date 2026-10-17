@@ -279,7 +279,9 @@ export class OpenAICompatProvider implements Provider {
         : {}),
       ...(req.toolChoice?.type === 'tool'
         ? { tool_choice: { type: 'function', function: { name: req.toolChoice.name } } }
-        : {}),
+        : req.toolChoice?.type === 'none' && req.tools.length
+          ? { tool_choice: 'none' }
+          : {}),
       // Several independent calls in one turn save whole round trips; the loop runs reads at once.
       ...(req.tools.length && !req.toolChoice && this.parallelToolCalls
         ? { parallel_tool_calls: true }

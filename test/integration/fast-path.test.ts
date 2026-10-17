@@ -6,7 +6,14 @@ import type { CompletionRequest, CompletionResponse, Provider } from '../../src/
 import { emptyUsage } from '../../src/providers/types.js';
 import { makeRepo, startTestRun } from '../support/harness.js';
 import { fileTask, fileWorker, planner, scenario } from '../support/scenarios.js';
-import { asks, call, ScriptedProvider, say, type Script } from '../support/scripted-provider.js';
+import {
+  asks,
+  call,
+  reviewAnswer,
+  ScriptedProvider,
+  say,
+  type Script,
+} from '../support/scripted-provider.js';
 
 const GATE = {
   name: 'test',
@@ -135,7 +142,7 @@ describe('fast path: one pass on the whole goal before planning', () => {
             ? [{ severity: 'blocker', problem: 'name the edge case in a comment' }]
             : [];
         return Promise.resolve({
-          content: [{ type: 'tool_use', id: `r${reviews}`, name: 'answer', input: { findings } }],
+          content: reviewAnswer(req, { findings }, `r${reviews}`),
           stopReason: 'tool_use',
           usage: emptyUsage(),
           model: req.model,
@@ -274,7 +281,7 @@ describe('think-first loop (the default for the fast path)', () => {
             ? [{ severity: 'blocker', problem: 'handle the edge case' }]
             : [];
         return Promise.resolve({
-          content: [{ type: 'tool_use', id: `r${reviews}`, name: 'answer', input: { findings } }],
+          content: reviewAnswer(req, { findings }, `r${reviews}`),
           stopReason: 'tool_use',
           usage: emptyUsage(),
           model: req.model,

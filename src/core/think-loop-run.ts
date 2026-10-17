@@ -160,7 +160,11 @@ export async function actAsThinkLoop(
     ...(run.config.review.enabled
       ? {
           review: (analysis: string, messages) =>
-            reviewDiff(run, task, analysis, { system: inputs.ctx.system, messages }),
+            reviewDiff(run, task, analysis, {
+              system: inputs.ctx.system,
+              tools: inputs.ctx.tools,
+              messages,
+            }),
         }
       : {}),
     restore: (tree) => restoreTree(run, tree),

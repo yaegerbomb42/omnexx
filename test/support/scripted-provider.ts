@@ -46,6 +46,16 @@ export function asks(req: CompletionRequest, phrase: string): boolean {
 }
 
 /**
+ * A reviewer's answer the way a real model gives it: JSON text on the worker's cached prefix
+ * (tools disabled there), the answer tool on the standalone path.
+ */
+export function reviewAnswer(req: CompletionRequest, input: unknown, id = 'r'): ContentBlock[] {
+  return req.toolChoice?.type === 'none'
+    ? [{ type: 'text', text: JSON.stringify(input) }]
+    : [{ type: 'tool_use', id, name: 'answer', input }];
+}
+
+/**
  * The backbone of the integration and chaos tests (plan §7.2): a Provider that answers from a
  * script keyed by task, attempt and turn. That makes replies a pure function of the request, so
  * a crash-and-resume replays the same way.
