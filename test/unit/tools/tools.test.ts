@@ -48,6 +48,9 @@ describe('read / outline', () => {
     expect(range.content.split('\n')[0]).toContain('v9');
     expect(range.content).toContain('(lines 410-500 not shown)');
     expect((await readTool.run({ path: 'src/a.ts', start: 99 }, ctx)).isError).toBe(true);
+    const inverted = await readTool.run({ path: 'src/a.ts', start: 5, end: 2 }, ctx);
+    expect(inverted.isError).toBe(true);
+    expect(inverted.content).toContain('start line (5) cannot be greater than end line (2)');
     expect((await readTool.run({ path: '.env' }, ctx)).content).toMatch(/denied/);
     expect((await readTool.run({ path: 'nope.ts' }, ctx)).content).toMatch(/ENOENT/);
     await writeFile(join(root, 'bin.dat'), 'a\0b');

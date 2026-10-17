@@ -134,6 +134,25 @@ export async function missingScriptHint(
   }
 }
 
+/** A missing binary or path: point at the package scripts, which are how this repo is run. */
+export async function shellHint(output: string, root: string): Promise<string> {
+  if (!/command not found|No such file or directory/i.test(output)) return '';
+  try {
+    const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    const scripts = pkg.scripts ?? {};
+    const tips = [
+      scripts.test ? 'tests run with `npm test`' : '',
+      scripts.lint ? 'lint runs with `npm run lint`' : '',
+      scripts.build ? 'the build is `npm run build`' : '',
+    ].filter(Boolean);
+    return tips.length ? `\n[${tips.join('; ')}]` : '';
+  } catch {
+    return '';
+  }
+}
+
 function commandStatus(
   r: { timedOut: boolean; exitCode: number },
   timeoutMs: number,
@@ -207,7 +226,8 @@ export const bashTool: Tool<typeof schema> = {
     // A recognized test failure becomes a short digest; anything else stays on trimOutput.
     const body =
       (testDigest(command, r.output, id) ?? trimOutput(compressOutput(r.output), id)) +
-      (await missingScriptHint(r.output, input.command, ctx.jail.root));
+      (await missingScriptHint(r.output, input.command, ctx.jail.root)) +
+      (await shellHint(r.output, ctx.jail.root));
     const text = `[${status}, ${Math.round(r.durationMs)}ms, log ${id}]\n${body}`;
     return peeked || (r.exitCode === 0 && !r.timedOut) ? ok(text) : fail(text);
   },

@@ -30,6 +30,7 @@ import { FactRecorder } from '../core/fact-recorder.js';
 import { factsBlockFor } from '../core/facts.js';
 import { runShell } from '../core/exec.js';
 import { realClock, type Clock } from '../core/clock.js';
+import { tokenCalibrationFile } from '../core/token-calibration.js';
 import { estimateTokens } from '../core/tokens.js';
 import { loadInstructions, renderInstructions } from '../instructions/load.js';
 import type { ResolvedModel } from '../providers/pricing.js';
@@ -656,6 +657,7 @@ export class CodeChat {
         provider: this.provider,
         models: this.models,
         strategy: this.strategy,
+        ...(this.paths ? { calibrationFile: tokenCalibrationFile(this.paths) } : {}),
         ...(this.paths
           ? (() => {
               const quota = new QuotaLedger(join(this.paths.configHome, 'quota.json'));

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isDevServer, missingScriptHint } from '../../../src/tools/bash.js';
+import { isDevServer, missingScriptHint, shellHint } from '../../../src/tools/bash.js';
 import { tempRepo } from '../../support/tmp.js';
 
 describe('bash: dev servers and missing scripts', () => {
@@ -32,6 +32,18 @@ describe('bash: dev servers and missing scripts', () => {
     );
     expect(await missingScriptHint('ok', 'npm test', root)).toBe('');
     expect(await missingScriptHint(out, 'cd ../elsewhere && npm test', root)).toBe('');
+  });
+
+  it('points a missing command at the package scripts', async () => {
+    const root = await tempRepo();
+    await writeFile(
+      join(root, 'package.json'),
+      JSON.stringify({ scripts: { test: 'vitest', lint: 'eslint .' } }),
+    );
+    expect(await shellHint('sh: vitest: command not found', root)).toContain(
+      'tests run with `npm test`',
+    );
+    expect(await shellHint('all good', root)).toBe('');
   });
 });
 
