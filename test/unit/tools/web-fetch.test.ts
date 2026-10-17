@@ -18,7 +18,7 @@ describe('web_fetch tool', () => {
   beforeEach(() => {
     clearWebFetchCache();
     setWebConfig({
-      allow: ['*'],
+      allow: ['*', '127.0.0.1'],
       deny: [],
       fetch_timeout: '15s',
       max_fetch_bytes: 5 * 1024 * 1024,
@@ -62,7 +62,7 @@ describe('web_fetch tool', () => {
 
   it('respects deny list configuration', async () => {
     setWebConfig({
-      allow: ['*'],
+      allow: ['*', '127.0.0.1'],
       deny: ['127.0.0.1'],
       fetch_timeout: '15s',
       max_fetch_bytes: 5 * 1024 * 1024,
@@ -74,6 +74,40 @@ describe('web_fetch tool', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain('not allowed by policy');
+  });
+
+  it('refuses private and metadata addresses unless allow names the host', async () => {
+    setWebConfig({ allow: ['*'], deny: [], fetch_timeout: '1s', max_fetch_bytes: 1024 });
+    const ctx = await toolContext(process.cwd());
+    for (const target of ['http://169.254.169.254/latest/meta-data/', 'http://localhost:1/x']) {
+      const result = await webFetchTool.run({ url: target }, ctx);
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain('web_fetch only reads public pages');
+    }
+  });
+
+  it('checks every redirect hop, so a page cannot bounce to the metadata service', async () => {
+    const { url } = await mockServer((req, res) => {
+      if (req.url === '/robots.txt') return void res.writeHead(404).end();
+      res.writeHead(302, { location: 'http://169.254.169.254/latest/meta-data/' }).end();
+    });
+    const ctx = await toolContext(process.cwd());
+    const result = await webFetchTool.run({ url: `${url}/go` }, ctx);
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain(
+      'Redirect to http://169.254.169.254/latest/meta-data/ refused',
+    );
+  });
+
+  it('follows a redirect that stays on an allowed host', async () => {
+    const { url } = await mockServer((req, res) => {
+      if (req.url === '/robots.txt') return void res.writeHead(404).end();
+      if (req.url === '/old') return void res.writeHead(301, { location: '/new' }).end();
+      res.writeHead(200, { 'content-type': 'text/plain' }).end('moved here');
+    });
+    const ctx = await toolContext(process.cwd());
+    const result = await webFetchTool.run({ url: `${url}/old` }, ctx);
+    expect(result.content).toBe('moved here');
   });
 
   it('enforces 5MB response cap', async () => {
@@ -183,7 +217,7 @@ describe('web_fetch tool', () => {
 
   it('times out a server that never answers, with a clear error', async () => {
     setWebConfig({
-      allow: ['*'],
+      allow: ['*', '127.0.0.1'],
       deny: [],
       fetch_timeout: '200ms',
       max_fetch_bytes: 1024 * 1024,
@@ -201,7 +235,7 @@ describe('web_fetch tool', () => {
 
   it('stops downloading at the size cap when there is no content-length', async () => {
     setWebConfig({
-      allow: ['*'],
+      allow: ['*', '127.0.0.1'],
       deny: [],
       fetch_timeout: '5s',
       max_fetch_bytes: 1024 * 1024,

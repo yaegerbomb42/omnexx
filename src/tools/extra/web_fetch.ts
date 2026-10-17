@@ -6,6 +6,7 @@ import { parseDuration } from '../../config/duration.js';
 import { matchesAny } from '../../security/glob.js';
 import { CHARS_PER_TOKEN } from '../../core/tokens.js';
 import { htmlToMarkdown, isRobotsDisallowed } from './web_extractor.js';
+import { privateTarget } from './private-address.js';
 import { fetchWithRetry, readCapped } from './web_http.js';
 import type { WebConfig } from '../../config/sections/web.js';
 
@@ -51,6 +52,27 @@ function isHostAllowed(
   return Boolean(matchesAny(hostname, allowList));
 }
 
+/** Redirects followed per fetch; each hop is checked like the first URL. */
+const MAX_REDIRECTS = 5;
+
+/**
+ * Why `url` may not be fetched, or undefined. Private and metadata addresses are refused unless
+ * `allow` names the host itself (a `*` does not count), so a prompt cannot reach them.
+ */
+async function refusal(url: URL): Promise<string | undefined> {
+  if (url.protocol !== 'http:' && url.protocol !== 'https:')
+    return `Unsupported protocol: ${url.protocol}. Only http and https are supported.`;
+  const allowList = activeWebConfig?.allow ?? ['*'];
+  if (!isHostAllowed(url.hostname, allowList, activeWebConfig?.deny ?? []))
+    return `Host "${url.hostname}" is not allowed by policy.`;
+  const named = allowList.filter((a) => a !== '*');
+  if (named.length && matchesAny(url.hostname, named)) return undefined;
+  const why = await privateTarget(url.hostname);
+  return why
+    ? `${why}; web_fetch only reads public pages (add the host to [web] allow to permit it)`
+    : undefined;
+}
+
 /** Splits text into pages of at most `maxChars`, preferring paragraph then line breaks. */
 export function paginate(text: string, maxChars: number): string[] {
   const pages: string[] = [];
@@ -90,7 +112,7 @@ async function robotsAllows(url: URL): Promise<boolean> {
   try {
     const res = await fetchWithRetry(
       `${url.origin}/robots.txt`,
-      { headers: { 'User-Agent': 'omnexx' } },
+      { redirect: 'manual', headers: { 'User-Agent': 'omnexx' } },
       { timeoutMs: ROBOTS_TIMEOUT_MS, retries: 0 },
     );
     if (!res.ok) return true;
@@ -108,16 +130,28 @@ const isHtml = (contentType: string, text: string): boolean =>
 async function load(url: URL, ctx: ToolContext): Promise<string | ToolOutput> {
   const maxBytes = activeWebConfig?.max_fetch_bytes ?? DEFAULT_MAX_BYTES;
   const capMb = Math.round(maxBytes / (1024 * 1024));
-  const res = await fetchWithRetry(
-    url.href,
-    {
-      headers: {
-        'User-Agent': 'omnexx (compatible; bot)',
-        Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
+  let at = url;
+  let res: Response;
+  for (let hop = 0; ; hop++) {
+    res = await fetchWithRetry(
+      at.href,
+      {
+        redirect: 'manual',
+        headers: {
+          'User-Agent': 'omnexx (compatible; bot)',
+          Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
+        },
       },
-    },
-    { timeoutMs: timeoutMs() },
-  );
+      { timeoutMs: timeoutMs() },
+    );
+    const location = res.headers.get('location');
+    if (res.status < 300 || res.status >= 400 || !location) break;
+    await res.body?.cancel().catch(() => undefined);
+    if (hop >= MAX_REDIRECTS) return fail(`Too many redirects from ${url.href}`);
+    at = new URL(location, at);
+    const why = await refusal(at);
+    if (why) return fail(`Redirect to ${at.href} refused: ${why}`);
+  }
   if (!res.ok) {
     await res.body?.cancel().catch(() => undefined);
     return fail(`HTTP error: ${res.status} ${res.statusText}`);
@@ -152,18 +186,8 @@ export const webFetchTool: Tool<typeof schema> = {
       return fail(`Invalid URL: ${rawUrl}`);
     }
 
-    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-      return fail(
-        `Unsupported protocol: ${parsedUrl.protocol}. Only http and https are supported.`,
-      );
-    }
-
-    const allowList = activeWebConfig?.allow ?? ['*'];
-    const denyList = activeWebConfig?.deny ?? [];
-
-    if (!isHostAllowed(parsedUrl.hostname, allowList, denyList)) {
-      return fail(`Host "${parsedUrl.hostname}" is not allowed by policy.`);
-    }
+    const why = await refusal(parsedUrl);
+    if (why) return fail(why);
 
     const key = cacheKey(ctx.store.runId, rawUrl);
     let text = runCache.get(key);
