@@ -12,6 +12,8 @@ export function secretCorpus() {
     aws: 'AK' + 'IA' + x(16, 'F'),
     slack: 'xo' + 'xb-' + '1234567890-' + x(24, 'g'),
     npm: 'np' + 'm_' + x(36, 'H'),
+    stripe: 'sk' + '_live_' + x(24, 'S'),
+    huggingface: 'hf' + '_' + x(34, 'T'),
     jwt: 'ey' + 'J' + x(20, 'i') + '.ey' + 'J' + x(20, 'j') + '.' + x(30, 'k'),
     pem:
       '-----BEGIN ' +
