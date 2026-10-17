@@ -362,7 +362,8 @@ body.vscode-high-contrast-light .word {
   transition: transform 0.15s;
 }
 
-.section[open] > summary .chev {
+.section[open] > summary .chev,
+.mission[open] > summary .chev {
   transform: rotate(45deg) translateY(-2px);
 }
 
@@ -3276,4 +3277,215 @@ textarea.ci-edit {
 .settings .set-section[data-sec] button.primary {
   color: var(--vscode-editor-background, #1e1e1e);
   font-weight: 600;
+}
+
+/*
+ * omnexx layout: one-line header (model, context meter, cost, menu), a mission strip for the
+ * plan, the conversation filling the rest, and mode plus actions living in the composer.
+ * Brand colour is reserved for live activity; everything else follows the VS Code theme.
+ */
+.top {
+  position: relative;
+  padding: 6px 8px;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.top .logo {
+  width: 16px;
+  height: 16px;
+  filter: none;
+}
+
+.top .chip.model {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+}
+
+.meter:hover,
+.chip.cost:hover {
+  background: var(--card);
+  color: var(--fg);
+}
+
+.meter .track,
+.mission .track {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.meter .track {
+  width: 34px;
+}
+
+.meter .fill,
+.mission .fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.meter .fill.hot {
+  background: var(--warn);
+}
+
+.chip.cost {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+}
+
+.pop {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 8px;
+  z-index: 20;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--vscode-widget-border, var(--line));
+  background: var(--vscode-editorWidget-background, var(--surface));
+  box-shadow: 0 6px 18px rgb(0 0 0 / 28%);
+}
+
+.pop.usage .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 4px;
+}
+
+.pop.usage .v {
+  font-family: var(--mono);
+}
+
+.pop.usage .ctx-parts {
+  padding: 4px 4px 0;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.pop.menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 5px 8px;
+  border-radius: 5px;
+  text-align: left;
+}
+
+.pop.menu button:hover {
+  background: var(--vscode-list-hoverBackground, var(--card));
+}
+
+.pop.menu button.danger {
+  color: var(--warn);
+}
+
+.mission {
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  max-height: 40%;
+  overflow-y: auto;
+}
+
+.mission > summary {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 2px 6px;
+  padding: 6px 10px 5px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.mission > summary::-webkit-details-marker {
+  display: none;
+}
+
+.mission .now {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.mission .count {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.mission > summary .track {
+  grid-column: 1 / -1;
+}
+
+.mission .fill {
+  background: var(--brand);
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+}
+
+.composer .row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.composer .grow {
+  flex: 1;
+}
+
+.modes {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--card);
+}
+
+.modes button {
+  border: 0;
+  background: none;
+  padding: 1px 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.modes button[aria-pressed='true'] {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
 }
