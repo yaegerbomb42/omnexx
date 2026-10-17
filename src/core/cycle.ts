@@ -35,7 +35,7 @@ import {
   sameFailureQuestion,
   toolSafetyQuestion,
 } from '../judge/uses.js';
-import { toolSpec, workerTools } from '../tools/registry.js';
+import { exposedTools, toolSpec, workerTools } from '../tools/registry.js';
 import { cycleRoute } from '../router/classify.js';
 import { readIntent } from '../agent/intent.js';
 import type { ToolContext } from '../tools/types.js';
@@ -410,9 +410,13 @@ export async function stepAct(run: Run): Promise<void> {
   const assembled = memory.assemble();
 
   // One agent with the whole context: helper agents (`task`) only when `[context] subagents` is on.
-  const tools = (
-    await workerTools(run.config, { repoRoot: run.worktree, env: run.deps.env })
-  ).filter((t) => run.config.context.subagents || t.name !== 'task');
+  // `recall` only once an earlier cycle left history to search.
+  const hasRecallableHistory =
+    notes.length > 0 || task.evidence.length > 0 || progressTail.trim().length > 0;
+  const tools = exposedTools(
+    await workerTools(run.config, { repoRoot: run.worktree, env: run.deps.env }),
+    { subagents: run.config.context.subagents, hasHistory: hasRecallableHistory },
+  );
   const route = await run.router.pick(cycleRoute(task, run.budgetLeftFraction()));
   const ctx = buildCycleContext({
     systemPrompt: WORKER_SYSTEM,
