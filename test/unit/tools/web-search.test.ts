@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { mockServer, json } from '../../support/mock-http.js';
 import { toolContext } from '../../support/tool-context.js';
+import { isolatedEnv } from '../../support/tmp.js';
+import { resolvePaths } from '../../../src/core/paths.js';
+import { RunStore } from '../../../src/core/run-store.js';
 import {
   webSearchTool,
   setWebSearchConfig,
@@ -199,6 +202,42 @@ describe('web_search tool', () => {
     expect(first.content.length).toBeLessThan(400);
     const again = await webSearchTool.run({ query: 'cache me' }, ctx);
     expect(again.content).toBe(first.content);
+    expect(hits).toBe(2);
+  });
+
+  it('does not serve a previous run the cached results of another run', async () => {
+    clearWebSearchCache();
+    let hits = 0;
+    const { url } = await mockServer((_req, res) => {
+      hits++;
+      json(res, 200, {
+        results: [
+          { title: `Hit ${hits}`, url: `https://example.test/${hits}`, content: 'snippet' },
+        ],
+      });
+    });
+    setWebSearchConfig({
+      allow: ['*'],
+      deny: [],
+      fetch_timeout: '15s',
+      max_fetch_bytes: 5 * 1024 * 1024,
+      search: 'searxng',
+      search_url: url,
+      search_timeout: '5s',
+    });
+
+    const first = await toolContext(process.cwd());
+    expect((await webSearchTool.run({ query: 'shared' }, first)).content).toContain(
+      '[Hit 1](https://example.test/1)',
+    );
+
+    const otherEnv = await isolatedEnv();
+    const otherStore = new RunStore(resolvePaths(otherEnv), 'r_20261017_0000_other');
+    await otherStore.init();
+    const second = await toolContext(process.cwd(), { store: otherStore });
+    expect((await webSearchTool.run({ query: 'shared' }, second)).content).toContain(
+      '[Hit 2](https://example.test/2)',
+    );
     expect(hits).toBe(2);
   });
 });

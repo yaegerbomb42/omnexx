@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { mockServer } from '../../support/mock-http.js';
 import { toolContext } from '../../support/tool-context.js';
+import { isolatedEnv } from '../../support/tmp.js';
+import { resolvePaths } from '../../../src/core/paths.js';
+import { RunStore } from '../../../src/core/run-store.js';
 import {
   webFetchTool,
   clearWebFetchCache,
@@ -107,6 +110,28 @@ describe('web_fetch tool', () => {
     const second = await webFetchTool.run({ url: `${url}/cached` }, ctx);
     expect(second.content).toBe('Call #1');
     expect(callCount).toBe(1);
+  });
+
+  it('does not serve a previous run the cached page of another run', async () => {
+    let callCount = 0;
+    const { url } = await mockServer((req, res) => {
+      if (req.url === '/robots.txt') {
+        res.writeHead(404).end();
+        return;
+      }
+      callCount++;
+      res.writeHead(200, { 'content-type': 'text/plain' }).end(`Call #${callCount}`);
+    });
+
+    const first = await toolContext(process.cwd());
+    expect((await webFetchTool.run({ url: `${url}/shared` }, first)).content).toBe('Call #1');
+
+    const otherEnv = await isolatedEnv();
+    const otherStore = new RunStore(resolvePaths(otherEnv), 'r_20261017_0000_other');
+    await otherStore.init();
+    const second = await toolContext(process.cwd(), { store: otherStore });
+    expect((await webFetchTool.run({ url: `${url}/shared` }, second)).content).toBe('Call #2');
+    expect(callCount).toBe(2);
   });
 
   it('splits a long page into pages and serves later pages from the cache', async () => {

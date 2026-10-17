@@ -13,7 +13,7 @@ const MAX_CACHED_QUERIES = 50;
 const MAX_SNIPPET_CHARS = 300;
 
 let activeWebConfig: WebConfig | undefined;
-/** Formatted results per backend + query + count, for this run. */
+/** Formatted results per run, backend, query and count. One run never serves another. */
 const searchCache = new Map<string, string>();
 
 export function setWebSearchConfig(config?: Partial<WebConfig>): void {
@@ -232,7 +232,7 @@ export const webSearchTool: Tool<typeof schema> = {
     const count = input.n ?? 5;
     const key = resolveSearchKey(backend, activeWebConfig?.search_key_env);
 
-    const cacheKey = `${backend}\n${count}\n${input.query}`;
+    const cacheKey = `${ctx.store.runId}\n${backend}\n${count}\n${input.query}`;
     const cached = searchCache.get(cacheKey);
     if (cached !== undefined) return ok(cached);
 
