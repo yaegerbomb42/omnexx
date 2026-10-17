@@ -412,5 +412,7 @@ export async function runThinkLoop(
     next = step ?? { text: fixPrompt(c.failures), chain: 'work', thinking: false };
   }
   io.emit('loop.rounds_spent', { rounds });
-  return finish(last?.end === 'stuck' ? 'stuck' : 'done');
+  // Out of rounds is never "done": the checks did not pass on the work that ran last, even when
+  // an earlier green tree is restored for the cycle to commit.
+  return finish(last?.end === 'stuck' ? 'stuck' : 'rounds_spent');
 }
