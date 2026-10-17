@@ -1,16 +1,11 @@
 import { dirname, join } from 'node:path';
-import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { serveChat, type ChatState } from '../../src/cli/chat-server.js';
-import type { CliIO } from '../../src/cli/io.js';
+import type { ChatState } from '../../src/cli/chat-server.js';
 import { BUILTIN_PRICING } from '../../src/providers/pricing.js';
 import type { CompletionRequest, CompletionResponse, Provider } from '../../src/providers/types.js';
-import { makeRepo } from '../support/harness.js';
+import { chatOnPipes, type Out } from '../support/chat-pipes.js';
 import { say, ScriptedProvider, type Script } from '../support/scripted-provider.js';
-import { isolatedEnv } from '../support/tmp.js';
-
-type Out = { type: string } & Record<string, unknown>;
 
 const TASK = 'FENCE-TOKEN-18';
 const STEER = 'STEER-TOKEN-18';
@@ -79,49 +74,12 @@ const script: Script = (meta) => {
   return say(`ack:${tail.slice(0, 120)}`);
 };
 
-/** Run the chat server on in-memory pipes, the same way the other chat-server tests do. */
+/** The chat server on in-memory pipes, plus `next` for messages in arrival order. */
 async function start() {
-  const repo = await makeRepo();
-  const provider = new HoldingProvider(script);
-  const stdin = new PassThrough();
-  const stdout = new PassThrough();
-  const out: Out[] = [];
-  let buf = '';
-  stdout.on('data', (c: Buffer) => {
-    buf += c.toString();
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-    for (const l of lines) if (l.trim()) out.push(JSON.parse(l) as Out);
-  });
-  const io: CliIO = {
-    stdout,
-    stderr: new PassThrough(),
-    stdin,
-    env: await isolatedEnv({ ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000' }),
-    cwd: repo,
-    isTTY: false,
-    makeProvider: () => provider,
-    fetch: () => Promise.reject(new Error('no network in tests')),
-  };
-  let exited = false;
-  const done = serveChat(io, () => Promise.resolve(0), { version: '9.9.9' }).finally(() => {
-    exited = true;
-  });
-  const send = (cmd: Record<string, unknown>): void => {
-    stdin.write(`${JSON.stringify(cmd)}\n`);
-  };
-  const states = (): ChatState[] => out.filter((o): o is Out & ChatState => o.type === 'state');
+  const t = await chatOnPipes(new HoldingProvider(script));
+  const { out, states, until } = t;
   const entries = (): ChatState['entries'] => states().flatMap((s) => s.entries);
   let seen = 0;
-  const until = async <T>(fn: () => T | undefined, what: string): Promise<T> => {
-    const deadline = Date.now() + 30_000;
-    for (;;) {
-      const v = fn();
-      if (v !== undefined) return v;
-      if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-      await new Promise((r) => setTimeout(r, 20));
-    }
-  };
   /** The next message of this type after everything already waited for. */
   const next = async (type: string, test: (o: Out) => boolean = () => true): Promise<Out> => {
     const found = await until(() => {
@@ -132,7 +90,7 @@ async function start() {
     return out[found] as Out;
   };
   await next('ready');
-  return { provider, send, out, states, entries, until, next, stdin, done, exited: () => exited };
+  return { ...t, entries, next };
 }
 
 async function close(t: Awaited<ReturnType<typeof start>>): Promise<void> {

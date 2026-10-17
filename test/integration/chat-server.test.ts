@@ -1,61 +1,21 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { serveChat, type ChatState } from '../../src/cli/chat-server.js';
-import type { CliIO } from '../../src/cli/io.js';
-import { makeRepo } from '../support/harness.js';
+import type { ChatState } from '../../src/cli/chat-server.js';
+import { chatOnPipes } from '../support/chat-pipes.js';
 import { call, say, ScriptedProvider } from '../support/scripted-provider.js';
-import { isolatedEnv } from '../support/tmp.js';
 
-type Out = { type: string } & Record<string, unknown>;
-
-/** Run the chat server on in-memory pipes; `send` writes one command, `until` waits for output. */
-async function start() {
-  const repo = await makeRepo();
-  const provider = new ScriptedProvider(({ turn }) =>
-    turn === 0
-      ? call('write_file', { path: 'src/a.js', content: 'export const a = 1;\n' })
-      : turn === 1
-        ? call('bash', { command: 'sudo ls' })
-        : say('Wrote **src/a.js**.'),
+/** Writes a file, asks before `sudo ls`, then reports. */
+const start = () =>
+  chatOnPipes(
+    new ScriptedProvider(({ turn }) =>
+      turn === 0
+        ? call('write_file', { path: 'src/a.js', content: 'export const a = 1;\n' })
+        : turn === 1
+          ? call('bash', { command: 'sudo ls' })
+          : say('Wrote **src/a.js**.'),
+    ),
   );
-  const stdin = new PassThrough();
-  const stdout = new PassThrough();
-  const out: Out[] = [];
-  let buf = '';
-  stdout.on('data', (c: Buffer) => {
-    buf += c.toString();
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-    for (const l of lines) if (l.trim()) out.push(JSON.parse(l) as Out);
-  });
-  const io: CliIO = {
-    stdout,
-    stderr: new PassThrough(),
-    stdin,
-    env: await isolatedEnv({ ANTHROPIC_API_KEY: 'sk-ant-test-0000000000000000' }),
-    cwd: repo,
-    isTTY: false,
-    makeProvider: () => provider,
-    fetch: () => Promise.reject(new Error('no network in tests')),
-  };
-  const done = serveChat(io, () => Promise.resolve(0), { version: '9.9.9' });
-  const send = (cmd: Record<string, unknown>): void => {
-    stdin.write(`${JSON.stringify(cmd)}\n`);
-  };
-  const states = (): ChatState[] => out.filter((o) => o.type === 'state') as unknown as ChatState[];
-  const until = async <T>(fn: () => T | undefined, what: string): Promise<T> => {
-    const deadline = Date.now() + 30_000;
-    for (;;) {
-      const v = fn();
-      if (v !== undefined) return v;
-      if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-      await new Promise((r) => setTimeout(r, 20));
-    }
-  };
-  return { repo, send, out, states, until, stdin, done, provider };
-}
 
 describe('omnexx chat-server (the VS Code chat panel protocol)', () => {
   it('chats, asks before a guarded command, counts tokens, and switches modes and approval', async () => {
