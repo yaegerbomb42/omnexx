@@ -24,6 +24,7 @@ import {
   type Block,
   type Entry,
   type TodoItem,
+  toolKind,
   type Usage,
 } from './render.js';
 import * as agentCard from './agentCard.js';
@@ -155,7 +156,10 @@ function messageHtml(b: Block): string {
   if (b.kind === 'user')
     return `<div class="msg user"><div class="who">You</div><div class="text">${escapeHtml(body)}</div></div>`;
   if (b.kind === 'act')
-    return `<div class="msg act"><span class="act-mark" aria-hidden="true">›</span>${escapeHtml(body)}</div>`;
+    return `<ul class="msg tools">${b.lines
+      .filter((l) => l.trim())
+      .map((l) => `<li class="tool k-${toolKind(l)}">${escapeHtml(l.trim())}</li>`)
+      .join('')}</ul>`;
   if (b.kind === 'think') return `<div class="msg think">${escapeHtml(body)}</div>`;
   if (b.kind === 'system' || b.kind === 'feed')
     return `<div class="msg note">${escapeHtml(body)}</div>`;

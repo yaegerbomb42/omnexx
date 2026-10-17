@@ -102,24 +102,6 @@ svg {
   padding: 8px 10px 6px;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-}
-
-.word {
-  font-size: var(--fs-lg);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  background: var(--brand);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
 body.vscode-high-contrast .word,
 body.vscode-high-contrast-light .word {
   background: none;
@@ -178,32 +160,6 @@ body.vscode-high-contrast-light .word {
   margin-left: auto;
 }
 
-/* Stats tiles */
-.stats {
-  margin: 0 10px;
-  padding: 8px 10px;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--card);
-  position: relative;
-  overflow: hidden;
-}
-
-.stats::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 2px;
-  background: var(--brand);
-}
-
-.tile {
-  min-width: 0;
-}
-
 #stat-turns {
   color: var(--violet);
 }
@@ -232,16 +188,6 @@ body.vscode-high-contrast-light .word {
   text-overflow: ellipsis;
 }
 
-.ctx {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: var(--gap);
-  font-size: var(--fs-xs);
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
 .track {
   flex: 1;
   height: 5px;
@@ -267,9 +213,6 @@ body.vscode-high-contrast-light .word {
 }
 
 @media (max-width: 360px) {
-  .stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 /* Mode bar */
@@ -2403,10 +2346,6 @@ body.ctx-open > :not(.top, #ctxpage, script) {
   gap: 6px;
 }
 
-.brand {
-  gap: 5px;
-}
-
 .logo {
   width: 18px;
   height: 18px;
@@ -2418,13 +2357,6 @@ body.ctx-open > :not(.top, #ctxpage, script) {
 
 .icon {
   padding: 3px;
-}
-
-.stats {
-  margin: 0 8px;
-  padding: 5px 8px 4px;
-  gap: 2px 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .k {
@@ -2442,13 +2374,6 @@ body.ctx-open > :not(.top, #ctxpage, script) {
 }
 
 @media (max-width: 260px) {
-  .stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.toolbar {
-  padding: 5px 8px;
 }
 
 .section > summary {
@@ -3488,4 +3413,72 @@ textarea.ci-edit {
 .modes button[aria-pressed='true'] {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
+}
+
+/* Tool calls: one quiet row each on a thin rail, a glyph per kind, the live one in brand colour. */
+.msg.tools {
+  list-style: none;
+  margin: 0 0 0 5px;
+  padding: 1px 0 1px 4px;
+  border-left: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.tool {
+  position: relative;
+  padding: 1px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool {
+  padding-left: 16px;
+}
+
+.tool::before {
+  position: absolute;
+  left: 0;
+  width: 12px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.conversation > .tools + .tools {
+  margin-top: -6px;
+}
+
+.tool.k-run::before {
+  content: '$';
+}
+
+.tool.k-read::before {
+  content: '◇';
+}
+
+.tool.k-edit::before {
+  content: '✎';
+  color: var(--accent);
+}
+
+.tool.k-search::before {
+  content: '⌕';
+}
+
+.tool.k-tool::before {
+  content: '·';
+}
+
+.tool.k-edit {
+  color: var(--fg);
+}
+
+.conversation > .tools:last-child .tool:last-child {
+  color: var(--fg);
+}
+
+.conversation > .tools:last-child .tool:last-child::before {
+  color: var(--violet);
 }
