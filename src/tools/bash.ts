@@ -77,12 +77,7 @@ export function splitHeredoc(command: string): { command: string; stdin: string 
 
 const schema = z.strictObject({
   command: z.string().min(1).describe('Shell command, run in the repo root'),
-  timeout: z
-    .string()
-    .optional()
-    .describe(
-      'Default 2m. e.g. "10m" for a long build or suite (a bare number is milliseconds); capped at 10m',
-    ),
+  timeout: z.string().optional().describe('Default 2m, max 10m; a bare number is ms'),
 });
 
 const DEV_SERVER_PEEK_MS = 20_000;
@@ -168,7 +163,7 @@ function commandStatus(
 export const bashTool: Tool<typeof schema> = {
   name: 'bash',
   description:
-    "Run a shell command in the repo root and wait for it to finish (never poll). Output is trimmed; use read_log for the full log. Dev servers (npm run dev, vite, next dev) run for 20 s and are then stopped for you, so their startup output shows whether they work; never background or kill them yourself. git writes, network, sudo and paths outside the repo need the person's OK: in chat just run the command and they are asked; unattended runs refuse them.",
+    "Run a shell command in the repo root and wait for it (never poll). Dev servers run 20 s, then stop; don't background them. git writes, network, sudo and outside paths need the person's OK; unattended runs refuse them.",
   schema,
   readOnly: false,
   // Models often send the timeout as a number of milliseconds.
@@ -237,7 +232,7 @@ const readLogSchema = z.strictObject({
   id: z
     .string()
     .regex(/^(cmd|gate)-[A-Za-z0-9_.-]+$/)
-    .describe('Log id from a bash result, e.g. "cmd-3-2"'),
+    .describe('Log id from a bash result'),
   start: z.number().int().positive().optional(),
   end: z.number().int().positive().optional(),
 });

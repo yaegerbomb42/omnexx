@@ -365,8 +365,9 @@ export function compactPlanView(plan: Plan, currentTaskId: string | undefined): 
   if (current) {
     lines.push('', `Current task ${current.id}: ${current.title}`);
     if (current.why) lines.push(`Why: ${current.why}`);
-    if (current.acceptance.length)
-      lines.push('Acceptance:', ...current.acceptance.map((a) => `- ${a}`));
+    // The fast plan's acceptance is the goal itself, which the prefix already holds.
+    const acceptance = current.acceptance.filter((a) => a.trim() !== plan.goal.trim());
+    if (acceptance.length) lines.push('Acceptance:', ...acceptance.map((a) => `- ${a}`));
     if (current.checks.length)
       lines.push('Checks the harness will run:', ...current.checks.map((c) => `- \`${c}\``));
     if (current.steps.length) lines.push('Suggested steps:', ...current.steps.map((s) => `- ${s}`));

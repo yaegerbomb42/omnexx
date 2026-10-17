@@ -52,7 +52,7 @@ export function contentsBlock(optional: readonly { id: SectionId; text: string }
     const info = SECTION_INFO[s.id];
     return `- ${info.label}: ${info.about} (~${String(estimateTokens(s.text))} tokens) → context read scope="${info.scope}"`;
   });
-  return `# More context, when you need it\n\nNot loaded, to keep each step lean. Open a section only if it helps this step:\n${rows.join('\n')}`;
+  return `# More context, on request\n\nOpen a section only if it helps this step:\n${rows.join('\n')}`;
 }
 
 const ROLE_BY_KIND: Record<string, { title: string; focus: string }> = {

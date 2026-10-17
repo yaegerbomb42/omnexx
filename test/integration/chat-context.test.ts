@@ -24,7 +24,7 @@ describe('Context explorer data', () => {
     await supervise(t.run.deps, t.run.state.runId, FAST_SUPERVISE);
     // The worker saw its role card and the table of contents (codemap is optional by default).
     expect(seen[0]).toContain('Role: Implementer for M1.T01');
-    expect(seen[0]).toContain('More context, when you need it');
+    expect(seen[0]).toContain('More context, on request');
 
     const io: CliIO = {
       stdout: new PassThrough(),

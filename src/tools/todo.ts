@@ -12,7 +12,7 @@ const schema = z.strictObject({
       }),
     )
     .max(30)
-    .describe('The whole list, in order. Send it again with updated statuses as you go.'),
+    .describe('The whole list; send it again with updated statuses'),
 });
 
 export type TodoItem = z.infer<typeof schema>['items'][number];
@@ -60,8 +60,7 @@ export function todoNudge(open: readonly TodoItem[]): string {
  */
 export const todoTool: Tool<typeof schema> = {
   name: 'todo',
-  description:
-    'Keep a short checklist of the steps for the current request, shown to the user. Write it before multi-step work, mark one item in_progress at a time, and mark items done as you finish them. Skip it for one-step requests.',
+  description: 'A short checklist of the current steps, shown to the user.',
   schema,
   readOnly: true,
   normalize: normalizeTodo,

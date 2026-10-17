@@ -7,13 +7,13 @@ const schema = z.strictObject({
   scope: z
     .enum(SCOPES)
     .describe(
-      "general: goal, intent, lessons (kept across runs) · repo: codebase map (kept across runs) · heat: files changing most lately · recent: this task's running context",
+      'general: goal, intent, lessons · repo: codebase map · heat: hottest files · recent: running context',
     ),
   notes: z
     .string()
     .max(notesCap('repo'))
     .optional()
-    .describe('update: your whole notes for this scope (replaces the old ones)'),
+    .describe('update: your whole notes for this scope'),
 });
 
 const envOf = (ctx: ToolContext): ScopeEnv => ({
@@ -26,7 +26,7 @@ const envOf = (ctx: ToolContext): ScopeEnv => ({
 export const contextTool: Tool<typeof schema> = {
   name: 'context',
   description:
-    "Pull in one level of context when you need it, from widest to narrowest: general (goal, intent, lessons), repo (codebase map), heat (files changing most lately), recent (this task's running context). Each is capped, so only read what helps. Use update to rewrite your own notes in a scope (architecture you worked out, where things live, the plan in your head) so you keep your bearings after the context is trimmed; general and repo notes carry over to later runs on this repo.",
+    'Read one capped scope of context, or rewrite your own notes in it with update (general and repo notes carry over to later runs).',
   schema,
   readOnly: true,
   async run(input, ctx) {

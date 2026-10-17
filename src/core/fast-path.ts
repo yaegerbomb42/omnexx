@@ -39,7 +39,7 @@ export function fastPlan(config: OmnexxConfig, goal: string): Plan {
             {
               id: FAST_TASK,
               title: 'Do the whole goal in one pass',
-              why: 'Fast path: small goals are cheapest done directly; the planner takes over if this does not get there.',
+              why: 'Fast path: the whole goal in one pass; the planner takes over if it fails.',
               acceptance: [what.length > 480 ? `${what.slice(0, 477)}...` : what],
               checks,
               size: 'L',

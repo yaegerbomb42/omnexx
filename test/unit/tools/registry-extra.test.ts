@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { defaultConfig } from '../../../src/config/load.js';
 import {
@@ -22,6 +25,13 @@ describe('extra tool sources', () => {
   const config = defaultConfig({
     skills: { import_claude: false },
     agents: { import_claude: false },
+  });
+  // Nor may the host's omnexx config dir.
+  beforeAll(() => {
+    vi.stubEnv('OMNEXX_CONFIG_HOME', mkdtempSync(join(tmpdir(), 'omx-cfg-')));
+  });
+  afterAll(() => {
+    vi.unstubAllEnvs();
   });
 
   it('keeps core tools first, then extras sorted by name regardless of source order', async () => {
@@ -50,12 +60,11 @@ describe('extra tool sources', () => {
     expect(await workerTools(config, undefined, {})).toEqual(WORKER_TOOLS);
   });
 
-  it('the default barrel contributes the integrations and skill tools after the core tools', async () => {
+  it('the default barrel adds the integrations tools after the core tools, and no skill tool without skills', async () => {
     expect((await workerTools(config)).map((t) => t.name)).toEqual([
       ...WORKER_TOOLS.map((t) => t.name),
       'integrations_install',
       'integrations_search',
-      'skill',
     ]);
   });
 });

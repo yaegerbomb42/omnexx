@@ -8,15 +8,15 @@ import { fail, ok, type Tool } from './types.js';
  */
 const schema = z.strictObject({
   action: z.enum(['add', 'replace', 'remove']),
-  id: z.string().optional().describe('Lesson id like "N3" (replace and remove)'),
-  type: z.enum(NOTE_TYPES).optional().describe('Required for add'),
-  text: z.string().min(1).max(400).optional().describe('Required for add and replace'),
+  id: z.string().optional().describe('Lesson id, e.g. "N3"'),
+  type: z.enum(NOTE_TYPES).optional().describe('For add'),
+  text: z.string().min(1).max(400).optional().describe('For add and replace'),
 });
 
 export const rememberTool: Tool<typeof schema> = {
   name: 'remember',
   description:
-    'Record a durable lesson about this repo for future cycles (e.g. "tests need DATABASE_URL", "use pnpm"). Types: env, convention, pitfall, command, flaky. The file is capped: when full, replace or remove an entry by id. Changes take effect next cycle.',
+    'Record a durable repo lesson for later cycles (e.g. "tests need DATABASE_URL"). When the file is full, replace or remove one by id.',
   schema,
   readOnly: true,
   async run(input, ctx) {

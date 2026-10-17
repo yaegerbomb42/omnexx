@@ -22,14 +22,11 @@ const TS_TIMEOUT_MS = 8_000;
 
 const schema = z.strictObject({
   symbol: z.string().min(1).describe('Function, method, class, interface or type name'),
-  path: z
-    .string()
-    .optional()
-    .describe('File or folder the definition is in, to pick one of several with the same name'),
+  path: z.string().optional().describe('Picks one of several same-name definitions'),
   depth: z
     .union([z.literal(0), z.literal(1)])
     .optional()
-    .describe('1 adds the signatures of its callers and callees (default 0)'),
+    .describe('1 adds caller and callee signatures'),
 });
 
 const refLine = (r: SymbolRef): string => `  ${r.file}:${String(r.line)}  ${r.text}`;
@@ -108,7 +105,7 @@ export async function lookupSymbol(
 export const readSymbolTool: Tool<typeof schema> = {
   name: 'read_symbol',
   description:
-    'Read a symbol by name in one call: its full definition with line numbers, the definitions of the types in its signature, and with depth 1 the one-line signatures of its callers and callees. Prefer it over search + read when you know the name. Several matches are listed for you to pick with path.',
+    'Read a symbol by name: its definition with line numbers and the types in its signature.',
   schema,
   readOnly: true,
   concurrent: true,
