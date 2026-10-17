@@ -88,6 +88,12 @@ describe('context sections', () => {
     expect(old.labels).toEqual(['system', 'codemap', 'goal', 'notes']);
     expect(text(old)).not.toContain('More context, when you need it');
   });
+
+  it('renders the cached prefix as the same bytes every time', () => {
+    expect(JSON.stringify(buildCycleContext(inputs))).toBe(
+      JSON.stringify(buildCycleContext(inputs)),
+    );
+  });
 });
 
 describe('role card', () => {

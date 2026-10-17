@@ -173,6 +173,8 @@ export class OpenAICompatProvider implements Provider {
   private readonly completionTokens = new Set<string>();
   /** Off once the server refused `parallel_tool_calls` (some local servers reject unknown fields). */
   private parallelToolCalls = true;
+  /** Off once the server refused `prompt_cache_key` (some OpenAI-compatible proxies reject it). */
+  private promptCacheKey = true;
   /**
    * Stream requests that didn't ask to, so stalls show (see `stallTimeoutMs`). Off once the
    * server refuses a stream, answers one with plain JSON, or leaves usage out of it.
@@ -214,6 +216,10 @@ export class OpenAICompatProvider implements Provider {
         }
         if (this.parallelToolCalls && /parallel_tool_calls/i.test(err.message)) {
           this.parallelToolCalls = false;
+          continue;
+        }
+        if (this.promptCacheKey && /prompt_cache_key/i.test(err.message)) {
+          this.promptCacheKey = false;
           continue;
         }
         if (!req.onDelta && this.streamsForStall() && /stream/i.test(err.message)) {
@@ -281,6 +287,9 @@ export class OpenAICompatProvider implements Provider {
       ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}),
       ...(thinking === undefined ? {} : { enable_thinking: thinking }),
       ...(effort ? { reasoning_effort: effort } : {}),
+      ...(this.promptCacheKey && req.promptCacheKey
+        ? { prompt_cache_key: req.promptCacheKey }
+        : {}),
     };
     const signals = [
       AbortSignal.timeout(this.opts.timeoutMs),

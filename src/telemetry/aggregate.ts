@@ -32,6 +32,8 @@ export interface Telemetry {
   /** Stuck signals and strategy-ladder escalations. */
   stuck: number;
   milestonesDone: number;
+  /** Turns whose cache read fell under 80% of the previous prompt. */
+  cacheMisses: number;
 }
 
 export function emptyTelemetry(): Telemetry {
@@ -52,6 +54,7 @@ export function emptyTelemetry(): Telemetry {
     quotaOut: [],
     stuck: 0,
     milestonesDone: 0,
+    cacheMisses: 0,
   };
 }
 
@@ -81,6 +84,9 @@ export function fold(t: Telemetry, e: OmnexxEvent): Telemetry {
       if (typeof e.provider === 'string') t.provider = e.provider;
       break;
     }
+    case 'cache.miss':
+      t.cacheMisses++;
+      break;
     case 'tool.call':
       t.toolCalls++;
       if (e.isError) t.toolErrors++;

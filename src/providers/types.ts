@@ -54,6 +54,13 @@ export interface CompletionRequest {
   turnEffort?: number;
   /** Stream text and reasoning as they arrive (interactive chat); the result is the same. */
   onDelta?: (d: { text?: string; reasoning?: string }) => void;
+  /** OpenAI prompt-cache routing key, stable for one run. Omitted by providers that reject it. */
+  promptCacheKey?: string;
+  /**
+   * A per-run key OpenAI-compatible endpoints use to route every call of a conversation to the
+   * same prompt-cache backend. Endpoints that reject the field are answered plainly after one 400.
+   */
+  cacheKey?: string;
 }
 
 export interface Usage {
