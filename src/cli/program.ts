@@ -10,7 +10,7 @@ import {
   resumeRun,
   superviseForeground,
 } from './commands/control.js';
-import { binaryVersion, renderChecks, runDoctorChecks } from './commands/doctor.js';
+import { binaryVersion, doctorRun, renderChecks, runDoctorChecks } from './commands/doctor.js';
 import { runInit } from './commands/init.js';
 import {
   checkpointsCommand,
@@ -330,10 +330,17 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
 
   program
     .command('doctor')
-    .description('check node, git, rg, the API key (masked), network and the optional judge')
+    .description(
+      'check node, git, rg, the API key (masked), network and the optional judge; --run diagnoses a finished run',
+    )
     .option('--offline', 'skip network checks')
     .option('--json', 'machine-readable output')
-    .action(async (opts: { offline?: boolean; json?: boolean }) => {
+    .option('--run <id>', 'diagnose a finished run (id or path to events.jsonl)')
+    .action(async (opts: { offline?: boolean; json?: boolean; run?: string }) => {
+      if (opts.run) {
+        await doctorRun(io, opts.run, opts.json === true);
+        return;
+      }
       const paths = resolvePaths(io.env);
       const { config } = await loadConfig({ cwd: io.cwd, env: io.env });
       const checks = await runDoctorChecks({
