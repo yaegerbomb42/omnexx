@@ -55,6 +55,7 @@ import { closeSession } from '../tools/extra/browser.js';
 import { subagentRunner } from '../agent/subagent.js';
 import type { PendingVerdict } from './run-store.js';
 import type { Run } from './run.js';
+import { tokenCalibrationFile } from './token-calibration.js';
 import { estimateTokens } from './tokens.js';
 import type { Message } from '../providers/types.js';
 
@@ -474,6 +475,7 @@ export async function stepAct(run: Run): Promise<void> {
       run.paused = p;
     },
     signal: run.signal,
+    calibrationFile: tokenCalibrationFile(run.deps.paths),
     parallelTasks: run.config.context.subagent_parallel,
     watch: new InCycleWatch(
       {

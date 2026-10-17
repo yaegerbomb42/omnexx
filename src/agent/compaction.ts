@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CHARS_PER_TOKEN, estimateTokens } from '../core/tokens.js';
+import { applyTokenRatio, CHARS_PER_TOKEN, estimateTokens } from '../core/tokens.js';
 import type { ContentBlock, Message } from '../providers/types.js';
 import { enforceBudget } from './budget-guard.js';
 import { pruneRules } from './prune-rules.js';
@@ -32,6 +32,11 @@ export interface CompactionSettings {
   budget?: number;
   /** Text the fold keeps word for word (the think phase's analysis). */
   pinned?: string;
+  /**
+   * This model's prompt-token ratio. Unset or 1 keeps the uncalibrated char estimate, so folds
+   * do not move until the model has been seen.
+   */
+  tokenRatio?: number;
 }
 
 /** Below this a clear saves less than the cache miss it causes on the next turn. */
@@ -72,6 +77,11 @@ export function contextTokens(messages: readonly Message[]): number {
     return v;
   });
   return estimateTokens(text) + images * IMAGE_TOKENS;
+}
+
+/** Context size as this model is actually billed. Ratio 1 is the char estimate, unchanged. */
+function measured(messages: readonly Message[], settings: CompactionSettings): number {
+  return applyTokenRatio(contextTokens(messages), settings.tokenRatio ?? 1);
 }
 
 /** `[exit 1, 812ms, log cmd-3-2]` at the top of a bash result names the log that keeps it whole. */
@@ -442,14 +452,14 @@ interface Step {
  * to pay for the cache miss the rewrite causes (continuous pruning, batched by size).
  */
 function prune(messages: Message[], settings: CompactionSettings, emit: Emit): Step {
-  const tokens = contextTokens(messages);
+  const tokens = measured(messages, settings);
   const s = pruneSuperseded(messages);
   const r = pruneRules(s.messages, settings.keepTurns);
   const chars = s.chars + r.chars;
   const count = s.pruned + r.pruned;
   if (!count || (tokens <= settings.clearAt && chars < minClearChars(settings)))
     return { messages, tokens };
-  const after = contextTokens(r.messages);
+  const after = measured(r.messages, settings);
   emit({ kind: 'pruned', pruned: count, chars, tokensBefore: tokens, tokensAfter: after });
   return { messages: r.messages, tokens: after };
 }
@@ -458,7 +468,7 @@ function clear(step: Step, settings: CompactionSettings, emit: Emit): Step {
   if (step.tokens <= settings.clearAt) return step;
   const r = clearOldToolResults(step.messages, settings.keepToolResults, minClearChars(settings));
   if (!r.cleared) return step;
-  const after = contextTokens(r.messages);
+  const after = measured(r.messages, settings);
   emit({
     kind: 'cleared',
     cleared: r.cleared,
@@ -511,12 +521,17 @@ async function fold(
   const next =
     settings.budget === undefined
       ? folded
-      : enforceBudget(folded, Math.floor(settings.budget * SETTLE_FRACTION), true).messages;
+      : enforceBudget(
+          folded,
+          Math.floor(settings.budget * SETTLE_FRACTION),
+          true,
+          settings.tokenRatio ?? 1,
+        ).messages;
   emit({
     kind: 'compacted',
     turnsSummarized: split.head.filter((m) => m.role === 'assistant').length,
     tokensBefore: tokens,
-    tokensAfter: contextTokens(next),
+    tokensAfter: measured(next, settings),
   });
   return next;
 }
@@ -539,12 +554,12 @@ export async function manageContext(
       ? await fold(cleared, first, settings, summarize, emit)
       : cleared.messages;
   if (settings.budget === undefined) return current;
-  const g = enforceBudget(current, settings.budget);
+  const g = enforceBudget(current, settings.budget, false, settings.tokenRatio ?? 1);
   if (g.digested)
     emit({
       kind: 'digested',
       digested: g.digested,
-      tokensBefore: contextTokens(current),
+      tokensBefore: measured(current, settings),
       tokensAfter: g.tokens,
     });
   return g.messages;

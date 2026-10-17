@@ -3,6 +3,7 @@ import { agentBriefFor } from '../config/agent-settings.js';
 import type { ResolvedModel } from '../providers/pricing.js';
 import { join } from 'node:path';
 import { readTextOr } from '../core/atomic.js';
+import { tokenCalibrationFile } from '../core/token-calibration.js';
 import { renderNotes } from '../core/notes.js';
 import {
   applyPlanUpdate,
@@ -448,6 +449,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       },
       control: () => run.control(),
       signal: run.abort.signal,
+      calibrationFile: tokenCalibrationFile(run.deps.paths),
       parallelTasks: Math.max(1, helpers),
       // Planners explore like workers when left alone: on a large repo glm-5.3 read for 46
       // turns and hit the token cap three times without a plan. Ask for the plan on a deadline.
