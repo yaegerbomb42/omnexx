@@ -232,7 +232,22 @@ describe('think-first loop session', () => {
     const out = await runThinkLoop(first, io, { rounds: 3, rethinks: 0, thinkTurns: 8 });
     expect(restored).toEqual(['green-1']);
     expect(events).toContain('loop.restore_green');
-    expect(out).toMatchObject({ green: true, rounds: 3 });
+    expect(out).toMatchObject({ end: 'rounds_spent', green: true, rounds: 3 });
+  });
+
+  it('never reports rounds spent on red checks as done, with no green tree to fall back to', async () => {
+    const analysis = '4. Ordered steps:\n   - fix sum()\n   - add a test\n5. Verify: npm test';
+    const { io, restored, log } = fakeIO(
+      [{ say: analysis }, { say: 'b' }, { say: 'c' }],
+      [fail('x'), fail('y')],
+    );
+    const out = await runThinkLoop(first, io, { rounds: 2, rethinks: 0, thinkTurns: 8 });
+    expect(out).toMatchObject({ end: 'rounds_spent', green: false, rounds: 2 });
+    expect(restored).toEqual([]);
+    expect(log.find((e) => e.type === 'loop.end')?.data.end).toBe('rounds_spent');
+    // The checklist is not ticked off for work that never passed.
+    const todos = log.filter((e) => e.type === 'todo.update');
+    expect(todos).toHaveLength(1);
   });
 
   it('stops at once on a stop request or the money running out', async () => {

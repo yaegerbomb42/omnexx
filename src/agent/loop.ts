@@ -145,7 +145,9 @@ export function stuckNudge(detail: string): string {
 
 export type ControlSignal = 'continue' | 'pause' | 'stop' | 'stop-now';
 
-export type LoopEnd = 'done' | 'stop' | 'stop-now' | BudgetStop | 'refusal' | 'stuck';
+/** `rounds_spent`: a think-loop session used every check round without passing its checks. */
+export type LoopEnd =
+  'done' | 'stop' | 'stop-now' | BudgetStop | 'refusal' | 'stuck' | 'rounds_spent';
 
 export interface LoopResult {
   end: LoopEnd;
