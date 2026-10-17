@@ -1,9 +1,14 @@
+import { stat } from 'node:fs/promises';
+import { isAbsolute, join } from 'node:path';
 import { execa } from 'execa';
 import pc from 'picocolors';
 import { findAnthropicKey, maskKey } from '../../auth/keys.js';
 import type { OmnexxConfig } from '../../config/schema.js';
-import type { OmnexxPaths } from '../../core/paths.js';
+import { readEvents } from '../../core/events.js';
+import { resolvePaths, runDir, type OmnexxPaths } from '../../core/paths.js';
+import { UsageError } from '../../errors.js';
 import { isTrustedJudgeHost, MIN_OLLAMA, versionAtLeast } from '../../judge/endpoint.js';
+import { diagnoseRun, findingsJson, formatFindings } from '../../telemetry/run-diagnosis.js';
 
 export { versionAtLeast } from '../../judge/endpoint.js';
 import { println, type CliIO } from '../io.js';
@@ -242,4 +247,51 @@ const ICON: Record<CheckStatus, string> = {
 
 export function renderChecks(io: CliIO, checks: readonly Check[]): void {
   for (const c of checks) println(io.stdout, `${ICON[c.status]} ${c.name.padEnd(20)} ${c.detail}`);
+}
+
+function looksLikePath(spec: string): boolean {
+  return (
+    isAbsolute(spec) ||
+    spec.startsWith('.') ||
+    spec.endsWith('events.jsonl') ||
+    spec.includes('/') ||
+    spec.includes('\\')
+  );
+}
+
+async function existingEventsFile(p: string): Promise<string | undefined> {
+  try {
+    const info = await stat(p);
+    if (info.isFile()) return p;
+    if (!info.isDirectory()) return undefined;
+    const nested = join(p, 'events.jsonl');
+    const inner = await stat(nested);
+    return inner.isFile() ? nested : undefined;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw err;
+  }
+}
+
+/** A run id under the omnexx home, or a path to `events.jsonl` (or a directory that contains it). */
+export async function loadRunEvents(spec: string, paths: OmnexxPaths) {
+  const trimmed = spec.trim();
+  if (!trimmed) throw new UsageError('missing run', 'pass a run id or a path to events.jsonl');
+  if (looksLikePath(trimmed)) {
+    const file = await existingEventsFile(trimmed);
+    if (!file)
+      throw new UsageError(`no events at ${trimmed}`, 'pass a run id or a path to events.jsonl');
+    return readEvents(file);
+  }
+  const file = await existingEventsFile(join(runDir(paths, trimmed), 'events.jsonl'));
+  if (!file) throw new UsageError(`no events for run ${trimmed}`, '`omnexx runs` lists them');
+  return readEvents(file);
+}
+
+/**
+ * Diagnose a finished run. Exit stays 0: findings are a report, not a failed install check.
+ */
+export async function doctorRun(io: CliIO, spec: string, json: boolean): Promise<void> {
+  const findings = diagnoseRun(await loadRunEvents(spec, resolvePaths(io.env)));
+  println(io.stdout, json ? findingsJson(spec, findings) : formatFindings(findings));
 }
