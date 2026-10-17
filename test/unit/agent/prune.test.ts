@@ -57,6 +57,20 @@ describe('pruneSuperseded: dead weight out, without a model', () => {
     expect(out[2]).toMatch(/all green/);
   });
 
+  it('keeps only the newest output of a rerun command, noting how the older run ended', () => {
+    const msgs = [
+      ...step('bash', { command: 'npm test' }, big('[exit 0] 3 passed')),
+      ...step('bash', { command: 'npm test' }, big('[exit 1] 1 failed'), true),
+      ...step('bash', { command: 'npm test' }, big('[exit 1] 2 failed'), true),
+      ...step('bash', { command: 'git status' }, big('clean')),
+    ];
+    const out = results(pruneSuperseded(msgs).messages);
+    expect(out[0]).toMatch(/^\[superseded by omnexx: `npm test` passed here and ran again later/);
+    expect(out[1]).toMatch(/^\[superseded by omnexx: `npm test` failed here and ran again later/);
+    expect(out[2]).toMatch(/2 failed/);
+    expect(out[3]).toMatch(/clean/);
+  });
+
   it('leaves small results and already-stubbed ones alone', () => {
     const msgs = [
       ...step('read', { path: 'tiny.ts' }, 'short'),
