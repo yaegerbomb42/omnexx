@@ -32,7 +32,7 @@ only `omnexx@0.1.0`.
    extension with the bundled CLI. Then rerun the head-to-head 3x per task (`npm run bench --
 --suite jimmy10 --agents omnexx,cline,openhands --endpoint DEEPSEEK` after `set -a; . ~/.omnexx-bench.env; set +a`) for stable
    numbers, and finish the judge row (Nimble steer vs off; it hasn't changed results so far).
-   Remaining gaps: task-02/03 still use ~2.5x Cline's fresh tokens; 20 duplicate CSS selectors
+   Remaining gaps (2026-10-16 bench: omnexx 616k fresh tokens vs Cline 1.32M; bench `[context] lazy_tools` and #227/#228 next); 20 duplicate CSS selectors
    need a visual check; CLM context mode not started.
 
 1. Watch the two listing PRs and answer review comments.
