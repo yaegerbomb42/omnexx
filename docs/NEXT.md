@@ -3,9 +3,9 @@
 Written 2026-10-09 at the end of a session. Start here. When an item is done, tick it, note
 the PR, and append a session entry to the log in [TODO.md](TODO.md).
 
-State (2026-10-11): `main` is the only branch and has everything (version 0.5.0, including the
-VS Code extension and `runs --json`). `next` was merged into `main` and deleted. npm still has
-only `omnexx@0.1.0`.
+State (2026-10-17): see [HANDOFF.md](HANDOFF.md) for the full picture. npm has `omnexx@0.18.2`
+and the extension 0.14.2; 49 commits on `main` (#183–#230) are unreleased. The release notes
+below are from 2026-10-12 and kept for the channel details.
 
 ## Released (2026-10-12)
 
@@ -28,8 +28,8 @@ only `omnexx@0.1.0`.
 
 ## Agent's queue, in order
 
-0. **Ship `feat/autonomy-2`** (2026-10-13): open the PR, merge after CI, release 0.10.0 and a new
-   extension with the bundled CLI. Then rerun the head-to-head 3x per task (`npm run bench --
+0. **Measure, then release** (2026-10-17; `feat/autonomy-2` shipped long ago, now at 0.18.2): see
+   [HANDOFF.md](HANDOFF.md) §4. Rerun the head-to-head 3x per task (`npm run bench --
 --suite jimmy10 --agents omnexx,cline,openhands --endpoint DEEPSEEK` after `set -a; . ~/.omnexx-bench.env; set +a`) for stable
    numbers, and finish the judge row (Nimble steer vs off; it hasn't changed results so far).
    Remaining gaps (2026-10-16 bench: omnexx 616k fresh tokens vs Cline 1.32M; bench `[context] lazy_tools` and #227/#228 next); 20 duplicate CSS selectors
