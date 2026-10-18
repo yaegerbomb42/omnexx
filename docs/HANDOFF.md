@@ -20,8 +20,8 @@ small by pruning, clearing, folding into a working state and digests
 | Item                 | State                                                                         |
 | -------------------- | ----------------------------------------------------------------------------- |
 | `main`               | `a6d843b`, green CI; the only long-lived branch                               |
-| npm                  | `omnexx@0.18.2`; **49 commits on `main` are unreleased** (#183–#230)          |
-| VS Code / Open VSX   | `yaegerbomb42.omnexx` 0.14.2 published; panel redesign (#218–#225) unreleased |
+| npm                  | `omnexx@0.19.0` (tag `v0.19.0`, 2026-10-17)                                  |
+| VS Code / Open VSX   | `yaegerbomb42.omnexx` 0.15.0 (release CI)                                     |
 | Homebrew / curl      | tap `yaegerbomb42/homebrew-omnexx`; `omnexx.org/install.sh`                   |
 | Open PRs (this repo) | none                                                                          |
 | Listing PRs          | ollama/ollama#18959 open; EndoTheDev/Awesome-Ollama#113 closed                |
@@ -51,7 +51,7 @@ bench (unmeasured): #226 reruns supersede older output, #227 miss-aware fold thr
 
 ## 3. Waiting on the owner
 
-- [ ] **Release 0.19.0** + extension 0.15.0 (tag pushed; needs npm 2FA on the staged publish).
+- [x] **Release 0.19.0** + extension 0.15.0 (2026-10-17; release CI green).
 - [ ] **Approve a bench** to measure #227/#228 and decide on `lazy_tools` (command in §4.1).
 - [ ] Replace the Azure DevOps and Open VSX tokens (they were pasted into a chat).
 - [ ] Review the new VS Code panel in a real window and report problems.
@@ -80,11 +80,8 @@ bench (unmeasured): #226 reruns supersede older output, #227 miss-aware fold thr
 8. **Older backlog:** W13 bench docs (`ws/13-bench-docs`), audit the W1/W2/W3/W9 checkboxes,
    SonarCloud findings from #20, 20 duplicate CSS selectors in `vscode/media/chat.css`, the CLM
    context mode.
-9. **Housekeeping:** ~35 remote branches were squash-merged and are stale
-   (`git branch -r --no-merged` lists them because of squash); worktrees `omnexx-wt-b0`,
-   `omnexx-wt-conditional-tools` (its one commit is already in `main` as #213) and
-   `omnexx-wt-spark` (holds `main`, blocks `gh pr merge` from switching to it locally) belong to
-   stopped agents. Delete only with the owner's OK.
+9. **Housekeeping:** stale `origin/*` squash-merge branches pruned 2026-10-17; agent worktrees
+   removed. Local `remotes/trial/r3` remains (separate remote, not on GitHub).
 
 ## 5. Future goals
 

@@ -37,6 +37,10 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-17 (owner-approved release, no bench):** `v0.19.0` / extension 0.15.0 tagged
+  (`05524df`); release CI green (npm, Marketplace, Open VSX). Removed worktrees
+  `omnexx-wt-b0`, `omnexx-wt-conditional-tools`, `omnexx-wt-spark`; pruned 36 stale
+  `origin/*` squash-merge branches. Bench deferred.
 - **2026-10-17 (single agent), PRs #224–#229, VS Code polish and context/token work:** composer
   (@ files, / commands, Send becomes Stop). Mined the 2026-10-16 bench: omnexx used 616k fresh
   tokens against Cline's 1.32M and resolved 9/10 tasks against Cline's 6/11. Fresh tokens split
