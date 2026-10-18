@@ -37,6 +37,16 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-17 (single agent), PRs #224–#229, VS Code polish and context/token work:** composer
+  (@ files, / commands, Send becomes Stop). Mined the 2026-10-16 bench: omnexx used 616k fresh
+  tokens against Cline's 1.32M and resolved 9/10 tasks against Cline's 6/11. Fresh tokens split
+  44% new content, 32% provider cache misses (Cline misses more on the same endpoint), 10% cold
+  starts, 7% re-reads after compaction, 7% side calls. Fixes: a rerun command supersedes its
+  older output (#226); the clear and fold thresholds scale down with the observed miss rate
+  (#227); the review prefix sent `[answerTool]`, so it never hit the cache and re-sent ~20k
+  uncached tokens per review. It now sends the worker's tools with `tool_choice: none`, worker
+  chain only (#228). `lazy_tools` flag, off until benched (#229). Next: bench `lazy_tools` and
+  #227/#228 when approved.
 - **2026-10-16/17 (single agent, other agents stopped), PRs #195–#221:** finished the master
   todo; all 20 items shipped (status lines in `docs/MASTER-TODO.md`). Highlights: first call
   5,163 → 3,415 tokens (#215); `web_fetch` refuses private/metadata addresses through redirects
