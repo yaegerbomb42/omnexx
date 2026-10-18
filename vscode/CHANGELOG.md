@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.0
+
+- Built on omnexx 0.19.0. **Panel redesign:** native title-bar actions and workbench tokens,
+  composer with mode pills, model chip, context meter and usage popover, tool glyph rows,
+  copy/edit-resend/history, approval keys, `@` file mentions, `/` commands, drag-and-drop,
+  Send ⇄ Stop.
+
 ## 0.14.2
 
 - Built on omnexx 0.18.2: Stop, Pause and sending a message act at once; falling back to

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.19.0
+
+- **Token efficiency:** multi-file reads, bookkeeping outside the main loop, related tests before
+  the full suite, hung-call cutoffs, cache-miss detection and `prompt_cache_key`, first-call
+  budget, directory `outline`, test-output digests, right-sized think phase, conditional native
+  tools (`lazy_tools`, off by default), repo probe, `str_replace` recovery, token calibration,
+  superseding reruns, miss-aware fold thresholds, and review calls that reuse the worker cache.
+- **Beyond mode:** evidence-ranked improvement backlog (`core/evidence.ts`).
+- **Security:** `web_fetch` blocks private and metadata addresses on every redirect; redactor
+  covers Stripe and Hugging Face keys.
+- **`omnexx doctor`:** run health and configuration report.
+- **Bench:** efficiency columns and cache-miss breakdown in results.
+
 ## 0.18.2
 
 - **Stop, pause and new messages act at once**: stop kills a running command too; pause cuts

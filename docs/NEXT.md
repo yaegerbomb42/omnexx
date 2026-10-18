@@ -16,7 +16,7 @@ below are from 2026-10-12 and kept for the channel details.
   regenerate `Formula/omnexx.rb` with `scripts/brew-formula.sh <version>` after each release).
 - VS Code Marketplace and Open VSX: `yaegerbomb42.omnexx` 0.1.0 (published by hand with the
   owner's tokens; moving that to CI with repo secrets is still open).
-- Listing PRs, open: ollama/ollama#18959, EndoTheDev/Awesome-Ollama#113. awesome-llm-agents needs
+- Listing PRs: ollama/ollama#18959 open; EndoTheDev/Awesome-Ollama#113 closed. awesome-llm-agents needs
   25 stars (its CI checks), so submit later as `data/frameworks/omnexx.yml`.
 
 ## Waiting on the owner

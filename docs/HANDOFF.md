@@ -51,7 +51,7 @@ bench (unmeasured): #226 reruns supersede older output, #227 miss-aware fold thr
 
 ## 3. Waiting on the owner
 
-- [ ] **Release 0.19.0** + extension 0.15.0 (49 commits; needs your go-ahead and npm 2FA).
+- [ ] **Release 0.19.0** + extension 0.15.0 (tag pushed; needs npm 2FA on the staged publish).
 - [ ] **Approve a bench** to measure #227/#228 and decide on `lazy_tools` (command in §4.1).
 - [ ] Replace the Azure DevOps and Open VSX tokens (they were pasted into a chat).
 - [ ] Review the new VS Code panel in a real window and report problems.
