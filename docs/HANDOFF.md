@@ -17,16 +17,16 @@ small by pruning, clearing, folding into a working state and digests
 
 ## 2. Current state
 
-| Item                 | State                                                                         |
-| -------------------- | ----------------------------------------------------------------------------- |
-| `main`               | `a6d843b`, green CI; the only long-lived branch                               |
-| npm                  | `omnexx@0.19.0` (tag `v0.19.0`, 2026-10-17)                                  |
-| VS Code / Open VSX   | `yaegerbomb42.omnexx` 0.15.0 (release CI)                                     |
-| Homebrew / curl      | tap `yaegerbomb42/homebrew-omnexx`; `omnexx.org/install.sh`                   |
-| Open PRs (this repo) | none                                                                          |
-| Listing PRs          | ollama/ollama#18959 open; EndoTheDev/Awesome-Ollama#113 closed                |
-| Master TODO          | all 20 items shipped ([MASTER-TODO.md](MASTER-TODO.md))                       |
-| Tests                | ~1,340 unit+integration in `test:quick`; CI runs the full suite               |
+| Item                 | State                                                           |
+| -------------------- | --------------------------------------------------------------- |
+| `main`               | `a6d843b`, green CI; the only long-lived branch                 |
+| npm                  | `omnexx@0.19.0` (tag `v0.19.0`, 2026-10-17)                     |
+| VS Code / Open VSX   | `yaegerbomb42.omnexx` 0.15.0 (release CI)                       |
+| Homebrew / curl      | tap `yaegerbomb42/homebrew-omnexx`; `omnexx.org/install.sh`     |
+| Open PRs (this repo) | none                                                            |
+| Listing PRs          | ollama/ollama#18959 open; EndoTheDev/Awesome-Ollama#113 closed  |
+| Master TODO          | all 20 items shipped ([MASTER-TODO.md](MASTER-TODO.md))         |
+| Tests                | ~1,340 unit+integration in `test:quick`; CI runs the full suite |
 
 **Bench (2026-10-16, hard10, DeepSeek V4.1 Flash, 1 rep):** omnexx resolved 9/10 with 616k
 fresh input tokens; Cline 6/11 with 1.32M. Data: `bench/results/full-2/`.
