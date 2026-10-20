@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CycleSummary } from '../../../src/agent/compaction.js';
 import {
   analysisIn,
+  diffWorkingState,
   mergeWorkingState,
   parseWorkingState,
   renderWorkingState,
@@ -70,5 +71,29 @@ describe('working state', () => {
 
   it('reads nothing from text without a working state', () => {
     expect(parseWorkingState('just a goal')).toBeUndefined();
+  });
+  it('diffs working states cleanly', () => {
+    const prior = {
+      done: ['step1'],
+      decisions: ['dec1'],
+      failed: ['fail1'],
+      filesTouched: ['a.ts'],
+      inProgress: 'working on step1',
+      nextStep: 'finish step1',
+    };
+    const current = {
+      done: ['step1', 'step2'],
+      decisions: ['dec1', 'dec2'],
+      failed: ['fail1'],
+      filesTouched: ['a.ts', 'b.ts'],
+      inProgress: 'working on step2',
+      nextStep: 'test step2',
+    };
+    const diff = diffWorkingState(prior, current);
+    expect(diff.addedDone).toEqual(['step2']);
+    expect(diff.addedDecisions).toEqual(['dec2']);
+    expect(diff.addedFailed).toEqual([]);
+    expect(diff.inProgressChanged).toBe(true);
+    expect(diff.nextStepChanged).toBe(true);
   });
 });

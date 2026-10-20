@@ -152,3 +152,44 @@ export function tombstonesIn(messages: readonly Message[]): string[] {
     ),
   );
 }
+
+export interface WorkingStateDiff {
+  addedDone: readonly string[];
+  addedDecisions: readonly string[];
+  addedFailed: readonly string[];
+  inProgressChanged: boolean;
+  nextStepChanged: boolean;
+  newTodos: readonly string[];
+}
+
+/**
+ * Computes the delta between two working states so cycles can communicate changes
+ * without retransmitting unchanged historical state.
+ */
+export function diffWorkingState(
+  prior: CycleSummary | undefined,
+  current: CycleSummary,
+): WorkingStateDiff {
+  if (!prior) {
+    return {
+      addedDone: current.done,
+      addedDecisions: current.decisions ?? [],
+      addedFailed: current.failed ?? [],
+      inProgressChanged: Boolean(current.inProgress),
+      nextStepChanged: Boolean(current.nextStep),
+      newTodos: current.openTodos ?? [],
+    };
+  }
+  const priorDone = new Set(prior.done);
+  const priorDec = new Set(prior.decisions ?? []);
+  const priorFailed = new Set(prior.failed ?? []);
+
+  return {
+    addedDone: current.done.filter((d) => !priorDone.has(d)),
+    addedDecisions: (current.decisions ?? []).filter((d) => !priorDec.has(d)),
+    addedFailed: (current.failed ?? []).filter((f) => !priorFailed.has(f)),
+    inProgressChanged: current.inProgress !== prior.inProgress,
+    nextStepChanged: current.nextStep !== prior.nextStep,
+    newTodos: current.openTodos ?? [],
+  };
+}
