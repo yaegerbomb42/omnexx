@@ -2678,9 +2678,6 @@ textarea.ci-edit {
 .ci,
 .ci-group .h {
   min-width: 0;
-}
-
-.ci-group .h {
   white-space: nowrap;
 }
 
@@ -3428,14 +3425,10 @@ textarea.ci-edit {
 
 .tool {
   position: relative;
-  padding: 1px 0;
+  padding: 1px 0 1px 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.tool {
-  padding-left: 16px;
 }
 
 .tool::before {
@@ -3793,10 +3786,6 @@ details.msg.think {
 
 .jump[hidden] {
   display: none;
-}
-
-body {
-  position: relative;
 }
 
 .ask {

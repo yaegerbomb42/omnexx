@@ -190,3 +190,23 @@ export async function mineEvidence(
 ): Promise<Finding[]> {
   return rankEvidence(await readSignals(cwd), exclude, limit);
 }
+
+/**
+ * Detects diminishing returns across improvement rounds: returns true if consecutive accepted diffs
+ * shrink past a threshold or if evidence repeats without driving substantial changes.
+ */
+export function hasDiminishingReturns(
+  recentDiffSizes: readonly number[],
+  minRelativeShrink = 0.5,
+  minConsecutiveRounds = 3,
+): boolean {
+  if (recentDiffSizes.length < minConsecutiveRounds) return false;
+  const tail = recentDiffSizes.slice(-minConsecutiveRounds);
+  for (let i = 1; i < tail.length; i++) {
+    const prev = tail[i - 1] ?? 0;
+    const curr = tail[i] ?? 0;
+    // If diffs are not strictly shrinking or if previous diff was negligible, not a diminishing pattern
+    if (prev === 0 || curr >= prev * (1 - minRelativeShrink)) return false;
+  }
+  return true;
+}
