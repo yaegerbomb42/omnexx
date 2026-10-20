@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   evidenceText,
   isTestPath,
+  hasDiminishingReturns,
   rankEvidence,
   readSignals,
   type RepoSignals,
@@ -90,5 +91,10 @@ describe('readSignals', () => {
   it('returns no signals outside a git checkout', async () => {
     const s = await readSignals('/');
     expect(s.files).toEqual([]);
+  });
+  it('detects diminishing returns when consecutive diff sizes shrink steadily', () => {
+    expect(hasDiminishingReturns([100, 40, 15])).toBe(true);
+    expect(hasDiminishingReturns([100, 90, 80])).toBe(false);
+    expect(hasDiminishingReturns([100, 20])).toBe(false);
   });
 });

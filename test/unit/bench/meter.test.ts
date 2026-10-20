@@ -108,4 +108,30 @@ describe('bench metering proxy', () => {
     meter.reset();
     expect(meter.totals().requests).toBe(0);
   });
+
+  it('rotates across apiKeys on multiple requests', async () => {
+    const seenKeys: (string | undefined)[] = [];
+    const upstream = createServer((req, res) => {
+      seenKeys.push(req.headers.authorization);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ usage: { prompt_tokens: 10, completion_tokens: 2 } }));
+    });
+    await new Promise<void>((r) => upstream.listen(0, '127.0.0.1', r));
+    closers.push(() => upstream.close());
+    const port = (upstream.address() as AddressInfo).port;
+    meter = await startMeter({
+      baseUrl: `http://127.0.0.1:${String(port)}/v1`,
+      model: 'M',
+      apiKey: 'key1',
+      apiKeys: ['key1', 'key2', 'key3'],
+    });
+    for (let i = 0; i < 3; i++) {
+      await fetch(`${meter.url}/chat/completions`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer x' },
+        body: JSON.stringify({ model: 'whatever' }),
+      }).then((r) => r.json());
+    }
+    expect(seenKeys).toEqual(['Bearer key1', 'Bearer key2', 'Bearer key3']);
+  });
 });

@@ -12,6 +12,7 @@ export interface Endpoint {
   baseUrl: string;
   model: string;
   apiKey: string;
+  apiKeys?: readonly string[];
 }
 
 export interface MeterTotals {
@@ -121,6 +122,8 @@ export function callLabel(raw: string): string {
 export async function startMeter(ep: Endpoint, log?: string, tag?: string): Promise<Meter> {
   let totals = EMPTY;
   const upstream = withoutTrailingSlashes(ep.baseUrl);
+  const keyList = ep.apiKeys && ep.apiKeys.length > 0 ? ep.apiKeys : [ep.apiKey];
+  let keyIdx = 0;
   const server: Server = createServer((req, res) => {
     void (async () => {
       const path = forwardPath(req.url);
@@ -145,8 +148,8 @@ export async function startMeter(ep: Endpoint, log?: string, tag?: string): Prom
           method: req.method ?? 'GET',
           headers: {
             'content-type': 'application/json',
-            authorization: `Bearer ${ep.apiKey}`,
-            'api-key': ep.apiKey,
+            authorization: `Bearer ${keyList[keyIdx] ?? ep.apiKey}`,
+            'api-key': keyList[keyIdx] ?? ep.apiKey,
           },
           ...(body === undefined ? {} : { body }),
           signal: gone.signal,
@@ -164,6 +167,11 @@ export async function startMeter(ep: Endpoint, log?: string, tag?: string): Prom
         }
         res.end();
         const usage = usageFrom(seen);
+        if (up.status === 429 && keyList.length > 1) {
+          keyIdx = (keyIdx + 1) % keyList.length;
+        } else if (up.ok && keyList.length > 1) {
+          keyIdx = (keyIdx + 1) % keyList.length;
+        }
         if (up.ok) totals = addUsage(totals, usage);
         else totals = { ...totals, errors: totals.errors + 1 };
         if (log && raw !== undefined)
@@ -225,5 +233,16 @@ export function endpointFromEnv(env: NodeJS.ProcessEnv, prefix: string): Endpoin
     if (!v) throw new Error(`${prefix}_${k} is not set`);
     return v;
   };
-  return { baseUrl: get('BASE_URL'), model: get('MODEL'), apiKey: get('API_KEY') };
+  const baseUrl = get('BASE_URL');
+  const model = get('MODEL');
+  const singleKey = get('API_KEY');
+  const keysEnv = env[`${prefix}_API_KEYS`]?.trim();
+  const keysList = keysEnv
+    ? keysEnv
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+  const apiKeys = keysList.length > 0 ? [...new Set([singleKey, ...keysList])] : undefined;
+  return { baseUrl, model, apiKey: singleKey, ...(apiKeys ? { apiKeys } : {}) };
 }
