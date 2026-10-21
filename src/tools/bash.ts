@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { z } from 'zod';
 import { parseDuration } from '../config/duration.js';
-import { runShell } from '../core/exec.js';
+import { runShell, type SessionName } from '../core/exec.js';
 import { checkCommand } from '../security/command-policy.js';
 import { compressOutput } from './output-compress.js';
 import { testSummary } from './output-summary.js';
@@ -75,9 +75,19 @@ export function splitHeredoc(command: string): { command: string; stdin: string 
   return { command: m[1].trim(), stdin: stdin ? `${stdin}\n` : '' };
 }
 
+const SESSION_NAMES = ['main', 'test', 'repl'] as const;
+
 const schema = z.strictObject({
-  command: z.string().min(1).describe('Shell command, run in the repo root'),
+  command: z.string().min(1).describe('Shell command, run in a persistent named session'),
   timeout: z.string().optional().describe('Default 2m, max 10m; a bare number is ms'),
+  session: z
+    .enum(SESSION_NAMES)
+    .optional()
+    .describe('Named persistent shell session ("main" default, "test", or "repl")'),
+  reset_session: z
+    .boolean()
+    .optional()
+    .describe('Reset the persistent session back to a clean repo root shell before running'),
 });
 
 const DEV_SERVER_PEEK_MS = 20_000;
@@ -106,14 +116,26 @@ export function isDevServer(command: string): boolean {
   return DEV_SERVERS.some((re) => re.test(flat));
 }
 
+/** Auto-route obvious test suites to the `test` session when `session` is not explicitly passed. */
+function inferSession(command: string, explicit?: SessionName): SessionName {
+  if (explicit) return explicit;
+  if (/^\s*(?:pytest|vitest|jest|cargo test|go test|npm test|pnpm test|yarn test|bun test)\b/.test(command)) {
+    return 'test';
+  }
+  return 'main';
+}
+
 /** "Missing script" from npm: name the scripts that do exist, in the folder the command ran in. */
 export async function missingScriptHint(
   output: string,
   command: string,
   root: string,
+  activeCwd?: string,
 ): Promise<string> {
   if (!/Missing script:/i.test(output)) return '';
-  const dir = /(?:^|&&|;)\s*cd\s+([^\s&;|]+)/.exec(command)?.[1] ?? '.';
+  const dir =
+    /(?:^|&&|;)\s*cd\s+([^\s&;|]+)/.exec(command)?.[1] ??
+    (activeCwd ? relative(root, activeCwd) || '.' : '.');
   // Only folders inside the repo.
   if (dir.startsWith('/') || dir.startsWith('~') || dir.split('/').includes('..')) return '';
   try {
@@ -149,21 +171,26 @@ export async function shellHint(output: string, root: string): Promise<string> {
 }
 
 function commandStatus(
-  r: { timedOut: boolean; exitCode: number },
+  r: { timedOut: boolean; exitCode: number; cwd?: string },
   timeoutMs: number,
   peeked: boolean,
+  sessionName: string,
+  repoRoot: string,
 ): string {
   const secs = Math.round(timeoutMs / 1000);
-  if (peeked) return `dev server still running after ${secs}s; stopped by the harness (it started)`;
+  const relCwd = r.cwd && r.cwd !== repoRoot ? ` cwd=${relative(repoRoot, r.cwd) || '.'}` : '';
+  const sessTag = `session=${sessionName}${relCwd}`;
+  if (peeked)
+    return `dev server still running after ${secs}s; stopped by the harness (it started), ${sessTag}`;
   if (r.timedOut)
-    return `timed out after ${secs}s; if it needs longer, run it again with a larger timeout (e.g. "10m")`;
-  return `exit ${String(r.exitCode)}`;
+    return `timed out after ${secs}s (${sessTag}); if it needs longer, run it again with a larger timeout (e.g. "10m")`;
+  return `exit ${String(r.exitCode)}, ${sessTag}`;
 }
 
 export const bashTool: Tool<typeof schema> = {
   name: 'bash',
   description:
-    "Run a shell command in the repo root and wait for it (never poll). Dev servers run 20 s, then stop; don't background them. git writes, network, sudo and outside paths need the person's OK; unattended runs refuse them.",
+    "Run a shell command in a persistent named session ('main', 'test', 'repl') that preserves cwd, virtualenvs, and exported variables across turns. Dev servers run 20 s, then stop; don't background them. git writes, network, sudo and outside paths need the person's OK; unattended runs refuse them.",
   schema,
   readOnly: false,
   // Models often send the timeout as a number of milliseconds.
@@ -207,6 +234,8 @@ export const bashTool: Tool<typeof schema> = {
     const devServer = isDevServer(input.command);
     if (devServer) timeoutMs = Math.min(timeoutMs, DEV_SERVER_PEEK_MS);
     const id = ctx.nextCommandId();
+    const sessionName = inferSession(command, input.session);
+
     const r = await (ctx.exec ?? runShell)(command, {
       ...(heredoc ? { stdin: heredoc.stdin } : {}),
       cwd: ctx.jail.root,
@@ -214,14 +243,17 @@ export const bashTool: Tool<typeof schema> = {
       timeoutMs,
       logPath: join(ctx.store.logsDir, `${id}.log`),
       redact: (s) => ctx.redactor.text(s),
+      session: sessionName,
+      ...(input.reset_session ? { resetSession: true } : {}),
       ...(ctx.signal ? { signal: ctx.signal } : {}),
     });
+
     const peeked = devServer && r.timedOut;
-    const status = commandStatus(r, timeoutMs, peeked);
+    const status = commandStatus(r, timeoutMs, peeked, sessionName, ctx.jail.root);
     // A recognized test failure becomes a short digest; anything else stays on trimOutput.
     const body =
       (testDigest(command, r.output, id) ?? trimOutput(compressOutput(r.output), id)) +
-      (await missingScriptHint(r.output, input.command, ctx.jail.root)) +
+      (await missingScriptHint(r.output, input.command, ctx.jail.root, r.cwd)) +
       (await shellHint(r.output, ctx.jail.root));
     const text = `[${status}, ${Math.round(r.durationMs)}ms, log ${id}]\n${body}`;
     return peeked || (r.exitCode === 0 && !r.timedOut) ? ok(text) : fail(text);

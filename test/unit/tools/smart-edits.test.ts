@@ -229,7 +229,7 @@ describe('post-edit diagnostics', () => {
       ctx,
     );
     expect(r.isError).toBe(true);
-    expect(r.content).toMatch(/Syntax error in proposed edit at line 1: TS1109/);
+    expect(r.content).toMatch(/Syntax error in proposed edit at line 1.*TS1109/);
     expect(r.content).toContain('Mutation discarded without writing to disk');
     expect(await readFile(join(root, 'src/a.ts'), 'utf8')).toBe('export const n: number = 1;\n');
   });

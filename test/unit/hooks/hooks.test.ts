@@ -98,7 +98,7 @@ describe('runHooks', () => {
     expect(outcome.blocked).toBe(false);
     expect(calls).toHaveLength(1);
     const opts = calls[0]?.opts;
-    expect(opts?.env.OMNEXX_EVENT).toBe('pre_tool');
+    expect(opts?.env?.OMNEXX_EVENT).toBe('pre_tool');
     expect(opts?.timeoutMs).toBe(30_000);
     expect(opts?.cwd).toBe('/w');
     const parsed: unknown = JSON.parse(String(opts?.stdin));
