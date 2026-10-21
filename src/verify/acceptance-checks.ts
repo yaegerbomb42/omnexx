@@ -59,6 +59,19 @@ export function inferGoalChecks(goal: string): string[] {
     const symbol = mSym[1];
     const file = mExp[1].replace(/^\.?\//, '');
     checks.push(`node --input-type=module -e 'import { ${symbol} } from "./${file}"'`);
+
+    // Pattern: throws ValidationError naming bad field: `field1`: ..., `field2`: ...
+    // Extract bulleted field names and check instance properties on thrown error
+    const fields: string[] = [];
+    for (const fb of goal.matchAll(/-\s+`([A-Za-z0-9_$]+)`\s*(?:\([^)]*\))?:/gi)) {
+      if (fb[1]) fields.push(fb[1]);
+    }
+    if (fields.length > 0) {
+      const fieldList = fields.map((f) => `"${f}"`).join(', ');
+      checks.push(
+        `node --input-type=module -e 'import { ${symbol} } from "./${file}"; for (const f of [${fieldList}]) { const e = new ${symbol}(f); if (e.field !== f) process.exit(1); }'`,
+      );
+    }
   }
 
   // Pattern: Add `func(args)` to `path/to/file`
@@ -78,6 +91,19 @@ export function inferGoalChecks(goal: string): string[] {
     if (file) {
       checks.push(`node --input-type=module -e 'import "./${file}"'`);
     }
+  }
+
+  // Pattern: Returns CSV with a header row `a,b,c` from `func(args)` in `path/to/file`
+  const pHeader = /returns\s+CSV\s+with\s+a\s+header\s+row\s+`([^`]+)`/i.exec(goal);
+  const pFn = /`([A-Za-z0-9_$]+)\([^`]*\)`/i.exec(goal);
+  const pModule = /`([^`]+\.[cm]?[jt]sx?)`/i.exec(goal);
+  if (pHeader?.[1] && pFn?.[1] && pModule?.[1]) {
+    const header = pHeader[1];
+    const fn = pFn[1];
+    const mod = pModule[1].replace(/^\.?\//, '');
+    checks.push(
+      `node --input-type=module -e 'import { ${fn} } from "./${mod}"; const r = ${fn}([]); if (!r.startsWith("${header}")) process.exit(1);'`,
+    );
   }
 
   return Array.from(new Set(checks));

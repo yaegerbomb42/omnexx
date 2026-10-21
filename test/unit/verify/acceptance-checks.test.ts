@@ -33,7 +33,7 @@ describe('acceptance-checks', () => {
       "npm test && ! (npm test 2>&1 | grep -q 'ℹ tests 0')",
     );
     const goal =
-      'Add validation that throws a `ValidationError` (export the class from `src/orders.js`). Add `toCsv(rows, columns)` to `src/csv.js` and use it in `src/export.js` so `exportUsers(users)` returns CSV.';
+      'Add validation that throws a `ValidationError` (export the class from `src/orders.js`) with a `field` property naming the first bad field:\n- `customerId`: non-empty string\n- `items`: non-empty array\nAdd `toCsv(rows, columns)` to `src/csv.js` and use it in `src/export.js` so `exportUsers(users)` returns CSV with a header row `id,name,email`.';
     const checks = inferGoalChecks(goal);
     expect(checks).toContain(
       'node --input-type=module -e \'import { ValidationError } from "./src/orders.js"\'',
@@ -42,5 +42,11 @@ describe('acceptance-checks', () => {
       'node --input-type=module -e \'import { toCsv } from "./src/csv.js"\'',
     );
     expect(checks).toContain('node --input-type=module -e \'import "./src/export.js"\'');
+    expect(checks).toContain(
+      'node --input-type=module -e \'import { ValidationError } from "./src/orders.js"; for (const f of ["customerId", "items"]) { const e = new ValidationError(f); if (e.field !== f) process.exit(1); }\'',
+    );
+    expect(checks).toContain(
+      'node --input-type=module -e \'import { exportUsers } from "./src/export.js"; const r = exportUsers([]); if (!r.startsWith("id,name,email")) process.exit(1);\'',
+    );
   });
 });
