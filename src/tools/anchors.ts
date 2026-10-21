@@ -62,6 +62,28 @@ export function locateRange(
     }
   }
 
+  // Fuzzy recovery for multi-line ranges: nearby window search matching both boundary tags
+  if (span > 0 && want.length === 4) {
+    const startTag = want.slice(0, 2);
+    const endTag = want.slice(2, 4);
+    const nearbyRadius = 15;
+    const minS = Math.max(1, start - nearbyRadius);
+    const maxS = Math.min(lines.length - span, start + nearbyRadius);
+    const nearbyHits: number[] = [];
+    for (let s = minS; s <= maxS && nearbyHits.length < 2; s++) {
+      if (
+        lineTag(lines[s - 1] ?? '') === startTag &&
+        lineTag(lines[s - 1 + span] ?? '') === endTag
+      ) {
+        nearbyHits.push(s);
+      }
+    }
+    const [nearbyOnly] = nearbyHits;
+    if (nearbyHits.length === 1 && nearbyOnly !== undefined) {
+      return { ok: true, start: nearbyOnly, end: nearbyOnly + span, moved: true };
+    }
+  }
+
   const now = rangeHash(lines, start, end);
   const first = JSON.stringify((lines[start - 1] ?? '').trim().slice(0, 80));
   return {
