@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { locateRange } from './anchors.js';
 import { openError } from './did-you-mean.js';
 import { recordEdit } from './edit.js';
-import { afterEdit } from './post-edit.js';
+import { afterEdit, preWriteSyntaxCheck } from './post-edit.js';
 import { fail, ok, resolvePath, type Tool } from './types.js';
 
 const schema = z.strictObject({
@@ -62,7 +62,10 @@ export const replaceLinesTool: Tool<typeof schema> = {
     const body = input.new_text.endsWith('\n') ? input.new_text.slice(0, -1) : input.new_text;
     const replacement = input.new_text === '' ? [] : body.split('\n');
     const out = [...lines.slice(0, at.start - 1), ...replacement, ...lines.slice(at.end)];
-    await writeFile(abs, out.join('\n'));
+    const newText = out.join('\n');
+    const syntaxCheck = await preWriteSyntaxCheck(ctx, abs, newText);
+    if (!syntaxCheck.ok) return fail(syntaxCheck.error);
+    await writeFile(abs, newText);
     recordEdit(ctx, abs);
     const moved = at.moved ? `; the lines had moved, applied at ${at.start}-${at.end}` : '';
     const tail = await afterEdit(ctx, abs, text);

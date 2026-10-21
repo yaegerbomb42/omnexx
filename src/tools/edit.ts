@@ -5,7 +5,7 @@ import { OmnexxError } from '../errors.js';
 import { openError } from './did-you-mean.js';
 import { missText } from './edit-recovery.js';
 import { fuzzyReplace } from './fuzzy-match.js';
-import { afterEdit } from './post-edit.js';
+import { afterEdit, preWriteSyntaxCheck } from './post-edit.js';
 import { fail, ok, resolvePath, type Tool, type ToolContext, type ToolOutput } from './types.js';
 
 /** 1-based line numbers where `needle` starts in `text` (the first ten). */
@@ -88,6 +88,8 @@ async function applyEdits(
     text = r.text;
     if (r.note) notes.push(r.note);
   }
+  const syntaxCheck = await preWriteSyntaxCheck(ctx, abs, text);
+  if (!syntaxCheck.ok) return fail(syntaxCheck.error);
   await writeFile(abs, text);
   recordEdit(ctx, abs);
   const how = notes.length ? `; ${notes.join('; ')}` : '';
@@ -218,6 +220,8 @@ export const writeFileTool: Tool<typeof writeSchema> = {
     } catch {
       // new file
     }
+    const syntaxCheck = await preWriteSyntaxCheck(ctx, abs, input.content);
+    if (!syntaxCheck.ok) return fail(syntaxCheck.error);
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, input.content);
     recordEdit(ctx, abs);
