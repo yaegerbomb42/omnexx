@@ -154,7 +154,7 @@ export class DockerSandbox {
     const pidFile = `/omnexx/exec/${id}.pid`;
     // setsid gives the command its own process group inside the container, recorded in pidFile.
     const inner = `setsid sh -c ${quote([command])} & p=$!; echo $p > ${pidFile}; wait $p; s=$?; rm -f ${pidFile}; exit $s`;
-    const envArgs = Object.entries(opts.env)
+    const envArgs = Object.entries(opts.env ?? {})
       .filter(([k]) => k !== 'PATH' && k !== 'HOME')
       .flatMap(([k, v]) => ['-e', `${k}=${v}`]);
     const argv = [
