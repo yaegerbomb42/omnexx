@@ -8,7 +8,7 @@ const MAX_DRYRUNS = 15;
 
 /** The check itself is broken (the shell or an inline script couldn't parse it), not the code. */
 const BROKEN =
-  /\b(sh|bash|zsh|dash)(: line \d+)?: .*(syntax error|unexpected EOF|unterminated|bad substitution)|command not found|\[eval\]:\d+[\s\S]*SyntaxError/i;
+  /\b(sh|bash|zsh|dash)(: line \d+)?: .*(syntax error|unexpected EOF|unterminated|bad substitution)|command not found|\[eval\]:\d+[\s\S]*SyntaxError|unexpected operator/i;
 
 export interface DryRunFindings {
   /** Checks that can never pass as written, with the shell's complaint. */
