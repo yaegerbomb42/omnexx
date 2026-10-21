@@ -47,6 +47,8 @@ export const EXECUTE_PROMPT = `[harness] Now carry out your analysis step by ste
 
 export const EXECUTE_REVISED_PROMPT = `[harness] Now carry out the revised analysis. Run the relevant tests as you go. ${STOP_RULE} Then stop calling tools and summarize.`;
 
+export const FINISH_PROMPT = `[harness] Turn budget nearly spent. Run the project's checks now (the relevant test command), then stop calling tools and summarize what you changed.`;
+
 export const fixPrompt = (failures: string): string =>
   `[harness] The project's checks fail on the current tree. Your work is kept (nothing was rolled back); fix forward:\n\n${failures}\n\nWhen they pass, stop calling tools and summarize.`;
 
@@ -230,6 +232,7 @@ export async function runThinkLoop(
   let rethinks = 0;
   let lastSignature = '';
   let rewinds = 0;
+  let continued = false;
   let nodes: Node[] = [];
   // The checklist shown to the person comes from the analysis unless the model keeps its own.
   let seeded: string[] = [];
@@ -327,6 +330,11 @@ export async function runThinkLoop(
 
   while (rounds < limits.rounds) {
     const r = await run(next);
+    if (r.end === 'max_turns_per_cycle' && !next.thinking && r.turns > 0 && !continued) {
+      continued = true;
+      next = { text: FINISH_PROMPT, chain: 'work', thinking: false, maxTurns: 2 };
+      continue;
+    }
     if (TERMINAL.has(r.end)) return finish(r.end);
     if (next.thinking) {
       const decided = await decide(r);
