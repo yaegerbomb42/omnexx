@@ -50,6 +50,35 @@ describe('line anchors', () => {
     expect(locateRange(FILE, 3, 2, undefined).ok).toBe(false);
   });
 
+  it('locateRange recovers a multi-line range in the nearby window when the full scan finds nothing unique', () => {
+    // Build a file where the same boundary tags appear twice, far apart, but one instance is near the original position
+    const block = ['function x() {', '  return 99;', '}'];
+    const padding = Array.from({ length: 40 }, (_, i) => `// line ${i}`);
+    const lines = [...block, ...padding, ...block, ''];
+    const hash = rangeHash(lines, 1, 3);
+    // Full-file scan finds 2 matches -> no unique hit -> falls through to nearby window
+    // Nearby window (+-15 from original start=1) finds only the first instance
+    const shifted = ['// header', ...lines];
+    const r = locateRange(shifted, 1, 3, hash);
+    expect(r).toEqual({ ok: true, start: 2, end: 4, moved: true });
+  });
+
+  it('locateRange still rejects a multi-line range when content actually changed', () => {
+    const hash = rangeHash(FILE, 5, 7);
+    const changed = FILE.map((l) => (l === 'function b() {' ? 'function c() {' : l));
+    const r = locateRange(changed, 5, 7, hash);
+    expect(r.ok).toBe(false);
+  });
+
+  it('locateRange rejects multi-line drift when two matches exist in the nearby window', () => {
+    const block = ['unique_start();', '  middle();', 'unique_end();'];
+    const lines = [...block, '', ...block, ''];
+    const hash = rangeHash(lines, 1, 3);
+    const shifted = ['// header', ...lines];
+    const r = locateRange(shifted, 1, 3, hash);
+    expect(r.ok).toBe(false);
+  });
+
   it('replace_lines edits by range, follows drift, refuses stale anchors', async () => {
     const { root, ctx } = await repo();
     const hash = rangeHash(FILE, 5, 7);
