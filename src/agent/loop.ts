@@ -539,7 +539,16 @@ export async function runAgentLoop(
               );
               continue;
             }
-            const req = turnRequest(ctx, messages, m.id, deps.maxTokens, deps.cacheKey);
+            // Use terminal prefix lock convention on the final turn to preserve KV cache warmth
+            const isTerminalTurn = turns >= deps.budget.max_turns_per_cycle - 1;
+            const req = turnRequest(
+              ctx,
+              messages,
+              m.id,
+              deps.maxTokens,
+              deps.cacheKey,
+              isTerminalTurn ? { toolChoice: 'none', terminalDirective: '[harness:terminal_step]' } : undefined,
+            );
             const quote = pricedPrompt(tokenRatios, m, req);
             const estimate = quote.estimate;
             const pf = preflight(deps.budget, {
