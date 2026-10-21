@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { compactPlanView, type Plan, type PlanNode } from '../core/plan.js';
 import { CHARS_PER_TOKEN } from '../core/tokens.js';
 import { contentsBlock, type SectionId, type SectionModes } from './sections.js';
@@ -47,6 +48,8 @@ export interface CycleInputs {
   /** How each section reaches the model; all pinned when unset (the old behaviour). */
   sections?: SectionModes;
   tools: ToolSpec[];
+  /** Optional repo root directory to normalize absolute paths into $REPO references in prefix. */
+  repoRoot?: string;
 }
 
 const ALL_PINNED: SectionModes = {
@@ -61,11 +64,70 @@ const clampSlot = (text: string, maxChars: number): string =>
   text.length <= maxChars ? text : `${text.slice(0, maxChars - 24)}\n...[slot-truncated]`;
 
 /**
- * Deterministically sort ToolSpecs by name so Slot 0 never invalidates the provider KV-cache
- * due to object registration order changes.
+ * Recursively sort JSON object keys to guarantee deterministic byte serialization for schemas.
  */
-function canonicalizeTools(tools: readonly ToolSpec[]): ToolSpec[] {
-  return [...tools].sort((a, b) => a.name.localeCompare(b.name));
+export function sortJsonKeys(val: unknown): unknown {
+  if (val === null || typeof val !== 'object') return val;
+  if (Array.isArray(val)) {
+    return val.map((item) => sortJsonKeys(item));
+  }
+  const obj = val as Record<string, unknown>;
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(obj).sort()) {
+    sorted[key] = sortJsonKeys(obj[key]);
+  }
+  return sorted;
+}
+
+/**
+ * Normalizes text to UTF-8 Unicode NFC normalization form and standardizes line endings (\r\n -> \n).
+ * Replaces repo absolute path with '$REPO' if repoRoot is supplied.
+ */
+export function canonicalizePrefixText(text: string, repoRoot?: string): string {
+  let normalized = text.normalize('NFC').replace(/\r\n/g, '\n');
+  if (repoRoot) {
+    const cleanRoot = repoRoot.replace(/[/\\]+$/, '');
+    if (cleanRoot.length > 0) {
+      normalized = normalized.split(cleanRoot).join('$REPO');
+    }
+  }
+  return normalized;
+}
+
+/**
+ * Deterministically sort ToolSpecs by name and sort inputSchema object keys so Slot 0 never
+ * invalidates the provider KV-cache due to object registration order changes or schema key jitter.
+ */
+export function canonicalizeTools(tools: readonly ToolSpec[], repoRoot?: string): ToolSpec[] {
+  return [...tools]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((t) => ({
+      name: t.name,
+      description: canonicalizePrefixText(t.description, repoRoot),
+      inputSchema: (sortJsonKeys(t.inputSchema) ?? {}) as Record<string, unknown>,
+    }));
+}
+
+/**
+ * Computes a deterministic SHA-256 hash of the frozen prefix (Slot 0 tools + Slots 1-6 content).
+ */
+export function computePrefixHash(
+  tools: readonly ToolSpec[],
+  system: readonly SystemBlock[],
+  cycleAnchor: string,
+): string {
+  const hash = createHash('sha256');
+  // Hash Slot 0 tools
+  for (const t of tools) {
+    hash.update(`tool:${t.name}:${t.description}:${JSON.stringify(t.inputSchema)}\n`);
+  }
+  // Hash Slots 1-5 system blocks
+  for (const s of system) {
+    hash.update(`system:${s.text}\n`);
+  }
+  // Hash Slot 6 cycle anchor
+  hash.update(`anchor:${cycleAnchor}\n`);
+  return hash.digest('hex');
 }
 
 /**
@@ -84,6 +146,8 @@ export function buildCycleContext(i: CycleInputs): {
   tools: ToolSpec[];
   /** One name per system block, for the context breakdown. */
   labels: string[];
+  /** Deterministic SHA-256 digest of Frozen Prefix Slots 0-6. */
+  prefixHash: string;
 } {
   const modes = i.sections ?? ALL_PINNED;
   const optional: { id: SectionId; text: string }[] = [];
@@ -98,34 +162,64 @@ export function buildCycleContext(i: CycleInputs): {
   // --- SLOTS 1–5: FROZEN SYSTEM PREFIX ---
   const blocks: { label: string; text: string }[] = [
     // Slot 1: Core System Identity
-    { label: 'system', text: clampSlot(i.systemPrompt.trim(), SLOT_CHAR_BUDGETS.core) },
+    {
+      label: 'system',
+      text: canonicalizePrefixText(
+        clampSlot(i.systemPrompt.trim(), SLOT_CHAR_BUDGETS.core),
+        i.repoRoot,
+      ),
+    },
   ];
 
   // Slot 2: Repository Codemap
   if (keep('codemap', i.codemap)) {
-    blocks.push({ label: 'codemap', text: clampSlot(i.codemap.trim(), SLOT_CHAR_BUDGETS.codemap) });
+    blocks.push({
+      label: 'codemap',
+      text: canonicalizePrefixText(
+        clampSlot(i.codemap.trim(), SLOT_CHAR_BUDGETS.codemap),
+        i.repoRoot,
+      ),
+    });
   }
 
   // Slot 3: Goal + Planner Intent
   const intent = keep('intent', i.intent) ? `\n\n${(i.intent ?? '').trim()}` : '';
   blocks.push({
     label: 'goal',
-    text: clampSlot(`# Goal\n\n${i.goal.trim()}${intent}`, SLOT_CHAR_BUDGETS.goal),
+    text: canonicalizePrefixText(
+      clampSlot(`# Goal\n\n${i.goal.trim()}${intent}`, SLOT_CHAR_BUDGETS.goal),
+      i.repoRoot,
+    ),
   });
 
   // Slot 4: Runtime Settings (brief) & Verified Repo Facts
   if (i.brief?.trim()) {
-    blocks.push({ label: 'settings', text: clampSlot(i.brief.trim(), SLOT_CHAR_BUDGETS.facts) });
+    blocks.push({
+      label: 'settings',
+      text: canonicalizePrefixText(
+        clampSlot(i.brief.trim(), SLOT_CHAR_BUDGETS.facts),
+        i.repoRoot,
+      ),
+    });
   }
   if (i.facts?.trim()) {
-    blocks.push({ label: 'facts', text: clampSlot(i.facts.trim(), SLOT_CHAR_BUDGETS.facts) });
+    blocks.push({
+      label: 'facts',
+      text: canonicalizePrefixText(
+        clampSlot(i.facts.trim(), SLOT_CHAR_BUDGETS.facts),
+        i.repoRoot,
+      ),
+    });
   }
 
   // Slot 5: Cross-Cycle Lessons (notes.md)
   if (keep('lessons', i.notes)) {
     blocks.push({
       label: 'notes',
-      text: clampSlot(`# Lessons (notes.md)\n\n${i.notes.trim()}`, SLOT_CHAR_BUDGETS.lessons),
+      text: canonicalizePrefixText(
+        clampSlot(`# Lessons (notes.md)\n\n${i.notes.trim()}`, SLOT_CHAR_BUDGETS.lessons),
+        i.repoRoot,
+      ),
     });
   }
 
@@ -163,7 +257,10 @@ export function buildCycleContext(i: CycleInputs): {
     `# Your task now\n\nWork on ${i.task.id}: ${i.task.title}. Stop calling tools and summarize when it is done or you are blocked.`,
   );
 
-  const slot6Text = clampSlot(slot6Parts.join('\n\n'), SLOT_CHAR_BUDGETS.cycleAnchor);
+  const slot6Text = canonicalizePrefixText(
+    clampSlot(slot6Parts.join('\n\n'), SLOT_CHAR_BUDGETS.cycleAnchor),
+    i.repoRoot,
+  );
 
   // --- SLOT 7: LIVING STATE FRAME SEED (first.content[1]) ---
   const slot7Parts: string[] = [];
@@ -180,19 +277,25 @@ export function buildCycleContext(i: CycleInputs): {
   const allParts = [slot6Text];
   if (slot7Parts.length > 0) {
     allParts.push(
-      clampSlot(
-        slot7Parts.join('\n\n'),
-        SLOT_CHAR_BUDGETS.initialLsf,
+      canonicalizePrefixText(
+        clampSlot(
+          slot7Parts.join('\n\n'),
+          SLOT_CHAR_BUDGETS.initialLsf,
+        ),
+        i.repoRoot,
       )
     );
   }
   const firstContent: Message['content'] = [{ type: 'text', text: allParts.join('\n\n') }];
+  const canonicalTools = canonicalizeTools(i.tools, i.repoRoot);
+  const prefixHash = computePrefixHash(canonicalTools, system, slot6Text);
 
   return {
     system,
     first: { role: 'user', content: firstContent },
-    tools: canonicalizeTools(i.tools),
+    tools: canonicalTools,
     labels: blocks.map((b) => b.label),
+    prefixHash,
   };
 }
 
