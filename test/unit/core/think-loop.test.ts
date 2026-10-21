@@ -5,7 +5,6 @@ import {
   continueWith,
   DECIDE_PROMPT,
   EXECUTE_PROMPT,
-  FINISH_PROMPT,
   runThinkLoop,
   THINK_PROMPT,
   thinkSizing,
