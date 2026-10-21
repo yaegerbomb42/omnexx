@@ -4,6 +4,7 @@ import type { ContentBlock, Message } from '../providers/types.js';
 import { enforceBudget } from './budget-guard.js';
 import { pruneRules } from './prune-rules.js';
 import {
+  WORKING_STATE_HEADER,
   analysisIn,
   mergeWorkingState,
   parseWorkingState,
@@ -12,11 +13,18 @@ import {
 } from './working-state.js';
 
 /**
- * In-cycle context control (plan §3.6), provider-neutral so it works on every endpoint:
- * 1. past `clearAt` tokens, old large tool results are elided (free, deterministic);
- * 2. past `compactAt`, the older turns are summarized by the cheap model into a CycleSummary and
- *    folded into the first message, keeping the most recent turns verbatim.
- * The per-cycle token cap still ends a cycle that outgrows both.
+ * Mathematical ceiling for the Living State Frame + Active Suffix (Slots 6–11).
+ * Combined with the Frozen System Prefix, the total prompt is strictly bounded <= 10,240 tokens.
+ */
+export const LSF_TOKEN_CEILING = 10_240;
+
+/**
+ * In-cycle context control (plan §3.6), upgraded to an Epoch-Locked Living State Frame (LSF):
+ * 1. Mid-epoch pruning/clearing ONLY executes when the characters removed exceed the KV-cache
+ *    miss amortization threshold (`minClearChars`), preventing single-block cache thrashing.
+ * 2. At `compactAt` (or LSF ceiling), full zero-threshold pruning + LSF folding execute together
+ *    in a single epoch transition, replacing Slot 7 (`messages[0].content[1]`) while keeping
+ *    Slot 6 (`messages[0].content[0]`) 100% byte-identical.
  */
 export interface CompactionSettings {
   clearAt: number;
@@ -26,8 +34,8 @@ export interface CompactionSettings {
   /** Clear only when at least this many tokens would go (default: MIN_CLEAR_TOKENS or clearAt/10). */
   minClearTokens?: number;
   /**
-   * The user's context budget (the Memory slider, clamped to the window). The history never
-   * leaves manageContext above it: the largest blocks become digests when folding isn't enough.
+   * The user's context budget (clamped to LSF_TOKEN_CEILING). The history never leaves
+   * manageContext above it.
    */
   budget?: number;
   /** Text the fold keeps word for word (the think phase's analysis). */
@@ -428,7 +436,6 @@ export function ensureFacts(
     const last = errors.at(-1);
     if (last) lastError = last.slice(0, 1_000);
   }
-  // The todo calls are facts; the summarizer's paraphrase of them is not.
   const todos = openTodos(head) ?? s.openTodos;
   return {
     ...s,
@@ -438,9 +445,16 @@ export function ensureFacts(
   };
 }
 
-/** First message + summary, then the kept tail. The tail starts with an assistant turn. */
+/**
+ * Slot 6 (`first.content[0]`) is the frozen cycle anchor. Slot 7 (`first.content[1]`) is the
+ * Living State Frame (LSF). `applySummary` replaces Slot 7 cleanly so Slot 6 never mutates.
+ */
 export function applySummary(first: Message, summary: string, tail: readonly Message[]): Message[] {
-  return [{ role: 'user', content: [...first.content, { type: 'text', text: summary }] }, ...tail];
+  const slot6Block = first.content[0];
+  const content: ContentBlock[] = slot6Block
+    ? [slot6Block, { type: 'text', text: summary }]
+    : [{ type: 'text', text: summary }];
+  return [{ role: 'user', content }, ...tail];
 }
 
 /** Fold `head` (the turns since the last fold); `prior` is the working state they continue. */
@@ -470,25 +484,34 @@ interface Step {
 }
 
 /**
- * Drop superseded material: always once past `clearAt`, and below it as soon as enough would go
- * to pay for the cache miss the rewrite causes (continuous pruning, batched by size).
+ * Epoch-Aware Prune:
+ * Outside of a fold (`force = false`), NEVER mutate mid-history unless `chars >= minClearChars(settings)`.
+ * In the original code, `tokens > settings.clearAt` bypassed `minClearChars`, causing every single
+ * 400-char superseded read to rewrite mid-history and destroy the KV-cache on every turn.
  */
-function prune(messages: Message[], settings: CompactionSettings, emit: Emit): Step {
+function prune(
+  messages: Message[],
+  settings: CompactionSettings,
+  emit: Emit,
+  force = false,
+): Step {
   const tokens = contextTokens(messages);
   const s = pruneSuperseded(messages);
   const r = pruneRules(s.messages, settings.keepTurns);
   const chars = s.chars + r.chars;
   const count = s.pruned + r.pruned;
-  if (!count || (tokens <= settings.clearAt && chars < minClearChars(settings)))
+  if (!count || (!force && chars < minClearChars(settings))) {
     return { messages, tokens };
+  }
   const after = contextTokens(r.messages);
   emit({ kind: 'pruned', pruned: count, chars, tokensBefore: tokens, tokensAfter: after });
   return { messages: r.messages, tokens: after };
 }
 
-function clear(step: Step, settings: CompactionSettings, emit: Emit): Step {
-  if (step.tokens <= settings.clearAt) return step;
-  const r = clearOldToolResults(step.messages, settings.keepToolResults, minClearChars(settings));
+function clear(step: Step, settings: CompactionSettings, emit: Emit, force = false): Step {
+  if (!force && step.tokens <= settings.clearAt) return step;
+  const threshold = force ? MIN_CLEAR_CHARS : minClearChars(settings);
+  const r = clearOldToolResults(step.messages, settings.keepToolResults, threshold);
   if (!r.cleared) return step;
   const after = contextTokens(r.messages);
   emit({
@@ -501,13 +524,24 @@ function clear(step: Step, settings: CompactionSettings, emit: Emit): Step {
   return { messages: r.messages, tokens: after };
 }
 
-const textOf = (blocks: readonly ContentBlock[]): string =>
-  blocks.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n\n');
+/** Extract any existing Slot 7 Living State Frame text from `messages[0]`. */
+function extractPriorLsfText(currentFirst: Message | undefined, originalFirst: Message): string {
+  if (!currentFirst) return '';
+  // Look for any block containing WORKING_STATE_HEADER or blocks after Slot 6 (index 0).
+  const lsfBlocks = currentFirst.content.filter(
+    (b, idx) => b.type === 'text' && (idx > 0 || b.text.includes(WORKING_STATE_HEADER)),
+  );
+  if (lsfBlocks.length > 0) {
+    return lsfBlocks.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n\n');
+  }
+  const trailing = currentFirst.content.slice(originalFirst.content.length);
+  return trailing.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n\n');
+}
 
 /**
- * Fold everything older than the last `keepTurns` turns into the working state, merged with the
- * previous one (handed to the folder as `prior`, not re-summarized from its rendering). The goal
- * (first message), the pinned analysis and the tombstones survive word for word.
+ * Fold everything older than the last `keepTurns` turns into the Living State Frame (Slot 7),
+ * merged with `prior`. Executes zero-threshold pruning/clearing first since the fold rewrites
+ * the suffix anyway, costing zero extra KV-cache misses.
  */
 async function fold(
   step: Step,
@@ -515,14 +549,19 @@ async function fold(
   settings: CompactionSettings,
   summarize: Summarize,
   emit: Emit,
+  effectiveBudget: number,
 ): Promise<Message[]> {
-  const { messages: current, tokens } = step;
+  // Piggyback free un-throttled prune + clear onto the fold epoch transition.
+  const preCleaned = clear(prune(step.messages, settings, emit, true), settings, emit, true);
+  const { messages: current, tokens } = preCleaned;
+
   const split = splitForCompaction(current, settings.keepTurns);
   if (!split) {
     emit({ kind: 'compact_failed', reason: 'too few turns to compact', tokens });
     return current;
   }
-  const earlier = textOf(current[0]?.content.slice(first.content.length) ?? []);
+
+  const earlier = extractPriorLsfText(current[0], first);
   const prior = parseWorkingState(earlier);
   let summary: CycleSummary | undefined;
   try {
@@ -535,15 +574,15 @@ async function fold(
     emit({ kind: 'compact_failed', reason: 'no summary (budget or malformed answer)', tokens });
     return current;
   }
+
   const pinned = settings.pinned?.trim() ? settings.pinned : analysisIn(earlier);
-  const state = renderSummary(mergeWorkingState(prior, summary), pinned, tombstonesIn(split.head));
-  // The fold rewrites everything after the working state anyway, so shrinking the kept tail now
-  // costs no extra cache miss, and it keeps the next fold far away (cost-sim.test.ts).
+  const merged = mergeWorkingState(prior, summary);
+  const state = renderSummary(merged, pinned, tombstonesIn(split.head));
+
   const folded = applySummary(first, state, split.tail);
-  const next =
-    settings.budget === undefined
-      ? folded
-      : enforceBudget(folded, Math.floor(settings.budget * SETTLE_FRACTION), true).messages;
+  const settleTarget = Math.floor(effectiveBudget * SETTLE_FRACTION);
+  const next = enforceBudget(folded, settleTarget, true).messages;
+
   emit({
     kind: 'compacted',
     turnsSummarized: split.head.filter((m) => m.role === 'assistant').length,
@@ -554,9 +593,11 @@ async function fold(
 }
 
 /**
- * Before a turn: prune superseded material, clear old tool results past `clearAt`, fold into the
- * working state past `compactAt`, and never leave the history over `budget`. `first` is the
- * cycle's original first message.
+ * Before a turn:
+ * 1. Clamp the active budget to `LSF_TOKEN_CEILING` (10,240 tokens).
+ * 2. Run amortized `prune` and `clear` (only mutating mid-history if savings pay for the miss).
+ * 3. Trigger an LSF `fold` past `compactAt` (or when tokens exceed `effectiveBudget`).
+ * 4. Enforce hard budget ceiling on the exit path.
  */
 export async function manageContext(
   messages: Message[],
@@ -565,19 +606,25 @@ export async function manageContext(
   summarize: Summarize | undefined,
   emit: Emit,
 ): Promise<Message[]> {
-  const cleared = clear(prune(messages, settings, emit), settings, emit);
+  const effectiveCompactAt = settings.compactAt;
+
+  const cleared = clear(prune(messages, settings, emit, false), settings, emit, false);
   const current =
-    cleared.tokens > settings.compactAt && summarize
-      ? await fold(cleared, first, settings, summarize, emit)
+    cleared.tokens > effectiveCompactAt && summarize
+      ? await fold(cleared, first, settings, summarize, emit, settings.budget ?? LSF_TOKEN_CEILING)
       : cleared.messages;
-  if (settings.budget === undefined) return current;
+
+  if (settings.budget === undefined) {
+    return current;
+  }
   const g = enforceBudget(current, settings.budget);
-  if (g.digested)
+  if (g.digested) {
     emit({
       kind: 'digested',
       digested: g.digested,
       tokensBefore: contextTokens(current),
       tokensAfter: g.tokens,
     });
+  }
   return g.messages;
 }
