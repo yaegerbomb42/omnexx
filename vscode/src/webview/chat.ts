@@ -891,7 +891,9 @@ contextPage.wire(post);
 inspector.wire(post, () => {
   contextPage.open(post);
 });
-crew.wire();
+crew.wire((action) => {
+  post({ type: 'browserNav', action });
+});
 modelPicker.wire(() => {
   settings.open(post);
 });

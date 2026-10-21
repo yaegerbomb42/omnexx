@@ -81,8 +81,16 @@ export function drawBrowser(f: BrowserFrameMsg): void {
   section.hidden = false;
   el('b-url').textContent = f.url || 'about:blank';
   el('b-action').textContent = f.action;
+  const statusEl = document.getElementById('b-status');
+  if (statusEl) {
+    statusEl.textContent = `frame #${String(f.seq)}`;
+  }
   const img = el('b-img');
   if (img instanceof HTMLImageElement) img.src = `data:${f.mime};base64,${f.data}`;
+  const dimmer = document.getElementById('b-dimmer');
+  if (dimmer) {
+    dimmer.hidden = true;
+  }
 }
 
 export function resetViews(): void {
@@ -91,9 +99,19 @@ export function resetViews(): void {
   el('browser').hidden = true;
 }
 
-export function wire(): void {
-  // Click the screenshot to see it larger; click again to shrink it.
+export function wire(onAction?: (action: string) => void): void {
+  // Click the screenshot to toggle full-width canvas
   el('b-img').addEventListener('click', () => {
     el('browser').classList.toggle('big');
+  });
+
+  document.getElementById('b-btn-back')?.addEventListener('click', () => {
+    onAction?.('back');
+  });
+  document.getElementById('b-btn-fwd')?.addEventListener('click', () => {
+    onAction?.('forward');
+  });
+  document.getElementById('b-btn-reload')?.addEventListener('click', () => {
+    onAction?.('reload');
   });
 }
