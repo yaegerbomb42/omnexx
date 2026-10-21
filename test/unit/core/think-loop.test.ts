@@ -5,6 +5,7 @@ import {
   continueWith,
   DECIDE_PROMPT,
   EXECUTE_PROMPT,
+  FINISH_PROMPT,
   runThinkLoop,
   THINK_PROMPT,
   thinkSizing,
@@ -303,6 +304,48 @@ describe('think-first loop session: bounded thinking', () => {
     );
     await runThinkLoop(first, io, limits);
     expect(calls[2]?.seg.maxTurns).toBe(8);
+  });
+});
+
+describe('think-first loop session: work continuation', () => {
+  it('grants one continuation turn when the work segment hits the turn limit', async () => {
+    const { io, calls } = fakeIO(
+      [
+        { say: 'analysis' },
+        { say: 'editing files...', end: 'max_turns_per_cycle' },
+        { say: 'tests pass' },
+      ],
+      [pass('t1')],
+    );
+    const out = await runThinkLoop(first, io, limits);
+    expect(calls.map((c) => c.chain)).toEqual(['think', 'work', 'work']);
+    expect(text(calls[2]?.seg.first)).toContain('Turn budget nearly spent');
+    expect(calls[2]?.seg.maxTurns).toBe(2);
+    expect(out).toMatchObject({ end: 'done', green: true, rounds: 1 });
+  });
+
+  it('does not grant a second continuation on the same session', async () => {
+    const { io } = fakeIO(
+      [
+        { say: 'analysis' },
+        { say: 'editing...', end: 'max_turns_per_cycle' },
+        { say: 'still going', end: 'max_turns_per_cycle' },
+      ],
+      [pass('t1')],
+    );
+    const out = await runThinkLoop(first, io, limits);
+    // Second max_turns_per_cycle proceeds to checks (rounds incremented) and then finishes
+    expect(out.end).toBe('done');
+  });
+
+  it('does not continue for think segments hitting the turn limit', async () => {
+    const { io } = fakeIO(
+      [{ say: 'exploring', end: 'max_turns_per_cycle' }, { say: 'analysis' }, { say: 'done' }],
+      [pass('t1')],
+    );
+    // Think segment hitting max_turns triggers the decide step, not continuation
+    const out = await runThinkLoop(first, io, limits);
+    expect(out.end).toBe('done');
   });
 });
 
