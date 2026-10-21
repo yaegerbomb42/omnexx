@@ -1,5 +1,5 @@
 import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -164,7 +164,8 @@ export class ShellSession {
     this.lastCwd = rootCwd;
     this.baseEnv = { ...baseEnv };
     mkdirSync(STATE_DIR, { recursive: true });
-    const safeId = `${Buffer.from(rootCwd).toString('base64url').slice(0, 16)}-${name.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const cwdHash = createHash('sha256').update(rootCwd).digest('hex').slice(0, 16);
+    const safeId = `${cwdHash}-${name.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
     this.cwdStatePath = join(STATE_DIR, `${safeId}.cwd`);
     this.envStatePath = join(STATE_DIR, `${safeId}.env`);
   }
@@ -460,94 +461,69 @@ async function writeLogSafe(logPath: string, content: string): Promise<void> {
 }
 
 /** Disposable one-shot execution for isolated commands or when `opts.oneShot` is set. */
-export async function runOneShotShell(command: string, opts: ExecOptions): Promise<ExecResult> {
-  const startMs = performance.now();
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const shellBin = existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh';
-
-  return new Promise<ExecResult>((resolve) => {
-    const child = spawn(shellBin, ['-c', command], {
-      cwd: opts.cwd,
-      env: { ...process.env, ...(opts.env ?? {}) },
-      detached: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    let output = '';
-    let timedOut = false;
-    let settled = false;
-
-    const killGroup = () => {
-      if (!child.pid) return;
-      try {
-        process.kill(-child.pid, 'SIGKILL');
-      } catch {
-        try {
-          child.kill('SIGKILL');
-        } catch {
-          // ignore
-        }
-      }
-    };
-
-    const timer = setTimeout(() => {
-      timedOut = true;
-      killGroup();
-    }, timeoutMs);
-
-    const onAbort = () => {
-      timedOut = true;
-      killGroup();
-    };
-
-    if (opts.signal) {
-      if (opts.signal.aborted) onAbort();
-      else opts.signal.addEventListener('abort', onAbort, { once: true });
-    }
-
-    const onChunk = (c: Buffer) => {
-      output += c.toString('utf8');
-    };
-    child.stdout.on('data', onChunk);
-    child.stderr.on('data', onChunk);
-
-    if (opts.stdin !== undefined) {
-      child.stdin.end(opts.stdin);
-    } else {
-      child.stdin.end();
-    }
-
-    const finish = async (code: number | null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
-      const cleaned = opts.redact ? opts.redact(output) : output;
-      if (opts.logPath) await writeLogSafe(opts.logPath, cleaned);
-      resolve({
-        output: cleaned,
-        exitCode: code ?? (timedOut ? 124 : 1),
-        timedOut,
-        durationMs: performance.now() - startMs,
-        cwd: opts.cwd,
-      });
-    };
-
-    child.once('close', (code) => void finish(code));
-    child.once('error', () => void finish(1));
+export async function runDisposableShell(command: string, opts: ExecOptions): Promise<ExecResult> {
+  const started = Date.now();
+  const child = execa(command, {
+    shell: '/bin/sh',
+    cwd: opts.cwd,
+    env: opts.env ?? {},
+    extendEnv: false,
+    detached: true,
+    all: true,
+    reject: false,
+    stripFinalNewline: false,
+    maxBuffer: 64 * 1024 * 1024,
+    ...(opts.stdin !== undefined ? { input: opts.stdin } : { stdin: 'ignore' }),
   });
+  let timedOut = false;
+  let aborted = false;
+  const grace = opts.killGraceMs ?? 5_000;
+  const stop = (): void => {
+    if (child.pid === undefined) return;
+    const pid = child.pid;
+    void opts.onKill?.().catch(() => undefined);
+    killGroup(pid, 'SIGTERM');
+    setTimeout(() => {
+      killGroup(pid, 'SIGKILL');
+    }, grace).unref();
+  };
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    stop();
+  }, timeoutMs);
+  const onAbort = (): void => {
+    aborted = true;
+    stop();
+  };
+  opts.signal?.addEventListener('abort', onAbort, { once: true });
+  const result = await child;
+  clearTimeout(timer);
+  opts.signal?.removeEventListener('abort', onAbort);
+  if (child.pid !== undefined) killGroup(child.pid, 'SIGKILL');
+  const raw = typeof result.all === 'string' ? result.all : '';
+  const output = opts.redact ? opts.redact(raw) : raw;
+  if (opts.logPath) await writeFile(opts.logPath, output, { mode: 0o600 });
+  return {
+    exitCode: result.exitCode ?? 124,
+    timedOut,
+    aborted,
+    output,
+    durationMs: Date.now() - started,
+    cwd: opts.cwd,
+  };
 }
 
 /**
  * Primary shell execution entrypoint.
- * Routes to a persistent named session ('main' by default) unless `opts.oneShot` is true.
- * Preserves 100% reference equality (`ctx.exec === runShell`) for `onHost(ctx)` checks.
+ * If `opts.session` is specified, routes to a stateful persistent named session ('main' | 'test' | 'repl').
+ * Otherwise, runs in an isolated process group via `runDisposableShell`.
  */
 export async function runShell(command: string, opts: ExecOptions): Promise<ExecResult> {
-  if (opts.oneShot) {
-    return runOneShotShell(command, opts);
+  if (opts.session && !opts.oneShot) {
+    const session = defaultSessionPool.getOrCreate(opts.cwd, opts.session, opts.env ?? {});
+    return session.exec(command, opts);
   }
-  const sessionName: SessionName = opts.session ?? 'main';
-  const session = defaultSessionPool.getOrCreate(opts.cwd, sessionName, opts.env ?? {});
-  return session.exec(command, opts);
+  return runDisposableShell(command, opts);
 }
+
