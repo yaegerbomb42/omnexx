@@ -35,6 +35,6 @@ export async function rollbackTo(
     }
   }
   await git(cwd, ['reset', '-q', '--hard', lastGreen]);
-  await git(cwd, ['clean', '-q', '-fd']);
+  await git(cwd, ['clean', '-q', '-fdx', '-e', 'node_modules', '-e', '.venv', '-e', 'venv', '-e', 'target', '-e', 'vendor']);
   return { savedPatch, exact };
 }
