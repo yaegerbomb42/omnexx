@@ -29,11 +29,18 @@ describe('acceptance-checks', () => {
     expect(inferCheckCommand('`npm run typecheck` passes with zero errors')).toBe(
       'npm run typecheck',
     );
+    expect(inferCheckCommand('`npm test` passes with tests for quoting and empty values')).toBe(
+      "npm test && ! (npm test 2>&1 | grep -q 'ℹ tests 0')",
+    );
     const goal =
-      'Add validation that throws a `ValidationError` (export the class from `src/orders.js`)';
+      'Add validation that throws a `ValidationError` (export the class from `src/orders.js`). Add `toCsv(rows, columns)` to `src/csv.js` and use it in `src/export.js` so `exportUsers(users)` returns CSV.';
     const checks = inferGoalChecks(goal);
     expect(checks).toContain(
       'node --input-type=module -e \'import { ValidationError } from "./src/orders.js"\'',
     );
+    expect(checks).toContain(
+      'node --input-type=module -e \'import { toCsv } from "./src/csv.js"\'',
+    );
+    expect(checks).toContain('node --input-type=module -e \'import "./src/export.js"\'');
   });
 });
