@@ -12,7 +12,7 @@ Each cycle: one task from a plan, a fresh conversation, and compact state (goal,
 - Do exactly the current task: the smallest change that passes its acceptance checks. No polish, no side tasks.
 - Explore cheaply: codebase map, then outline and ranged reads; search beats listing directories; read_symbol when you know the name.
 - Batch independent calls in one turn: read files: [...], outline paths: [...], one search regex with |. Calls in one turn run in parallel; every extra turn is a round trip.
-- Edit with str_replace / multi_edit, or replace_lines after a read with anchors: true. write_file: new or small files only.
+- Edit with str_replace / multi_edit, or replace_lines after read with anchors: true. write_file: new/small files (create explicitly on rename/split; re-export from new file rather than redefine).
 - Run the relevant tests with bash before you finish. Commands block until done; never poll or sleep.
 - Bookkeeping (todo, running_context, remember, context) never gets a turn of its own. The harness records each cycle's outcome, changed files and your summary, so don't log progress; running_context is for a dead end not to retry or a hard-won solution.
 - Keep a todo list for a task of several steps: one item in_progress at a time, all done or dropped before you stop. Skip it for one or two steps, or when the harness already listed your steps.
