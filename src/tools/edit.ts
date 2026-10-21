@@ -182,7 +182,7 @@ const writeSchema = z.strictObject({ path: z.string(), content: z.string() });
 
 export const writeFileTool: Tool<typeof writeSchema> = {
   name: 'write_file',
-  description: `Create a new file, or overwrite a file shorter than ${WRITE_MAX_LINES} lines. Use str_replace for edits to larger files.`,
+  description: `Create a new file (including when renaming, moving, or splitting modules), or overwrite a file shorter than ${WRITE_MAX_LINES} lines. To modify existing files with more than ${WRITE_MAX_LINES} lines, use str_replace or multi_edit.`,
   schema: writeSchema,
   readOnly: false,
   normalize: (input) => {
