@@ -44,10 +44,10 @@ export class MemoryHarness {
   constructor(opts: MemoryHarnessOptions = {}) {
     this.arbiter = new JEPASalienceArbiter(opts.arbiter);
     const budgets = opts.budgets ?? {};
-    this.conversation = new BankConversation(this.arbiter, budgets.conversation ?? 4_000);
-    this.working = new BankWorking(this.arbiter, budgets.working ?? 6_000);
-    this.episodic = new BankEpisodic(this.arbiter, budgets.episodic ?? 3_000);
-    this.agenda = new BankAgenda(this.arbiter, budgets.agenda ?? 2_000);
+    this.conversation = new BankConversation(this.arbiter, budgets.conversation ?? 3_000);
+    this.working = new BankWorking(this.arbiter, budgets.working ?? 4_000);
+    this.episodic = new BankEpisodic(this.arbiter, budgets.episodic ?? 2_500);
+    this.agenda = new BankAgenda(this.arbiter, budgets.agenda ?? 1_500);
   }
 
   bank(type: BankType) {
