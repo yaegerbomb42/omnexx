@@ -80,9 +80,13 @@ export function buildCycleContext(i: CycleInputs): {
   const parts = [`# Plan\n\n${compactPlanView(i.plan, i.task.id)}`];
   const progress = i.memory ?? (i.progressTail ? `# Recent progress\n\n${i.progressTail}` : '');
   if (keep('progress', progress)) parts.push(progress);
-  if (i.task.approachesTried.length) {
+  if (i.task.approachesTried.length || i.task.lastRejection) {
+    const lines = [
+      ...i.task.approachesTried.map((a) => `- [failed approach] ${a}`),
+      ...(i.task.lastRejection ? [`- [last rejection] ${i.task.lastRejection}`] : []),
+    ];
     parts.push(
-      `# Approaches already tried for ${i.task.id} (do not repeat these)\n\n${i.task.approachesTried.map((a) => `- ${a}`).join('\n')}`,
+      `# Negative Knowledge & Dead Ends for ${i.task.id} (do not repeat these)\n\n${lines.join('\n')}`,
     );
   }
   if (!i.memory && i.evidence.length)
