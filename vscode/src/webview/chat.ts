@@ -141,6 +141,7 @@ const ICON = {
   spinner: '<span class="spinner" aria-hidden="true"></span>',
   wait: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3.2l2 1.3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   dot: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
+  tool: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2.5a2.12 2.12 0 0 0-3 0L3.5 9 2 13.5 6.5 12l6.5-6.5a2.12 2.12 0 0 0 0-3z"/></svg>',
 };
 
 /** Everything shows in the conversation: actions and thinking as compact lines between messages. */
@@ -187,9 +188,11 @@ function messageHtml(b: Block): string {
       .join('')}</ul>`;
   if (b.kind === 'think') {
     const lines = body.split('\n');
+    const wordCount = body.trim().split(/\s+/).filter(Boolean).length;
+    const countBadge = `<span class="think-badge">${String(wordCount)} words</span>`;
     if (lines.length <= THINK_PREVIEW_LINES)
-      return `<div class="msg think">${escapeHtml(body)}</div>`;
-    return `<details class="msg think"><summary>${escapeHtml(lines.slice(0, THINK_PREVIEW_LINES).join('\n'))}</summary>${escapeHtml(lines.slice(THINK_PREVIEW_LINES).join('\n'))}</details>`;
+      return `<div class="msg think"><span class="think-header">💭 Thinking ${countBadge}</span><div class="think-body">${escapeHtml(body)}</div></div>`;
+    return `<details class="msg think"><summary><span class="think-header">💭 Thinking ${countBadge}</span> <span class="think-summary-text">${escapeHtml(lines.slice(0, THINK_PREVIEW_LINES).join(' '))}</span></summary><div class="think-body">${escapeHtml(lines.join('\n'))}</div></details>`;
   }
   if (b.kind === 'system' || b.kind === 'feed')
     return `<div class="msg note">${escapeHtml(body)}</div>`;
@@ -203,9 +206,12 @@ function drawConversation(): void {
   if (state?.live)
     html.push(`<div class="msg reply streaming">${renderMarkdown(state.live)}</div>`);
   if (state?.busy && !state.live && !state.pending) {
-    const doing = logLines.findLast((l) => l.role === 'agent')?.text ?? 'Thinking';
+    const lastAgentLog = logLines.findLast((l) => l.role === 'agent')?.text;
+    const doing = lastAgentLog ?? 'Thinking…';
+    const kind = lastAgentLog ? toolKind(lastAgentLog) : 'tool';
+    const toolBadge = lastAgentLog ? `<span class="active-tool-pill k-${kind}">${ICON.tool} ${escapeHtml(lastAgentLog)}</span>` : `<span>${escapeHtml(doing)}</span>`;
     html.push(
-      `<div class="working">${ICON.spinner}<span>${escapeHtml(doing)}</span><span id="eta" class="eta">${etaText(state.waiting, Date.now())}</span>${state.paused ? '<span class="tag">paused</span>' : ''}</div>`,
+      `<div class="working">${ICON.spinner}${toolBadge}<span id="eta" class="eta">${etaText(state.waiting, Date.now())}</span>${state.paused ? '<span class="tag">paused</span>' : ''}</div>`,
     );
   }
   html.push(estimateHtml(state?.estimate));
