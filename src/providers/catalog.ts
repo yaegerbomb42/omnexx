@@ -85,12 +85,29 @@ export const PROVIDER_CATALOG: readonly CatalogEntry[] = [
     { keyPrefix: 'csk-', freeTier: true },
   ),
   hosted(
+    'inception',
+    'Inception Labs (Mercury-3)',
+    'https://api.inceptionlabs.ai/v1',
+    'INCEPTION_API_KEY',
+    'https://inceptionlabs.ai',
+    {
+      keyPrefix: 'sk_',
+      freeTier: true,
+      note: 'Fast diffusion-based reasoning models with 100M free tokens.',
+      docs: 'https://docs.inceptionlabs.ai',
+    },
+  ),
+  hosted(
     'openrouter',
     'OpenRouter (hundreds of models)',
     'https://openrouter.ai/api/v1',
     'OPENROUTER_API_KEY',
     'https://openrouter.ai/keys',
-    { keyPrefix: 'sk-or-', freeTier: true },
+    {
+      keyPrefix: 'sk-or-',
+      freeTier: true,
+      note: 'Access hundreds of models with free options (ending in :free).',
+    },
   ),
   hosted(
     'together',

@@ -87,7 +87,9 @@ export function resolveModel(ref: string, config: OmnexxConfig): ResolvedModel {
   if (byAlias) return { provider, alias: name, id: byAlias.id, price: byAlias };
   const byId = Object.entries(table).find(([, p]) => p.id === name);
   if (byId) return { provider, alias: byId[0], id: name, price: byId[1] };
-  if (endpoint?.free) return { provider, alias: name, id: name, price: { id: name, ...FREE } };
+  if (endpoint?.free || name === 'mercury-3' || name.endsWith(':free')) {
+    return { provider, alias: name, id: name, price: { id: name, ...FREE } };
+  }
   throw new ConfigError(
     `no price for model "${name}" on ${provider}`,
     `add [pricing.<alias>] with id = "${name}" and per-MTok rates${endpoint ? ', or set free = true on the endpoint' : ''}`,
