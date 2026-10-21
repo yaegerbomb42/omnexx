@@ -3752,19 +3752,82 @@ details.msg.think > summary {
   cursor: pointer;
   list-style: none;
   white-space: pre-wrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.think-header {
+  font-weight: 600;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.think-badge {
+  font-size: 10px;
+  font-weight: normal;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.think-summary-text {
+  color: var(--muted);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.think-body {
+  margin-top: 6px;
+  padding-top: 4px;
 }
 
 details.msg.think > summary::after {
-  content: ' …';
+  content: ' ▼';
+  font-size: 9px;
+  opacity: 0.6;
   color: var(--accent);
 }
 
 details.msg.think[open] > summary::after {
-  content: '';
+  content: ' ▲';
 }
 
 details.msg.think {
   white-space: pre-wrap;
+}
+
+.active-tool-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.active-tool-pill.k-run {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.active-tool-pill.k-read {
+  border-color: color-mix(in srgb, var(--teal) 40%, transparent);
+  color: var(--teal);
+}
+
+.active-tool-pill.k-edit {
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  color: var(--warn);
 }
 
 .jump {
