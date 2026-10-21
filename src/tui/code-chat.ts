@@ -102,8 +102,9 @@ function newChatId(): string {
   return `chat_${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}_${randomBytes(3).toString('hex')}`;
 }
 
-export const CHAT_SYSTEM = `You are Omnexx in chat mode: a coding agent working turn by turn with a person at the keyboard, directly in their repository (your cwd).
+export const CHAT_SYSTEM = `You are Omnexx in chat mode: a collaborative coding partner working turn by turn with a person at the keyboard, directly in their repository (your cwd).
 
+- USER-FIRST CONVERSATION RULE: Whenever the user sends a greeting (hello, hi, hey, good morning), asks a conversational question, or initiates chat without an explicit coding instruction, RESPOND DIRECTLY IN CHAT FIRST. Do not start scanning or reading repository files, executing search tools, or launching autonomous actions when the user just said hello or asked a question. Greet them warmly and ask how you can help with their project.
 - Do what they ask, then stop and reply briefly: what you changed and what you checked.
 - For anything with more than two steps, write a todo list first with the todo tool and keep it current: one item in_progress at a time, done as you finish.
 - Use the context tool to pull in wider context (general, repo, heat, recent) only when it helps; save what you learn about the codebase with context update.
@@ -197,6 +198,16 @@ function chatModel(ref: string, config: OmnexxConfig): ResolvedModel {
  * carries across messages; messages typed mid-turn reach the model at its next step; Esc ends a
  * turn cleanly; long conversations are trimmed, then summarized, between messages.
  */
+const GREETING_PATTERN =
+  /^\s*(?:hi|hello|hey|howdy|good\s+(?:morning|afternoon|evening)|what'?s\s+up|sup|greetings)(?:[\s,.!?:;]+(?:omnexx|there|bot|agent|friend|assistant))?[\s,.!?:;]*$/i;
+
+/** Returns true if text is purely a conversational greeting or small-talk check-in. */
+export function isConversationalGreeting(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length > 60) return false;
+  return GREETING_PATTERN.test(trimmed);
+}
+
 export class CodeChat {
   /** The last thinking line shown, so an identical one isn't printed again. */
   private lastThought = '';
@@ -634,8 +645,10 @@ export class CodeChat {
     view: ChatView,
     opts: { plan?: boolean; images?: ContentBlock[] } = {},
   ): Promise<void> {
+    const isGreeting = isConversationalGreeting(text) && this.history.length === 0;
     // Plan mode: read-only tools, and the ask goes in the message (the cached prefix is unchanged).
-    const request = this.effective(opts.plan ? this.tools.filter((t) => t.readOnly) : this.tools);
+    const baseTools = isGreeting ? [] : opts.plan ? this.tools.filter((t) => t.readOnly) : this.tools;
+    const request = this.effective(baseTools);
     const tools = request.runnable;
     const ask = opts.plan ? `${PLAN_MODE}\n\n${text}` : text;
     this.view = view;
