@@ -12,15 +12,13 @@ describe('acceptance-checks', () => {
     ]);
   });
 
-  it('generates preflight checks for each requirement and satisfies schema', () => {
+  it('infers shell check command when criteria is a clear negative grep pattern', () => {
     const checks = buildPreflightChecks({
-      id: 'task-2',
-      title: 'Database migration',
-      requirements: ['Add column x', 'Backfill null values', 'Add index'],
+      id: 'task-3',
+      title: 'Rename API',
+      requirements: ['No file other than `src/usr.js` mentions `getUsr`'],
     });
-    expect(checks).toHaveLength(3);
-    expect(checks[0]?.id).toBe('task-2-check-1');
-    expect(checks[2]?.id).toBe('task-2-check-3');
+    expect(checks[0]?.command).toBe('! grep -rn "getUsr" --exclude="src/usr.js" src/ test/');
     const parsed = preflightSuiteSchema.safeParse({ checks });
     expect(parsed.success).toBe(true);
   });
