@@ -45,6 +45,23 @@ export function locateRange(
   const [only] = hits;
   if (hits.length === 1 && only !== undefined)
     return { ok: true, start: only, end: only + span, moved: true };
+
+  // Fuzzy recovery for 1-line ranges where anchor shifted slightly within nearby window
+  if (span === 0 && want.length === 4) {
+    const singleTag = want.slice(0, 2);
+    const nearbyRadius = 15;
+    const minS = Math.max(1, start - nearbyRadius);
+    const maxS = Math.min(lines.length, start + nearbyRadius);
+    const nearbyHits: number[] = [];
+    for (let s = minS; s <= maxS && nearbyHits.length < 2; s++) {
+      if (lineTag(lines[s - 1] ?? '') === singleTag) nearbyHits.push(s);
+    }
+    const [nearbyOnly] = nearbyHits;
+    if (nearbyHits.length === 1 && nearbyOnly !== undefined) {
+      return { ok: true, start: nearbyOnly, end: nearbyOnly, moved: true };
+    }
+  }
+
   const now = rangeHash(lines, start, end);
   const first = JSON.stringify((lines[start - 1] ?? '').trim().slice(0, 80));
   return {
