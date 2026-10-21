@@ -203,4 +203,24 @@ describe('testDigest', () => {
     expect(out).toMatch(/… \d+ more failures omitted/);
     expect(out).not.toContain('case 29');
   });
+
+  it('deduplicates identical failures and annotates with repeats count', () => {
+    const repeated = [
+      ' FAIL  src/add.test.ts > adds two numbers',
+      'AssertionError: expected 4 to be 5',
+      ' ❯ src/add.test.ts:7:28',
+      '',
+      ' FAIL  src/add.test.ts > adds two numbers',
+      'AssertionError: expected 4 to be 5',
+      ' ❯ src/add.test.ts:7:28',
+      '',
+      ' Test Files  1 failed (1)',
+      '      Tests  2 failed (2)',
+    ].join('\n');
+    const out = testDigest('npm test', repeated, 'cmd-3');
+    expect(out).toBeDefined();
+    if (!out) return;
+    expect(out).toContain('adds two numbers (repeats 2x)');
+    expect(out).toContain('src/add.test.ts:7:28');
+  });
 });
