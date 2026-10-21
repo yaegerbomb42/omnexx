@@ -17,6 +17,8 @@ export const stackFrameSchema = z.strictObject({
   assumptions: z.array(z.string()).default([]),
   dependencies: z.array(z.string()).default([]),
   pushedAtCycle: z.number().int().nonnegative(),
+  pushedAtTurn: z.number().int().nonnegative().optional(),
+  gitCommitSha: z.string().optional(),
   status: z.enum(['active', 'resolved', 'trapped']).default('active'),
   trap: z
     .strictObject({
@@ -54,6 +56,16 @@ export class ExecutionCallStack {
     cur.status = 'trapped';
     cur.trap = { kind, detail, turn };
     return cur;
+  }
+
+  /**
+   * Deterministically unwind frames down to a target frame or until an untrapped parent is reached.
+   * Returns all discarded/unwound frames.
+   */
+  public unwindTo(frameId: string): readonly StackFrame[] {
+    const targetIdx = this.frames.findIndex((f) => f.id === frameId);
+    if (targetIdx === -1) return [];
+    return Object.freeze(this.frames.splice(targetIdx + 1));
   }
 
   public toJSON(): readonly StackFrame[] {
