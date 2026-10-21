@@ -51,7 +51,13 @@ const isStub = (s: string): boolean =>
 function pathOf(input: unknown): string | undefined {
   if (typeof input !== 'object' || input === null) return undefined;
   const p = (input as Record<string, unknown>).path;
-  return typeof p === 'string' ? p : undefined;
+  if (typeof p === 'string') return p;
+  const files = (input as Record<string, unknown>).files;
+  if (Array.isArray(files) && files.length === 1 && typeof files[0] === 'object' && files[0] !== null) {
+    const fPath = (files[0] as Record<string, unknown>).path;
+    if (typeof fPath === 'string') return fPath;
+  }
+  return undefined;
 }
 
 function results(messages: readonly Message[]): Result[] {
