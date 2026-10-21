@@ -213,7 +213,25 @@ describe('post-edit diagnostics', () => {
     const { root, ctx } = await repo({ 'a.py': 'x = 1\n' });
     const r = await strReplaceTool.run({ path: 'a.py', old_str: 'x = 1', new_str: 'def f(:' }, ctx);
     expect(r.content).toMatch(/⚠ line 1: SyntaxError/);
+    expect(r.content).toContain('Mutation discarded without writing to disk');
+    // Verify file content on disk remained unchanged
+    expect(await readFile(join(root, 'a.py'), 'utf8')).toBe('x = 1\n');
     expect(root).toBeTruthy();
+  });
+
+  it('rejects TypeScript edits with syntax errors before mutating disk', async () => {
+    const { root, ctx } = await repo({
+      'tsconfig.json': '{ "compilerOptions": { "target": "es2022" } }\n',
+      'src/a.ts': 'export const n: number = 1;\n',
+    });
+    const r = await strReplaceTool.run(
+      { path: 'src/a.ts', old_str: 'export const n: number = 1;', new_str: 'export const n: number = ;' },
+      ctx,
+    );
+    expect(r.isError).toBe(true);
+    expect(r.content).toMatch(/Syntax error in proposed edit at line 1: TS1109/);
+    expect(r.content).toContain('Mutation discarded without writing to disk');
+    expect(await readFile(join(root, 'src/a.ts'), 'utf8')).toBe('export const n: number = 1;\n');
   });
 });
 

@@ -1,10 +1,86 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { extname, join } from 'node:path';
 import { runShell } from '../core/exec.js';
 import { checkTs, TS_EXTENSIONS, type Diag } from './ts-check.js';
 import type { ToolContext } from './types.js';
+
+interface TsCompiler {
+  createSourceFile: (
+    fileName: string,
+    sourceText: string,
+    languageVersion: number,
+    setParentNodes?: boolean,
+  ) => {
+    parseDiagnostics: readonly {
+      start: number;
+      code: number;
+      messageText: string | { messageText: string };
+    }[];
+    getLineAndCharacterOfPosition: (pos: number) => { line: number; character: number };
+  };
+  ScriptTarget: { Latest: number };
+  flattenDiagnosticMessageText: (diag: string | { messageText: string }, sep: string) => string;
+}
+
+let cachedTs: TsCompiler | null | undefined;
+
+function getTs(root: string): TsCompiler | null {
+  if (cachedTs !== undefined) return cachedTs;
+  try {
+    const req = createRequire(join(root, 'package.json'));
+    cachedTs = req('typescript') as TsCompiler;
+    return cachedTs;
+  } catch {
+    try {
+      cachedTs = createRequire(import.meta.url)('typescript') as TsCompiler;
+      return cachedTs;
+    } catch {
+      cachedTs = null;
+      return null;
+    }
+  }
+}
+
+/** Pre-write syntax gate: checks AST/parse validity in memory before disk mutation. */
+export async function preWriteSyntaxCheck(
+  ctx: ToolContext,
+  abs: string,
+  text: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!onHost(ctx)) return { ok: true };
+  const root = ctx.jail.root;
+  if (TS_EXTENSIONS.test(abs)) {
+    const ts = getTs(root);
+    if (!ts) return { ok: true };
+    try {
+      const sf = ts.createSourceFile(abs, text, ts.ScriptTarget.Latest, true);
+      const err = sf.parseDiagnostics[0];
+      if (err) {
+        const { line } = sf.getLineAndCharacterOfPosition(err.start);
+        const msg = ts.flattenDiagnosticMessageText(err.messageText, ' ');
+        return {
+          ok: false,
+          error: `Syntax error in proposed edit at line ${String(line + 1)}: TS${String(err.code)} ${msg}. Mutation discarded without writing to disk.`,
+        };
+      }
+    } catch {
+      return { ok: true };
+    }
+  } else if (extname(abs) === '.py') {
+    const diags = await pythonSyntax(root, text, 1_500, ctx.env);
+    const err = diags[0];
+    if (err) {
+      return {
+        ok: false,
+        error: `Syntax error in proposed edit at line ${String(err.line)}: ⚠ line ${String(err.line)}: SyntaxError ${err.message}. Mutation discarded without writing to disk.`,
+      };
+    }
+  }
+  return { ok: true };
+}
 
 /** A formatter that takes longer than this is abandoned; the edit stands unformatted. */
 export const FORMAT_TIMEOUT_MS = 2_000;
