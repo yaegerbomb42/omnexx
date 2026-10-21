@@ -21,6 +21,12 @@ export const preflightSuiteSchema = z.object({
 /** Converts standard acceptance criteria statements into executable shell checks where patterns are unambiguous. */
 export function inferCheckCommand(criterion: string): string | undefined {
   const c = criterion.trim();
+  // Pattern: `COMMAND` passes with tests (requires test suite not to be empty 0 tests)
+  const cmdPassTests = /^`([^`]+)`\s+passes\s+with\s+tests/i.exec(c);
+  if (cmdPassTests?.[1]) {
+    const cmd = cmdPassTests[1].trim();
+    return `${cmd} && ! (${cmd} 2>&1 | grep -q 'ℹ tests 0')`;
+  }
   // Pattern: `COMMAND` passes
   const cmdPass = /^`([^`]+)`\s+passes/i.exec(c);
   if (cmdPass?.[1]) {
@@ -42,7 +48,7 @@ export function inferCheckCommand(criterion: string): string | undefined {
   return undefined;
 }
 
-/** Extracts explicit export requirement checks from goal text (e.g. export class from module). */
+/** Extracts explicit export and function requirement checks from goal text (e.g. export class from module, add func to module). */
 export function inferGoalChecks(goal: string): string[] {
   const checks: string[] = [];
   const pSym = /throws\s+a\s+`([A-Za-z0-9_$]+)`/i;
@@ -54,7 +60,27 @@ export function inferGoalChecks(goal: string): string[] {
     const file = mExp[1].replace(/^\.?\//, '');
     checks.push(`node --input-type=module -e 'import { ${symbol} } from "./${file}"'`);
   }
-  return checks;
+
+  // Pattern: Add `func(args)` to `path/to/file`
+  for (const m of goal.matchAll(
+    /(?:add|export)\s+`([A-Za-z0-9_$]+)(?:\([^`]*\))?`\s+to\s+`([^`]+)`/gi,
+  )) {
+    const symbol = m[1];
+    const file = m[2]?.replace(/^\.?\//, '');
+    if (symbol && file) {
+      checks.push(`node --input-type=module -e 'import { ${symbol} } from "./${file}"'`);
+    }
+  }
+
+  // Pattern: Use `func` in `path/to/file` or use `func` from `./module`
+  for (const m of goal.matchAll(/use\s+(?:it\s+in\s+|`([A-Za-z0-9_$]+)`\s+in\s+)`([^`]+)`/gi)) {
+    const file = m[2]?.replace(/^\.?\//, '');
+    if (file) {
+      checks.push(`node --input-type=module -e 'import "./${file}"'`);
+    }
+  }
+
+  return Array.from(new Set(checks));
 }
 
 /**
