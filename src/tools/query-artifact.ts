@@ -7,10 +7,10 @@ import { tmpdir } from 'node:os';
 import { ok, type Tool, type ToolContext, type ToolOutput } from './types.js';
 
 const inputSchema = z.object({
-  path: z.string().describe('File path of the JSON, CSV, or log artifact to query (relative to repository root or absolute).'),
-  format: z.enum(['json', 'lines', 'sqlite']).default('json').describe('Data format: "json" for JSON objects/arrays, "lines" for line-based text/logs, or "sqlite" for existing SQLite DBs.'),
-  query: z.string().describe('Query expression: SQL SELECT query when format is json/lines/sqlite, or jsonata-style projection.'),
-  limit: z.number().int().min(1).max(500).default(50).describe('Maximum number of rows/records to return in the result.'),
+  path: z.string().describe('File path of the artifact to query (relative or absolute).'),
+  format: z.enum(['json', 'lines', 'sqlite']).default('json').describe('Format: "json", "lines", or "sqlite".'),
+  query: z.string().describe('SQL SELECT query against the artifact table.'),
+  limit: z.number().int().min(1).max(500).default(50).describe('Max rows to return.'),
 });
 
 type Input = z.infer<typeof inputSchema>;
@@ -18,7 +18,7 @@ type Input = z.infer<typeof inputSchema>;
 export const queryArtifactTool: Tool<typeof inputSchema> = {
   name: 'query_artifact',
   description:
-    'Query structured logs, JSON dumps, CSVs, or large build outputs in-place using fast SQLite in-memory tables without inflating conversation context.',
+    'Query structured logs, JSON dumps, or SQLite tables in-place using SQLite in-memory tables without inflating context.',
   readOnly: true,
   schema: inputSchema,
   async run(input: Input, ctx: ToolContext): Promise<ToolOutput> {
