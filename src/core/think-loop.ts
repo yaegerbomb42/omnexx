@@ -29,7 +29,7 @@ export const THINK_PROMPT = `# Think first
 
 Before you change anything, understand the problem. Read what you need in a few turns: put every independent read in one turn (they run in parallel), starting with the files the goal names and what they use. Don't run experiments or write scratch scripts yet. Then stop calling tools and write your analysis:
 1. Framing: what the problem really is, in your own words.
-2. Root causes and key invariants, and how the requirements interact (where one constrains another).
+2. Root causes and key invariants, and how the requirements interact (where one constrains another). For concurrent or asynchronous code, state the ordering, bounding, and error-propagation invariants explicitly.
 3. The approach, and why it is right.
 4. Ordered steps.
 5. How you will verify each step (which tests or commands).
