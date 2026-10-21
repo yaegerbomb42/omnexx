@@ -15,7 +15,7 @@ export const patchOpSchema = z.discriminatedUnion('op', [
     op: z.literal('RECORD_DECISION'),
     key: z.string().min(1).max(200),
     value: z.string().min(1).max(1_000),
-    rationale: z.string().max(1_000).default(''),
+    rationale: z.string().max(1_000).optional(),
   }),
   z.strictObject({
     op: z.literal('REVOKE_FACT'),
@@ -31,7 +31,7 @@ export const statePatchSchema = z.strictObject({
   sourceTurnId: z.number().int().nonnegative().describe('Originating turn number for epistemic provenance'),
   cycle: z.number().int().nonnegative().describe('Cycle in which this patch was produced'),
   timestamp: z.number().int().nonnegative().describe('Epoch millisecond timestamp'),
-  author: z.string().default('agent'),
+  author: z.string().optional(),
   ops: z.array(patchOpSchema).min(1),
 });
 
@@ -102,7 +102,7 @@ export class EpistemicStateReducer {
         case 'RECORD_DECISION': {
           this.state.decisions.set(op.key, {
             value: op.value,
-            rationale: op.rationale,
+            rationale: op.rationale ?? '',
             cycle: patch.cycle,
             turn: patch.sourceTurnId,
           });
@@ -126,5 +126,33 @@ export class EpistemicStateReducer {
 
   public getHistory(): readonly StatePatch[] {
     return Object.freeze([...this.patchLog]);
+  }
+
+  /**
+   * Deterministically roll back state to before a specific turn or cycle.
+   * Discards all patches applied at or after the given turn in that cycle,
+   * re-reducing the event history from scratch.
+   */
+  public rollbackTo(cycle: number, beforeTurnId: number): readonly StatePatch[] {
+    const validPatches = this.patchLog.filter((p) => {
+      if (p.cycle > cycle) return false;
+      if (p.cycle === cycle && p.sourceTurnId >= beforeTurnId) return false;
+      return true;
+    });
+
+    const discarded = this.patchLog.filter((p) => !validPatches.includes(p));
+
+    this.state = {
+      facts: [],
+      invalidPaths: new Map(),
+      decisions: new Map(),
+    };
+    this.patchLog.length = 0;
+
+    for (const patch of validPatches) {
+      this.apply(patch);
+    }
+
+    return Object.freeze(discarded);
   }
 }
