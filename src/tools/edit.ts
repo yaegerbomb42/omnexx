@@ -19,7 +19,7 @@ function linesOf(text: string, needle: string): number[] {
   return out;
 }
 
-export const WRITE_MAX_LINES = 50;
+export const WRITE_MAX_LINES = 250;
 
 const editSchema = z.strictObject({ old_str: z.string().min(1), new_str: z.string() });
 
