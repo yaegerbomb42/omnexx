@@ -17,7 +17,7 @@ type Input = z.infer<typeof inputSchema>;
 export const queryArtifactTool: Tool<typeof inputSchema> = {
   name: 'query_artifact',
   description:
-    'Query structured logs, JSON dumps, or SQLite tables in-place using SQLite in-memory tables without inflating context.',
+    'Query structured logs, JSON dumps, or SQLite tables in-place using SQLite in-memory tables without inflating prompt context.',
   readOnly: true,
   schema: inputSchema,
   async run(input: Input, ctx: ToolContext): Promise<ToolOutput> {

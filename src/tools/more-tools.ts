@@ -9,6 +9,7 @@ export const DEFERRED_TOOLS: ReadonlySet<string> = new Set([
   'remember',
   'running_context',
   'query_artifact',
+  'repl_projection',
   'recall',
   'outline',
   'read_symbol',
