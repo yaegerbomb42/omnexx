@@ -404,6 +404,7 @@ describe('registry', () => {
     expect(READ_ONLY_TOOLS.map((t) => t.name).sort()).toEqual([
       'context',
       'outline',
+      'query_artifact',
       'read',
       'read_log',
       'read_symbol',

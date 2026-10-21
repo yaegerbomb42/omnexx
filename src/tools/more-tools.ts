@@ -8,6 +8,7 @@ import { fail, ok, type Tool } from './types.js';
 export const DEFERRED_TOOLS: ReadonlySet<string> = new Set([
   'remember',
   'running_context',
+  'query_artifact',
   'recall',
   'outline',
   'read_symbol',
