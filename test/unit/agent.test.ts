@@ -175,4 +175,30 @@ describe('fresh context per cycle (property)', () => {
     expect(ctx.system.at(-1)?.cacheBreakpoint).toBe(true);
     expect(JSON.stringify(ctx.first)).toContain('Evidence from earlier attempts');
   });
+
+  it('renders negative knowledge and dead ends when approachesTried or lastRejection are present', () => {
+    const plan = applyPlanUpdate(
+      undefined,
+      { milestones: [{ id: 'M1', title: 'Mile', tasks: [{ id: 'M1.T01', title: 'Task one' }] }] },
+      'g',
+    );
+    const node = getNode(plan, 'M1.T01');
+    node.approachesTried = ['Tried editing index.html directly'];
+    node.lastRejection = 'review: formatting broke CI gate';
+    const ctx = buildCycleContext({
+      systemPrompt: WORKER_SYSTEM,
+      codemap: 'map',
+      goal: 'g',
+      notes: 'n',
+      plan,
+      task: node,
+      progressTail: '',
+      evidence: [],
+      tools: [],
+    });
+    const text = JSON.stringify(ctx.first);
+    expect(text).toContain('# Negative Knowledge & Dead Ends for M1.T01 (do not repeat these)');
+    expect(text).toContain('- [failed approach] Tried editing index.html directly');
+    expect(text).toContain('- [last rejection] review: formatting broke CI gate');
+  });
 });
