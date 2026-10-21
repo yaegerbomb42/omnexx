@@ -15,6 +15,7 @@ import { searchTool } from './search.js';
 import { taskTool } from './task.js';
 import { runningContextTool } from './running-context.js';
 import { queryArtifactTool } from './query-artifact.js';
+import { replProjectionTool } from './repl-projection.js';
 import type { OmnexxConfig } from '../config/schema.js';
 import * as extraSources from './extra/index.js';
 import type { ToolSource, ToolWhere } from './extra/types.js';
@@ -36,6 +37,7 @@ export const WORKER_TOOLS: readonly Tool[] = [
   taskTool,
   runningContextTool,
   queryArtifactTool,
+  replProjectionTool,
   contextTool,
   todoTool,
 ] as Tool[];
