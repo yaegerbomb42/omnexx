@@ -38,41 +38,61 @@
   z-index: 5;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin: 0 -12px;
-  padding: 6px 12px 8px;
-  background: var(--vscode-sideBar-background, var(--surface));
-  border-bottom: 1px solid var(--line);
+  gap: 6px;
+  margin: 0 -12px 12px;
+  padding: 8px 12px 10px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--glass-border);
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.12);
 }
 
 .set-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px 2px 6px;
+  gap: 5px;
+  padding: 3px 10px 3px 8px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--sec) 45%, transparent);
-  background: color-mix(in srgb, var(--sec) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sec) 35%, transparent);
+  background: color-mix(in srgb, var(--sec) 10%, transparent);
   color: var(--fg);
   font-size: var(--fs-xs);
+  font-weight: 500;
   cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .set-chip:hover,
 .set-chip:focus-visible {
-  background: color-mix(in srgb, var(--sec) 26%, transparent);
+  background: color-mix(in srgb, var(--sec) 24%, transparent);
   border-color: var(--sec);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--sec) 25%, transparent);
   outline: none;
 }
 
 .set-chip .sec-icon {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   color: var(--sec);
 }
 
 .settings .set-section {
   scroll-margin-top: 64px;
+  background: var(--glass-card);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md, 8px);
+  margin-bottom: 12px;
+  box-shadow: var(--glass-highlight), 0 2px 8px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.settings .set-section:hover {
+  border-color: color-mix(in srgb, var(--sec, var(--line)) 45%, transparent);
 }
 
 .settings .set-section[data-sec] {
@@ -83,15 +103,25 @@
 .sec-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 9px 12px;
+  padding: 10px 14px;
   border: 0;
-  background: none;
+  background: color-mix(in srgb, var(--surface) 40%, transparent);
   color: var(--fg);
   text-align: left;
   cursor: pointer;
-  border-radius: var(--radius);
+  border-bottom: 1px solid transparent;
+  transition: background 0.15s ease;
+}
+
+.set-section:not(.folded) .sec-head {
+  border-bottom: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--sec, var(--surface)) 8%, transparent);
+}
+
+.sec-head:hover {
+  background: color-mix(in srgb, var(--sec, var(--surface)) 14%, transparent);
 }
 
 .sec-head:focus-visible {
@@ -101,24 +131,27 @@
 
 .sec-head > .sec-icon {
   flex: none;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   padding: 5px;
-  border-radius: 7px;
+  border-radius: 8px;
   color: var(--sec, var(--accent));
-  background: color-mix(in srgb, var(--sec, var(--accent)) 18%, transparent);
+  background: color-mix(in srgb, var(--sec, var(--accent)) 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sec, var(--accent)) 30%, transparent);
 }
 
 .sec-titles {
   flex: 1;
   min-width: 0;
   display: grid;
+  gap: 1px;
 }
 
 .sec-title {
   font-weight: 600;
   font-size: var(--fs-md);
   color: var(--fg);
+  letter-spacing: -0.01em;
 }
 
 .sec-sub {
@@ -154,8 +187,8 @@
 
 .sec-body {
   display: grid;
-  gap: 6px;
-  padding: 0 12px 12px;
+  gap: 8px;
+  padding: 12px;
 }
 
 .sec-body[hidden] {
@@ -212,23 +245,30 @@
 .mcp-card {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 7px 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--card);
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-highlight);
   color: var(--fg);
   text-align: left;
   cursor: pointer;
   min-width: 0;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .mcp-card:hover {
   border-color: var(--sec, var(--accent));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--sec, var(--accent)) 20%, transparent);
 }
 
 .mcp-card.on {
   border-color: var(--sec, var(--accent));
+  background: color-mix(in srgb, var(--sec, var(--accent)) 10%, var(--glass-bg));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--sec, var(--accent)) 50%, transparent);
 }
 
