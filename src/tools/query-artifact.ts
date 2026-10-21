@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import { realpath } from 'node:fs/promises';
@@ -34,6 +33,9 @@ export const queryArtifactTool: Tool<typeof inputSchema> = {
     }
 
     try {
+      // Dynamically import node:sqlite at runtime to prevent tsup from rewriting the built-in module specifier
+      const { DatabaseSync } = await import('node:sqlite');
+
       if (input.format === 'sqlite') {
         const db = new DatabaseSync(fullPath, { open: true, readOnly: true });
         try {
