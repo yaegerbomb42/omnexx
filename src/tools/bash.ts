@@ -9,12 +9,12 @@ import { testSummary } from './output-summary.js';
 import { testDigest } from './test-digest.js';
 import { fail, ok, type Tool } from './types.js';
 
-export const HEAD_LINES = 20;
-export const TAIL_LINES = 40;
+export const HEAD_LINES = 12;
+export const TAIL_LINES = 20;
 /** Error-looking lines kept from the omitted middle. */
-const MAX_ERROR_LINES = 40;
-/** A command result never puts more than this into the conversation (~3k tokens). */
-export const MAX_OUTPUT_CHARS = 12_000;
+const MAX_ERROR_LINES = 20;
+/** A command result never puts more than this into the conversation (~1.5k tokens). */
+export const MAX_OUTPUT_CHARS = 6_000;
 const ERROR_LINE =
   /\b(error|fail(ed|ure|ing)?|exception|panic|traceback|assert(ion)?|cannot|not found|undefined)\b/i;
 
