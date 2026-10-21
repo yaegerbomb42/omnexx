@@ -40,7 +40,10 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (c) => ESCAPES[c] ?? c);
 }
 
-/** Kinds whose consecutive lines read as one message. Actions stay one line each. */
+/**
+ * Consecutive entries of these kinds fold into a single Block.
+ * Including 'act' groups sequential tool executions into a cohesive execution cluster.
+ */
 const JOINS = new Set<EntryKind>(['out', 'user', 'think', 'err', 'system', 'feed']);
 
 /** Fold new entries into blocks: consecutive lines of a joining kind become one message. */
@@ -57,8 +60,14 @@ export function addEntries(blocks: readonly Block[], entries: readonly Entry[]):
   return out;
 }
 
+/** A fast, deterministic signature to detect whether a Block needs DOM reconciliation. */
+export function blockSignature(b: Block, isActiveTail: boolean): string {
+  const lastLine = b.lines.at(-1) ?? '';
+  return `${b.id}:${b.kind}:${b.lines.length}:${lastLine.length}:${isActiveTail ? 1 : 0}`;
+}
+
 /** A relative or absolute file path worth making clickable: has a slash or a dot extension. */
-const PATH = /^(?:\.{0,2}\/)?[\w@.-]+(?:\/[\w@.-]+)*\.[A-Za-z0-9]{1,8}(?::\d+)?$/;
+const PATH = /^(?:\.{0,2}\/)?[\w@.-]+(?:\/[\w@.-]+)*\.[A-Za-z0-9]{1,8}(?::\d+(?::\d+)?)?$/;
 
 export function looksLikePath(text: string): boolean {
   return PATH.test(text) && !/^\d+(\.\d+)+$/.test(text) && !text.includes('://');
@@ -149,13 +158,36 @@ function startsBlock(line: string): boolean {
   );
 }
 
+/** Renders unified diff lines with semantic line classes for instant visual scanning. */
+function renderDiffLines(lines: readonly string[]): string {
+  return lines
+    .map((raw) => {
+      const esc = escapeHtml(raw);
+      if (raw.startsWith('+++') || raw.startsWith('---'))
+        return `<span class="diff-line diff-meta">${esc}</span>`;
+      if (raw.startsWith('@@')) return `<span class="diff-line diff-hunk">${esc}</span>`;
+      if (raw.startsWith('+')) return `<span class="diff-line diff-add">${esc}</span>`;
+      if (raw.startsWith('-')) return `<span class="diff-line diff-del">${esc}</span>`;
+      return `<span class="diff-line">${esc}</span>`;
+    })
+    .join('\n');
+}
+
 function fenceBlock(lines: readonly string[], start: number): Parsed {
-  const lang = (lines[start] ?? '').trimStart().slice(3).trim();
+  const lang = (lines[start] ?? '').trimStart().slice(3).trim().toLowerCase();
   let i = start + 1;
   const body: string[] = [];
   while (i < lines.length && !isFence(lines[i] ?? '')) body.push(lines[i++] ?? '');
-  const attr = /^[\w+-]{1,20}$/.test(lang) ? ` data-lang="${lang}"` : '';
-  return { html: `<pre${attr}><code>${escapeHtml(body.join('\n'))}</code></pre>`, next: i + 1 };
+  const validLang = /^[\w+-]{1,20}$/.test(lang) ? lang : '';
+  const attr = validLang ? ` data-lang="${validLang}"` : '';
+  const inner =
+    validLang === 'diff' || validLang === 'patch'
+      ? renderDiffLines(body)
+      : escapeHtml(body.join('\n'));
+  return {
+    html: `<pre${attr}><code>${inner}</code></pre>`,
+    next: i + 1,
+  };
 }
 
 function listBlock(lines: readonly string[], start: number, ordered: boolean): Parsed {
@@ -214,6 +246,43 @@ export function renderMarkdown(source: string): string {
     i = parsed.next;
   }
   return html.join('');
+}
+
+/**
+ * Extracts inline `<think>...</think>` blocks (including unclosed streaming `<think>` prefixes)
+ * so reasoning models streaming raw tags render inside the glassmorphic thinking accordion.
+ */
+export interface SplitThinkResult {
+  thoughts: string[];
+  isThinkingOpen: boolean;
+  reply: string;
+}
+
+export function splitThinkContent(raw: string): SplitThinkResult {
+  const thoughts: string[] = [];
+  let isThinkingOpen = false;
+  let remaining = raw;
+
+  const closedRe = /<think>([\s\S]*?)<\/think>/gi;
+  remaining = remaining.replace(closedRe, (_match, inner: string) => {
+    const trimmed = inner.trim();
+    if (trimmed) thoughts.push(trimmed);
+    return '';
+  });
+
+  const openIdx = remaining.toLowerCase().indexOf('<think>');
+  if (openIdx >= 0) {
+    isThinkingOpen = true;
+    const activeThought = remaining.slice(openIdx + 7).trim();
+    if (activeThought) thoughts.push(activeThought);
+    remaining = remaining.slice(0, openIdx);
+  }
+
+  return {
+    thoughts,
+    isThinkingOpen,
+    reply: remaining.trim(),
+  };
 }
 
 const UNITS: [number, string][] = [
@@ -290,22 +359,50 @@ export function stepsPercent(items: readonly TodoItem[]): number {
   return Math.round((items.filter((t) => t.status === 'done').length / items.length) * 100);
 }
 
-export type ToolKind = 'run' | 'read' | 'edit' | 'search' | 'tool';
+export type ToolKind = 'run' | 'read' | 'edit' | 'diff' | 'test' | 'search' | 'mcp' | 'tool';
 
 const TOOL_VERBS: readonly [RegExp, ToolKind][] = [
+  [/^(testing|running tests|verifying|vitest|jest|pytest|cargo test|mocha)\b/i, 'test'],
   [/^running\b/i, 'run'],
-  [/^(reading|skimming|listing)\b/i, 'read'],
+  [/^(executing|bash|sh|zsh|spawn)\b/i, 'run'],
+  [/^(reading|skimming|listing|viewing|cat|head|tail)\b/i, 'read'],
+  [/^(diffing|patching|comparing)\b/i, 'diff'],
   [/^(editing|writing code)\b/i, 'edit'],
-  [/^(looking|searching|recalling)\b/i, 'search'],
+  [/^(looking|searching|recalling|grepping|finding|globbing)\b/i, 'search'],
+  [/^(mcp|calling tool|invoking|delegating)\b/i, 'mcp'],
 ];
 
-/** Which icon a narrated tool line gets, from its leading verb ("editing src/a.ts" is an edit). */
+const TOOL_BADGE_LABELS: Record<ToolKind, string> = {
+  run: 'BASH',
+  read: 'READ',
+  edit: 'EDIT',
+  diff: 'DIFF',
+  test: 'TEST',
+  search: 'FIND',
+  mcp: 'MCP',
+  tool: 'TOOL',
+};
+
+/** Which icon/category a narrated tool line gets, from its leading verb or content. */
 export function toolKind(line: string): ToolKind {
   const text = line.trimStart();
-  return TOOL_VERBS.find(([re]) => re.test(text))?.[1] ?? 'tool';
+  const matched = TOOL_VERBS.find(([re]) => re.test(text))?.[1];
+  if (matched) return matched;
+  if (/[+-]\d+\s+[+-]\d+/.test(text)) return 'diff';
+  return 'tool';
 }
 
-/** A narrated tool line as HTML, with each file path in it a link that opens the file. */
+export function toolBadgeLabel(kind: ToolKind): string {
+  return TOOL_BADGE_LABELS[kind];
+}
+
+/**
+ * Formats a narrated tool line as rich HTML:
+ * - Clickable file paths (`data-open`)
+ * - Inline shell commands wrapped in `.tool-cmd`
+ * - Diff stat counters (`+24` / `-9`) wrapped in `.diff-stat` pills
+ * - Test pass/fail badges (`PASS` / `FAIL`)
+ */
 export function toolLineHtml(line: string): string {
   return line
     .trim()

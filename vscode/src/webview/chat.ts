@@ -2,29 +2,35 @@
  * The chat panel's script (runs inside the webview). It draws what the extension forwards from
  * `omnexx chat-server` and posts the person's actions back; it never talks to omnexx itself.
  *
- * Layout, top to bottom: session stats, the step timeline (the agent's todo list), the
- * conversation, the live log (actions, thinking, notes), and the composer.
+ * Architectural highlights:
+ * - Frame-coalesced rendering (`requestAnimationFrame`) to eliminate high-frequency IPC jank.
+ * - Keyed block reconciliation so historical messages and open `<details>` accordions never reset.
+ * - Dedicated live streaming region for real-time `<think>` reasoning and active tool telemetry.
  */
 import {
   addEntries,
+  blockSignature,
   cacheHitPercent,
   cleanQuestion,
   contextPercent,
   escapeHtml,
+  estimateHtml,
+  etaText,
   formatClock,
   formatTokens,
   formatUsd,
-  estimateHtml,
-  etaText,
   logRole,
   renderMarkdown,
+  splitThinkContent,
   stepLabel,
-  stepStates,
   stepsPercent,
+  stepStates,
   type Block,
   type Entry,
   type TodoItem,
+  toolBadgeLabel,
   toolKind,
+  type ToolKind,
   toolLineHtml,
   type Usage,
 } from './render.js';
@@ -101,6 +107,8 @@ interface LogLine {
 const MAX_LOG_LINES = 400;
 const ACTIVE_STEP_ACTIONS = 2;
 const CLOCK_TICK_MS = 1_000;
+const THINK_PREVIEW_LINES = 2;
+const TOOL_CLUSTER_COLLAPSE_THRESHOLD = 6;
 
 const vscode = acquireVsCodeApi();
 const post = (msg: Record<string, unknown>): void => {
@@ -125,9 +133,27 @@ const welcome = el('welcome', HTMLElement);
 /** The head agent's avatar in the crew view: the extension logo. */
 const logoSrc = document.body.dataset.logo ?? '';
 
+/**
+ * Partition `#log` into two persistent sub-containers:
+ * 1. `blocksRoot`: keyed historical blocks reconciled incrementally.
+ * 2. `liveRoot`: high-frequency streaming thoughts, markdown tokens, and active tool cockpit.
+ */
+const blocksRoot = document.createElement('div');
+blocksRoot.className = 'blocks-root';
+const liveRoot = document.createElement('div');
+liveRoot.className = 'live-root';
+conversation.append(blocksRoot, liveRoot);
+
 let blocks: Block[] = [];
 let logLines: LogLine[] = [];
 let state: State | undefined;
+let lastStepsSignature = '';
+let rafPending = false;
+let pendingState: State | null = null;
+
+/** Tracks user-toggled `<details>` accordions by stable key so re-renders never collapse them. */
+const openDisclosures = new Set<string>();
+
 /** Keep a scroller pinned to the bottom unless the person scrolled up to read. */
 const stick = { conversation: true };
 const jumpBtn = el('jump', HTMLButtonElement);
@@ -141,11 +167,55 @@ const ICON = {
   spinner: '<span class="spinner" aria-hidden="true"></span>',
   wait: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3.2l2 1.3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   dot: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
-  tool: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2.5a2.12 2.12 0 0 0-3 0L3.5 9 2 13.5 6.5 12l6.5-6.5a2.12 2.12 0 0 0 0-3z"/></svg>',
+  brain:
+    '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3a2.5 2.5 0 0 0-2.4 3.2A2.5 2.5 0 0 0 4 11a2.5 2.5 0 0 0 2 2.4V3zm4 0a2.5 2.5 0 0 1 2.4 3.2A2.5 2.5 0 0 1 12 11a2.5 2.5 0 0 1-2 2.4V3z"/></svg>',
+  terminal:
+    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5l3 3-3 3m5 0h5"/></svg>',
+  file:
+    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/></svg>',
+  edit:
+    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 2.5l2.5 2.5L5.5 13H3v-2.5z"/></svg>',
+  diff:
+    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6M5 6h6M5 12h6"/></svg>',
+  test:
+    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h4m-3 0v4L3.5 12.5a1 1 0 0 0 .8 1.5h7.4a1 1 0 0 0 .8-1.5L9 6V2"/></svg>',
+  search:
+    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4"/><path d="M10 10l3 3"/></svg>',
+  mcp:
+    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4" cy="8" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 7l4-2M6 9l4 2"/></svg>',
+  tool:
+    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2.5a2.12 2.12 0 0 0-3 0L3.5 9 2 13.5 6.5 12l6.5-6.5a2.12 2.12 0 0 0 0-3z"/></svg>',
 };
+
+const ICON_COPY =
+  '<svg viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M3 10.5V3.5A1 1 0 0 1 4 2.5h6.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
+const ICON_EDIT =
+  '<svg viewBox="0 0 16 16"><path d="M10.5 2.5l3 3L6 13H3v-3z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+
+function iconForToolKind(kind: ToolKind): string {
+  switch (kind) {
+    case 'run':
+      return ICON.terminal;
+    case 'read':
+      return ICON.file;
+    case 'edit':
+      return ICON.edit;
+    case 'diff':
+      return ICON.diff;
+    case 'test':
+      return ICON.test;
+    case 'search':
+      return ICON.search;
+    case 'mcp':
+      return ICON.mcp;
+    default:
+      return ICON.tool;
+  }
+}
 
 /** Everything shows in the conversation: actions and thinking as compact lines between messages. */
 function ingest(entries: readonly Entry[]): void {
+  if (!entries.length) return;
   const now = Date.now();
   const forLog: LogLine[] = [];
   for (const e of entries) {
@@ -159,65 +229,209 @@ function ingest(entries: readonly Entry[]): void {
   logLines = [...logLines, ...forLog.filter((l) => l.text)].slice(-MAX_LOG_LINES);
 }
 
-const THINK_PREVIEW_LINES = 2;
-const ICON_COPY =
-  '<svg viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M3 10.5V3.5A1 1 0 0 1 4 2.5h6.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
-const ICON_EDIT =
-  '<svg viewBox="0 0 16 16"><path d="M10.5 2.5l3 3L6 13H3v-3z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
-
-/** Gives each fenced code block a language label and a copy button. */
+/** Gives each fenced code block a language label, streaming badge (if active), and copy button. */
 function withCopy(html: string): string {
   return html.replace(
-    /<pre( data-lang="([^"]*)")?>/g,
-    (_m, attr: string | undefined, lang: string | undefined) =>
-      `<pre${attr ?? ''}><span class="code-bar"><span class="code-lang">${lang ?? ''}</span><button class="icon small" data-copy-code title="Copy code" aria-label="Copy code">${ICON_COPY}</button></span>`,
+    /<pre( data-lang="([^"]*)")?( data-streaming="true")?>/g,
+    (_m, attr: string | undefined, lang: string | undefined, streaming: string | undefined) => {
+      const streamBadge = streaming ? '<span class="code-stream-dot" title="Streaming code"></span>' : '';
+      return `<pre${attr ?? ''}${streaming ?? ''}><span class="code-bar"><span class="code-lang">${streamBadge}${lang ?? ''}</span><button class="icon small" data-copy-code title="Copy code" aria-label="Copy code">${ICON_COPY}</button></span>`;
+    },
   );
 }
 
-function messageHtml(b: Block): string {
+/** Renders a glassmorphic `<think>` accordion with live tail preview and persistent open state. */
+function renderThinkAccordion(
+  body: string,
+  disclosureId: string,
+  isStreaming: boolean,
+): string {
+  const clean = body.trim();
+  const lines = clean.split('\n').filter((l) => l.trim());
+  const wordCount = clean ? clean.split(/\s+/).length : 0;
+  const estTokens = Math.max(1, Math.round(wordCount * 1.3));
+  const streamClass = isStreaming ? ' is-streaming' : '';
+  const statusLabel = isStreaming ? 'Reasoning…' : 'Thought Process';
+  const countBadge = `<span class="think-badge">${String(wordCount)}w · ~${formatTokens(estTokens)} tok</span>`;
+  const isOpen = openDisclosures.has(disclosureId);
+
+  // Show the latest 2 lines during streaming so the user sees live progress while collapsed
+  const previewSlice = isStreaming
+    ? lines.slice(-THINK_PREVIEW_LINES)
+    : lines.slice(0, THINK_PREVIEW_LINES);
+  const previewText = previewSlice.join(' · ');
+
+  if (lines.length <= 1 && !isStreaming) {
+    return `<div class="msg think compact${streamClass}"><span class="think-header">${ICON.brain} <span>${statusLabel}</span> ${countBadge}</span><div class="think-body">${escapeHtml(clean)}</div></div>`;
+  }
+
+  return `<details class="msg think${streamClass}" data-disclosure-id="${disclosureId}"${isOpen ? ' open' : ''}><summary><span class="think-header">${ICON.brain} <span>${statusLabel}</span> ${countBadge}</span><span class="think-summary-text">${escapeHtml(previewText)}</span></summary><div class="think-body">${escapeHtml(clean)}</div></details>`;
+}
+
+/** Renders a grouped tool execution cluster with semantic pills and collapsible overflow. */
+function renderToolCluster(b: Block, isActiveTail: boolean): string {
+  const validLines = b.lines.filter((l) => l.trim());
+  if (!validLines.length) return '';
+
+  const renderItem = (line: string, idx: number): string => {
+    const kind = toolKind(line);
+    const isLiveItem = isActiveTail && idx === validLines.length - 1;
+    const liveClass = isLiveItem ? ' is-live' : '';
+    return `<li class="tool k-${kind}${liveClass}"><span class="tool-ico">${iconForToolKind(kind)}</span><span class="tool-badge k-${kind}">${toolBadgeLabel(kind)}</span><span class="tool-text">${toolLineHtml(line)}</span>${isLiveItem ? '<span class="tool-pulse" aria-hidden="true"></span>' : ''}</li>`;
+  };
+
+  if (validLines.length <= TOOL_CLUSTER_COLLAPSE_THRESHOLD) {
+    return `<ul class="msg tools">${validLines.map(renderItem).join('')}</ul>`;
+  }
+
+  const disclosureId = `tools-${String(b.id)}`;
+  const isOpen = openDisclosures.has(disclosureId);
+  const hiddenCount = validLines.length - 3;
+  const tailItems = validLines
+    .slice(-3)
+    .map((l, i) => renderItem(l, validLines.length - 3 + i))
+    .join('');
+
+  return `<div class="msg tools-cluster"><details class="tools-fold" data-disclosure-id="${disclosureId}"${isOpen ? ' open' : ''}><summary class="tools-summary"><span class="tools-count-pill">${String(validLines.length)} tool actions</span><span class="tools-expand-hint">Show ${String(hiddenCount)} earlier</span></summary><ul class="msg tools">${validLines.slice(0, -3).map(renderItem).join('')}</ul></details><ul class="msg tools tools-tail">${tailItems}</ul></div>`;
+}
+
+function messageHtml(b: Block, isActiveTail: boolean): string {
   const body = b.lines.join('\n');
   const id = String(b.id);
-  if (b.kind === 'out')
-    return `<div class="msg reply">${withCopy(renderMarkdown(body))}<div class="msg-actions"><button class="icon small" data-copy-block="${id}" title="Copy reply" aria-label="Copy reply">${ICON_COPY}</button></div></div>`;
-  if (b.kind === 'user')
-    return `<div class="msg user"><div class="who">You<button class="icon small" data-reuse="${id}" title="Edit and resend" aria-label="Edit and resend">${ICON_EDIT}</button></div><div class="text">${escapeHtml(body)}</div></div>`;
-  if (b.kind === 'act')
-    return `<ul class="msg tools">${b.lines
-      .filter((l) => l.trim())
-      .map((l) => `<li class="tool k-${toolKind(l)}">${toolLineHtml(l)}</li>`)
-      .join('')}</ul>`;
-  if (b.kind === 'think') {
-    const lines = body.split('\n');
-    const wordCount = body.trim().split(/\s+/).filter(Boolean).length;
-    const countBadge = `<span class="think-badge">${String(wordCount)} words</span>`;
-    if (lines.length <= THINK_PREVIEW_LINES)
-      return `<div class="msg think"><span class="think-header">💭 Thinking ${countBadge}</span><div class="think-body">${escapeHtml(body)}</div></div>`;
-    return `<details class="msg think"><summary><span class="think-header">💭 Thinking ${countBadge}</span> <span class="think-summary-text">${escapeHtml(lines.slice(0, THINK_PREVIEW_LINES).join(' '))}</span></summary><div class="think-body">${escapeHtml(lines.join('\n'))}</div></details>`;
+
+  if (b.kind === 'out') {
+    const split = splitThinkContent(body);
+    const thinkPart = split.thoughts.length
+      ? renderThinkAccordion(
+          split.thoughts.join('\n\n'),
+          `think-inline-${id}`,
+          split.isThinkingOpen && isActiveTail,
+        )
+      : '';
+    const replyPart = split.reply
+      ? `<div class="msg reply">${withCopy(renderMarkdown(split.reply))}<div class="msg-actions"><button class="icon small" data-copy-block="${id}" title="Copy reply" aria-label="Copy reply">${ICON_COPY}</button></div></div>`
+      : '';
+    return `${thinkPart}${replyPart}`;
   }
-  if (b.kind === 'system' || b.kind === 'feed')
+
+  if (b.kind === 'user') {
+    return `<div class="msg user"><div class="who">You<button class="icon small" data-reuse="${id}" title="Edit and resend" aria-label="Edit and resend">${ICON_EDIT}</button></div><div class="text">${escapeHtml(body)}</div></div>`;
+  }
+
+  if (b.kind === 'act') {
+    return renderToolCluster(b, isActiveTail);
+  }
+
+  if (b.kind === 'think') {
+    return renderThinkAccordion(body, `think-${id}`, isActiveTail);
+  }
+
+  if (b.kind === 'system' || b.kind === 'feed') {
     return `<div class="msg note">${escapeHtml(body)}</div>`;
+  }
+
   const text = b.lines.map((l) => l.trimStart().replace(/^✗ ?/, '')).join('\n');
   return `<div class="msg error">${escapeHtml(text)}</div>`;
 }
 
+/** True if the user currently has a non-empty text selection inside `container`. */
+function hasActiveSelectionIn(container: HTMLElement): boolean {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.anchorNode) return false;
+  return container.contains(sel.anchorNode);
+}
+
+/**
+ * Reconciles historical `blocks` into `blocksRoot` with minimal DOM mutations,
+ * and updates `liveRoot` for active token streaming and tool execution status.
+ */
 function drawConversation(): void {
   welcome.hidden = blocks.length > 0 || Boolean(state?.live) || Boolean(state?.busy);
-  const html = blocks.map(messageHtml);
-  if (state?.live)
-    html.push(`<div class="msg reply streaming">${renderMarkdown(state.live)}</div>`);
+
+  // If the user is actively selecting text in historical blocks, defer mutating `blocksRoot`
+  if (!hasActiveSelectionIn(blocksRoot)) {
+    const existingNodes = Array.from(blocksRoot.children) as HTMLElement[];
+
+    // If blocks were cleared (e.g. session reset), wipe fast
+    if (blocks.length === 0 && existingNodes.length > 0) {
+      blocksRoot.replaceChildren();
+    } else {
+      for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
+        if (!b) continue;
+        const isActiveTail = Boolean(state?.busy) && i === blocks.length - 1 && !state?.live;
+        const sig = blockSignature(b, isActiveTail);
+        const current = existingNodes[i];
+
+        if (current?.dataset.blockId === String(b.id)) {
+          if (current.dataset.sig !== sig) {
+            current.dataset.sig = sig;
+            current.innerHTML = messageHtml(b, isActiveTail);
+          }
+        } else {
+          const slot = document.createElement('div');
+          slot.className = 'block-slot';
+          slot.dataset.blockId = String(b.id);
+          slot.dataset.sig = sig;
+          slot.innerHTML = messageHtml(b, isActiveTail);
+          if (current) {
+            blocksRoot.replaceChild(slot, current);
+          } else {
+            blocksRoot.appendChild(slot);
+          }
+        }
+      }
+
+      // Trim any surplus nodes if blocks array shrunk
+      while (blocksRoot.children.length > blocks.length) {
+        blocksRoot.lastElementChild?.remove();
+      }
+    }
+  }
+
+  // Render the high-frequency live streaming & active tool cockpit region
+  const liveParts: string[] = [];
+  if (state?.live) {
+    const split = splitThinkContent(state.live);
+    if (split.thoughts.length > 0 || split.isThinkingOpen) {
+      liveParts.push(
+        renderThinkAccordion(
+          split.thoughts.join('\n\n'),
+          'think-live-stream',
+          split.isThinkingOpen,
+        ),
+      );
+    }
+    if (split.reply) {
+      liveParts.push(
+        `<div class="msg reply streaming">${withCopy(renderMarkdown(split.reply))}<span class="stream-cursor" aria-hidden="true"></span></div>`,
+      );
+    }
+  }
+
   if (state?.busy && !state.live && !state.pending) {
     const lastAgentLog = logLines.findLast((l) => l.role === 'agent')?.text;
-    const doing = lastAgentLog ?? 'Thinking…';
-    const kind = lastAgentLog ? toolKind(lastAgentLog) : 'tool';
-    const toolBadge = lastAgentLog ? `<span class="active-tool-pill k-${kind}">${ICON.tool} ${escapeHtml(lastAgentLog)}</span>` : `<span>${escapeHtml(doing)}</span>`;
-    html.push(
-      `<div class="working">${ICON.spinner}${toolBadge}<span id="eta" class="eta">${etaText(state.waiting, Date.now())}</span>${state.paused ? '<span class="tag">paused</span>' : ''}</div>`,
+    const doing = lastAgentLog ?? 'Synthesizing next step…';
+    const kind: ToolKind = lastAgentLog ? toolKind(lastAgentLog) : 'tool';
+    const badge = lastAgentLog
+      ? `<span class="active-tool-pill k-${kind}"><span class="pill-ico">${iconForToolKind(kind)}</span><span class="pill-tag">${toolBadgeLabel(kind)}</span><span class="pill-body">${toolLineHtml(lastAgentLog)}</span></span>`
+      : `<span class="active-tool-pill k-think">${ICON.brain}<span class="pill-body">${escapeHtml(doing)}</span></span>`;
+    liveParts.push(
+      `<div class="working cockpit-hud">${ICON.spinner}${badge}<span id="eta" class="eta">${etaText(state.waiting, Date.now())}</span>${state.paused ? '<span class="tag">paused</span>' : ''}</div>`,
     );
   }
-  html.push(estimateHtml(state?.estimate));
-  conversation.innerHTML = html.join('');
-  if (stick.conversation) conversation.scrollTop = conversation.scrollHeight;
-  else jumpBtn.hidden = false;
+
+  liveParts.push(estimateHtml(state?.estimate));
+  const nextLiveHtml = liveParts.join('');
+  if (liveRoot.innerHTML !== nextLiveHtml) {
+    liveRoot.innerHTML = nextLiveHtml;
+  }
+
+  if (stick.conversation) {
+    conversation.scrollTop = conversation.scrollHeight;
+  } else {
+    jumpBtn.hidden = false;
+  }
 }
 
 function stepDetail(s: string, states: readonly string[], pct: number, recent: string): string {
@@ -233,9 +447,17 @@ function stepDetail(s: string, states: readonly string[], pct: number, recent: s
 
 function drawSteps(items: readonly TodoItem[]): void {
   steps.hidden = items.length === 0;
-  if (!items.length) return;
+  if (!items.length) {
+    lastStepsSignature = '';
+    return;
+  }
   const states = stepStates(items);
   const pct = stepsPercent(items);
+  const recentLogs = logLines.filter((l) => l.role === 'agent').slice(-ACTIVE_STEP_ACTIONS);
+  const stepsSig = `${ items.map((t) => `${t.status}:${t.text}`).join('|')}#${recentLogs.map((l) => l.text).join('|')}`;
+  if (stepsSig === lastStepsSignature) return;
+  lastStepsSignature = stepsSig;
+
   const done = items.filter((t) => t.status === 'done').length;
   el('steps-count', HTMLElement).textContent = `${String(done)}/${String(items.length)}`;
   const current = states.indexOf('active');
@@ -243,11 +465,7 @@ function drawSteps(items: readonly TodoItem[]): void {
   el('steps-now', HTMLElement).textContent =
     done === items.length ? 'All steps done' : `${stepLabel(shown)}: ${items[shown]?.text ?? ''}`;
   el('steps-bar', HTMLElement).style.width = `${String(pct)}%`;
-  const recent = logLines
-    .filter((l) => l.role === 'agent')
-    .slice(-ACTIVE_STEP_ACTIONS)
-    .map((l) => `<li>${escapeHtml(l.text)}</li>`)
-    .join('');
+  const recent = recentLogs.map((l) => `<li>${toolLineHtml(l.text)}</li>`).join('');
   const icons = { done: ICON.check, active: ICON.spinner, waiting: ICON.wait, queued: ICON.dot };
   stepsBody.innerHTML = items
     .map((t, i) => {
@@ -259,7 +477,7 @@ function drawSteps(items: readonly TodoItem[]): void {
 
 function stat(id: string, value: string, title: string): void {
   const node = el(id, HTMLElement);
-  node.textContent = value;
+  if (node.textContent !== value) node.textContent = value;
   node.parentElement?.setAttribute('title', title);
 }
 
@@ -355,19 +573,28 @@ function drawControls(s: State): void {
   }
 }
 
-function apply(s: State): void {
+/** Coalesces rapid incoming state transitions into a single animation frame paint. */
+function scheduleApply(s: State): void {
   ingest(s.entries);
-  state = s;
-  settings.setCurrentModel(s.model);
-  modelPicker.setCurrent(s.model);
-  banner.hidden = true;
-  drawControls(s);
-  drawStats(s);
-  drawSteps(s.todos);
-  inspector.onBusy(s.busy, post);
-  // An older omnexx sends no helpers; treat that as none.
-  crew.drawCrew(s.helpers ?? [], logoSrc);
-  drawConversation();
+  pendingState = s;
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    if (!pendingState) return;
+    const next = pendingState;
+    pendingState = null;
+    state = next;
+    settings.setCurrentModel(next.model);
+    modelPicker.setCurrent(next.model);
+    banner.hidden = true;
+    drawControls(next);
+    drawStats(next);
+    drawSteps(next.todos);
+    inspector.onBusy(next.busy, post);
+    crew.drawCrew(next.helpers ?? [], logoSrc);
+    drawConversation();
+  });
 }
 
 function showBanner(text: string, kind: 'error' | 'info'): void {
@@ -376,9 +603,20 @@ function showBanner(text: string, kind: 'error' | 'info'): void {
   banner.innerHTML = `<span>${escapeHtml(text)}</span>${kind === 'info' ? '<button class="link" data-action="restart">Restart</button>' : ''}`;
 }
 
+// Track user-toggled `<details>` accordions so re-renders preserve their open state
+conversation.addEventListener(
+  'toggle',
+  (e) => {
+    const target = e.target;
+    if (target instanceof HTMLDetailsElement && target.dataset.disclosureId) {
+      if (target.open) openDisclosures.add(target.dataset.disclosureId);
+      else openDisclosures.delete(target.dataset.disclosureId);
+    }
+  },
+  true,
+);
+
 window.addEventListener('message', (event: MessageEvent<Incoming>) => {
-  // The extension's messages arrive through VS Code's webview host, which shares this frame's
-  // origin; anything else (another frame or window) is ignored.
   if (event.origin !== window.location.origin) return;
   const m = event.data;
   if (m.type === 'ui') {
@@ -408,17 +646,19 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
   if (m.type !== 'state' && contextPage.onMessage(m)) return;
   if (m.type !== 'state' && agentCard.onMessage(m)) return;
   if (m.type !== 'state' && settings.onMessage(m)) return;
-  if (m.type === 'state') apply(m);
+  if (m.type === 'state') scheduleApply(m);
   else if (m.type === 'ready') {
-    // A new chat, a fresh omnexx process or a resync: back to the conversation, from the start.
     settings.close();
     contextPage.close();
     inspector.close();
     crew.resetViews();
     blocks = [];
     logLines = [];
+    openDisclosures.clear();
+    lastStepsSignature = '';
+    blocksRoot.replaceChildren();
+    liveRoot.replaceChildren();
     drawConversation();
-    // The agent settings: offered once at the top of the panel while "always ask" is on.
     agentCard.request(post);
   } else if (m.type === 'error' || m.type === 'down') {
     const text = typeof m.message === 'string' ? m.message : 'Something went wrong';
@@ -520,7 +760,6 @@ input.addEventListener('input', () => {
 input.addEventListener('click', () => {
   suggest.refresh();
 });
-// Files dragged in from the Explorer or an editor tab become @mentions (hold Shift in VS Code).
 input.addEventListener('dragover', (e) => {
   e.preventDefault();
 });
@@ -562,11 +801,15 @@ window.addEventListener('focus', () => {
 send.addEventListener('click', () => {
   submit(true);
 });
-conversation.addEventListener('scroll', () => {
-  stick.conversation =
-    conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 40;
-  if (stick.conversation) jumpBtn.hidden = true;
-});
+conversation.addEventListener(
+  'scroll',
+  () => {
+    stick.conversation =
+      conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 40;
+    if (stick.conversation) jumpBtn.hidden = true;
+  },
+  { passive: true },
+);
 
 /** A control's action, from a click in the panel or a command in the view's title bar. */
 function runAction(action: string, target: Element | null): void {
