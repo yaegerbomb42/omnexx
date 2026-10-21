@@ -357,8 +357,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   <div id="crew-body" class="crew-body"></div>
 </details>
 <details id="browser" class="section browser" open hidden>
-  <summary><span class="chev" aria-hidden="true"></span><span class="h">Browser</span><span class="sub-h">what the agent sees</span></summary>
-  <div class="bframe"><div class="bbar"><span class="bdots" aria-hidden="true"><i></i><i></i><i></i></span><span id="b-url" class="burl"></span><span id="b-action" class="baction"></span></div><img id="b-img" alt="The agent's browser" title="Click to enlarge"></div>
+  <summary><span class="chev" aria-hidden="true"></span><span class="h">Browser Session</span><span class="sub-h">live agent viewport</span><span id="b-status" class="b-status"></span></summary>
+  <div class="bframe">
+    <div class="bbar">
+      <div class="b-nav-btns">
+        <button id="b-btn-back" class="b-ctrl-btn" title="Back" aria-label="Back">‹</button>
+        <button id="b-btn-fwd" class="b-ctrl-btn" title="Forward" aria-label="Forward">›</button>
+        <button id="b-btn-reload" class="b-ctrl-btn" title="Reload" aria-label="Reload">↻</button>
+      </div>
+      <div class="b-address-bar">
+        <span class="b-lock-icon" aria-hidden="true">🔒</span>
+        <span id="b-url" class="burl"></span>
+      </div>
+      <span id="b-action" class="baction"></span>
+    </div>
+    <div class="b-canvas-wrapper">
+      <img id="b-img" alt="The agent's browser" title="Click to expand/collapse viewport">
+      <div id="b-dimmer" class="b-dimmer" hidden><span class="spinner"></span> Driving browser...</div>
+    </div>
+  </div>
 </details>
 <section id="agent-start" class="agent-start" hidden aria-label="Agent settings"></section>
 <main id="log" class="conversation" aria-live="polite"></main>
