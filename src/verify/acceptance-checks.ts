@@ -61,10 +61,22 @@ export function inferGoalChecks(goal: string): string[] {
     checks.push(`node --input-type=module -e 'import { ${symbol} } from "./${file}"'`);
 
     // Pattern: throws ValidationError naming bad field: `field1`: ..., `field2`: ...
-    // Extract bulleted field names and check instance properties on thrown error
+    // Extract bulleted field names and property identifiers mentioned in the goal
     const fields: string[] = [];
     for (const fb of goal.matchAll(/-\s+`([A-Za-z0-9_$]+)`\s*(?:\([^)]*\))?:/gi)) {
       if (fb[1]) fields.push(fb[1]);
+    }
+    for (const m of goal.matchAll(/`([A-Za-z0-9_$]+)`/g)) {
+      const sym = m[1];
+      if (
+        sym &&
+        !fields.includes(sym) &&
+        !['ValidationError', 'createOrder', 'orders.js', 'npm', 'test', 'field'].includes(sym) &&
+        !sym.endsWith('.js') &&
+        !sym.endsWith('.ts')
+      ) {
+        fields.push(sym);
+      }
     }
     if (fields.length > 0) {
       const fieldList = fields.map((f) => `"${f}"`).join(', ');
@@ -93,17 +105,23 @@ export function inferGoalChecks(goal: string): string[] {
     }
   }
 
-  // Pattern: Returns CSV with a header row `a,b,c` from `func(args)` in `path/to/file`
-  const pHeader = /returns\s+CSV\s+with\s+a\s+header\s+row\s+`([^`]+)`/i.exec(goal);
-  const pFn = /`([A-Za-z0-9_$]+)\([^`]*\)`/i.exec(goal);
-  const pModule = /`([^`]+\.[cm]?[jt]sx?)`/i.exec(goal);
-  if (pHeader?.[1] && pFn?.[1] && pModule?.[1]) {
-    const header = pHeader[1];
-    const fn = pFn[1];
-    const mod = pModule[1].replace(/^\.?\//, '');
-    checks.push(
-      `node --input-type=module -e 'import { ${fn} } from "./${mod}"; const r = ${fn}([]); if (!r.startsWith("${header}")) process.exit(1);'`,
-    );
+  // Pattern: so `func(args)` returns CSV with a header row `a,b,c`
+  const pCsvExport =
+    /`([A-Za-z0-9_$]+)\([^`]*\)`\s+returns\s+CSV\s+with\s+a\s+header\s+row\s+`([^`]+)`/i.exec(goal);
+  if (pCsvExport?.[1] && pCsvExport[2]) {
+    const fn = pCsvExport[1];
+    const header = pCsvExport[2];
+    // Find the module where this function is exported: in `path/to/file` so `func(...)`
+    const pModBefore = new RegExp(
+      `(?:in|to)\\s+\`([^\`]+\\.[cm]?[jt]sx?)\`\\s+so\\s+\`${fn}`,
+      'i',
+    ).exec(goal);
+    const mod = (pModBefore?.[1] ?? '').replace(/^\.?\//, '');
+    if (mod) {
+      checks.push(
+        `node --input-type=module -e 'import { ${fn} } from "./${mod}"; const r = ${fn}([]); if (!r.startsWith("${header}")) process.exit(1);'`,
+      );
+    }
   }
 
   return Array.from(new Set(checks));
