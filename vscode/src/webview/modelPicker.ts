@@ -32,24 +32,38 @@ function matches(): ModelItem[] {
   return items.filter((m) => words.every((w) => m.ref.toLowerCase().includes(w)));
 }
 
+function customModelItem(): ModelItem | undefined {
+  const q = query.trim();
+  if (!q) return undefined;
+  const list = matches();
+  if (list.some((m) => m.ref.toLowerCase() === q.toLowerCase())) return undefined;
+  const parts = q.split(':');
+  const provider = parts.length > 1 && parts[0] ? parts[0] : 'custom';
+  const model = parts.length > 1 ? parts.slice(1).join(':') : q;
+  return { provider, model, ref: q };
+}
+
 function draw(): void {
   const list = matches();
-  cursor = Math.min(cursor, Math.max(0, list.length - 1));
+  const custom = customModelItem();
+  const all = custom ? [...list, custom] : list;
+  cursor = Math.min(cursor, Math.max(0, all.length - 1));
   let rows = '';
   let lastProvider = '';
-  list.forEach((m, i) => {
+  all.forEach((m, i) => {
     if (m.provider !== lastProvider) {
       lastProvider = m.provider;
       rows += `<li class="mp-group">${badge(m.provider)}<span>${escapeHtml(m.provider)}</span></li>`;
     }
     const isCurrent = m.ref === current;
-    rows += `<li class="mp-item${i === cursor ? ' active' : ''}${isCurrent ? ' current' : ''}" role="option" aria-selected="${String(isCurrent)}" data-ref="${escapeHtml(m.ref)}" data-index="${String(i)}"><span class="mp-name">${escapeHtml(m.model)}</span>${isCurrent ? '<span class="mp-check">✓</span>' : ''}</li>`;
+    const isCustom = m.ref === custom?.ref;
+    rows += `<li class="mp-item${i === cursor ? ' active' : ''}${isCurrent ? ' current' : ''}${isCustom ? ' mp-custom-entry' : ''}" role="option" aria-selected="${String(isCurrent)}" data-ref="${escapeHtml(m.ref)}" data-index="${String(i)}"><span class="mp-name">${isCustom ? `Use model "<strong>${escapeHtml(m.ref)}</strong>"` : escapeHtml(m.model)}</span>${isCurrent ? '<span class="mp-check">✓</span>' : ''}</li>`;
   });
   const empty = loading
     ? '<li class="mp-empty"><span class="spinner"></span> Loading models…</li>'
     : items.length
       ? '<li class="mp-empty">No model matches.</li>'
-      : '<li class="mp-empty">No models yet. Add a provider in Settings.</li>';
+      : '<li class="mp-empty">No models yet. Add a provider in Settings or type a model ID directly.</li>';
   const note = unreachable.length
     ? `<div class="mp-note">Couldn't reach: ${escapeHtml(unreachable.join(', '))}</div>`
     : '';
@@ -134,13 +148,15 @@ export function wire(openSettings: () => void): void {
   });
   el.addEventListener('keydown', (e) => {
     const list = matches();
+    const custom = customModelItem();
+    const all = custom ? [...list, custom] : list;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      cursor = (cursor + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % Math.max(1, list.length);
+      cursor = (cursor + (e.key === 'ArrowDown' ? 1 : -1) + all.length) % Math.max(1, all.length);
       draw();
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const pick = list[cursor];
+      const pick = all[cursor];
       if (pick) choose(pick.ref);
     } else if (e.key === 'Escape') {
       e.preventDefault();
