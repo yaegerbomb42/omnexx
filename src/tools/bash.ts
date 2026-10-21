@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { z } from 'zod';
 import { parseDuration } from '../config/duration.js';
@@ -178,13 +179,26 @@ function commandStatus(
   repoRoot: string,
 ): string {
   const secs = Math.round(timeoutMs / 1000);
-  const relCwd = r.cwd && r.cwd !== repoRoot ? ` cwd=${relative(repoRoot, r.cwd) || '.'}` : '';
-  const sessTag = `session=${sessionName}${relCwd}`;
+  let isSameDir = false;
+  if (r.cwd) {
+    if (r.cwd === repoRoot) {
+      isSameDir = true;
+    } else {
+      try {
+        isSameDir = realpathSync(r.cwd) === realpathSync(repoRoot);
+      } catch {
+        isSameDir = false;
+      }
+    }
+  }
+  const relCwd = r.cwd && !isSameDir ? ` cwd=${relative(repoRoot, r.cwd) || '.'}` : '';
+  const hasCustomSession = sessionName !== 'main' || Boolean(relCwd);
+  const sessTag = hasCustomSession ? ` (${sessionName}${relCwd})` : '';
   if (peeked)
-    return `dev server still running after ${secs}s; stopped by the harness (it started), ${sessTag}`;
+    return `dev server still running after ${secs}s; stopped by the harness (it started)${sessTag}`;
   if (r.timedOut)
-    return `timed out after ${secs}s (${sessTag}); if it needs longer, run it again with a larger timeout (e.g. "10m")`;
-  return `exit ${String(r.exitCode)}, ${sessTag}`;
+    return `timed out after ${secs}s${sessTag}; if it needs longer, run it again with a larger timeout (e.g. "10m")`;
+  return `exit ${String(r.exitCode)}${sessTag}`;
 }
 
 export const bashTool: Tool<typeof schema> = {

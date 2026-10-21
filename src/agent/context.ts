@@ -1,7 +1,6 @@
 import { compactPlanView, type Plan, type PlanNode } from '../core/plan.js';
 import { CHARS_PER_TOKEN } from '../core/tokens.js';
 import { contentsBlock, type SectionId, type SectionModes } from './sections.js';
-import { WORKING_STATE_HEADER } from './working-state.js';
 import type { CompletionRequest, Message, SystemBlock, ToolSpec } from '../providers/types.js';
 
 /** Hard ceiling for the Frozen Prefix (Slots 0–6) so Slots 0–11 stay <= 10,240 tokens. */
@@ -178,14 +177,16 @@ export function buildCycleContext(i: CycleInputs): {
     );
   }
 
-  const firstContent: Message['content'] = [{ type: 'text', text: slot6Text }];
+  const allParts = [slot6Text];
   if (slot7Parts.length > 0) {
-    const seedLsf = clampSlot(
-      `${WORKING_STATE_HEADER}\n\n${slot7Parts.join('\n\n')}`,
-      SLOT_CHAR_BUDGETS.initialLsf,
+    allParts.push(
+      clampSlot(
+        slot7Parts.join('\n\n'),
+        SLOT_CHAR_BUDGETS.initialLsf,
+      )
     );
-    firstContent.push({ type: 'text', text: seedLsf });
   }
+  const firstContent: Message['content'] = [{ type: 'text', text: allParts.join('\n\n') }];
 
   return {
     system,
