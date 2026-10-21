@@ -1,6 +1,6 @@
 import type { OmnexxConfig } from '../config/schema.js';
 import { applyPlanUpdate, type Plan } from './plan.js';
-import { inferCheckCommand } from '../verify/acceptance-checks.js';
+import { inferCheckCommand, inferGoalChecks } from '../verify/acceptance-checks.js';
 
 /**
  * The fast path: before planning, one worker tries the whole goal as a single task, gated and
@@ -58,7 +58,8 @@ export function fastPlan(config: OmnexxConfig, goal: string): Plan {
   const derivedChecks = parsedCriteria
     .map((c) => inferCheckCommand(c))
     .filter((c): c is string => c !== undefined);
-  const checks = [...derivedChecks, ...gateChecks].slice(0, 10);
+  const goalChecks = inferGoalChecks(goal);
+  const checks = Array.from(new Set([...derivedChecks, ...goalChecks, ...gateChecks])).slice(0, 10);
   return applyPlanUpdate(
     undefined,
     {
