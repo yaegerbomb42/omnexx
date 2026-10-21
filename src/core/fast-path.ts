@@ -1,5 +1,6 @@
 import type { OmnexxConfig } from '../config/schema.js';
 import { applyPlanUpdate, type Plan } from './plan.js';
+import { inferCheckCommand } from '../verify/acceptance-checks.js';
 
 /**
  * The fast path: before planning, one worker tries the whole goal as a single task, gated and
@@ -23,10 +24,41 @@ export function tryFastPath(config: OmnexxConfig, goal: string): boolean {
   );
 }
 
+/** Extracts bulleted acceptance or success criteria from goal markdown if present. */
+export function extractCriteria(goal: string): string[] {
+  const lines = goal.split('\n');
+  const bullets: string[] = [];
+  let inCriteria = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^#+\s*(success criteria|acceptance criteria|done when)/i.test(trimmed)) {
+      inCriteria = true;
+      continue;
+    }
+    if (inCriteria && /^#+\s+/.test(trimmed)) {
+      inCriteria = false;
+    }
+    if (inCriteria && /^[-*]\s+/.test(trimmed)) {
+      const item = trimmed.replace(/^[-*]\s+/, '').trim();
+      if (item) bullets.push(item);
+    }
+  }
+  return bullets;
+}
+
 /** One milestone with one task: the whole goal, done when every gate passes. */
 export function fastPlan(config: OmnexxConfig, goal: string): Plan {
-  const checks = config.gates.map((g) => g.run).slice(0, 10);
+  const gateChecks = config.gates.map((g) => g.run);
   const what = goal.trim().replace(/\s+/g, ' ');
+  const parsedCriteria = extractCriteria(goal);
+  const acceptance =
+    parsedCriteria.length > 0
+      ? parsedCriteria
+      : [what.length > 480 ? `${what.slice(0, 477)}...` : what];
+  const derivedChecks = parsedCriteria
+    .map((c) => inferCheckCommand(c))
+    .filter((c): c is string => c !== undefined);
+  const checks = [...derivedChecks, ...gateChecks].slice(0, 10);
   return applyPlanUpdate(
     undefined,
     {
@@ -40,7 +72,7 @@ export function fastPlan(config: OmnexxConfig, goal: string): Plan {
               id: FAST_TASK,
               title: 'Do the whole goal in one pass',
               why: 'Fast path: the whole goal in one pass; the planner takes over if it fails.',
-              acceptance: [what.length > 480 ? `${what.slice(0, 477)}...` : what],
+              acceptance,
               checks,
               size: 'L',
             },
