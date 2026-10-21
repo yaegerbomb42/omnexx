@@ -34,7 +34,11 @@
 
   /* Glassmorphism Tokens */
   --glass-bg: color-mix(in srgb, var(--surface) 74%, transparent);
-  --glass-card: color-mix(in srgb, var(--fg) 5%, color-mix(in srgb, var(--surface) 82%, transparent));
+  --glass-card: color-mix(
+    in srgb,
+    var(--fg) 5%,
+    color-mix(in srgb, var(--surface) 82%, transparent)
+  );
   --glass-border: color-mix(in srgb, var(--fg) 14%, transparent);
   --glass-highlight: inset 0 1px 0 0 color-mix(in srgb, #ffffff 10%, transparent);
   --glass-blur: blur(10px) saturate(140%);
@@ -55,7 +59,11 @@ body.vscode-light {
   --ok: var(--emerald);
   --warn: var(--amber);
   --glass-bg: color-mix(in srgb, var(--surface) 85%, transparent);
-  --glass-card: color-mix(in srgb, var(--fg) 4%, color-mix(in srgb, var(--surface) 90%, transparent));
+  --glass-card: color-mix(
+    in srgb,
+    var(--fg) 4%,
+    color-mix(in srgb, var(--surface) 90%, transparent)
+  );
   --glass-highlight: inset 0 1px 0 0 color-mix(in srgb, #ffffff 65%, transparent);
   --glow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
@@ -956,7 +964,9 @@ details.msg.think[open] > summary::after {
   background: color-mix(in srgb, var(--fg) 3%, transparent);
   border: 1px solid transparent;
   min-width: 0;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .tool:hover {
@@ -1226,7 +1236,9 @@ details.msg.think[open] > summary::after {
   padding: 5px 8px;
   color: var(--accent);
   text-align: left;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .suggestions button:hover {
@@ -1576,7 +1588,9 @@ textarea::placeholder {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .b-ctrl-btn:hover {

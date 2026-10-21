@@ -130,7 +130,9 @@ function checkBashSyntax(command: string, stdin?: string): Promise<string | null
         resolve(null);
       }
     });
-    child.on('error', () => { resolve(null); });
+    child.on('error', () => {
+      resolve(null);
+    });
     child.stdin?.end(command);
   });
 }
@@ -318,9 +320,7 @@ export class ShellSession {
       let settled = false;
       let killEscalationTimer: ReturnType<typeof setTimeout> | undefined;
 
-      const sentinelRegex = new RegExp(
-        `(?:^|\\n)${sentinelPrefix}:(\\d+):([^\\r\\n]*)\\r?\\n?`,
-      );
+      const sentinelRegex = new RegExp(`(?:^|\\n)${sentinelPrefix}:(\\d+):([^\\r\\n]*)\\r?\\n?`);
 
       const cleanup = () => {
         clearTimeout(timeoutTimer);
@@ -395,7 +395,9 @@ export class ShellSession {
         }, KILL_GRACE_MS);
       };
 
-      const onAbort = () => { interruptCommand(); };
+      const onAbort = () => {
+        interruptCommand();
+      };
 
       const timeoutTimer = setTimeout(interruptCommand, timeoutMs);
       if (opts.signal) {
@@ -422,7 +424,11 @@ export class SessionPool {
     return `${rootCwd}::${sessionName}`;
   }
 
-  getOrCreate(rootCwd: string, sessionName: SessionName, baseEnv: Record<string, string>): ShellSession {
+  getOrCreate(
+    rootCwd: string,
+    sessionName: SessionName,
+    baseEnv: Record<string, string>,
+  ): ShellSession {
     const k = this.key(rootCwd, sessionName);
     let session = this.sessions.get(k);
     if (!session) {
@@ -526,4 +532,3 @@ export async function runShell(command: string, opts: ExecOptions): Promise<Exec
   }
   return runDisposableShell(command, opts);
 }
-

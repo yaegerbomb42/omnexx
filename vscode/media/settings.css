@@ -86,9 +86,13 @@
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md, 8px);
   margin-bottom: 12px;
-  box-shadow: var(--glass-highlight), 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow:
+    var(--glass-highlight),
+    0 2px 8px rgba(0, 0, 0, 0.08);
   overflow: hidden;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .settings .set-section:hover {
@@ -402,7 +406,11 @@
 }
 
 .auto-calibrate-btn {
-  background: linear-gradient(135deg, color-mix(in srgb, #36c5f0 20%, transparent), color-mix(in srgb, #a78bfa 20%, transparent));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #36c5f0 20%, transparent),
+    color-mix(in srgb, #a78bfa 20%, transparent)
+  );
   border: 1px solid color-mix(in srgb, #a78bfa 40%, transparent);
   color: var(--fg);
   font-weight: 600;
@@ -413,7 +421,11 @@
 }
 
 .auto-calibrate-btn:hover {
-  background: linear-gradient(135deg, color-mix(in srgb, #36c5f0 35%, transparent), color-mix(in srgb, #a78bfa 35%, transparent));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #36c5f0 35%, transparent),
+    color-mix(in srgb, #a78bfa 35%, transparent)
+  );
   box-shadow: 0 0 12px color-mix(in srgb, #a78bfa 35%, transparent);
   transform: translateY(-1px);
 }

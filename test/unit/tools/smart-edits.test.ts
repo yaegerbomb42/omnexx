@@ -225,7 +225,11 @@ describe('post-edit diagnostics', () => {
       'src/a.ts': 'export const n: number = 1;\n',
     });
     const r = await strReplaceTool.run(
-      { path: 'src/a.ts', old_str: 'export const n: number = 1;', new_str: 'export const n: number = ;' },
+      {
+        path: 'src/a.ts',
+        old_str: 'export const n: number = 1;',
+        new_str: 'export const n: number = ;',
+      },
       ctx,
     );
     expect(r.isError).toBe(true);

@@ -30,7 +30,11 @@ describe('Deterministic Trajectory & Epistemic Rollback', () => {
     });
 
     // Trap is raised in sub-task
-    const trapped = stack.raiseTrap('ASSUMPTION_INVALID', 'pgvector not supported in local SQLite env', 5);
+    const trapped = stack.raiseTrap(
+      'ASSUMPTION_INVALID',
+      'pgvector not supported in local SQLite env',
+      5,
+    );
     expect(trapped?.status).toBe('trapped');
     expect(trapped?.trap?.kind).toBe('ASSUMPTION_INVALID');
 
@@ -61,7 +65,11 @@ describe('Deterministic Trajectory & Epistemic Rollback', () => {
       cycle: 1,
       timestamp: 2000,
       ops: [
-        { op: 'APPEND_FACT', fact: 'Assuming pgvector available for vector search', category: 'architecture' },
+        {
+          op: 'APPEND_FACT',
+          fact: 'Assuming pgvector available for vector search',
+          category: 'architecture',
+        },
         { op: 'RECORD_DECISION', key: 'vector_store', value: 'pgvector' },
       ],
     });

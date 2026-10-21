@@ -17,8 +17,9 @@ export class PtyDaemon {
 
   constructor(opts: PtyServerOptions = {}) {
     this.socketPath =
-      opts.socketPath ?? join(tmpdir(), `omnexx-pty-${Date.now()}-${Math.floor(Math.random() * 1000)}.sock`);
-    this.shell = opts.shell ?? (process.env.SHELL ?? '/bin/sh');
+      opts.socketPath ??
+      join(tmpdir(), `omnexx-pty-${Date.now()}-${Math.floor(Math.random() * 1000)}.sock`);
+    this.shell = opts.shell ?? process.env.SHELL ?? '/bin/sh';
   }
 
   public getSocketPath(): string {

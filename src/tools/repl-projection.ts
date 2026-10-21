@@ -4,8 +4,17 @@ import { ok, type Tool, type ToolContext, type ToolOutput } from './types.js';
 
 const inputSchema = z.object({
   code: z.string().describe('JavaScript code to evaluate in the isolated projection REPL.'),
-  input: z.unknown().optional().describe('Optional input object/array provided to the script as the `input` global variable.'),
-  timeoutMs: z.number().int().min(100).max(10_000).default(3_000).describe('Max execution time in milliseconds.'),
+  input: z
+    .unknown()
+    .optional()
+    .describe('Optional input object/array provided to the script as the `input` global variable.'),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(100)
+    .max(10_000)
+    .default(3_000)
+    .describe('Max execution time in milliseconds.'),
 });
 
 type Input = z.infer<typeof inputSchema>;
@@ -55,8 +64,7 @@ export const replProjectionTool: Tool<typeof inputSchema> = {
         timeout: input.timeoutMs,
       });
 
-      const formatted =
-        typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+      const formatted = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
 
       return Promise.resolve(ok(formatted));
     } catch (err) {

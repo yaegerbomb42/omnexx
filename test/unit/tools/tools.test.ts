@@ -410,6 +410,7 @@ describe('registry', () => {
       'read_symbol',
       'recall',
       'remember',
+      'repl_projection',
       'running_context',
       'search',
       'task',

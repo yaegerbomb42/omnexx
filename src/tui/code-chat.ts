@@ -647,7 +647,11 @@ export class CodeChat {
   ): Promise<void> {
     const isGreeting = isConversationalGreeting(text) && this.history.length === 0;
     // Plan mode: read-only tools, and the ask goes in the message (the cached prefix is unchanged).
-    const baseTools = isGreeting ? [] : opts.plan ? this.tools.filter((t) => t.readOnly) : this.tools;
+    const baseTools = isGreeting
+      ? []
+      : opts.plan
+        ? this.tools.filter((t) => t.readOnly)
+        : this.tools;
     const request = this.effective(baseTools);
     const tools = request.runnable;
     const ask = opts.plan ? `${PLAN_MODE}\n\n${text}` : text;

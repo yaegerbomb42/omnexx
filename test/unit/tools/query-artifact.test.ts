@@ -22,7 +22,8 @@ describe('queryArtifactTool', () => {
         {
           path: filePath,
           format: 'json',
-          query: "SELECT json_extract(data, '$.name') as name FROM artifact WHERE json_extract(data, '$.status') = 'active'",
+          query:
+            "SELECT json_extract(data, '$.name') as name FROM artifact WHERE json_extract(data, '$.status') = 'active'",
           limit: 10,
         },
         ctx,
@@ -60,7 +61,10 @@ describe('queryArtifactTool', () => {
       );
 
       expect(res.isError).toBeFalsy();
-      const output = JSON.parse(res.content) as readonly { readonly line_no: number; readonly text: string }[];
+      const output = JSON.parse(res.content) as readonly {
+        readonly line_no: number;
+        readonly text: string;
+      }[];
       expect(output).toHaveLength(2);
       expect(output[0]?.line_no).toBe(2);
       expect(output[1]?.line_no).toBe(4);

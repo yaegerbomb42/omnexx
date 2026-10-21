@@ -120,7 +120,11 @@ export function isDevServer(command: string): boolean {
 /** Auto-route obvious test suites to the `test` session when `session` is not explicitly passed. */
 function inferSession(command: string, explicit?: SessionName): SessionName {
   if (explicit) return explicit;
-  if (/^\s*(?:pytest|vitest|jest|cargo test|go test|npm test|pnpm test|yarn test|bun test)\b/.test(command)) {
+  if (
+    /^\s*(?:pytest|vitest|jest|cargo test|go test|npm test|pnpm test|yarn test|bun test)\b/.test(
+      command,
+    )
+  ) {
     return 'test';
   }
   return 'main';

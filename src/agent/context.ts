@@ -196,19 +196,13 @@ export function buildCycleContext(i: CycleInputs): {
   if (i.brief?.trim()) {
     blocks.push({
       label: 'settings',
-      text: canonicalizePrefixText(
-        clampSlot(i.brief.trim(), SLOT_CHAR_BUDGETS.facts),
-        i.repoRoot,
-      ),
+      text: canonicalizePrefixText(clampSlot(i.brief.trim(), SLOT_CHAR_BUDGETS.facts), i.repoRoot),
     });
   }
   if (i.facts?.trim()) {
     blocks.push({
       label: 'facts',
-      text: canonicalizePrefixText(
-        clampSlot(i.facts.trim(), SLOT_CHAR_BUDGETS.facts),
-        i.repoRoot,
-      ),
+      text: canonicalizePrefixText(clampSlot(i.facts.trim(), SLOT_CHAR_BUDGETS.facts), i.repoRoot),
     });
   }
 
@@ -278,12 +272,9 @@ export function buildCycleContext(i: CycleInputs): {
   if (slot7Parts.length > 0) {
     allParts.push(
       canonicalizePrefixText(
-        clampSlot(
-          slot7Parts.join('\n\n'),
-          SLOT_CHAR_BUDGETS.initialLsf,
-        ),
+        clampSlot(slot7Parts.join('\n\n'), SLOT_CHAR_BUDGETS.initialLsf),
         i.repoRoot,
-      )
+      ),
     );
   }
   const firstContent: Message['content'] = [{ type: 'text', text: allParts.join('\n\n') }];
@@ -314,7 +305,9 @@ export interface TurnRequestOptions {
   terminalDirective?: string;
 }
 
-function normalizeToolChoice(choice: TurnRequestOptions['toolChoice']): CompletionRequest['toolChoice'] {
+function normalizeToolChoice(
+  choice: TurnRequestOptions['toolChoice'],
+): CompletionRequest['toolChoice'] {
   if (!choice) return undefined;
   if (typeof choice === 'object') return choice;
   if (choice === 'none') return { type: 'none' };

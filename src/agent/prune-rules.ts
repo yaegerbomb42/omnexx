@@ -53,7 +53,12 @@ function pathOf(input: unknown): string | undefined {
   const p = (input as Record<string, unknown>).path;
   if (typeof p === 'string') return p;
   const files = (input as Record<string, unknown>).files;
-  if (Array.isArray(files) && files.length === 1 && typeof files[0] === 'object' && files[0] !== null) {
+  if (
+    Array.isArray(files) &&
+    files.length === 1 &&
+    typeof files[0] === 'object' &&
+    files[0] !== null
+  ) {
     const fPath = (files[0] as Record<string, unknown>).path;
     if (typeof fPath === 'string') return fPath;
   }

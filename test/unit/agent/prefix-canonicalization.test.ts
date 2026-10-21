@@ -50,7 +50,8 @@ describe('Prefix Canonicalization & Deterministic SHA-256 Gate', () => {
   });
 
   it('replaces local repository path with $REPO token in prefix texts', () => {
-    const raw = 'The repo is at /Users/developer/workspace/project and files are in /Users/developer/workspace/project/src';
+    const raw =
+      'The repo is at /Users/developer/workspace/project and files are in /Users/developer/workspace/project/src';
     const canonical = canonicalizePrefixText(raw, '/Users/developer/workspace/project');
     expect(canonical).toBe('The repo is at $REPO and files are in $REPO/src');
   });
