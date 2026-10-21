@@ -389,6 +389,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     </div>
     <button id="model" class="chip model" data-action="pickModel" title="Chat model: click to switch or add a provider">Pick a model</button>
     <span class="grow"></span>
+    <span id="stat-cache-pill" class="chip hud-cache" title="Prompt cache hit percentage">⚡ 0% cache</span>
     <button id="approval" class="chip danger" data-action="approval" hidden title="omnexx goes ahead without asking; click to ask first again">Auto-approve</button>
     <button class="meter" data-action="inspect" title="Context in use; click to see, edit or delete what the model gets"><span class="track"><span class="fill" id="ctx-fill"></span></span><span id="ctx-text">—</span></button>
     <button class="chip cost" data-action="usage" aria-haspopup="true" title="Session usage"><span id="stat-cost">$0.00</span></button>

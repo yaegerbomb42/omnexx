@@ -274,6 +274,14 @@ function drawStats(s: State): void {
       : 'No tokens used yet',
   );
   stat('stat-cost', formatUsd(u?.usd ?? 0), 'Spend this session');
+  const cachePill = document.getElementById('stat-cache-pill');
+  if (cachePill) {
+    const rate = u ? cacheHitPercent(u) : 0;
+    cachePill.textContent = `⚡ ${String(rate)}% cache`;
+    cachePill.title = u
+      ? `Prompt cache hit rate: ${String(rate)}% (${formatTokens(u.tokens.cacheRead)} cached tokens)`
+      : 'Prompt cache hit rate';
+  }
   drawUptime();
   const pct = contextPercent(s.context);
   const fill = el('ctx-fill', HTMLElement);
