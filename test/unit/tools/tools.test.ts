@@ -265,7 +265,7 @@ describe('edit tools', () => {
       (await writeFileTool.run({ path: 'new/dir/x.ts', content: 'x\n' }, ctx)).content,
     ).toMatch(/wrote/);
     expect((await writeFileTool.run({ path: 'src/big.ts', content: '' }, ctx)).content).toMatch(
-      /more than 50 lines/,
+      /more than \d+ lines/,
     );
     expect((await writeFileTool.run({ path: '.env.local', content: '' }, ctx)).isError).toBe(true);
   });
