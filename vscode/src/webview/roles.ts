@@ -97,7 +97,15 @@ function advancedHtml(): string {
 
 export function html(): string {
   return `<div class="palette" aria-label="Your models">${paletteHtml()}</div>
-<div class="rank-main"><div class="role-head"><span class="role-name">Ranked list</span><span class="role-what">used for everything</span></div>${listHtml(POOL, pool.ranked, exhausted, 'Click or drag a model above to add it. #1 is tried first.')}${modeHtml(POOL, pool.mode)}</div>
+<div class="rank-main">
+  <div class="role-head">
+    <span class="role-name">Ranked list</span>
+    <span class="role-what">used for everything</span>
+    <button class="ghost small auto-calibrate-btn" data-auto-calibrate title="Automatically select and rank the best models across all your connected providers">✨ Auto-Calibrate Roles</button>
+  </div>
+  ${listHtml(POOL, pool.ranked, exhausted, 'Click or drag a model above to add it. #1 is tried first.')}
+  ${modeHtml(POOL, pool.mode)}
+</div>
 ${advancedHtml()}<p class="hint">⏳ means out of quota; it is skipped until its quota resets. Applies to new chats and runs.</p>`;
 }
 
@@ -167,6 +175,10 @@ export function click(t: Element, p: Post): boolean {
     modelPicker.open(add, p, (ref) => {
       place(ref, role, undefined);
     });
+    return true;
+  }
+  if (t.closest('[data-auto-calibrate]')) {
+    p({ type: 'autoCalibrate' });
     return true;
   }
   const remove = t.closest<HTMLElement>('[data-rank-remove]');

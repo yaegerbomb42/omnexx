@@ -477,6 +477,20 @@ export async function serveChat(
           }),
         );
         return;
+      case 'autoCalibrate':
+        run(
+          (async () => {
+            const paths = resolvePaths(io.env);
+            const { autoCalibrateModels } = await import('../config/auto-calibrate.js');
+            const { loadModelChoices } = await import('../tui/model-picker.js');
+            const { items } = await loadModelChoices(io);
+            const refs = items.filter((m) => m.kind === 'model').map((m) => m.ref);
+            const res = await autoCalibrateModels(paths, refs);
+            await sendRoles();
+            write({ type: 'notify', level: 'info', message: res.summary });
+          })(),
+        );
+        return;
       case 'removeProvider':
         run(
           import('./chat-settings.js').then(async ({ removeProvider }) => {
