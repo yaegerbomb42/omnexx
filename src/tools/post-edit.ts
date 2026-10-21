@@ -130,8 +130,8 @@ for raw in sys.stdin:
 class PythonAstDaemon {
   private proc: ChildProcess | null = null;
   private buffer = '';
-  private pending: ((res: { ok: boolean; line?: number; col?: number; msg?: string }) => void) | null =
-    null;
+  private pending:
+    ((res: { ok: boolean; line?: number; col?: number; msg?: string }) => void) | null = null;
   private queue: Promise<unknown> = Promise.resolve();
 
   check(
@@ -398,11 +398,7 @@ export function formatterFor(root: string, abs: string): [string, string[]] | un
   return undefined;
 }
 
-async function pythonSyntax(
-  abs: string,
-  text: string,
-  ms: number,
-): Promise<Diag[]> {
+async function pythonSyntax(abs: string, text: string, ms: number): Promise<Diag[]> {
   const res = await pyDaemon.check(abs, text, ms);
   if (res.ok) return [];
   return [{ line: res.line ?? 1, code: 'SyntaxError', message: res.msg ?? 'invalid syntax' }];
@@ -483,13 +479,7 @@ export async function afterEdit(
       after = await readFile(abs, 'utf8');
       if (r.ok && after !== written) notes.push(` Formatted with ${fmt[0].split('/').pop()}.`);
     }
-    const diags = await diagnose(
-      root,
-      abs,
-      before,
-      after,
-      opts.diagTimeoutMs ?? DIAG_TIMEOUT_MS,
-    );
+    const diags = await diagnose(root, abs, before, after, opts.diagTimeoutMs ?? DIAG_TIMEOUT_MS);
     notes.push(renderDiags(diags));
   } catch {
     // The edit is already written; a failed format or check never fails it.

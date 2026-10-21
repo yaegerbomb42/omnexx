@@ -28,7 +28,11 @@ export type PatchOp = z.infer<typeof patchOpSchema>;
 
 export const statePatchSchema = z.strictObject({
   id: z.string().describe('Unique patch identifier (e.g. patch-c1-t3-0)'),
-  sourceTurnId: z.number().int().nonnegative().describe('Originating turn number for epistemic provenance'),
+  sourceTurnId: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe('Originating turn number for epistemic provenance'),
   cycle: z.number().int().nonnegative().describe('Cycle in which this patch was produced'),
   timestamp: z.number().int().nonnegative().describe('Epoch millisecond timestamp'),
   author: z.string().optional(),
@@ -120,7 +124,10 @@ export class EpistemicStateReducer {
     return this.state.invalidPaths;
   }
 
-  public getDecisions(): ReadonlyMap<string, { value: string; rationale: string; cycle: number; turn: number }> {
+  public getDecisions(): ReadonlyMap<
+    string,
+    { value: string; rationale: string; cycle: number; turn: number }
+  > {
     return this.state.decisions;
   }
 

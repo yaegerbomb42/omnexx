@@ -171,20 +171,14 @@ const ICON = {
     '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3a2.5 2.5 0 0 0-2.4 3.2A2.5 2.5 0 0 0 4 11a2.5 2.5 0 0 0 2 2.4V3zm4 0a2.5 2.5 0 0 1 2.4 3.2A2.5 2.5 0 0 1 12 11a2.5 2.5 0 0 1-2 2.4V3z"/></svg>',
   terminal:
     '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5l3 3-3 3m5 0h5"/></svg>',
-  file:
-    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/></svg>',
-  edit:
-    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 2.5l2.5 2.5L5.5 13H3v-2.5z"/></svg>',
-  diff:
-    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6M5 6h6M5 12h6"/></svg>',
-  test:
-    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h4m-3 0v4L3.5 12.5a1 1 0 0 0 .8 1.5h7.4a1 1 0 0 0 .8-1.5L9 6V2"/></svg>',
+  file: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/></svg>',
+  edit: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 2.5l2.5 2.5L5.5 13H3v-2.5z"/></svg>',
+  diff: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6M5 6h6M5 12h6"/></svg>',
+  test: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h4m-3 0v4L3.5 12.5a1 1 0 0 0 .8 1.5h7.4a1 1 0 0 0 .8-1.5L9 6V2"/></svg>',
   search:
     '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4"/><path d="M10 10l3 3"/></svg>',
-  mcp:
-    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4" cy="8" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 7l4-2M6 9l4 2"/></svg>',
-  tool:
-    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2.5a2.12 2.12 0 0 0-3 0L3.5 9 2 13.5 6.5 12l6.5-6.5a2.12 2.12 0 0 0 0-3z"/></svg>',
+  mcp: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4" cy="8" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 7l4-2M6 9l4 2"/></svg>',
+  tool: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2.5a2.12 2.12 0 0 0-3 0L3.5 9 2 13.5 6.5 12l6.5-6.5a2.12 2.12 0 0 0 0-3z"/></svg>',
 };
 
 const ICON_COPY =
@@ -234,18 +228,16 @@ function withCopy(html: string): string {
   return html.replace(
     /<pre( data-lang="([^"]*)")?( data-streaming="true")?>/g,
     (_m, attr: string | undefined, lang: string | undefined, streaming: string | undefined) => {
-      const streamBadge = streaming ? '<span class="code-stream-dot" title="Streaming code"></span>' : '';
+      const streamBadge = streaming
+        ? '<span class="code-stream-dot" title="Streaming code"></span>'
+        : '';
       return `<pre${attr ?? ''}${streaming ?? ''}><span class="code-bar"><span class="code-lang">${streamBadge}${lang ?? ''}</span><button class="icon small" data-copy-code title="Copy code" aria-label="Copy code">${ICON_COPY}</button></span>`;
     },
   );
 }
 
 /** Renders a glassmorphic `<think>` accordion with live tail preview and persistent open state. */
-function renderThinkAccordion(
-  body: string,
-  disclosureId: string,
-  isStreaming: boolean,
-): string {
+function renderThinkAccordion(body: string, disclosureId: string, isStreaming: boolean): string {
   const clean = body.trim();
   const lines = clean.split('\n').filter((l) => l.trim());
   const wordCount = clean ? clean.split(/\s+/).length : 0;
@@ -454,7 +446,7 @@ function drawSteps(items: readonly TodoItem[]): void {
   const states = stepStates(items);
   const pct = stepsPercent(items);
   const recentLogs = logLines.filter((l) => l.role === 'agent').slice(-ACTIVE_STEP_ACTIONS);
-  const stepsSig = `${ items.map((t) => `${t.status}:${t.text}`).join('|')}#${recentLogs.map((l) => l.text).join('|')}`;
+  const stepsSig = `${items.map((t) => `${t.status}:${t.text}`).join('|')}#${recentLogs.map((l) => l.text).join('|')}`;
   if (stepsSig === lastStepsSignature) return;
   lastStepsSignature = stepsSig;
 

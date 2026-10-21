@@ -12,7 +12,12 @@ export interface AutoCalibrateResult {
 /**
  * Classifies model refs based on known strength, reasoning, speed, and cost profiles.
  */
-function scoreModel(ref: string): { capability: number; speed: number; cost: number; reasoning: boolean } {
+function scoreModel(ref: string): {
+  capability: number;
+  speed: number;
+  cost: number;
+  reasoning: boolean;
+} {
   const lower = ref.toLowerCase();
   const isReasoning =
     lower.includes('mercury') ||
@@ -32,9 +37,18 @@ function scoreModel(ref: string): { capability: number; speed: number; cost: num
     lower.includes('cerebras');
 
   let capability = 5;
-  if (lower.includes('opus') || lower.includes('sonnet') || lower.includes('mercury-3') || lower.includes('r1')) {
+  if (
+    lower.includes('opus') ||
+    lower.includes('sonnet') ||
+    lower.includes('mercury-3') ||
+    lower.includes('r1')
+  ) {
     capability = 9;
-  } else if (lower.includes('codestral') || lower.includes('qwen-2.5-coder') || lower.includes('gpt-4o')) {
+  } else if (
+    lower.includes('codestral') ||
+    lower.includes('qwen-2.5-coder') ||
+    lower.includes('gpt-4o')
+  ) {
     capability = 8;
   } else if (lower.includes('flash') || lower.includes('haiku')) {
     capability = 7;

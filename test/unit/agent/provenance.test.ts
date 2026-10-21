@@ -13,7 +13,12 @@ describe('EpistemicStateReducer', () => {
       author: 'agent',
       ops: [
         { op: 'APPEND_FACT', fact: 'Project uses vitest 5.0.3', category: 'test' },
-        { op: 'RECORD_DECISION', key: 'db_driver', value: 'node:sqlite', rationale: 'built-in zero dependency' },
+        {
+          op: 'RECORD_DECISION',
+          key: 'db_driver',
+          value: 'node:sqlite',
+          rationale: 'built-in zero dependency',
+        },
       ],
     });
 

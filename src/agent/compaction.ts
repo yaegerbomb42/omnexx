@@ -489,12 +489,7 @@ interface Step {
  * In the original code, `tokens > settings.clearAt` bypassed `minClearChars`, causing every single
  * 400-char superseded read to rewrite mid-history and destroy the KV-cache on every turn.
  */
-function prune(
-  messages: Message[],
-  settings: CompactionSettings,
-  emit: Emit,
-  force = false,
-): Step {
+function prune(messages: Message[], settings: CompactionSettings, emit: Emit, force = false): Step {
   const tokens = contextTokens(messages);
   const s = pruneSuperseded(messages);
   const r = pruneRules(s.messages, settings.keepTurns);

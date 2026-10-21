@@ -7,7 +7,10 @@ import { ok, type Tool, type ToolContext, type ToolOutput } from './types.js';
 
 const inputSchema = z.object({
   path: z.string().describe('File path of the artifact to query (relative or absolute).'),
-  format: z.enum(['json', 'lines', 'sqlite']).default('json').describe('Format: "json", "lines", or "sqlite".'),
+  format: z
+    .enum(['json', 'lines', 'sqlite'])
+    .default('json')
+    .describe('Format: "json", "lines", or "sqlite".'),
   query: z.string().describe('SQL SELECT query against the artifact table.'),
   limit: z.number().int().min(1).max(500).default(50).describe('Max rows to return.'),
 });
@@ -22,10 +25,16 @@ export const queryArtifactTool: Tool<typeof inputSchema> = {
   schema: inputSchema,
   async run(input: Input, ctx: ToolContext): Promise<ToolOutput> {
     const root = await realpath(ctx.jail.root).catch(() => ctx.jail.root);
-    const resolvedPath = isAbsolute(input.path) ? resolve(input.path) : resolve(ctx.jail.root, input.path);
+    const resolvedPath = isAbsolute(input.path)
+      ? resolve(input.path)
+      : resolve(ctx.jail.root, input.path);
     const fullPath = await realpath(resolvedPath).catch(() => resolvedPath);
     const sysTmp = await realpath(tmpdir()).catch(() => tmpdir());
-    if (!fullPath.startsWith(root) && !fullPath.startsWith(sysTmp) && !fullPath.startsWith('/tmp')) {
+    if (
+      !fullPath.startsWith(root) &&
+      !fullPath.startsWith(sysTmp) &&
+      !fullPath.startsWith('/tmp')
+    ) {
       return {
         content: 'Access denied: path must be inside workspace or /tmp',
         isError: true,
@@ -68,7 +77,9 @@ export const queryArtifactTool: Tool<typeof inputSchema> = {
           const clipped = rows.slice(0, input.limit);
           return ok(
             JSON.stringify(clipped, null, 2) +
-              (rows.length > input.limit ? `\n... [${rows.length - input.limit} more records]` : ''),
+              (rows.length > input.limit
+                ? `\n... [${rows.length - input.limit} more records]`
+                : ''),
           );
         } else {
           const lines = text.split('\n');

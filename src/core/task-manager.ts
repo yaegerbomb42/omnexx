@@ -23,7 +23,11 @@ export class TaskManager {
     return TaskManager.instance;
   }
 
-  public async start(command: string, cwd: string, env: NodeJS.ProcessEnv): Promise<BackgroundTask> {
+  public async start(
+    command: string,
+    cwd: string,
+    env: NodeJS.ProcessEnv,
+  ): Promise<BackgroundTask> {
     const id = `bg-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const logPath = join(tmpdir(), `omnexx-task-${id}.log`);
     const logFd = await open(logPath, 'a', 0o600);

@@ -260,16 +260,16 @@ export async function runCandidateTournament(
   // Sort by: fewest new diagnostics -> fewest fuzzy matches -> smallest diff churn
   survivors.sort(
     (a, b) =>
-      a.newDiagCount - b.newDiagCount ||
-      a.fuzzyCount - b.fuzzyCount ||
-      a.diffSize - b.diffSize,
+      a.newDiagCount - b.newDiagCount || a.fuzzyCount - b.fuzzyCount || a.diffSize - b.diffSize,
   );
 
   const winner: ScoredCandidate | undefined = survivors[0];
   if (!winner) {
     return {
       winnerId: 'none',
-      output: fail('All candidate patches were rejected by the pre-write syntax gate or failed to match.'),
+      output: fail(
+        'All candidate patches were rejected by the pre-write syntax gate or failed to match.',
+      ),
       evaluated: candidates.length,
     };
   }

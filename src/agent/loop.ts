@@ -547,7 +547,9 @@ export async function runAgentLoop(
               m.id,
               deps.maxTokens,
               deps.cacheKey,
-              isTerminalTurn ? { toolChoice: 'none', terminalDirective: '[harness:terminal_step]' } : undefined,
+              isTerminalTurn
+                ? { toolChoice: 'none', terminalDirective: '[harness:terminal_step]' }
+                : undefined,
             );
             const quote = pricedPrompt(tokenRatios, m, req);
             const estimate = quote.estimate;

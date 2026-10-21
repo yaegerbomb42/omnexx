@@ -299,7 +299,9 @@ function deduplicateFailures(failures: readonly DigestFailure[]): DedupedFailure
 function formatFailure(f: DedupedFailure): string {
   const countTag = f.count > 1 ? ` (repeats ${String(f.count)}x)` : '';
   const assertion = f.assertion.replace(/\n/g, '\n  ');
-  return [`- ${f.name}${countTag}`, `  ${assertion}`, ...(f.frame ? [`  ${f.frame}`] : [])].join('\n');
+  return [`- ${f.name}${countTag}`, `  ${assertion}`, ...(f.frame ? [`  ${f.frame}`] : [])].join(
+    '\n',
+  );
 }
 
 function joinDigest(header: string, kept: readonly string[], omitted: number): string {
@@ -307,7 +309,11 @@ function joinDigest(header: string, kept: readonly string[], omitted: number): s
   return [header, ...kept, note].filter((p) => p.length > 0).join('\n');
 }
 
-function renderDigest(summary: string, logId: string, rawFailures: readonly DigestFailure[]): string {
+function renderDigest(
+  summary: string,
+  logId: string,
+  rawFailures: readonly DigestFailure[],
+): string {
   const header = `tests: ${summary}\nread_log id="${logId}"`;
   const failures = deduplicateFailures(rawFailures);
   const blocks = failures.map(formatFailure);
