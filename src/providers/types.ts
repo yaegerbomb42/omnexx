@@ -98,8 +98,10 @@ export const emptyUsage = (): Usage => ({
   output: 0,
 });
 
+const nonNeg = (n: number): number => (Number.isFinite(n) ? Math.max(0, n) : 0);
+
 export const totalInput = (u: Usage): number =>
-  u.uncached + u.cacheWrite5m + u.cacheWrite1h + u.cacheRead;
+  nonNeg(u.uncached) + nonNeg(u.cacheWrite5m) + nonNeg(u.cacheWrite1h) + nonNeg(u.cacheRead);
 
 /** Cache reads cost about a tenth of fresh input on every major provider. */
 const CACHE_READ_WEIGHT = 0.1;
@@ -109,8 +111,8 @@ const CACHE_READ_WEIGHT = 0.1;
  * session isn't stopped early (a 82k-fresh session once hit the 400k cap on cache reads alone).
  */
 export const budgetTokens = (u: Usage): number =>
-  u.uncached +
-  u.cacheWrite5m +
-  u.cacheWrite1h +
-  u.output +
-  Math.ceil(u.cacheRead * CACHE_READ_WEIGHT);
+  nonNeg(u.uncached) +
+  nonNeg(u.cacheWrite5m) +
+  nonNeg(u.cacheWrite1h) +
+  nonNeg(u.output) +
+  Math.ceil(nonNeg(u.cacheRead) * CACHE_READ_WEIGHT);

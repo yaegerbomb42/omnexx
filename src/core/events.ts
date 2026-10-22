@@ -43,8 +43,12 @@ export class EventLog {
     return event;
   }
 
-  onEvent(listener: (e: OmnexxEvent) => void): void {
+  onEvent(listener: (e: OmnexxEvent) => void): () => void {
     this.listeners.push(listener);
+    return () => {
+      const i = this.listeners.indexOf(listener);
+      if (i >= 0) this.listeners.splice(i, 1);
+    };
   }
 
   private rotateIfNeeded(): void {

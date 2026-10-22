@@ -444,7 +444,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       spentUsd: () => run.state.spend.usd,
       spentTodayUsd: () => run.spentToday(),
       onUsage: (u, usd, model, provider) => {
-        planTokens += totalInput(u) + u.output;
+        planTokens += Math.max(0, totalInput(u) + u.output);
         return run.addSpend(u, usd, model, 'planner', provider);
       },
       control: () => run.control(),

@@ -25,4 +25,21 @@ describe('TaskManager', () => {
     const updated = mgr.list().find((t) => t.id === task.id);
     expect(updated?.status).toBe('stopped');
   });
+
+  it('stopAll SIGTERMs running children so a suite cannot leak them', async () => {
+    const mgr = TaskManager.get();
+    const task = await mgr.start('sleep 30', tmpdir(), process.env);
+    expect(task.pid).toBeGreaterThan(0);
+    mgr.stopAll();
+    const deadline = Date.now() + 2_000;
+    while (Date.now() < deadline) {
+      try {
+        process.kill(task.pid, 0);
+        await new Promise((r) => setTimeout(r, 20));
+      } catch {
+        return;
+      }
+    }
+    expect.fail(`pid ${String(task.pid)} still alive after stopAll`);
+  });
 });

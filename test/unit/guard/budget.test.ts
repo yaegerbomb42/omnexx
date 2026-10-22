@@ -4,6 +4,7 @@ import {
   budgetFraction,
   dailyPauseThreshold,
   inWrapup,
+  nonNegative,
   preflight,
   runLimitHit,
   shouldWarn,
@@ -11,6 +12,7 @@ import {
   windowRollsAt,
 } from '../../../src/guard/budget.js';
 import { BUILTIN_PRICING, costUsd } from '../../../src/providers/pricing.js';
+import { budgetTokens } from '../../../src/providers/types.js';
 
 const price =
   BUILTIN_PRICING.sonnet ??
@@ -38,6 +40,25 @@ describe('preflight', () => {
     maxOutputTokens: 1_000,
     price,
   };
+
+  it('ignores negative token estimates so a bad usage report cannot rewind the cap', () => {
+    expect(
+      preflight(budget, {
+        ...base,
+        cycle: { turns: 1, tokens: -1_000_000 },
+        estimatedInputTokens: -50,
+        maxOutputTokens: -10,
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      preflight(budget, {
+        ...base,
+        cycle: { turns: 1, tokens: 95_000 },
+        estimatedInputTokens: -50,
+        maxOutputTokens: 10_000,
+      }),
+    ).toMatchObject({ ok: false, stop: 'max_tokens_per_cycle' });
+  });
 
   it('allows, then stops on turns, tokens and dollars', () => {
     expect(preflight(budget, base)).toMatchObject({ ok: true });
@@ -148,5 +169,22 @@ describe('rolling daily cap', () => {
     });
     expect(r).toMatchObject({ ok: false, stop: 'max_usd_per_day' });
     expect(dailyPauseThreshold(budget)).toBe(0.9);
+  });
+});
+
+describe('nonNegative token math', () => {
+  it('clamps NaN and negatives', () => {
+    expect(nonNegative(-4)).toBe(0);
+    expect(nonNegative(Number.NaN)).toBe(0);
+    expect(nonNegative(3.2)).toBe(3.2);
+    expect(
+      budgetTokens({
+        uncached: -10,
+        cacheWrite5m: Number.NaN,
+        cacheWrite1h: 0,
+        cacheRead: -100,
+        output: 5,
+      }),
+    ).toBe(5);
   });
 });
