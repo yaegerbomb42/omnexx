@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
+import { astForFile, type AstCache } from '../core/ast-cache.js';
 import { estimateTokens } from '../core/tokens.js';
 import { git } from '../git/git.js';
 import { matchesAny } from '../security/glob.js';
@@ -77,6 +78,27 @@ async function entryFor(root: string, path: string): Promise<CodemapEntry | unde
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The same entry, but through the AST cache: an unchanged file is not read again, so a
+ * rebuild of the map only pays for the files that actually changed.
+ */
+async function cachedEntryFor(
+  root: string,
+  path: string,
+  cache: AstCache,
+): Promise<CodemapEntry | undefined> {
+  if (isSecretPath(path) || matchesAny(path, SKIP)) return undefined;
+  const abs = join(root, path);
+  const found = await astForFile(cache, path, abs);
+  if (!found) return undefined;
+  const kind = kindOf(path);
+  const symbols =
+    kind === 'source'
+      ? found.ast.symbols.slice(0, MAX_SYMBOLS).map((s) => `${s.kind} ${s.name}`)
+      : [];
+  return { path, kind, lines: found.ast.lines, symbols };
 }
 
 /** Directories a walk outside git never descends into. */
@@ -156,18 +178,33 @@ export async function buildCodemap(root: string): Promise<Codemap> {
 }
 
 /**
- * Recompute entries only for `changed` paths (added, modified or deleted). A changed file keeps
- * its purpose unless `purposes` supplies a new one. Returns the paths that are new or changed.
+ * The same map, but built through the AST cache: a file that did not change is not read
+ * or parsed again. The map is byte-identical to the one `buildCodemap` produces.
+ */
+export async function buildCodemapCached(root: string, cache: AstCache): Promise<Codemap> {
+  const entries: CodemapEntry[] = [];
+  for (const path of await trackedFiles(root)) {
+    const e = await cachedEntryFor(root, path, cache);
+    if (e) entries.push(e);
+  }
+  return { version: 1, entries };
+}
+
+/**
+ * Recompute entries only for `changed` paths (added, modified or deleted), through the AST
+ * cache so an unchanged file is never re-read. A changed file keeps its purpose unless
+ * `purposes` supplies a new one. Returns the paths that are new or changed.
  */
 export async function updateCodemap(
   map: Codemap,
   root: string,
   changed: readonly string[],
+  cache?: AstCache,
 ): Promise<{ map: Codemap; touched: string[] }> {
   const byPath = new Map(map.entries.map((e) => [e.path, e]));
   const touched: string[] = [];
   for (const path of new Set(changed)) {
-    const fresh = await entryFor(root, path);
+    const fresh = cache ? await cachedEntryFor(root, path, cache) : await entryFor(root, path);
     const old = byPath.get(path);
     if (!fresh) {
       byPath.delete(path);

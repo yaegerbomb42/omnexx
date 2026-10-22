@@ -37,6 +37,15 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-22 (single agent), branch `feat/speculative-cache`:** speculative cache recovered
+  from the `omnexx-perf` checkout and landed: persistent AST cache (`src/core/ast-cache.ts`)
+  wired into the codemap (`buildCodemapCached`, cache-aware `updateCodemap`), provider prefix
+  pinning (`src/providers/cache-pinning.ts`), a cache-tracking provider wrapper
+  (`cache-tracking.ts`), cache telemetry (`src/telemetry/cache-metrics.ts`), speculative file
+  checks (`src/core/speculative-check.ts`), and the speculative-cache benchmark under
+  `test/unit/bench` (0 re-reads on an unchanged tree, 99.5% cacheable prefix, 94.8% of prompt
+  tokens read from cache). 40 new tests, all passing; typecheck/lint/format clean on the new
+  files; unit suite at 1514 pass with only the 5 pre-existing bench failures.
 - **2026-10-22 (single agent), branch `feat/multi-agent-swarm-core`:** merged
   `origin/main` to resolve PR conflicts; fixed the `docs/TODO.md` session-log conflict and
   verified merge commit `048d4ec`.
