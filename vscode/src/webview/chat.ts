@@ -105,7 +105,7 @@ interface LogLine {
 }
 
 const MAX_LOG_LINES = 400;
-const ACTIVE_STEP_ACTIONS = 2;
+const ACTIVE_STEP_ACTIONS = 4;
 const CLOCK_TICK_MS = 1_000;
 const THINK_PREVIEW_LINES = 2;
 const TOOL_CLUSTER_COLLAPSE_THRESHOLD = 6;
@@ -457,6 +457,7 @@ function drawSteps(items: readonly TodoItem[]): void {
   el('steps-now', HTMLElement).textContent =
     done === items.length ? 'All steps done' : `${stepLabel(shown)}: ${items[shown]?.text ?? ''}`;
   el('steps-bar', HTMLElement).style.width = `${String(pct)}%`;
+  // Show recent actions with the newest/most recent action at the bottom
   const recent = recentLogs.map((l) => `<li>${toolLineHtml(l.text)}</li>`).join('');
   const icons = { done: ICON.check, active: ICON.spinner, waiting: ICON.wait, queued: ICON.dot };
   stepsBody.innerHTML = items
