@@ -18,4 +18,5 @@ export { router } from './router.js';
 export { search } from './search.js';
 export { security } from './security.js';
 export { skills } from './skills.js';
+export { sweBench } from './swe-bench.js';
 export { web } from './web.js';
