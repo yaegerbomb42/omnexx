@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { openSync } from 'node:fs';
+import { closeSync, openSync } from 'node:fs';
 
 /** argv prefix that runs this CLI again: `[node, /path/to/dist/cli.js]`. Tests substitute their own entry. */
 export const selfEntry = (): string[] => [process.execPath, process.argv[1] ?? ''];
@@ -16,13 +16,17 @@ export function spawnDetached(
 ): number {
   const [cmd, ...rest] = entry;
   const fd = openSync(logPath, 'a', 0o600);
-  const child = spawn(cmd ?? process.execPath, [...rest, ...args], {
-    detached: true,
-    stdio: ['ignore', fd, fd],
-    env,
-  });
-  child.unref();
-  return child.pid ?? -1;
+  try {
+    const child = spawn(cmd ?? process.execPath, [...rest, ...args], {
+      detached: true,
+      stdio: ['ignore', fd, fd],
+      env,
+    });
+    child.unref();
+    return child.pid ?? -1;
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /** Run a supervisor as an attached child and resolve with its exit code (resume --all). */
@@ -34,16 +38,20 @@ export function spawnAttached(
 ): Promise<number> {
   const [cmd, ...rest] = entry;
   const fd = openSync(logPath, 'a', 0o600);
-  const child = spawn(cmd ?? process.execPath, [...rest, ...args], {
-    stdio: ['ignore', fd, fd],
-    env,
-  });
-  return new Promise((resolve) => {
-    child.on('exit', (code, signal) => {
-      resolve(code ?? (signal ? 128 : 1));
+  try {
+    const child = spawn(cmd ?? process.execPath, [...rest, ...args], {
+      stdio: ['ignore', fd, fd],
+      env,
     });
-    child.on('error', () => {
-      resolve(1);
+    return new Promise((resolve) => {
+      child.on('exit', (code, signal) => {
+        resolve(code ?? (signal ? 128 : 1));
+      });
+      child.on('error', () => {
+        resolve(1);
+      });
     });
-  });
+  } finally {
+    closeSync(fd);
+  }
 }
