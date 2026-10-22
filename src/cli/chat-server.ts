@@ -121,11 +121,19 @@ export async function serveChat(
   const { Session } = await import('../tui/session.js');
   const session = new Session(io, runCli);
   const write = (msg: object): void => {
-    println(io.stdout, JSON.stringify(msg));
+    if (!io.stdout.writable) return;
+    try {
+      println(io.stdout, JSON.stringify(msg));
+    } catch {
+      // Client closed the pipe (EPIPE / destroyed stream).
+    }
   };
   const fail = (err: unknown): void => {
     write({ type: 'error', message: describeError(err) });
   };
+  io.stdout.on('error', () => {
+    // Writes after the editor disconnects surface as EPIPE; don't crash the process.
+  });
 
   let sentUpTo = -1;
   let sentFrame = 0;
@@ -193,12 +201,12 @@ export async function serveChat(
         : null,
     };
     write(state);
-    void sendFrame();
+    void sendFrame().catch(() => undefined);
   };
   const schedule = (): void => {
     timer ??= setTimeout(emit, EMIT_EVERY_MS);
   };
-  session.onChange(schedule);
+  const offChange = session.onChange(schedule);
 
   const sendModels = async (): Promise<void> => {
     const { loadModelChoices } = await import('../tui/model-picker.js');
@@ -534,21 +542,27 @@ export async function serveChat(
   emit();
 
   const lines = createInterface({ input: io.stdin, crlfDelay: Infinity });
-  for await (const line of lines) {
-    if (!line.trim()) continue;
-    try {
-      handle(parseCommand(line));
-    } catch (err) {
-      fail(err);
+  try {
+    for await (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        handle(parseCommand(line));
+      } catch (err) {
+        fail(err);
+      }
     }
-  }
-  // The editor closed the pipe: end any turn in progress, let running commands finish, then
-  // flush the last state.
-  if (session.chatBusy) await session.command('stop');
-  await Promise.allSettled([...inflight]);
-  if (timer) {
-    clearTimeout(timer);
-    emit();
+    // The editor closed the pipe: end any turn in progress, let running commands finish, then
+    // flush the last state.
+    if (session.chatBusy) await session.command('stop').catch(fail);
+    await Promise.allSettled([...inflight]);
+    if (timer) {
+      clearTimeout(timer);
+      if (io.stdout.writable) emit();
+    }
+  } finally {
+    offChange();
+    if (timer) clearTimeout(timer);
+    lines.close();
   }
   return 0;
 }
