@@ -41,7 +41,9 @@ import * as contextPage from './contextPage.js';
 import * as crew from './crew.js';
 import * as inspector from './inspector.js';
 import * as modelPicker from './modelPicker.js';
+import * as posture from './posture.js';
 import * as settings from './settings.js';
+import * as stats from './stats.js';
 
 interface State {
   entries: Entry[];
@@ -82,7 +84,8 @@ type Incoming =
         | 'contextFiles'
         | 'engine'
         | 'browser'
-        | 'agentSettings';
+        | 'agentSettings'
+        | 'executionMode';
     } & Record<string, unknown>)
   | ({ type: 'browserFrame' } & crew.BrowserFrameMsg)
   | { type: 'ui'; action: string }
@@ -588,6 +591,7 @@ function scheduleApply(s: State): void {
     banner.hidden = true;
     drawControls(next);
     drawStats(next);
+    stats.update(next);
     drawSteps(next.todos);
     inspector.onBusy(next.busy, post);
     crew.drawCrew(next.helpers ?? [], logoSrc);
@@ -651,6 +655,7 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
   if (m.type !== 'state' && inspector.onMessage(m)) return;
   if (m.type !== 'state' && contextPage.onMessage(m)) return;
   if (m.type !== 'state' && agentCard.onMessage(m)) return;
+  if (m.type !== 'state' && posture.onMessage(m)) return;
   if (m.type !== 'state' && settings.onMessage(m)) return;
   if (m.type === 'state') scheduleApply(m);
   else if (m.type === 'ready') {
@@ -896,6 +901,8 @@ settings.useFoldStore({
 });
 settings.wire(post);
 agentCard.wire(post);
+posture.wire(post);
+posture.request(post);
 contextPage.wire(post);
 inspector.wire(post, () => {
   contextPage.open(post);
