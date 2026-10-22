@@ -141,6 +141,7 @@ export async function runPlanOnly(io: CliIO, goal: string, flags: RunFlags): Pro
     cwd: io.cwd,
     goal,
     now: clock.now(),
+    executionMode: deps.config.execution.mode,
     ...(flags.from ? { from: flags.from } : {}),
   });
   const run = await Run.open(deps, store.runId);
@@ -209,6 +210,7 @@ export async function runCommand(
     now: clock.now(),
     noChecks: !config.gates.length,
     writing,
+    executionMode: config.execution.mode,
     ...(flags.from ? { from: flags.from } : {}),
   });
   await writeJsonAtomic(store.file(RUN_FLAGS_FILE), overrides);

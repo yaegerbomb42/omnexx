@@ -71,12 +71,19 @@ export class Run {
   readonly abort = new AbortController();
   /** Aborts only the current cycle (the stall watchdog), unlike `abort` which ends the run. */
   private cycleAbort = new AbortController();
+  /**
+   * Cached `AbortSignal.any` of run + cycle. Recreating it on every `signal` read would add a
+   * listener to `abort` per call and leak them until the run ends.
+   */
+  private combinedSignal: AbortSignal = AbortSignal.any([this.abort.signal, this.cycleAbort.signal]);
+  /** Serialize state.json writes so overlapping save() calls cannot persist a stale snapshot. */
+  private saveChain: Promise<void> = Promise.resolve();
   /** Set by the watchdog when it aborted the current cycle for silence: what it saw. */
   hang: string | undefined;
   /** Supervisor start, for elapsed-time accounting together with state.activeMs. */
   /** What every model call and command of the current cycle listens to. */
   get signal(): AbortSignal {
-    return AbortSignal.any([this.abort.signal, this.cycleAbort.signal]);
+    return this.combinedSignal;
   }
 
   /** A fresh cycle: a new abort switch, and no hang or deadline recorded. */
@@ -84,6 +91,7 @@ export class Run {
     this.cycleAbort = new AbortController();
     this.hang = undefined;
     this.deadlineHit = false;
+    this.combinedSignal = AbortSignal.any([this.abort.signal, this.cycleAbort.signal]);
   }
 
   /** The watchdog's way out of a hung cycle: abort it, keep the run. */
@@ -235,6 +243,12 @@ export class Run {
   }
 
   async save(): Promise<void> {
+    const next = this.saveChain.then(() => this.persistState());
+    this.saveChain = next.catch(() => undefined);
+    return next;
+  }
+
+  private async persistState(): Promise<void> {
     this.state.updatedAt = this.clock.now();
     this.state.activeMs = this.elapsedMs();
     await this.store.writeState(this.state);

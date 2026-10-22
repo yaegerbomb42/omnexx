@@ -33,8 +33,15 @@ export type PreflightResult =
  * If so, the cycle ends gracefully instead of making the call, so spend never overshoots by
  * more than one turn's estimation error.
  */
+/** Treat NaN/negative usage as zero so a bad provider report cannot rewind a cap. */
+export function nonNegative(n: number): number {
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
 export function preflight(budget: OmnexxConfig['budget'], i: PreflightInput): PreflightResult {
-  const worst = worstCaseUsd(i.estimatedInputTokens, i.maxOutputTokens, i.price);
+  const estimatedInputTokens = nonNegative(i.estimatedInputTokens);
+  const maxOutputTokens = nonNegative(i.maxOutputTokens);
+  const worst = worstCaseUsd(estimatedInputTokens, maxOutputTokens, i.price);
   if (i.cycle.turns >= budget.max_turns_per_cycle) {
     return {
       ok: false,
@@ -42,7 +49,7 @@ export function preflight(budget: OmnexxConfig['budget'], i: PreflightInput): Pr
       detail: `${i.cycle.turns} turns used this cycle`,
     };
   }
-  const tokens = i.cycle.tokens + i.estimatedInputTokens + i.maxOutputTokens;
+  const tokens = nonNegative(i.cycle.tokens) + estimatedInputTokens + maxOutputTokens;
   if (tokens > budget.max_tokens_per_cycle) {
     return {
       ok: false,

@@ -27,10 +27,12 @@ let offered = false;
 let status = '';
 
 function sliderHtml(s: Slider, l: AgentLevels, m: AgentMeta): string {
+  const pos = position(s.id, l, m);
+  const pct = Math.round((pos / steps(s.id, m)) * 100);
   return `<div class="agent-row${s.prominent ? ' prominent' : ''}">
-  <label for="agent-${s.id}">${s.name}</label>
-  <input id="agent-${s.id}" type="range" min="1" max="${String(steps(s.id, m))}" step="1" value="${String(position(s.id, l, m))}" data-agent-slider="${s.id}">
-  <span class="agent-meaning" data-agent-meaning="${s.id}">${escapeHtml(meaning(s.id, l, m))}</span>
+  <div class="agent-row-head"><label for="agent-${s.id}">${s.name}</label>
+  <span class="agent-meaning" data-agent-meaning="${s.id}">${escapeHtml(meaning(s.id, l, m))}</span></div>
+  <input id="agent-${s.id}" type="range" min="1" max="${String(steps(s.id, m))}" step="1" value="${String(pos)}" style="--p:${String(pct)}%" data-agent-slider="${s.id}">
   <span class="agent-hint">${escapeHtml(s.hint)}</span>
 </div>`;
 }
@@ -75,6 +77,14 @@ export function request(post: Post): void {
   post({ type: 'agentSettings' });
 }
 
+function isEditingCard(): boolean {
+  const active = document.activeElement;
+  return (
+    active instanceof HTMLInputElement &&
+    Boolean(active.closest('.agent-card, #agent-start, .agent-start'))
+  );
+}
+
 /** Messages for the card; true when handled. */
 export function onMessage(m: { type: string } & Record<string, unknown>): boolean {
   if (m.type !== 'agentSettings') return false;
@@ -86,6 +96,8 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
     offered = true;
     start.hidden = false;
   }
+  // A full innerHTML redraw while a slider or checkbox is focused resets the control.
+  if (isEditingCard()) return true;
   redraw();
   return true;
 }
@@ -110,6 +122,7 @@ export function wire(post: Post): void {
     const id = t.dataset.agentSlider as SliderId | undefined;
     if (!id) return;
     levels = withPosition(id, Number(t.value), levels, meta);
+    t.style.setProperty('--p', `${String(Math.round((Number(t.value) / steps(id, meta)) * 100))}%`);
     status = '';
     // Update every copy of this slider's label (settings page and launch offer).
     const text = meaning(id, levels, meta);

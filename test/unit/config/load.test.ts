@@ -91,6 +91,74 @@ describe('config errors are one actionable line', () => {
   });
 });
 
+describe('execution mode', () => {
+  it('defaults to normal and stays byte-identical to the defaults', async () => {
+    const { cwd, env } = await setup();
+    const { config } = await loadConfig({ cwd, env });
+    expect(config.execution.mode).toBe('normal');
+    expect(config).toEqual(defaultConfig());
+  });
+
+  it('picks a mode from the environment and applies its plan/loop preset', async () => {
+    const { cwd, env } = await setup();
+    env.OMNEXX_EXECUTION_MODE = 'efficient';
+    const { config } = await loadConfig({ cwd, env });
+    expect(config.execution.mode).toBe('efficient');
+    expect(config.plan.mode).toBe('fast');
+    expect(config.plan.fast_attempts).toBe(1);
+    expect(config.plan.loop_rounds).toBe(4);
+    expect(config.plan.loop_rethinks).toBe(1);
+    expect(config.plan.loop_think_turns).toBe(4);
+  });
+
+  it('a preset fills only plan/loop keys the user did not set', async () => {
+    const { cwd, env } = await setup('[execution]\nmode = "extreme"\n[plan]\nloop_rounds = 7\n');
+    const { config } = await loadConfig({ cwd, env });
+    expect(config.execution.mode).toBe('extreme');
+    expect(config.plan.loop_rounds).toBe(7); // explicit wins over the preset
+    expect(config.plan.loop_think_turns).toBe(16); // preset filled the rest
+    expect(config.plan.loop_rethinks).toBe(4);
+    expect(config.plan.loop_rewinds).toBe(3);
+  });
+
+  it('environment mode overrides the project file mode', async () => {
+    const { cwd, env } = await setup('[execution]\nmode = "normal"\n');
+    env.OMNEXX_EXECUTION_MODE = 'extreme';
+    const { config } = await loadConfig({ cwd, env });
+    expect(config.execution.mode).toBe('extreme');
+    expect(config.plan.loop_think_turns).toBe(16);
+  });
+
+  it('flags override the environment for the mode', async () => {
+    const { cwd, env } = await setup();
+    env.OMNEXX_EXECUTION_MODE = 'efficient';
+    const { config } = await loadConfig({
+      cwd,
+      env,
+      flags: { execution: { mode: 'extreme' } },
+    });
+    expect(config.execution.mode).toBe('extreme');
+    expect(config.plan.loop_think_turns).toBe(16);
+  });
+
+  it('rejects an invalid environment mode with a ConfigError naming the key', async () => {
+    const { cwd, env } = await setup();
+    env.OMNEXX_EXECUTION_MODE = 'turbo';
+    const err = (await loadConfig({ cwd, env }).catch((e: unknown) => e)) as ConfigError;
+    expect(err).toBeInstanceOf(ConfigError);
+    const line = err.oneLine();
+    expect(line).toMatch(/OMNEXX_\* environment: execution\.mode/);
+    expect(line).toMatch(/docs\/config\.md/);
+  });
+
+  it('rejects an invalid project mode with a ConfigError naming the key', async () => {
+    const { cwd, env } = await setup('[execution]\nmode = "turbo"\n');
+    const err = (await loadConfig({ cwd, env }).catch((e: unknown) => e)) as ConfigError;
+    expect(err).toBeInstanceOf(ConfigError);
+    expect(err.oneLine()).toMatch(/omnexx\.toml: execution\.mode/);
+  });
+});
+
 describe('workers config', () => {
   it('accepts unknown worker ids, all off by default', async () => {
     const { cwd, env } = await setup('[workers.aider]\ntimeout = "15m"\n[workers.someday-tool]\n');

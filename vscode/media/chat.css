@@ -46,6 +46,30 @@
     0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
     0 4px 16px color-mix(in srgb, var(--accent) 18%, transparent);
   --mono: var(--vscode-editor-font-family, ui-monospace, monospace);
+
+  /* Bento glass tokens: the shared surface language of the posture pill, the swarm
+     cockpit cards, the telemetry strip and the settings Live Stats card. */
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --bento-bg: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--fg) 7%, transparent),
+    color-mix(in srgb, var(--surface) 86%, transparent)
+  );
+  --bento-border: color-mix(in srgb, var(--fg) 13%, transparent);
+  --bento-shadow: 0 10px 28px rgb(3 7 18 / 30%), var(--glass-highlight);
+  /* Execution posture gradients (active pill segments) and their glow colors. */
+  --grad-efficient: linear-gradient(92deg, #1d6fe0, #38bdf8);
+  --grad-normal: linear-gradient(92deg, #7c3aed, #c084fc);
+  --grad-extreme: linear-gradient(92deg, #ea580c, #fbbf24);
+  --seg-efficient: #38bdf8;
+  --seg-normal: #c084fc;
+  --seg-extreme: #fbbf24;
+  /* Swarm role accents: explorer amber, planner violet, reviewer green, helper blue. */
+  --role-amber: var(--amber);
+  --role-violet: var(--violet);
+  --role-green: var(--emerald);
+  --role-blue: var(--accent);
 }
 
 body.vscode-light {
@@ -103,6 +127,12 @@ body {
   flex-direction: column;
   color: var(--fg);
   background: var(--surface);
+  /* A faint deep-navy wash at the top, so the glass surfaces read as one cockpit. */
+  background-image: radial-gradient(
+    130% 55% at 50% -12%,
+    color-mix(in srgb, var(--accent) 8%, transparent),
+    transparent 70%
+  );
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
   line-height: 1.4;
@@ -340,6 +370,364 @@ svg {
 
 .pop.menu button:hover {
   background: var(--vscode-list-hoverBackground, var(--card));
+}
+
+/* ==========================================================================
+   Bento glass: Execution Posture pill, cockpit telemetry, swarm crew cards
+   ========================================================================== */
+
+/* The posture pill sits in the chat header; the same markup renders in Settings. */
+.posture {
+  flex: none;
+  padding: 8px 10px 7px;
+  border-bottom: 1px solid var(--line);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.posture-pill {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--bento-border);
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
+}
+
+.posture-pill button {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    color 0.15s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.posture-pill button:hover {
+  color: var(--fg);
+}
+
+.posture-pill button[aria-pressed='true'] {
+  color: #fff;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 28%);
+}
+
+.posture-pill button[data-posture='efficient'][aria-pressed='true'] {
+  background: var(--grad-efficient);
+  box-shadow: 0 2px 14px color-mix(in srgb, var(--seg-efficient) 50%, transparent);
+}
+
+.posture-pill button[data-posture='normal'][aria-pressed='true'] {
+  background: var(--grad-normal);
+  box-shadow: 0 2px 14px color-mix(in srgb, var(--seg-normal) 45%, transparent);
+}
+
+.posture-pill button[data-posture='extreme'][aria-pressed='true'] {
+  background: var(--grad-extreme);
+  box-shadow: 0 2px 14px color-mix(in srgb, var(--seg-extreme) 50%, transparent);
+}
+
+body.vscode-high-contrast .posture-pill button[aria-pressed='true'],
+body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 2px var(--vscode-focusBorder);
+  text-shadow: none;
+}
+
+.posture-ico {
+  font-size: 0.95em;
+  line-height: 1;
+}
+
+.posture-caption {
+  margin: 6px 2px 0;
+  font-size: var(--fs-sm);
+  color: var(--fg);
+  opacity: 0.88;
+}
+
+.posture-note {
+  margin: 2px 2px 0;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+/* Cockpit telemetry strip (real session usage), over the crew cards. */
+.telemetry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--bento-border);
+  border-radius: var(--radius-lg);
+  background: var(--bento-bg);
+  box-shadow: var(--bento-shadow);
+}
+
+.t-cell {
+  display: grid;
+  gap: 0;
+}
+
+.t-label {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.t-value {
+  font-family: var(--mono);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Swarm crew: the head agent chip and one bento card per helper. */
+.section.crew {
+  flex: none;
+  max-height: 44%;
+  overflow-y: auto;
+  margin: 8px 10px 0;
+  border: 1px solid var(--bento-border);
+  border-radius: var(--radius-lg);
+  background: var(--glass-card);
+  box-shadow: var(--bento-shadow);
+  overflow: hidden;
+}
+
+.section.crew > summary,
+.section.browser > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.section.crew > summary .h,
+.section.browser > summary .h {
+  font-weight: 600;
+}
+
+.section.crew > summary .sub-h,
+.section.browser > summary .sub-h {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.section.crew > summary .count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.crew-body {
+  padding: 0 10px 10px;
+}
+
+.head-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 4px;
+  border: 1px solid var(--bento-border);
+  border-radius: 999px;
+  background: var(--bento-bg);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+
+.head-agent img {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+
+.helpers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.helper {
+  position: relative;
+  margin-top: 8px;
+  --role: var(--role-blue);
+}
+
+.helper.accent-amber {
+  --role: var(--role-amber);
+}
+
+.helper.accent-violet {
+  --role: var(--role-violet);
+}
+
+.helper.accent-green {
+  --role: var(--role-green);
+}
+
+.helper.accent-blue {
+  --role: var(--role-blue);
+}
+
+/* The wire from the head agent down to each helper card. */
+.helper .wire {
+  position: absolute;
+  left: 17px;
+  top: -8px;
+  width: 2px;
+  height: 8px;
+  background: color-mix(in srgb, var(--role) 55%, transparent);
+}
+
+.h-card {
+  border: 1px solid color-mix(in srgb, var(--role) 32%, var(--bento-border));
+  border-left: 3px solid var(--role);
+  border-radius: var(--radius-lg);
+  background: var(--bento-bg);
+  box-shadow:
+    var(--bento-shadow),
+    0 0 18px -6px color-mix(in srgb, var(--role) 45%, transparent);
+  padding: 9px 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.helper.stopped .h-card {
+  opacity: 0.72;
+}
+
+.h-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 7px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: hsl(var(--h, 210) 85% 72%);
+  background: hsl(var(--h, 210) 70% 45% / 22%);
+  box-shadow: inset 0 0 0 1px hsl(var(--h, 210) 70% 55% / 45%);
+}
+
+.h-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h-role {
+  flex: none;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: var(--role);
+}
+
+.h-top .spinner,
+.h-top .h-ok,
+.h-top .h-warn {
+  margin-left: auto;
+  flex: none;
+}
+
+.h-ok {
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.h-warn {
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.h-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: var(--role);
+}
+
+.h-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--role);
+  box-shadow: 0 0 8px var(--role);
+}
+
+.helper.working .h-dot {
+  animation: mcp-pulse 1.2s ease-in-out infinite;
+}
+
+.helper.done .h-status {
+  color: var(--ok);
+}
+
+.helper.done .h-dot {
+  background: var(--ok);
+  box-shadow: 0 0 8px var(--ok);
+}
+
+.helper.stopped .h-status {
+  color: var(--warn);
+}
+
+.helper.stopped .h-dot {
+  background: var(--warn);
+  box-shadow: none;
+}
+
+.h-task {
+  font-size: var(--fs-sm);
+  color: var(--fg);
+  opacity: 0.9;
+  overflow-wrap: anywhere;
+}
+
+.h-foot {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.h-live {
+  color: var(--role);
 }
 
 /* Mission & Step Timeline */
@@ -581,6 +969,11 @@ svg {
   gap: 6px;
 }
 
+.history-overflow {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
 .msg {
   overflow-wrap: anywhere;
 }
@@ -698,13 +1091,15 @@ svg {
   white-space: pre-wrap;
 }
 
-/* Code Blocks & Inline Diff Highlighting */
+/* Code Blocks & Inline Diff Highlighting — code renders as a glass "stream" panel;
+   lines the markdown already marks .diff-add/.diff-del get the green/red tinting. */
 pre {
   position: relative;
-  background: var(--vscode-textCodeBlock-background, var(--card-strong));
-  border: 1px solid var(--line);
+  background: var(--bento-bg);
+  border: 1px solid var(--bento-border);
   padding: 0 8px 6px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--bento-shadow);
   overflow-x: auto;
 }
 
@@ -889,7 +1284,7 @@ details.msg.think[open] .think-summary-text {
   border-top: 1px solid color-mix(in srgb, var(--violet) 20%, var(--line));
   font-family: var(--vscode-font-family);
   font-style: normal;
-  color: color-mix(in srgb, var(--fg) 84%, var(--muted));
+  color: var(--fg);
   max-height: 260px;
   overflow-y: auto;
 }

@@ -1,4 +1,5 @@
 import { readAgentSettings, withAgentLayers } from './agent-settings.js';
+import { applyExecutionMode, isExecutionMode } from './execution.js';
 import { readSectionModes, sectionsLayer } from './sections-file.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -47,6 +48,7 @@ const ENV_MAP: readonly (readonly [string, readonly string[], EnvKind])[] = [
   ['OMNEXX_MODELS_WORKER', ['models', 'worker'], 'string'],
   ['OMNEXX_MODELS_CHEAP', ['models', 'cheap'], 'string'],
   ['OMNEXX_GIT_PUSH', ['git', 'push'], 'string'],
+  ['OMNEXX_EXECUTION_MODE', ['execution', 'mode'], 'string'],
   ['OMNEXX_JUDGE_KIND', ['judge', 'kind'], 'string'],
   ['OMNEXX_JUDGE_MODE', ['judge', 'mode'], 'string'],
   ['OMNEXX_JUDGE_NIMBLE_URL', ['judge', 'nimble', 'url'], 'string'],
@@ -193,7 +195,14 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<LoadedConfig>
   const mergeLayers = (ls: readonly Layer[]): Plain =>
     [...ls].reverse().reduce<Plain>((acc, l) => deepMerge(acc, l.data), {});
   // The agent sliders (/settings): the levels, and what they imply for plan/context/budget.
-  const all = withAgentLayers(layers, await readAgentSettings(paths), Boolean(user), mergeLayers);
+  let all = withAgentLayers(layers, await readAgentSettings(paths), Boolean(user), mergeLayers);
+  // Execution modes: a preset that fills plan/loop keys the user did not set. It is the
+  // lowest-precedence layer, so any explicit value anywhere wins; "normal" adds nothing.
+  const rawMode = (mergeLayers(all).execution as Plain | undefined)?.mode;
+  const mode = typeof rawMode === 'string' && isExecutionMode(rawMode) ? rawMode : 'normal';
+  if (mode !== 'normal') {
+    all = [...all, { source: `execution mode preset (${mode})`, data: applyExecutionMode(mode) }];
+  }
 
   const merged = mergeLayers(all);
   const parsed = configSchema.safeParse(merged);

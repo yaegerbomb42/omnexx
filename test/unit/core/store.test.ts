@@ -32,6 +32,7 @@ export function sampleState(over: Partial<RunState> = {}): RunState {
     activeMs: 0,
     goalHash: 'h',
     setupDone: false,
+    executionMode: 'normal',
     spend: {
       usd: 0,
       tokens: { uncached: 0, cacheWrite: 0, cacheRead: 0, output: 0 },
@@ -79,7 +80,7 @@ describe('EventLog', () => {
     const path = join(dir, 'events.jsonl');
     const log = new EventLog(path, 'r1', new Redactor(), clock, 200);
     const seen: string[] = [];
-    log.onEvent((e) => seen.push(e.type));
+    const off = log.onEvent((e) => seen.push(e.type));
     log.cycle = 2;
     log.emit('a', { secret: secretCorpus().anthropic });
     for (let i = 0; i < 5; i++) log.emit('b', { pad: 'x'.repeat(60) });
@@ -91,6 +92,9 @@ describe('EventLog', () => {
     const events = await readEvents(path);
     expect(events.every((e) => e.runId === 'r1')).toBe(true);
     expect(await readEvents(join(dir, 'none'))).toEqual([]);
+    off();
+    log.emit('after-unsub', {});
+    expect(seen).toHaveLength(6);
   });
 });
 

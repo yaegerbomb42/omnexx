@@ -8,6 +8,8 @@ export type ServerMessage = { type: string } & Record<string, unknown>;
 const MAX_RESTARTS = 3;
 const RESTART_WINDOW_MS = 60_000;
 const STDERR_TAIL_CHARS = 2_000;
+const KILL_GRACE_MS = 2_000;
+const MAX_STDOUT_BUFFER = 8 * 1024 * 1024;
 
 /**
  * One `omnexx chat-server` per workspace. Lines it prints become `onMessage` events; it restarts
@@ -20,6 +22,10 @@ export class ChatProcess implements vscode.Disposable {
   private crashes: number[] = [];
   private readonly emitter = new vscode.EventEmitter<ServerMessage>();
   readonly onMessage = this.emitter.event;
+  /** Bumps on stop/dispose so an in-flight `engine()` lookup cannot spawn after teardown. */
+  private generation = 0;
+  private disposed = false;
+  private killTimer: NodeJS.Timeout | undefined;
 
   constructor(private readonly cwd: string | undefined) {}
 
@@ -31,14 +37,20 @@ export class ChatProcess implements vscode.Disposable {
   private starting: Promise<void> | undefined;
 
   start(): void {
-    if (this.child || this.starting) return;
-    this.starting = this.launch().finally(() => {
+    if (this.disposed || this.child || this.starting) return;
+    const generation = this.generation;
+    this.starting = this.launch(generation).finally(() => {
       this.starting = undefined;
     });
   }
 
-  private async launch(): Promise<void> {
-    if (this.child) return;
+  /** True while stop/dispose has not invalidated this launch. */
+  private stillCurrent(generation: number): boolean {
+    return !this.disposed && generation === this.generation;
+  }
+
+  private async launch(generation: number): Promise<void> {
+    if (this.child || !this.stillCurrent(generation)) return;
     const now = Date.now();
     this.crashes = this.crashes.filter((t) => now - t < RESTART_WINDOW_MS);
     if (this.crashes.length >= MAX_RESTARTS) {
@@ -54,21 +66,31 @@ export class ChatProcess implements vscode.Disposable {
     try {
       e = await engine();
     } catch (err) {
+      if (!this.stillCurrent(generation)) return;
       this.emitter.fire({
         type: 'down',
         message: err instanceof Error ? err.message : String(err),
       });
       return;
     }
+    if (!this.stillCurrent(generation)) return;
     // A Windows .cmd shim only runs through a shell; the only argument is a fixed word.
     const child = spawn(e.command, [...e.prefix, 'chat-server'], {
       cwd: this.cwd,
       env: e.env,
       shell: e.shell,
+      windowsHide: true,
     });
+    if (!this.stillCurrent(generation)) {
+      this.killTree(child, 'SIGKILL');
+      return;
+    }
     this.child = child;
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
+    child.stdin.on('error', () => undefined);
+    child.stdout.on('error', () => undefined);
+    child.stderr.on('error', () => undefined);
     child.stdout.on('data', (chunk: string) => {
       this.onData(chunk);
     });
@@ -76,6 +98,7 @@ export class ChatProcess implements vscode.Disposable {
       this.stderr = (this.stderr + chunk).slice(-STDERR_TAIL_CHARS);
     });
     child.on('error', (err: NodeJS.ErrnoException) => {
+      if (this.child !== child) return;
       this.child = undefined;
       this.emitter.fire({
         type: 'down',
@@ -85,12 +108,13 @@ export class ChatProcess implements vscode.Disposable {
             : `omnexx could not start: ${err.message}`,
       });
     });
-    child.on('exit', (code) => {
+    child.on('exit', () => {
+      this.clearKillTimer();
       if (this.child !== child) return;
       this.child = undefined;
       this.crashes.push(Date.now());
       const why = this.stderr.trim().split('\n').at(-1) ?? '';
-      const exit = code === null ? '' : ` (exit ${String(code)})`;
+      const exit = child.exitCode === null ? '' : ` (exit ${String(child.exitCode)})`;
       const reason = why ? `: ${why}` : '';
       this.emitter.fire({
         type: 'down',
@@ -102,28 +126,88 @@ export class ChatProcess implements vscode.Disposable {
   send(cmd: Record<string, unknown>): void {
     const line = `${JSON.stringify(cmd)}\n`;
     if (this.child) {
-      this.child.stdin.write(line);
+      this.writeStdin(line);
       return;
     }
     this.start();
-    void this.starting?.then(() => this.child?.stdin.write(line));
+    void this.starting?.then(() => {
+      this.writeStdin(line);
+    });
   }
 
   restart(): void {
+    if (this.disposed) return;
     this.crashes = [];
+    const pending = this.starting;
     this.stop();
-    this.start();
+    if (pending) {
+      void pending.finally(() => {
+        this.start();
+      });
+    } else this.start();
+  }
+
+  private writeStdin(line: string): void {
+    const stdin = this.child?.stdin;
+    if (!stdin || stdin.destroyed || !stdin.writable) return;
+    try {
+      stdin.write(line);
+    } catch {
+      // EPIPE while the process is exiting; the next command restarts it.
+    }
   }
 
   private stop(): void {
+    this.generation += 1;
+    this.clearKillTimer();
     const child = this.child;
     this.child = undefined;
-    child?.stdin.end();
-    child?.kill();
+    if (!child) return;
+    try {
+      child.stdin.end();
+    } catch {
+      // already closed
+    }
+    this.killTree(child, 'SIGTERM');
+    this.killTimer = setTimeout(() => {
+      this.killTimer = undefined;
+      this.killTree(child, 'SIGKILL');
+    }, KILL_GRACE_MS);
+  }
+
+  private killTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const pid = child.pid;
+    if (!pid) return;
+    if (process.platform === 'win32') {
+      const args = ['/pid', String(pid), '/T'];
+      if (signal === 'SIGKILL') args.push('/F');
+      spawn('taskkill', args, { stdio: 'ignore', windowsHide: true }).on('error', () => undefined);
+      return;
+    }
+    try {
+      child.kill(signal);
+    } catch {
+      // already gone
+    }
+  }
+
+  private clearKillTimer(): void {
+    if (!this.killTimer) return;
+    clearTimeout(this.killTimer);
+    this.killTimer = undefined;
   }
 
   private onData(chunk: string): void {
     this.buffer += chunk;
+    if (this.buffer.length > MAX_STDOUT_BUFFER) {
+      this.buffer = '';
+      this.emitter.fire({
+        type: 'error',
+        message: 'omnexx sent a line too large to parse; some output was dropped.',
+      });
+      return;
+    }
     const lines = this.buffer.split('\n');
     this.buffer = lines.pop() ?? '';
     for (const line of lines) {
@@ -137,6 +221,7 @@ export class ChatProcess implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.stop();
     this.emitter.dispose();
   }

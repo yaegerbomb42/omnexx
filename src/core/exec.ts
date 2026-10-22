@@ -90,17 +90,20 @@ export async function runArgv(
     ...(opts.stdin !== undefined ? { input: opts.stdin } : { stdin: 'ignore' }),
   });
   let timedOut = false;
+  let graceTimer: ReturnType<typeof setTimeout> | undefined;
   const timer = setTimeout(() => {
     timedOut = true;
     if (child.pid === undefined) return;
     const pid = child.pid;
-    killGroup(pid, 'SIGTERM');
-    setTimeout(() => {
+    graceTimer = setTimeout(() => {
       killGroup(pid, 'SIGKILL');
-    }, opts.killGraceMs ?? 5_000).unref();
+    }, opts.killGraceMs ?? 5_000);
+    graceTimer.unref();
+    killGroup(pid, 'SIGTERM');
   }, opts.timeoutMs);
   const r = await child;
   clearTimeout(timer);
+  if (graceTimer) clearTimeout(graceTimer);
   if (child.pid !== undefined) killGroup(child.pid, 'SIGKILL');
   const stdout = opts.redact(typeof r.stdout === 'string' ? r.stdout : '');
   const stderr = opts.redact(typeof r.stderr === 'string' ? r.stderr : '');
@@ -319,15 +322,18 @@ export class ShellSession {
       let timedOut = false;
       let settled = false;
       let killEscalationTimer: ReturnType<typeof setTimeout> | undefined;
+      let reapTimer: ReturnType<typeof setTimeout> | undefined;
 
       const sentinelRegex = new RegExp(`(?:^|\\n)${sentinelPrefix}:(\\d+):([^\\r\\n]*)\\r?\\n?`);
 
       const cleanup = () => {
         clearTimeout(timeoutTimer);
         if (killEscalationTimer) clearTimeout(killEscalationTimer);
+        if (reapTimer) clearTimeout(reapTimer);
         proc.stdout.off('data', onData);
         proc.stderr.off('data', onData);
         proc.off('exit', onExit);
+        proc.stdin.off('error', onStdinError);
         if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
       };
 
@@ -382,7 +388,7 @@ export class ShellSession {
         }
         // Stage 1: Reap child processes of the shell so the shell itself survives and emits its sentinel.
         void killChildTree(proc.pid, 'TERM');
-        setTimeout(() => {
+        reapTimer = setTimeout(() => {
           if (!settled && proc.pid) void killChildTree(proc.pid, 'KILL');
         }, 80);
 
@@ -399,19 +405,24 @@ export class ShellSession {
         interruptCommand();
       };
 
-      const timeoutTimer = setTimeout(interruptCommand, timeoutMs);
-      if (opts.signal) {
-        if (opts.signal.aborted) {
-          interruptCommand();
-          return;
-        }
-        opts.signal.addEventListener('abort', onAbort, { once: true });
-      }
+      const onStdinError = () => {
+        void finalize(1, rawBuffer);
+      };
 
+      const timeoutTimer = setTimeout(interruptCommand, timeoutMs);
       proc.stdout.on('data', onData);
       proc.stderr.on('data', onData);
       proc.once('exit', onExit);
-      proc.stdin.write(payload);
+      proc.stdin.once('error', onStdinError);
+      if (opts.signal) {
+        if (opts.signal.aborted) interruptCommand();
+        else opts.signal.addEventListener('abort', onAbort, { once: true });
+      }
+      try {
+        proc.stdin.write(payload);
+      } catch {
+        void finalize(1, rawBuffer);
+      }
     });
   }
 }
@@ -484,14 +495,16 @@ export async function runDisposableShell(command: string, opts: ExecOptions): Pr
   let timedOut = false;
   let aborted = false;
   const grace = opts.killGraceMs ?? 5_000;
+  let graceTimer: ReturnType<typeof setTimeout> | undefined;
   const stop = (): void => {
     if (child.pid === undefined) return;
     const pid = child.pid;
     void opts.onKill?.().catch(() => undefined);
-    killGroup(pid, 'SIGTERM');
-    setTimeout(() => {
+    graceTimer = setTimeout(() => {
       killGroup(pid, 'SIGKILL');
-    }, grace).unref();
+    }, grace);
+    graceTimer.unref();
+    killGroup(pid, 'SIGTERM');
   };
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const timer = setTimeout(() => {
@@ -505,6 +518,7 @@ export async function runDisposableShell(command: string, opts: ExecOptions): Pr
   opts.signal?.addEventListener('abort', onAbort, { once: true });
   const result = await child;
   clearTimeout(timer);
+  if (graceTimer) clearTimeout(graceTimer);
   opts.signal?.removeEventListener('abort', onAbort);
   if (child.pid !== undefined) killGroup(child.pid, 'SIGKILL');
   const raw = typeof result.all === 'string' ? result.all : '';
