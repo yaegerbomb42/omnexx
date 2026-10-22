@@ -243,7 +243,7 @@ One knob for how hard the agent tries per task. It picks a preset that fills in 
 | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mode` | `"normal"` | `"normal"`: today's defaults, byte-identical. `"efficient"`: cheaper and faster — always tries the fast path first (`mode = "fast"`), one fast attempt, 4 think turns, 4 rounds, 1 re-think, 1 rewind, 1 flaky rerun. `"extreme"`: deeper — 3 fast attempts, 16 think turns, 10 rounds, 4 re-thinks, 3 rewinds, 3 flaky reruns. |
 
-The preset never overwrites a `[plan]` key you set yourself (for example `loop_rounds`), so switching the mode mid-run applies at the next cycle boundary without a restart.
+The preset never overwrites a `[plan]` key you set yourself (for example `loop_rounds`). Switching the mode mid-run applies at the next cycle boundary without a restart: the supervisor re-reads `omnexx.toml` and the environment each cycle, records the mode in the run state, and emits an `execution.mode_change` event with the old and new modes (no event when nothing changed). The re-read config applies as if the run had just restarted — plan/loop presets, budget, gates and review hot-apply; model chains and the judge are fixed for the run. A project file that fails to parse mid-run is ignored: the run keeps the previous config and emits `config.reload_failed`.
 
 ## `[context]`
 

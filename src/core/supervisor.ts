@@ -25,6 +25,7 @@ import { EXIT } from '../cli/exit-codes.js';
 import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
 import { LockError } from '../errors.js';
+import type { OmnexxConfig } from '../config/schema.js';
 import {
   dailyPauseThreshold,
   inWrapup,
@@ -64,7 +65,8 @@ import {
 import { evidenceText, mineEvidence } from './evidence.js';
 import { writeReport } from './report.js';
 import { recordFinishedRun, repoFileCount, sampleForRun, workerRef } from './run-estimate-io.js';
-import type { RunStatus } from './run-store.js';
+import type { RunStatus, RunState } from './run-store.js';
+import type { OmnexxEvent } from './events.js';
 import { Run, type RunDeps } from './run.js';
 
 export interface SuperviseOptions {
@@ -74,6 +76,12 @@ export interface SuperviseOptions {
   controlPollMs?: number;
   pausePollMs?: number;
   notifier?: Notifier;
+  /**
+   * Re-load the config at each cycle boundary (project omnexx.toml, env, flags) so a mode switch
+   * or config edit applies mid-run without restarting. When omitted the run keeps the config it
+   * started with.
+   */
+  reloadConfig?: () => Promise<OmnexxConfig>;
 }
 
 export interface Outcome {
@@ -95,8 +103,7 @@ export const EXIT_FOR: Record<RunStatus, number> = {
 const MAX_MILESTONE_REPLANS = 2;
 
 /** Fold this run's lessons into the repo's memory so the next run or chat starts with them. */
-async function rememberForRepo(run: Run, facts?: FactRecorder): Promise<void> {
-  try {
+async function rememberForRepo(run: Run, facts?: FactRecorder): Promise<void> {  try {
     facts?.promoteNotes(await run.store.readNotes());
     await facts?.flush();
     const added = await saveToRepoMemory(
@@ -128,6 +135,42 @@ export function splitDepth(plan: Plan, id: string): number {
 
 /** Fresh planner attempts after it ends stuck or out of turns, per supervisor process. */
 const PLANNER_RETRIES = 2;
+
+/**
+ * Re-read the project's config and apply it in place, as if the run had just restarted. Emits
+ * `execution.mode_change` when the execution mode changed (the state records the mode) and
+ * `config.reload_failed` when the re-read failed — the previous config is then kept, so a bad
+ * edit mid-run never ends the run.
+ */
+export async function refreshRunConfig(
+  run: {
+    config: OmnexxConfig;
+    state: Pick<RunState, 'executionMode'>;
+    save: () => Promise<void>;
+    events: { emit(type: string, data?: Record<string, unknown>): OmnexxEvent };
+  },
+  load: () => Promise<OmnexxConfig>,
+): Promise<boolean> {
+  let fresh: OmnexxConfig;
+  try {
+    fresh = await load();
+  } catch (err) {
+    run.events.emit('config.reload_failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+  // Replace the config the run reads from now on. Model chains and the judge were built once at
+  // start; plan/loop, budget, gates and review settings hot-apply from here.
+  Object.assign(run.config, fresh);
+  const next = fresh.execution.mode;
+  const prev = run.state.executionMode;
+  if (next === prev) return false;
+  run.state.executionMode = next;
+  await run.save();
+  run.events.emit('execution.mode_change', { from: prev, to: next });
+  return true;
+}
 
 class Supervisor {
   private plannerRetries = 0;
@@ -949,6 +992,8 @@ class Supervisor {
     const r = this.run;
     await this.resumeInFlight();
     for (;;) {
+      // Hot config/mode switch: apply at the next cycle boundary, without a restart.
+      if (this.opts.reloadConfig) await refreshRunConfig(r, this.opts.reloadConfig);
       const pre = await this.guardPre();
       if (pre) return pre;
       try {

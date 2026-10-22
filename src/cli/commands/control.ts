@@ -1,5 +1,6 @@
 import pc from 'picocolors';
-import type { ConfigInput } from '../../config/schema.js';
+import type { ConfigInput, OmnexxConfig } from '../../config/schema.js';
+import { loadConfig } from '../../config/load.js';
 import { readTextOr } from '../../core/atomic.js';
 import { pidAlive, readLock } from '../../core/lock.js';
 import { listRunIds, RunStore, TERMINAL } from '../../core/run-store.js';
@@ -43,6 +44,10 @@ export async function superviseForeground(
   // Flags given to `omnexx run` (budget, gates, models…) outrank omnexx.toml for the whole run.
   const flags = JSON.parse(await readTextOr(store.file(RUN_FLAGS_FILE), '{}')) as ConfigInput;
   const { deps } = await resolveRunDeps(io, state.repoRoot, flags, io.hooks);
+  // Hot-reload at every cycle boundary: the mode (and any config edit) applies without a restart.
+  const reloadConfig = async (): Promise<OmnexxConfig> =>
+    (await loadConfig({ cwd: state.repoRoot, env: io.env, flags })).config;
+  const superviseOpts: SuperviseOptions = { ...opts, reloadConfig };
   let interrupts = 0;
   const onTerm = (): void => {
     void store.writeControl({ request: 'stop', at: Date.now() });
@@ -60,7 +65,7 @@ export async function superviseForeground(
   process.on('SIGTERM', onTerm);
   process.on('SIGINT', onInt);
   try {
-    const out = await supervise(deps, runId, opts);
+    const out = await supervise(deps, runId, superviseOpts);
     await beforeReport?.();
     println(io.stdout, `${pc.bold(out.status)}: ${out.reason}`);
     println(io.stdout, `Report: ${store.file('REPORT.md')}`);
