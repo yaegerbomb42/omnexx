@@ -1,6 +1,7 @@
 import { fmtTokens as formatTokensShort } from '../telemetry/humanize.js';
 import {
   addContextNote,
+  clearContextHistory,
   contextTotal,
   pinContextItem,
   restoreContextItem,
@@ -20,9 +21,10 @@ export type ContextChange =
   | { op: 'reset' }
   | { op: 'add'; text: string }
   | { op: 'pin'; id: string }
-  | { op: 'restore'; id: string };
+  | { op: 'restore'; id: string }
+  | { op: 'clearChat' };
 
-type PureChange = Extract<ContextChange, { op: 'add' | 'pin' | 'restore' }>;
+type PureChange = Extract<ContextChange, { op: 'add' | 'pin' | 'restore' | 'clearChat' }>;
 
 /** The pure state change for ops that don't have their own CodeChat method. */
 export function contextTransform(change: PureChange): (s: ContextState) => ContextState {
@@ -33,6 +35,8 @@ export function contextTransform(change: PureChange): (s: ContextState) => Conte
       return (s) => pinContextItem(s, change.id);
     case 'restore':
       return (s) => restoreContextItem(s, change.id);
+    case 'clearChat':
+      return (s) => clearContextHistory(s);
   }
 }
 

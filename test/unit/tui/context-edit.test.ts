@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Message, SystemBlock, ToolSpec } from '../../../src/providers/types.js';
 import {
   applyContext,
+  clearContextHistory,
   deleteContextItem,
   EMPTY_OVERRIDES,
   listContext,
@@ -116,5 +117,18 @@ describe('deleteContextItem', () => {
     expect(applied.system).toEqual([system[1]]);
     expect(applied.tools.map((t) => t.name)).toEqual(['bash']);
     expect(listContext(next).find((i) => i.id === 'tool:read')?.removed).toBe(true);
+  });
+});
+
+describe('clearContextHistory', () => {
+  it('clears all conversation messages and tool calls/results while preserving system and tools', () => {
+    const cleared = clearContextHistory(base);
+    expect(cleared.history).toEqual([]);
+    expect(cleared.system).toEqual(system);
+    expect(cleared.tools).toEqual(tools);
+    const items = listContext(cleared);
+    expect(items.some((i) => i.group === 'chat')).toBe(false);
+    expect(items.filter((i) => i.group === 'system')).toHaveLength(2);
+    expect(items.filter((i) => i.group === 'tools')).toHaveLength(2);
   });
 });

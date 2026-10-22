@@ -384,3 +384,8 @@ export function restoreContextItem(s: ContextState, id: string): ContextState {
   }
   throw new Error('only system blocks and tools have a default to restore');
 }
+
+/** Clear all conversation and tooling history, keeping system blocks, tools, and user notes intact. */
+export function clearContextHistory(s: ContextState): ContextState {
+  return { ...s, history: [] };
+}

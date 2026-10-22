@@ -27,6 +27,7 @@ export const FORWARD: ReadonlySet<string> = new Set([
   'contextUpdate',
   'contextDelete',
   'contextReset',
+  'contextClearChat',
   'contextAdd',
   'contextPin',
   'contextRestore',
