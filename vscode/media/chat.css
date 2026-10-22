@@ -5,7 +5,9 @@
  * accordions elevate observability.
  */
 :root {
-  --gap: 6px;
+  --gap: 8px;
+  /* One horizontal gutter for the whole panel: header, sections, log, composer. */
+  --pad-x: 12px;
   --fs-xs: calc(var(--vscode-font-size, 13px) * 0.85);
   --fs-sm: calc(var(--vscode-font-size, 13px) * 0.92);
   --fs-md: var(--vscode-font-size, 13px);
@@ -29,7 +31,8 @@
   --ok: var(--emerald);
   --warn: var(--amber);
   --bad: var(--vscode-errorForeground, #f14c4c);
-  --brand: linear-gradient(90deg, var(--accent), var(--violet));
+  /* One accent, taken from the theme; gradients are reserved for the posture pill. */
+  --brand: var(--accent);
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
 
   /* Glassmorphism Tokens */
@@ -57,11 +60,11 @@
     color-mix(in srgb, var(--surface) 86%, transparent)
   );
   --bento-border: color-mix(in srgb, var(--fg) 13%, transparent);
-  --bento-shadow: 0 10px 28px rgb(3 7 18 / 30%), var(--glass-highlight);
+  --bento-shadow: 0 3px 12px rgb(3 7 18 / 20%), var(--glass-highlight);
   /* Execution posture gradients (active pill segments) and their glow colors. */
-  --grad-efficient: linear-gradient(92deg, #1d6fe0, #38bdf8);
-  --grad-normal: linear-gradient(92deg, #7c3aed, #c084fc);
-  --grad-extreme: linear-gradient(92deg, #ea580c, #fbbf24);
+  --grad-efficient: linear-gradient(92deg, #2b6cb8, #4aa3e0);
+  --grad-normal: linear-gradient(92deg, #6d4fc2, #9d7bea);
+  --grad-extreme: linear-gradient(92deg, #c2571b, #e8a33d);
   --seg-efficient: #38bdf8;
   --seg-normal: #c084fc;
   --seg-extreme: #fbbf24;
@@ -127,12 +130,6 @@ body {
   flex-direction: column;
   color: var(--fg);
   background: var(--surface);
-  /* A faint deep-navy wash at the top, so the glass surfaces read as one cockpit. */
-  background-image: radial-gradient(
-    130% 55% at 50% -12%,
-    color-mix(in srgb, var(--accent) 8%, transparent),
-    transparent 70%
-  );
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
   line-height: 1.4;
@@ -165,7 +162,7 @@ svg {
   position: relative;
   display: flex;
   align-items: center;
-  padding: 6px 8px;
+  padding: 6px var(--pad-x);
   gap: 6px;
   border-bottom: 1px solid var(--line);
   background: var(--glass-bg);
@@ -379,7 +376,7 @@ svg {
 /* The posture pill sits in the chat header; the same markup renders in Settings. */
 .posture {
   flex: none;
-  padding: 8px 10px 7px;
+  padding: 10px var(--pad-x) 9px;
   border-bottom: 1px solid var(--line);
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
@@ -428,17 +425,17 @@ svg {
 
 .posture-pill button[data-posture='efficient'][aria-pressed='true'] {
   background: var(--grad-efficient);
-  box-shadow: 0 2px 14px color-mix(in srgb, var(--seg-efficient) 50%, transparent);
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--seg-efficient) 30%, transparent);
 }
 
 .posture-pill button[data-posture='normal'][aria-pressed='true'] {
   background: var(--grad-normal);
-  box-shadow: 0 2px 14px color-mix(in srgb, var(--seg-normal) 45%, transparent);
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--seg-normal) 28%, transparent);
 }
 
 .posture-pill button[data-posture='extreme'][aria-pressed='true'] {
   background: var(--grad-extreme);
-  box-shadow: 0 2px 14px color-mix(in srgb, var(--seg-extreme) 50%, transparent);
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--seg-extreme) 30%, transparent);
 }
 
 body.vscode-high-contrast .posture-pill button[aria-pressed='true'],
@@ -504,7 +501,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   flex: none;
   max-height: 44%;
   overflow-y: auto;
-  margin: 8px 10px 0;
+  margin: 10px var(--pad-x) 0;
   border: 1px solid var(--bento-border);
   border-radius: var(--radius-lg);
   background: var(--glass-card);
@@ -744,7 +741,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 2px 6px;
-  padding: 5px 10px 4px 8px;
+  padding: 7px var(--pad-x) 6px;
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -950,23 +947,23 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   flex: 1;
   min-height: 120px;
   overflow-y: auto;
-  padding: 6px 8px;
+  padding: 12px var(--pad-x) 16px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 14px;
 }
 
 .blocks-root,
 .live-root {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
 
 .block-slot {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
 
 .history-overflow {
@@ -979,12 +976,11 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 }
 
 .msg.user {
-  border-radius: var(--radius);
-  background: var(--vscode-input-background);
-  border: 1px solid color-mix(in srgb, var(--violet) 28%, var(--line));
-  border-left: 3px solid var(--violet);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  border: 1px solid var(--line);
   box-shadow: var(--glass-highlight);
-  padding: 5px 9px;
+  padding: 8px 12px;
 }
 
 .msg.user .who {
@@ -992,8 +988,9 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   align-items: center;
   justify-content: space-between;
   font-size: var(--fs-xs);
-  color: var(--violet);
+  color: var(--muted);
   font-weight: 600;
+  margin-bottom: 2px;
 }
 
 .msg.user .who .icon {
@@ -1012,6 +1009,8 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 
 .msg.reply {
   position: relative;
+  line-height: 1.55;
+  padding: 0 2px;
 }
 
 .msg.reply > :first-child {
@@ -1605,7 +1604,7 @@ details.msg.think[open] > summary::after {
 
 /* Welcome, Banner, Ask & Composer */
 .welcome {
-  padding: 4px 10px 8px;
+  padding: 6px var(--pad-x) 10px;
   color: var(--muted);
 }
 
@@ -1621,14 +1620,14 @@ details.msg.think[open] > summary::after {
 
 .suggestions {
   display: grid;
-  gap: 4px;
+  gap: 6px;
 }
 
 .suggestions button {
   border: 1px solid var(--glass-border);
   background: var(--glass-card);
-  border-radius: var(--radius);
-  padding: 5px 8px;
+  border-radius: var(--radius-md);
+  padding: 7px 10px;
   color: var(--accent);
   text-align: left;
   transition:
@@ -1643,9 +1642,9 @@ details.msg.think[open] > summary::after {
 
 .banner,
 .ask {
-  margin: 0 8px 6px;
-  padding: 6px 8px;
-  border-radius: var(--radius);
+  margin: 0 var(--pad-x) 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
   font-size: var(--fs-sm);
   flex: none;
 }
@@ -1717,13 +1716,14 @@ details.msg.think[open] > summary::after {
   font-size: var(--fs-xs);
 }
 
-/* Composer */
+/* Composer: the input is one elevated card — borderless textarea inside, a filled
+   round send button, and the focus ring on the card, not the textarea. */
 .composer {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px 8px;
+  gap: 8px;
+  padding: 10px var(--pad-x) 12px;
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   border-top: 1px solid var(--line);
@@ -1733,26 +1733,39 @@ details.msg.think[open] > summary::after {
 .input-wrap {
   position: relative;
   min-width: 0;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--line));
+  border-radius: var(--radius-lg);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 16%);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.input-wrap:focus-within {
+  border-color: var(--vscode-focusBorder, var(--accent));
+  box-shadow:
+    0 0 0 1px var(--vscode-focusBorder, var(--accent)),
+    0 4px 14px rgb(0 0 0 / 20%);
 }
 
 textarea {
   width: 100%;
   resize: none;
-  min-height: 36px;
+  min-height: 42px;
   max-height: 200px;
-  padding: 7px 34px 7px 9px;
-  border-radius: var(--radius);
-  border: 1px solid var(--vscode-input-border, var(--line));
-  background: var(--vscode-input-background);
+  padding: 11px 48px 11px 13px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
   color: var(--vscode-input-foreground);
   font: inherit;
+  line-height: 1.45;
   display: block;
 }
 
 textarea:focus {
   outline: none;
-  border-color: var(--vscode-focusBorder, var(--accent));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 textarea::placeholder {
@@ -1761,22 +1774,35 @@ textarea::placeholder {
 
 .send {
   position: absolute;
-  right: 5px;
-  bottom: 5px;
+  right: 7px;
+  bottom: 7px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
   border: 0;
-  background: none;
-  padding: 4px;
-  border-radius: var(--radius);
-  color: var(--vscode-icon-foreground, var(--fg));
+  padding: 0;
+  border-radius: 50%;
+  background: var(--vscode-button-background, var(--accent));
+  color: var(--vscode-button-foreground, #fff);
+  transition:
+    background 0.15s ease,
+    opacity 0.15s ease;
 }
 
 .send:hover:not(:disabled) {
-  background: var(--vscode-toolbar-hoverBackground);
+  background: var(--vscode-button-hoverBackground, var(--vscode-button-background, var(--accent)));
+}
+
+.send:disabled {
+  background: var(--card-strong);
+  color: var(--muted);
+  opacity: 0.65;
 }
 
 .send svg {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
 }
 
 .send .stop-ico,
@@ -1784,27 +1810,32 @@ textarea::placeholder {
   display: none;
 }
 
+.send.as-stop {
+  background: color-mix(in srgb, var(--bad) 82%, transparent);
+  color: #fff;
+}
+
 .send.as-stop .stop-ico {
   display: block;
-  color: var(--vscode-errorForeground, var(--bad));
+  color: currentColor;
 }
 
 .composer .row {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
 }
 
 .composer .grow {
-  flex: 0 1 4px;
+  flex: 1 1 auto;
 }
 
 .composer .chip,
 .composer .meter {
-  border: 0;
-  background: none;
-  border-radius: var(--radius);
-  padding: 1px 5px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 2px 8px;
   color: var(--muted);
 }
 
@@ -1827,24 +1858,29 @@ textarea::placeholder {
 
 .modes {
   display: inline-flex;
-  gap: 1px;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
 }
 
 .modes button {
   border: 0;
   background: none;
-  border-radius: var(--radius);
-  padding: 1px 7px;
+  border-radius: 999px;
+  padding: 2px 9px;
   color: var(--muted);
   font-size: var(--fs-sm);
 }
 
 .modes button:hover {
   background: var(--vscode-toolbar-hoverBackground);
+  color: var(--fg);
 }
 
 .modes button[aria-pressed='true'] {
-  background: var(--vscode-toolbar-activeBackground, var(--vscode-toolbar-hoverBackground));
+  background: var(--card-strong);
   color: var(--fg);
   font-weight: 600;
 }
@@ -1852,7 +1888,7 @@ textarea::placeholder {
 .jump {
   position: absolute;
   right: 14px;
-  bottom: 86px;
+  bottom: 122px;
   z-index: 10;
   display: grid;
   place-items: center;
@@ -1870,8 +1906,8 @@ textarea::placeholder {
 /* Suggest Widget */
 .suggest {
   position: absolute;
-  left: 8px;
-  right: 8px;
+  left: var(--pad-x);
+  right: var(--pad-x);
   bottom: calc(100% - 4px);
   z-index: 25;
   max-height: 240px;
