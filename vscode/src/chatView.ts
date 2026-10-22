@@ -23,6 +23,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private view: vscode.WebviewView | undefined;
   private readonly server: ChatProcess;
   private readonly subscriptions: vscode.Disposable[] = [];
+  /** Listeners tied to the current webview instance; replaced when the view is re-resolved. */
+  private viewSubs: vscode.Disposable[] = [];
   /** Paths the latest contextFiles listed: the only files the explorer may open. */
   private contextPaths = new Map<string, boolean>();
   private modelsWaiter: ((items: ModelItem[], unreachable: string[]) => void) | undefined;
@@ -38,18 +40,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
+    for (const s of this.viewSubs) s.dispose();
+    this.viewSubs = [];
     this.view = view;
     const media = vscode.Uri.joinPath(this.extensionUri, 'media');
     const out = vscode.Uri.joinPath(this.extensionUri, 'out');
     view.webview.options = { enableScripts: true, localResourceRoots: [media, out] };
     view.webview.html = this.html(view.webview);
-    this.subscriptions.push(
+    this.viewSubs.push(
       view.webview.onDidReceiveMessage((m: { type?: unknown } & Record<string, unknown>) => {
         void this.fromWebview(m).catch((err: unknown) => {
           void vscode.window.showErrorMessage(
             `omnexx: ${err instanceof Error ? err.message : String(err)}`,
           );
         });
+      }),
+      view.onDidDispose(() => {
+        if (this.view === view) this.view = undefined;
       }),
     );
   }
@@ -425,6 +432,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   }
 
   dispose(): void {
+    for (const s of this.viewSubs) s.dispose();
+    this.viewSubs = [];
+    this.view = undefined;
     for (const s of this.subscriptions) s.dispose();
   }
 }

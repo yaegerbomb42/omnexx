@@ -581,6 +581,11 @@ svg {
   gap: 6px;
 }
 
+.history-overflow {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
 .msg {
   overflow-wrap: anywhere;
 }
@@ -889,7 +894,7 @@ details.msg.think[open] .think-summary-text {
   border-top: 1px solid color-mix(in srgb, var(--violet) 20%, var(--line));
   font-family: var(--vscode-font-family);
   font-style: normal;
-  color: color-mix(in srgb, var(--fg) 84%, var(--muted));
+  color: var(--fg);
   max-height: 260px;
   overflow-y: auto;
 }

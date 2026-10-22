@@ -239,6 +239,29 @@
   color: var(--muted);
 }
 
+.agent-card {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-row {
+  display: grid;
+  gap: 2px;
+}
+
+.agent-row label {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.agent-meaning {
+  color: var(--fg);
+}
+
+.agent-ask {
+  color: var(--fg);
+}
+
 /* MCP gallery cards and server marks. */
 .mcp-cards {
   display: grid;

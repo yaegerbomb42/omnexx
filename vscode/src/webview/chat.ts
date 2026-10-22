@@ -20,6 +20,7 @@ import {
   formatTokens,
   formatUsd,
   logRole,
+  mountedRange,
   renderMarkdown,
   splitThinkContent,
   stepLabel,
@@ -150,6 +151,8 @@ let state: State | undefined;
 let lastStepsSignature = '';
 let rafPending = false;
 let pendingState: State | null = null;
+let lastLiveHtml = '';
+let needsRedrawAfterSelect = false;
 
 /** Tracks user-toggled `<details>` accordions by stable key so re-renders never collapse them. */
 const openDisclosures = new Set<string>();
@@ -340,46 +343,47 @@ function hasActiveSelectionIn(container: HTMLElement): boolean {
 function drawConversation(): void {
   welcome.hidden = blocks.length > 0 || Boolean(state?.live) || Boolean(state?.busy);
 
-  // If the user is actively selecting text in historical blocks, defer mutating `blocksRoot`
-  if (!hasActiveSelectionIn(blocksRoot)) {
-    const existingNodes = Array.from(blocksRoot.children) as HTMLElement[];
+  const { start, hidden } = mountedRange(blocks.length);
+  const shown = blocks.slice(start);
+  const existing = new Map<string, HTMLElement>();
+  let overflow = blocksRoot.querySelector<HTMLElement>(':scope > .history-overflow');
+  for (const node of Array.from(blocksRoot.children)) {
+    if (!(node instanceof HTMLElement) || !node.classList.contains('block-slot')) continue;
+    const id = node.dataset.blockId;
+    if (id) existing.set(id, node);
+  }
+  const next: HTMLElement[] = [];
+  if (hidden > 0) {
+    overflow ??= document.createElement('div');
+    overflow.className = 'history-overflow msg note';
+    overflow.textContent = `${String(hidden)} earlier messages`;
+    next.push(overflow);
+  }
 
-    // If blocks were cleared (e.g. session reset), wipe fast
-    if (blocks.length === 0 && existingNodes.length > 0) {
-      blocksRoot.replaceChildren();
-    } else {
-      for (let i = 0; i < blocks.length; i++) {
-        const b = blocks[i];
-        if (!b) continue;
-        const isActiveTail = Boolean(state?.busy) && i === blocks.length - 1 && !state?.live;
-        const sig = blockSignature(b, isActiveTail);
-        const current = existingNodes[i];
-
-        if (current?.dataset.blockId === String(b.id)) {
-          if (current.dataset.sig !== sig) {
-            current.dataset.sig = sig;
-            current.innerHTML = messageHtml(b, isActiveTail);
-          }
-        } else {
-          const slot = document.createElement('div');
-          slot.className = 'block-slot';
-          slot.dataset.blockId = String(b.id);
-          slot.dataset.sig = sig;
-          slot.innerHTML = messageHtml(b, isActiveTail);
-          if (current) {
-            blocksRoot.replaceChild(slot, current);
-          } else {
-            blocksRoot.appendChild(slot);
-          }
-        }
-      }
-
-      // Trim any surplus nodes if blocks array shrunk
-      while (blocksRoot.children.length > blocks.length) {
-        blocksRoot.lastElementChild?.remove();
+  for (let i = 0; i < shown.length; i++) {
+    const b = shown[i];
+    if (!b) continue;
+    const absIndex = start + i;
+    const isActiveTail = Boolean(state?.busy) && absIndex === blocks.length - 1 && !state?.live;
+    const sig = blockSignature(b, isActiveTail);
+    const id = String(b.id);
+    let slot = existing.get(id);
+    if (!slot) {
+      slot = document.createElement('div');
+      slot.className = 'block-slot';
+      slot.dataset.blockId = id;
+    }
+    if (slot.dataset.sig !== sig) {
+      if (hasActiveSelectionIn(slot)) {
+        needsRedrawAfterSelect = true;
+      } else {
+        slot.dataset.sig = sig;
+        slot.innerHTML = messageHtml(b, isActiveTail);
       }
     }
+    next.push(slot);
   }
+  blocksRoot.replaceChildren(...next);
 
   // Render the high-frequency live streaming & active tool cockpit region
   const liveParts: string[] = [];
@@ -415,7 +419,8 @@ function drawConversation(): void {
 
   liveParts.push(estimateHtml(state?.estimate));
   const nextLiveHtml = liveParts.join('');
-  if (liveRoot.innerHTML !== nextLiveHtml) {
+  if (lastLiveHtml !== nextLiveHtml) {
+    lastLiveHtml = nextLiveHtml;
     liveRoot.innerHTML = nextLiveHtml;
   }
 
@@ -596,21 +601,29 @@ function showBanner(text: string, kind: 'error' | 'info'): void {
   banner.innerHTML = `<span>${escapeHtml(text)}</span>${kind === 'info' ? '<button class="link" data-action="restart">Restart</button>' : ''}`;
 }
 
-// Track user-toggled `<details>` accordions so re-renders preserve their open state
+// Track user-toggled `<details>` accordions so re-renders preserve their open state.
+// Ignore events from nodes being detached: innerHTML replacement fires `toggle` closed.
 conversation.addEventListener(
   'toggle',
   (e) => {
     const target = e.target;
-    if (target instanceof HTMLDetailsElement && target.dataset.disclosureId) {
-      if (target.open) openDisclosures.add(target.dataset.disclosureId);
-      else openDisclosures.delete(target.dataset.disclosureId);
-    }
+    if (!(target instanceof HTMLDetailsElement) || !target.dataset.disclosureId) return;
+    if (!target.isConnected) return;
+    if (target.open) openDisclosures.add(target.dataset.disclosureId);
+    else openDisclosures.delete(target.dataset.disclosureId);
   },
   true,
 );
 
+document.addEventListener('selectionchange', () => {
+  if (!needsRedrawAfterSelect) return;
+  if (hasActiveSelectionIn(blocksRoot)) return;
+  needsRedrawAfterSelect = false;
+  drawConversation();
+});
+
 window.addEventListener('message', (event: MessageEvent<Incoming>) => {
-  if (event.origin !== window.location.origin) return;
+  if (event.origin && event.origin !== 'null' && event.origin !== window.location.origin) return;
   const m = event.data;
   if (m.type === 'ui') {
     runAction(m.action, null);
@@ -641,6 +654,9 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
   if (m.type !== 'state' && settings.onMessage(m)) return;
   if (m.type === 'state') scheduleApply(m);
   else if (m.type === 'ready') {
+    pendingState = null;
+    lastLiveHtml = '';
+    needsRedrawAfterSelect = false;
     settings.close();
     contextPage.close();
     inspector.close();

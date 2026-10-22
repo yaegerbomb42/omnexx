@@ -44,4 +44,5 @@ export const FORWARD: ReadonlySet<string> = new Set([
   'setBrowser',
   'agentSettings',
   'setAgentSettings',
+  'autoCalibrate',
 ]);

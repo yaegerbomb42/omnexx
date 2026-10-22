@@ -75,6 +75,14 @@ export function request(post: Post): void {
   post({ type: 'agentSettings' });
 }
 
+function isEditingCard(): boolean {
+  const active = document.activeElement;
+  return (
+    active instanceof HTMLInputElement &&
+    Boolean(active.closest('.agent-card, #agent-start, .agent-start'))
+  );
+}
+
 /** Messages for the card; true when handled. */
 export function onMessage(m: { type: string } & Record<string, unknown>): boolean {
   if (m.type !== 'agentSettings') return false;
@@ -86,6 +94,8 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
     offered = true;
     start.hidden = false;
   }
+  // A full innerHTML redraw while a slider or checkbox is focused resets the control.
+  if (isEditingCard()) return true;
   redraw();
   return true;
 }
