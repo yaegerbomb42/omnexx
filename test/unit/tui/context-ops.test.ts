@@ -114,6 +114,10 @@ describe('/context', () => {
   it('applies pure changes', () => {
     const next = contextTransform({ op: 'add', text: 'hi' })(base);
     expect(next.overrides.notes).toHaveLength(1);
+    const cleared = contextTransform({ op: 'clearChat' })(base);
+    expect(cleared.history).toEqual([]);
+    expect(cleared.system).toHaveLength(3);
+    expect(cleared.tools).toHaveLength(3);
   });
 
   it('renders groups, ids, sources and a budget bar', () => {

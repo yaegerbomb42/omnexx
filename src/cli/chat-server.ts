@@ -402,6 +402,10 @@ export async function serveChat(
         session.changeContext({ op: 'reset' });
         sendContext();
         return;
+      case 'contextClearChat':
+        session.changeContext({ op: 'clearChat' });
+        sendContext();
+        return;
       case 'contextAdd':
         session.changeContext({ op: 'add', text: text(c, 'text') });
         sendContext();

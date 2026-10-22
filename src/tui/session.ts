@@ -1054,6 +1054,7 @@ export class Session {
     if (change.op === 'edit') code.editContext(change.id, change.text);
     else if (change.op === 'delete') code.deleteContext(change.id);
     else if (change.op === 'reset') code.resetContext();
+    else if (change.op === 'clearChat') code.clearHistory();
     else code.transformContext(contextTransform(change));
     this.changed();
   }

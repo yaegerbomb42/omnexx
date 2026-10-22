@@ -56,6 +56,7 @@ import {
 } from './latency.js';
 import {
   applyContext,
+  clearContextHistory,
   deleteContextItem,
   EMPTY_OVERRIDES,
   listContext,
@@ -540,6 +541,13 @@ export class CodeChat {
   /** Any other inspector change (add a note, pin, restore one item), as a pure function. */
   transformContext(change: (s: ContextState) => ContextState): void {
     this.changeContext(change(this.contextState()));
+  }
+
+  /** Clear all conversation and tooling history; system blocks, tools, and user notes stay intact. */
+  clearHistory(): void {
+    this.changeContext(clearContextHistory(this.contextState()));
+    this.ctx.reads?.clear();
+    this.contextUsed = this.baseTokens();
   }
 
   /** Bring back the default system prompt and tools (conversation edits and notes stay). */
