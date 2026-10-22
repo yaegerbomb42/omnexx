@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   addEntries,
+  blockSignature,
+  mountedRange,
   estimateHtml,
   etaText,
   cacheHitPercent,
@@ -47,6 +49,22 @@ describe('addEntries', () => {
     const second = addEntries(first, [{ id: 2, kind: 'out', text: 'b' }]);
     expect(first[0]?.lines).toEqual(['a']);
     expect(second).toEqual([{ id: 1, kind: 'out', lines: ['a', 'b'] }]);
+  });
+
+  it('changes the signature when a block grows or is the active tail', () => {
+    const block = { id: 4, kind: 'out' as const, lines: ['Done:'] };
+    const grown = { ...block, lines: ['Done:', '- one'] };
+    expect(blockSignature(block, false)).not.toBe(blockSignature(grown, false));
+    expect(blockSignature(grown, false)).not.toBe(blockSignature(grown, true));
+  });
+});
+
+describe('mountedRange', () => {
+  it('keeps a bounded window of recent blocks', () => {
+    expect(mountedRange(0)).toEqual({ start: 0, hidden: 0 });
+    expect(mountedRange(400)).toEqual({ start: 0, hidden: 0 });
+    expect(mountedRange(401)).toEqual({ start: 1, hidden: 1 });
+    expect(mountedRange(1000, 100)).toEqual({ start: 900, hidden: 900 });
   });
 });
 

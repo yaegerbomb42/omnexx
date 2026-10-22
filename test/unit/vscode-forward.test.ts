@@ -18,7 +18,7 @@ async function postedTypes(): Promise<Set<string>> {
   const files = (await readdir(dir)).filter((f) => f.endsWith('.ts'));
   const text = (await Promise.all(files.map((f) => readFile(join(dir, f), 'utf8')))).join('\n');
   return new Set(
-    [...text.matchAll(/post\??\.?\(\{\s*type:\s*'([a-zA-Z]+)'/g)].map((m) => m[1] ?? ''),
+    [...text.matchAll(/\b(?:post|p)\(\{\s*type:\s*'([a-zA-Z]+)'/g)].map((m) => m[1] ?? ''),
   );
 }
 

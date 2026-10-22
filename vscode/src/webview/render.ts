@@ -41,8 +41,8 @@ export function escapeHtml(text: string): string {
 }
 
 /**
- * Consecutive entries of these kinds fold into a single Block.
- * Including 'act' groups sequential tool executions into a cohesive execution cluster.
+ * Consecutive entries of these kinds fold into a single Block. Actions stay one per
+ * block so a new tool call appends a node instead of rewriting the whole cluster.
  */
 const JOINS = new Set<EntryKind>(['out', 'user', 'think', 'err', 'system', 'feed']);
 
@@ -64,6 +64,17 @@ export function addEntries(blocks: readonly Block[], entries: readonly Entry[]):
 export function blockSignature(b: Block, isActiveTail: boolean): string {
   const lastLine = b.lines.at(-1) ?? '';
   return `${b.id}:${b.kind}:${b.lines.length}:${lastLine.length}:${isActiveTail ? 1 : 0}`;
+}
+
+/** Cap mounted conversation DOM so multi-thousand-turn histories cannot grow without bound. */
+export const MAX_MOUNTED_BLOCKS = 400;
+
+export function mountedRange(
+  length: number,
+  max = MAX_MOUNTED_BLOCKS,
+): { start: number; hidden: number } {
+  const start = Math.max(0, length - max);
+  return { start, hidden: start };
 }
 
 /** A relative or absolute file path worth making clickable: has a slash or a dot extension. */
