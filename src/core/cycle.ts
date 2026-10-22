@@ -25,6 +25,7 @@ import { commitCheckpoint } from '../git/checkpoint.js';
 import { git } from '../git/git.js';
 import { commitMessage, headSha, isClean, workingTreeDiff } from '../git/repo.js';
 import { rollbackTo } from '../git/rollback.js';
+import { runCheck, runSentinel } from '../verify/sentinel.js';
 import { parseTrailers } from '../git/trailers.js';
 import { PathJail } from '../security/paths.js';
 import { burnThreshold, detectOscillation, InCycleWatch } from '../guard/stuck.js';
@@ -806,6 +807,7 @@ export async function stepCommit(run: Run): Promise<void> {
       diff: p.diffStats,
       worker: p.worker,
     });
+    await maybeRunSentinel(run);
     if (run.config.git.push === 'branch') {
       const r = await git(
         run.worktree,
@@ -822,6 +824,31 @@ export async function stepCommit(run: Run): Promise<void> {
   run.state.lastProgressCycle = run.state.cycle;
   run.state.recoveries = 0;
   await run.setPhase('record');
+}
+
+/**
+ * SENTINEL (opt-in, [sentinel]): every N accepted commits run the full check on lastGreen. On a
+ * regression, bisect this run's checkpoints and revert the first bad one with a new commit.
+ */
+async function maybeRunSentinel(run: Run): Promise<void> {
+  const cfg = run.config.sentinel;
+  if (!cfg.enabled || run.state.acceptedCommits % cfg.every_commits !== 0) return;
+  run.events.emit('sentinel.start', { head: run.state.lastGreen });
+  try {
+    const r = await runSentinel({
+      cwd: run.worktree,
+      history: run.state.greenHistory.map((g) => g.sha),
+      check: (cwd) => runCheck(cwd, cfg.command, cfg.timeout_seconds * 1_000),
+      autoRevert: cfg.auto_revert,
+    });
+    if (r.revertSha) {
+      run.state.lastGreen = r.revertSha;
+      run.state.greenHistory.push({ sha: r.revertSha, cycle: run.state.cycle });
+    }
+    run.events.emit(r.healthy ? 'sentinel.healthy' : 'sentinel.regression', { ...r });
+  } catch (err) {
+    run.events.emit('sentinel.error', { error: String(err) });
+  }
 }
 
 /** ROLLBACK: save the failed diff, reset to lastGreen. Idempotent. */
