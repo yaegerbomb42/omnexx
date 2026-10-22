@@ -30,6 +30,8 @@ const config = {
   serve_timeout: '60s',
   allow_eval: false,
   live_view: false,
+  report_errors: false,
+  visual_diff_threshold: 0.1,
   engine: 'chromium' as const,
 };
 const PNG =

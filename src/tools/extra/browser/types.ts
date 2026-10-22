@@ -1,6 +1,8 @@
 export interface BrowserConsoleMessage {
   type: string;
   text: string;
+  /** `url:line:column` when the backend reports one. */
+  location?: string;
 }
 
 export interface ScreenshotResult {
@@ -23,6 +25,8 @@ export interface BrowserRequest {
   /** Absent when the request has no response yet or failed at the network level. */
   status?: number;
   resourceType?: string;
+  /** Why no response arrived (DNS, refused, aborted); set for network-level failures. */
+  failure?: string;
 }
 
 /** What `waitFor` waits for: an element (ref or CSS selector) or text anywhere on the page. */
@@ -42,7 +46,14 @@ export interface BrowserBackend {
   press(key: string): Promise<void>;
   scroll(direction?: 'up' | 'down' | 'left' | 'right', amount?: number): Promise<void>;
   screenshot(): Promise<ScreenshotResult>;
+  /** Screenshot of one element (its bounding box), for before/after UI comparison. */
+  screenshotElement?(ref: string): Promise<ScreenshotResult>;
   console(): Promise<BrowserConsoleMessage[]>;
+  /** Drop buffered console messages so the next diagnostics only report what follows. */
+  clearConsole?(): Promise<void>;
+  reload?(): Promise<void>;
+  goBack?(): Promise<void>;
+  goForward?(): Promise<void>;
   close(): Promise<void>;
 
   /** Resolves when the target appears; rejects after `timeoutMs`. */
@@ -64,6 +75,8 @@ export interface BrowserBackend {
   /** Evaluates a JS expression in the page and returns its JSON-serializable result. */
   evaluate?(expression: string): Promise<unknown>;
   network?(): Promise<BrowserRequest[]>;
+  /** Drop the request log so a later `network` call only shows what follows. */
+  clearNetwork?(): Promise<void>;
   tabs?(): Promise<BrowserTab[]>;
   switchTab?(id: string): Promise<void>;
   /** Opens `url` in a new tab and makes it active. */

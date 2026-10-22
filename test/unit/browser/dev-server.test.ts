@@ -1,0 +1,122 @@
+import { once } from 'node:events';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterEach, describe, expect, it } from 'vitest';
+import { DevServer, freePort, portOpen } from '../../../src/browser/dev-server.js';
+
+const node = JSON.stringify(process.execPath);
+const running = new Set<DevServer>();
+
+function server(opts: ConstructorParameters<typeof DevServer>[0]): DevServer {
+  const s = new DevServer(opts);
+  running.add(s);
+  return s;
+}
+
+afterEach(async () => {
+  await Promise.all([...running].map((s) => s.stop()));
+  running.clear();
+});
+
+describe('dev server supervisor', () => {
+  it('finds a free port and sees nothing listening on it', async () => {
+    const port = await freePort();
+    expect(port).toBeGreaterThan(0);
+    expect(await portOpen(port)).toBe(false);
+  });
+
+  it('starts a server, exposes its status and output, and stops its process group', async () => {
+    const port = await freePort();
+    const s = server({
+      command: `${node} -e "console.log('ready soon'); require('node:http').createServer((q,r)=>r.end('ok')).listen(${String(port)})"`,
+      cwd: process.cwd(),
+      port,
+      timeoutMs: 10_000,
+    });
+    const started = await s.start();
+    expect(started.running).toBe(true);
+    expect(started.port).toBe(port);
+    expect(started.startedAt).toBeTypeOf('number');
+    expect(started.output).toContain('ready soon');
+    expect(await portOpen(port)).toBe(true);
+
+    // A second start is a no-op, not a second process.
+    const again = await s.start();
+    expect(again.startedAt).toBe(started.startedAt);
+
+    await s.stop();
+    expect(s.status().running).toBe(false);
+    expect(await portOpen(port)).toBe(false);
+  }, 20_000);
+
+  it('waits for a URL to answer, including error statuses', async () => {
+    const http = createServer((_req, res) => {
+      res.statusCode = 503;
+      res.end('down');
+    });
+    http.listen(0, '127.0.0.1');
+    await once(http, 'listening');
+    const port = (http.address() as AddressInfo).port;
+    try {
+      const s = server({
+        command: `${node} -e "setTimeout(()=>{},10000)"`,
+        cwd: process.cwd(),
+        url: `http://127.0.0.1:${String(port)}/health`,
+        timeoutMs: 5_000,
+      });
+      const status = await s.start();
+      expect(status.running).toBe(true);
+      expect(status.url).toBe(`http://127.0.0.1:${String(port)}/health`);
+    } finally {
+      http.close();
+      await once(http, 'close');
+    }
+  }, 15_000);
+
+  it('explains a server that exits before it is ready', async () => {
+    const port = await freePort();
+    const s = server({
+      command: `${node} -e "console.error('missing config'); process.exit(3)"`,
+      cwd: process.cwd(),
+      port,
+      timeoutMs: 5_000,
+    });
+    await expect(s.start()).rejects.toThrow(/exited with code 3[\s\S]*missing config/);
+    expect(s.status().running).toBe(false);
+  }, 15_000);
+
+  it('times out and cleans up a server that never answers', async () => {
+    const port = await freePort();
+    const s = server({
+      command: `${node} -e "setTimeout(()=>{},5000)"`,
+      cwd: process.cwd(),
+      port,
+      timeoutMs: 400,
+    });
+    await expect(s.start()).rejects.toThrow(/did not answer on port/);
+    expect(s.status().running).toBe(false);
+    expect(await portOpen(port)).toBe(false);
+  }, 15_000);
+
+  it('supports a command with no health check', async () => {
+    const s = server({
+      command: `${node} -e "console.log('started'); setTimeout(()=>{},5000)"`,
+      cwd: process.cwd(),
+      timeoutMs: 5_000,
+    });
+    const status = await s.start();
+    expect(status.running).toBe(true);
+    expect(status.port).toBeUndefined();
+    expect(status.url).toBeUndefined();
+    expect(status.output).toContain('started');
+  }, 10_000);
+
+  it('reports a command that dies without a health check', async () => {
+    const s = server({
+      command: `${node} -e "process.exit(2)"`,
+      cwd: process.cwd(),
+      timeoutMs: 5_000,
+    });
+    await expect(s.start()).rejects.toThrow(/exited with code 2/);
+  }, 10_000);
+});

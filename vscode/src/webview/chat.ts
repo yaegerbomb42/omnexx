@@ -37,6 +37,7 @@ import {
 } from './render.js';
 import { attachSuggest } from './suggestBox.js';
 import * as agentCard from './agentCard.js';
+import * as browserCockpit from './browserCockpit.js';
 import * as contextPage from './contextPage.js';
 import * as crew from './crew.js';
 import * as inspector from './inspector.js';
@@ -70,6 +71,22 @@ interface State {
   helpers?: crew.Helper[];
   waiting?: { startedAt: number; estimateMs: number | null } | null;
   estimate?: string | null;
+  browserDiagnostics?: {
+    seq: number;
+    at: number;
+    summary: string;
+    errors: number;
+    warnings: number;
+    failedRequests: number;
+  } | null;
+  browserVisual?: {
+    seq: number;
+    at: number;
+    name: string;
+    pass: boolean;
+    changedRatio: number;
+    dimensionsMatch: boolean;
+  } | null;
 }
 
 type Incoming =
@@ -87,7 +104,9 @@ type Incoming =
         | 'agentSettings'
         | 'executionMode';
     } & Record<string, unknown>)
-  | ({ type: 'browserFrame' } & crew.BrowserFrameMsg)
+  | ({ type: 'browserFrame' } & browserCockpit.BrowserFrameMsg)
+  | ({ type: 'browserDiagnostics' } & browserCockpit.BrowserDiagnosticsMsg)
+  | ({ type: 'browserVisual' } & browserCockpit.BrowserVisualMsg)
   | { type: 'ui'; action: string }
   | { type: 'files'; items: string[] }
   | { type: 'insert'; text: string }
@@ -643,7 +662,15 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
     return;
   }
   if (m.type === 'browserFrame') {
-    crew.drawBrowser(m);
+    browserCockpit.drawFrame(m);
+    return;
+  }
+  if (m.type === 'browserDiagnostics') {
+    browserCockpit.drawDiagnostics(m);
+    return;
+  }
+  if (m.type === 'browserVisual') {
+    browserCockpit.drawVisual(m);
     return;
   }
   if (m.type === 'models')
@@ -666,6 +693,7 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
     contextPage.close();
     inspector.close();
     crew.resetViews();
+    browserCockpit.resetCockpit();
     blocks = [];
     logLines = [];
     openDisclosures.clear();
@@ -907,9 +935,7 @@ contextPage.wire(post);
 inspector.wire(post, () => {
   contextPage.open(post);
 });
-crew.wire((action) => {
-  post({ type: 'browserNav', action });
-});
+browserCockpit.wireCockpit();
 modelPicker.wire(() => {
   settings.open(post);
 });
