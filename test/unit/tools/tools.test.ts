@@ -431,12 +431,14 @@ describe('tool schemas the API accepts', () => {
     }
   });
 
-  it('remember enforces per-action fields', async () => {
+  it('remember enforces per-action fields and normalizes defaults', async () => {
     const ctx = await toolContext(await repo());
-    expect((await rememberTool.run({ action: 'add', text: 'no type' }, ctx)).content).toMatch(
+    expect((await rememberTool.run({ action: 'add', text: '' }, ctx)).content).toMatch(
       /add needs type and text/,
     );
     expect((await rememberTool.run({ action: 'remove' }, ctx)).isError).toBe(true);
+    // When text is provided without explicit type or action, defaults to add + inferred type
+    expect((await rememberTool.run({ text: 'use pnpm' }, ctx)).content).toMatch(/next cycle/);
   });
 });
 
