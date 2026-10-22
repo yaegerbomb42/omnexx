@@ -37,6 +37,23 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-22 (single agent), branch `feat/multi-agent-swarm-core`:** merged
+  `origin/main` to resolve PR conflicts; fixed the `docs/TODO.md` session-log conflict and
+  verified merge commit `048d4ec`.
+- **2026-10-22 (single agent), branch `feat/multi-agent-swarm-core`:** hierarchical swarm core.
+  `src/workers/scratchpad.ts`: namespaced, versioned shared board (optimistic-concurrency
+  claims via `putIfVersion`), append-only event log, live subscribers.
+  `src/workers/ipc.ts`: in-process pipe pair over a transport-agnostic envelope
+  (`{ id, kind, payload, replyTo? }`), request/reply correlation, typed timeout/closed/remote
+  errors. `src/workers/file-locks.ts`: region locks (same path + overlapping inclusive line
+  ranges conflict), FIFO-fair queueing per file, acquire timeouts, lazy TTL expiry.
+  `src/agent/swarm.ts`: `SwarmCoordinator` running architect → implementer → red-team →
+  auditor over injected executors (no model calls in the coordinator; production wiring
+  adapts `helperRunner` later), region locks held across the implementer phase and released
+  in a `finally`, phase outputs on the scratchpad (`spec`/`impl`/`qa`/`audit`), verdict
+  `pass` only on clean QA and no blocking audit findings. 27 new unit tests, all passing;
+  lint, typecheck and format green (the 5 `test/unit/bench` suite-validation failures are
+  pre-existing on a clean tree, untouched here). Not committed.
 - **2026-10-22 (single agent), branch `feat/vscode-bento-ui` (uncommitted, in the working
   tree):** VS Code panel redesigned to the bento-glass cockpit concepts. New shared tokens in
   chat.css (`--bento-*`, `--radius-lg`, posture gradients, role accents) underpin: an Execution
@@ -53,7 +70,6 @@ SonarCloud findings from the #20 integration merge are still open.
   not added: the webview has no backing settings for either. Gates: typecheck and extension
   build green; unit suite unchanged (5 pre-existing bench failures, identical on a clean tree);
   lint/format complaints are the pre-existing ones in test/unit and src/core, none in vscode/.
-
 - **2026-10-17 (owner-approved release, no bench):** `v0.19.0` / extension 0.15.0 tagged
   (`05524df`); release CI green (npm, Marketplace, Open VSX). Removed worktrees
   `omnexx-wt-b0`, `omnexx-wt-conditional-tools`, `omnexx-wt-spark`; pruned 36 stale
