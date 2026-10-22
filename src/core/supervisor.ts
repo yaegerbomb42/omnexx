@@ -65,7 +65,21 @@ import { evidenceText, mineEvidence } from './evidence.js';
 import { writeReport } from './report.js';
 import { recordFinishedRun, repoFileCount, sampleForRun, workerRef } from './run-estimate-io.js';
 import type { RunStatus } from './run-store.js';
+import type { ControlSignal } from '../agent/loop.js';
 import { Run, type RunDeps } from './run.js';
+
+/** Read control.json once: stop-now aborts the run. Read errors must not become unhandled rejections. */
+export async function pollControl(run: {
+  control: () => Promise<ControlSignal>;
+  abort: AbortController;
+}): Promise<void> {
+  try {
+    const c = await run.control();
+    if (c === 'stop-now' && !run.abort.signal.aborted) run.abort.abort(new Error('stop --now'));
+  } catch {
+    // control.json is advisory.
+  }
+}
 
 export interface SuperviseOptions {
   bootId?: string;
@@ -1111,14 +1125,12 @@ export async function supervise(
   const stopHeartbeat = startHeartbeat(run, opts.heartbeatMs);
   // Stall watchdog: any event is activity; a working cycle that goes silent too long is hung.
   let lastActivity = run.clock.now();
-  run.events.onEvent(() => {
+  const offActivity = run.events.onEvent(() => {
     lastActivity = run.clock.now();
   });
   const maxSilence = parseDuration(run.config.stuck.max_silence);
   const watcher = setInterval(() => {
-    void run.control().then((c) => {
-      if (c === 'stop-now' && !run.abort.signal.aborted) run.abort.abort(new Error('stop --now'));
-    });
+    void pollControl(run);
     const silent = run.clock.now() - lastActivity;
     if (run.state.phase === 'act' && !run.paused && silent >= maxSilence)
       run.abortCycle(`no activity for ${formatDuration(silent)} while working`);
@@ -1127,72 +1139,77 @@ export async function supervise(
       run.endCycleAtDeadline();
   }, opts.controlPollMs ?? 1_000);
   watcher.unref();
+  const stopWatching = (): void => {
+    clearInterval(watcher);
+    offActivity();
+    stopHeartbeat();
+  };
 
   let outcome: Outcome;
   try {
-    outcome = await sup.loop();
-  } catch (err) {
-    if (run.abort.signal.aborted)
-      outcome = { status: 'user-stop', reason: 'stopped immediately (--now)' };
-    else {
-      run.state.status = 'error';
-      run.state.statusReason = (err as Error).message;
-      await run.save();
-      run.events.emit('run.error', { error: (err as Error).message });
-      clearInterval(watcher);
-      stopHeartbeat();
-      await closeSession(runId).catch(() => undefined);
-      await rememberForRepo(run, facts);
-      await sandbox?.stop();
-      await releaseLock(run.store.dir, pid);
-      throw err;
+    try {
+      outcome = await sup.loop();
+    } catch (err) {
+      if (run.abort.signal.aborted)
+        outcome = { status: 'user-stop', reason: 'stopped immediately (--now)' };
+      else {
+        run.state.status = 'error';
+        run.state.statusReason = (err as Error).message;
+        await run.save();
+        run.events.emit('run.error', { error: (err as Error).message });
+        await closeSession(runId).catch(() => undefined);
+        await rememberForRepo(run, facts);
+        await sandbox?.stop();
+        await releaseLock(run.store.dir, pid);
+        throw err;
+      }
     }
-  }
-  clearInterval(watcher);
-  // No browser outlives its run (a cycle that threw may have skipped its own cleanup).
-  await closeSession(runId).catch(() => undefined);
-  await rememberForRepo(run, facts);
-  if (outcome.status === 'user-stop') await prepareWorktree(run);
-  run.state.status = outcome.status;
-  run.state.statusReason = outcome.reason;
-  await run.setPhase('done');
-  run.events.emit('run.finish', {
-    status: outcome.status,
-    reason: outcome.reason,
-    usd: run.state.spend.usd,
-    commits: run.state.acceptedCommits,
-    cycles: run.state.cycle,
-  });
-  await writeReport(run.store, run.state, run.plan, deps.clock.now());
-  await rememberRunTook(run, deps, outcome.status);
-  const prUrl = deps.config.git.open_pr ? await openPullRequest(run) : undefined;
-  const kind: NotifyKind =
-    outcome.status === 'needs-human'
-      ? 'needs-human'
-      : outcome.status === 'budget-stop'
-        ? 'budget'
-        : outcome.status === 'user-stop'
-          ? 'stopped'
-          : 'finished';
-  const counts = run.plan ? planCounts(run.plan) : undefined;
-  await notifierSafe(() =>
-    notifier.notify({
-      kind,
-      runId,
-      repo: run.state.repoName,
+    // No browser outlives its run (a cycle that threw may have skipped its own cleanup).
+    await closeSession(runId).catch(() => undefined);
+    await rememberForRepo(run, facts);
+    if (outcome.status === 'user-stop') await prepareWorktree(run);
+    run.state.status = outcome.status;
+    run.state.statusReason = outcome.reason;
+    await run.setPhase('done');
+    run.events.emit('run.finish', {
       status: outcome.status,
-      ...(counts ? { done: counts.done, total: counts.tasks, parked: counts.parked } : {}),
-      commits: run.state.acceptedCommits,
+      reason: outcome.reason,
       usd: run.state.spend.usd,
-      budgetUsd: deps.config.budget.max_usd,
-      hint: `${outcome.reason}. Report: omnexx report ${runId}`,
-      ...(prUrl ? { url: prUrl } : {}),
-    }),
-  );
-  stopHeartbeat();
-  await sandbox?.stop();
-  await releaseLock(run.store.dir, pid);
-  return { ...outcome, exitCode: EXIT_FOR[outcome.status] };
+      commits: run.state.acceptedCommits,
+      cycles: run.state.cycle,
+    });
+    await writeReport(run.store, run.state, run.plan, deps.clock.now());
+    await rememberRunTook(run, deps, outcome.status);
+    const prUrl = deps.config.git.open_pr ? await openPullRequest(run) : undefined;
+    const kind: NotifyKind =
+      outcome.status === 'needs-human'
+        ? 'needs-human'
+        : outcome.status === 'budget-stop'
+          ? 'budget'
+          : outcome.status === 'user-stop'
+            ? 'stopped'
+            : 'finished';
+    const counts = run.plan ? planCounts(run.plan) : undefined;
+    await notifierSafe(() =>
+      notifier.notify({
+        kind,
+        runId,
+        repo: run.state.repoName,
+        status: outcome.status,
+        ...(counts ? { done: counts.done, total: counts.tasks, parked: counts.parked } : {}),
+        commits: run.state.acceptedCommits,
+        usd: run.state.spend.usd,
+        budgetUsd: deps.config.budget.max_usd,
+        hint: `${outcome.reason}. Report: omnexx report ${runId}`,
+        ...(prUrl ? { url: prUrl } : {}),
+      }),
+    );
+    await sandbox?.stop();
+    await releaseLock(run.store.dir, pid);
+    return { ...outcome, exitCode: EXIT_FOR[outcome.status] };
+  } finally {
+    stopWatching();
+  }
 }
 
 async function notifierSafe(fn: () => Promise<void>): Promise<void> {

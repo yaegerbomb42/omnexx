@@ -40,6 +40,7 @@ export class TaskManager {
     });
 
     child.unref();
+    await logFd.close();
 
     const task: BackgroundTask = {
       id,
@@ -56,13 +57,11 @@ export class TaskManager {
       task.status = code === 0 ? 'stopped' : 'failed';
       task.exitCode = code;
       task.process = undefined;
-      void logFd.close();
     });
 
     child.on('error', () => {
       task.status = 'failed';
       task.process = undefined;
-      void logFd.close();
     });
 
     this.tasks.set(id, task);
@@ -91,19 +90,39 @@ export class TaskManager {
   public stop(id: string): boolean {
     const task = this.tasks.get(id);
     if (task?.status !== 'running') return false;
-    if (task.pid) {
+    const pid = task.pid;
+    const child = task.process;
+    if (pid) {
       try {
-        process.kill(-task.pid, 'SIGTERM');
+        process.kill(-pid, 'SIGTERM');
       } catch {
         try {
-          process.kill(task.pid, 'SIGTERM');
+          process.kill(pid, 'SIGTERM');
         } catch {
           // Process already dead
         }
       }
+      setTimeout(() => {
+        const proc = child;
+        if (!proc || proc.killed || proc.exitCode !== null) return;
+        try {
+          process.kill(-pid, 'SIGKILL');
+        } catch {
+          try {
+            proc.kill('SIGKILL');
+          } catch {
+            // already reaped
+          }
+        }
+      }, 200).unref();
     }
     task.status = 'stopped';
     task.process = undefined;
     return true;
+  }
+
+  /** SIGKILL every running child. Tests and shutdown use this so nothing is left behind. */
+  public stopAll(): void {
+    for (const id of [...this.tasks.keys()]) this.stop(id);
   }
 }
