@@ -152,14 +152,15 @@ const PLANNER_RETRIES = 2;
 
 /**
  * Re-read the project's config and apply it in place, as if the run had just restarted. Emits
- * `execution.mode_change` when the execution mode changed (the state records the mode) and
- * `config.reload_failed` when the re-read failed — the previous config is then kept, so a bad
- * edit mid-run never ends the run.
+ * `execution.mode_change` when the execution mode changed (the state records the mode),
+ * `execution.domain_change` when the work domain changed, and `config.reload_failed` when
+ * the re-read failed — the previous config is then kept, so a bad edit mid-run never ends
+ * the run.
  */
 export async function refreshRunConfig(
   run: {
     config: OmnexxConfig;
-    state: Pick<RunState, 'executionMode'>;
+    state: Pick<RunState, 'executionMode' | 'workDomain'>;
     save: () => Promise<void>;
     events: { emit(type: string, data?: Record<string, unknown>): OmnexxEvent };
   },
@@ -177,12 +178,24 @@ export async function refreshRunConfig(
   // Replace the config the run reads from now on. Model chains and the judge were built once at
   // start; plan/loop, budget, gates and review settings hot-apply from here.
   Object.assign(run.config, fresh);
+  let changed = false;
   const next = fresh.execution.mode;
   const prev = run.state.executionMode;
-  if (next === prev) return false;
-  run.state.executionMode = next;
+  if (next !== prev) {
+    run.state.executionMode = next;
+    changed = true;
+  }
+  const nextDomain = fresh.execution.domain;
+  const prevDomain = run.state.workDomain;
+  if (nextDomain !== prevDomain) {
+    run.state.workDomain = nextDomain;
+    changed = true;
+  }
+  if (!changed) return false;
   await run.save();
-  run.events.emit('execution.mode_change', { from: prev, to: next });
+  if (next !== prev) run.events.emit('execution.mode_change', { from: prev, to: next });
+  if (nextDomain !== prevDomain)
+    run.events.emit('execution.domain_change', { from: prevDomain, to: nextDomain });
   return true;
 }
 

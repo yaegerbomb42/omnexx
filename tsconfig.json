@@ -38,6 +38,7 @@
     "vscode/src/webview/agentCard.ts",
     "vscode/src/webview/browserCockpit.ts",
     "vscode/src/webview/posture.ts",
+    "vscode/src/webview/domain.ts",
     "vscode/src/webview/stats.ts",
     "vscode/src/webview/savedMark.ts",
     "vscode/src/webview/suggestBox.ts"

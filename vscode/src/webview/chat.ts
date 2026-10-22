@@ -40,6 +40,7 @@ import * as agentCard from './agentCard.js';
 import * as browserCockpit from './browserCockpit.js';
 import * as contextPage from './contextPage.js';
 import * as crew from './crew.js';
+import * as domain from './domain.js';
 import * as inspector from './inspector.js';
 import * as modelPicker from './modelPicker.js';
 import * as posture from './posture.js';
@@ -102,7 +103,8 @@ type Incoming =
         | 'engine'
         | 'browser'
         | 'agentSettings'
-        | 'executionMode';
+        | 'executionMode'
+        | 'workDomain';
     } & Record<string, unknown>)
   | ({ type: 'browserFrame' } & browserCockpit.BrowserFrameMsg)
   | ({ type: 'browserDiagnostics' } & browserCockpit.BrowserDiagnosticsMsg)
@@ -683,6 +685,7 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
   if (m.type !== 'state' && contextPage.onMessage(m)) return;
   if (m.type !== 'state' && agentCard.onMessage(m)) return;
   if (m.type !== 'state' && posture.onMessage(m)) return;
+  if (m.type !== 'state' && domain.onMessage(m)) return;
   if (m.type !== 'state' && settings.onMessage(m)) return;
   if (m.type === 'state') scheduleApply(m);
   else if (m.type === 'ready') {
@@ -931,6 +934,8 @@ settings.wire(post);
 agentCard.wire(post);
 posture.wire(post);
 posture.request(post);
+domain.wire(post);
+domain.request(post);
 contextPage.wire(post);
 inspector.wire(post, () => {
   contextPage.open(post);

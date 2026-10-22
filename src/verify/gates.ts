@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseDuration } from '../config/duration.js';
 import type { GateConfig } from '../config/schema.js';
@@ -40,6 +40,7 @@ export interface GateRunContext {
 
 export async function runGate(gate: GateConfig, ctx: GateRunContext): Promise<GateResult> {
   if (gate.kind === 'browser') return runServedBrowserGate(gate, ctx);
+  if (gate.kind === 'exists') return runExistsGate(gate, ctx);
   const logFile = join(ctx.logsDir, `gate-${ctx.label}-${gate.name}.log`);
   const timeoutMs = Math.min(parseDuration(gate.timeout), ctx.maxCmdTimeoutMs);
   const r = await (ctx.exec ?? runShell)(gate.run, {
@@ -64,6 +65,33 @@ export async function runGate(gate: GateConfig, ctx: GateRunContext): Promise<Ga
     failures: parsed.failures,
     ...(parsed.tests ? { tests: parsed.tests } : {}),
     structured: parsed.structured,
+    logFile,
+  };
+}
+
+/**
+ * An artifact gate: passes when `gate.path` exists in the workspace, no command runs.
+ * The general domain's basic verification — the deliverable is there — composable with
+ * command gates running validators over it. Checked on the host filesystem: a docker
+ * sandbox's workspace is the same mounted tree.
+ */
+async function runExistsGate(gate: GateConfig, ctx: GateRunContext): Promise<GateResult> {
+  const logFile = join(ctx.logsDir, `gate-${ctx.label}-${gate.name}.log`);
+  const started = Date.now();
+  const rel = gate.path ?? '';
+  const exists = await stat(join(ctx.cwd, rel)).then(
+    () => true,
+    () => false,
+  );
+  await writeFile(logFile, exists ? `exists: ${rel}\n` : `missing: ${rel}\n`);
+  return {
+    name: gate.name,
+    level: gate.level,
+    exitCode: exists ? 0 : 1,
+    timedOut: false,
+    durationMs: Date.now() - started,
+    failures: exists ? [] : [{ id: `${gate.name}:exists`, message: `expected ${rel} to exist` }],
+    structured: true,
     logFile,
   };
 }

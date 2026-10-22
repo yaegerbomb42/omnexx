@@ -116,8 +116,9 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .command('init')
     .description('detect package manager and gates, then write omnexx.toml (asks first)')
     .option('-y, --yes', 'write without asking')
-    .action(async (opts: { yes?: boolean }) => {
-      await runInit(io, { yes: opts.yes === true });
+    .option('--mode <mode>', 'work domain to record in omnexx.toml: swe | general')
+    .action(async (opts: { yes?: boolean; mode?: string }) => {
+      await runInit(io, { yes: opts.yes === true, ...(opts.mode ? { mode: opts.mode } : {}) });
     });
 
   program
@@ -138,6 +139,10 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .option(
       '--kind <kind>',
       'auto | code | writing (prose such as a book or report; no tests needed)',
+    )
+    .option(
+      '--mode <mode>',
+      'swe (software engineering: AST tools, test gates) | general (documents, data, research: artifact checks, no test suite needed)',
     )
     .option('--plan-helpers <n>', 'helpers the planner runs at once while exploring (0-8)')
     .option('--plan-milestones <n>', 'at most this many milestones in the first plan')

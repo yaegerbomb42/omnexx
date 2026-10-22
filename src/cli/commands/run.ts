@@ -40,6 +40,8 @@ export interface RunFlags {
   plan?: string;
   /** auto | code | writing */
   kind?: string;
+  /** swe | general: the work domain (documents/data/research instead of code). */
+  mode?: string;
   planHelpers?: string;
   planMilestones?: string;
 }
@@ -75,7 +77,21 @@ export function flagsToConfig(f: RunFlags): ConfigInput {
       : {}),
     ...(f.push ? { git: { push: f.push as 'none' } } : {}),
     ...planFlags(f),
+    ...domainFlag(f),
   };
+}
+
+const WORK_DOMAIN_FLAG = ['swe', 'general'] as const;
+
+/** `--mode <swe|general>` as an [execution] domain layer (highest precedence). */
+function domainFlag(f: RunFlags): ConfigInput {
+  if (f.mode === undefined) return {};
+  if (!(WORK_DOMAIN_FLAG as readonly string[]).includes(f.mode))
+    throw new UsageError(
+      `--mode is one of ${WORK_DOMAIN_FLAG.join(', ')}, got "${f.mode}"`,
+      'swe is software engineering; general is documents, data and research',
+    );
+  return { execution: { domain: f.mode as (typeof WORK_DOMAIN_FLAG)[number] } };
 }
 
 const PLAN_MODES = ['auto', 'fast', 'full'] as const;
@@ -142,6 +158,7 @@ export async function runPlanOnly(io: CliIO, goal: string, flags: RunFlags): Pro
     goal,
     now: clock.now(),
     executionMode: deps.config.execution.mode,
+    workDomain: deps.config.execution.domain,
     ...(flags.from ? { from: flags.from } : {}),
   });
   const run = await Run.open(deps, store.runId);
@@ -201,7 +218,9 @@ export async function runCommand(
       io.stderr,
       writing
         ? 'writing run: no tests needed; each piece is checked by its plan and reviewed before it is kept'
-        : 'no tests configured: each change is checked by its task checks and a reviewer (add tests with `omnexx init` for stronger checks)',
+        : config.execution.domain === 'general'
+          ? 'general run: no gates configured; each artifact is checked by its task checks and a reviewer'
+          : 'no tests configured: each change is checked by its task checks and a reviewer (add tests with `omnexx init` for stronger checks)',
     );
   const store = await createRun({
     paths,
@@ -211,6 +230,7 @@ export async function runCommand(
     noChecks: !config.gates.length,
     writing,
     executionMode: config.execution.mode,
+    workDomain: config.execution.domain,
     ...(flags.from ? { from: flags.from } : {}),
   });
   await writeJsonAtomic(store.file(RUN_FLAGS_FILE), overrides);

@@ -19,7 +19,8 @@ import { renderCodemap, type Codemap } from '../agent/codemap.js';
 import { runAgentLoop, type LoopDeps } from '../agent/loop.js';
 import type { ResolvedModel } from '../providers/pricing.js';
 import { actAsThinkLoop, renderGateFailures, usesThinkLoop } from './think-loop-run.js';
-import { WORKER_SYSTEM } from '../agent/prompts.js';
+import { getWorkerPrompt } from '../agent/prompts.js';
+import { workModeOf } from '../config/work-mode.js';
 import { StateError } from '../errors.js';
 import { commitCheckpoint } from '../git/checkpoint.js';
 import { git } from '../git/git.js';
@@ -428,7 +429,7 @@ export async function stepAct(run: Run): Promise<void> {
   const route = await run.router.pick(cycleRoute(task, run.budgetLeftFraction()));
   const shownNotes = task.id === FAST_TASK ? keepNewestNotes(notes, FAST_NOTES_TOKENS) : notes;
   const ctx = buildCycleContext({
-    systemPrompt: WORKER_SYSTEM,
+    systemPrompt: getWorkerPrompt(workModeOf(run.config)),
     codemap,
     goal: goal.text,
     intent,
@@ -642,6 +643,7 @@ export async function stepVerify(run: Run): Promise<void> {
       allow: task.allow,
       baseline: run.state.baseline,
       results,
+      domain: workModeOf(run.config),
     });
     for (const v of cheats) {
       reasons.push(`anti-cheat ${v.rule}: ${v.detail}`);

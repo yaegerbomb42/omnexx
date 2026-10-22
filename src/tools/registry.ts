@@ -17,6 +17,7 @@ import { runningContextTool } from './running-context.js';
 import { queryArtifactTool } from './query-artifact.js';
 import { replProjectionTool } from './repl-projection.js';
 import type { OmnexxConfig } from '../config/schema.js';
+import { workModeOf } from '../config/work-mode.js';
 import * as extraSources from './extra/index.js';
 import type { ToolSource, ToolWhere } from './extra/types.js';
 import type { Tool } from './types.js';
@@ -43,6 +44,22 @@ export const WORKER_TOOLS: readonly Tool[] = [
 ] as Tool[];
 
 export const READ_ONLY_TOOLS: readonly Tool[] = WORKER_TOOLS.filter((t) => t.readOnly);
+
+/**
+ * Tools that only make sense on a codebase: AST/symbol navigation backed by the
+ * TypeScript compiler (outline, read_symbol). Everything else in WORKER_TOOLS is
+ * universal (files, search, bash, notes, artifacts) and loads in both work domains.
+ * In the "general" domain these are suppressed: there is no AST to navigate, and
+ * their schemas would only invite dead calls. (fsm-mask, ts-check, test-digest and
+ * the AST cache are internal helpers of other tools, not exposed tools themselves.)
+ */
+export const CODE_ONLY_TOOLS: ReadonlySet<string> = new Set(['outline', 'read_symbol']);
+
+/** Drop the code-only tools when the run's work domain is "general"; identity for "swe". */
+export function forDomain(tools: readonly Tool[], config: OmnexxConfig): readonly Tool[] {
+  if (workModeOf(config) !== 'general') return tools;
+  return tools.filter((t) => !CODE_ONLY_TOOLS.has(t.name));
+}
 
 export interface ExposureOptions {
   /** `[context] subagents`: whether the worker may start `task` helper agents. */
@@ -93,7 +110,10 @@ export async function workerTools(
     if (core.has(t.name) || seen.has(t.name)) throw new Error(`duplicate tool name "${t.name}"`);
     seen.add(t.name);
   }
-  return [...WORKER_TOOLS, ...[...extra].sort((a, b) => (a.name < b.name ? -1 : 1))];
+  return forDomain(
+    [...WORKER_TOOLS, ...[...extra].sort((a, b) => (a.name < b.name ? -1 : 1))],
+    config,
+  );
 }
 
 export async function readOnlyTools(

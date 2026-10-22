@@ -1,4 +1,5 @@
 import type { Baseline } from '../core/run-store.js';
+import type { WorkMode } from '../config/work-mode.js';
 import type { FileChange } from '../git/repo.js';
 import { matchesAny } from '../security/glob.js';
 import type { GateResult } from './gates.js';
@@ -50,6 +51,13 @@ export interface AntiCheatInput {
   allow: readonly string[];
   baseline: Baseline | undefined;
   results: readonly GateResult[];
+  /**
+   * The run's work domain. The test-weakening rules (deleted tests, skip markers,
+   * snapshot rewrites) police a test suite; in the "general" domain there is none to
+   * weaken — an artifact may legitimately quote a marker — so only the protected-path
+   * rule applies there.
+   */
+  domain?: WorkMode;
 }
 
 /** A path without its last extension: `test/a.test.js` → `test/a.test`. */
@@ -72,8 +80,10 @@ export function antiCheat(input: AntiCheatInput): Violation[] {
   const allow = new Set(input.allow);
   const out: Violation[] = [];
   const isTest = (p: string): boolean => matchesAny(p, TEST_FILE_PATTERNS) !== undefined;
+  // In the general domain only the protected-path rule (below) applies.
+  const swe = input.domain !== 'general';
 
-  if (!allow.has('delete-tests')) {
+  if (swe && !allow.has('delete-tests')) {
     const ported = portedTests(input.changes, isTest);
     for (const c of input.changes) {
       if (c.status === 'D' && isTest(c.path) && !ported.has(c.path))
@@ -91,7 +101,7 @@ export function antiCheat(input: AntiCheatInput): Violation[] {
     }
   }
 
-  if (!allow.has('skip')) {
+  if (swe && !allow.has('skip')) {
     let file = '';
     for (const line of input.patch.split('\n')) {
       if (line.startsWith('+++ ')) {
@@ -111,7 +121,7 @@ export function antiCheat(input: AntiCheatInput): Violation[] {
     }
   }
 
-  if (!allow.has('snapshots')) {
+  if (swe && !allow.has('snapshots')) {
     for (const c of input.changes) {
       if (c.status !== 'A' && (c.path.endsWith('.snap') || c.path.includes('__snapshots__/'))) {
         out.push({ rule: 'snapshot-rewrite', detail: c.path });
