@@ -239,6 +239,85 @@
   color: var(--muted);
 }
 
+/* ==========================================================================
+   Bento glass: Execution Posture card, glass slider rows, Token Budget bar,
+   Live Stats card — surfaces share the tokens defined in chat.css.
+   ========================================================================== */
+
+.posture-card {
+  border: 1px solid var(--bento-border);
+  border-radius: var(--radius-lg);
+  background: var(--bento-bg);
+  box-shadow: var(--bento-shadow);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.posture-title {
+  font-weight: 600;
+  font-size: var(--fs-md);
+  letter-spacing: -0.01em;
+}
+
+.posture-card .posture-caption {
+  margin-top: 8px;
+}
+
+/* Segmented pill groups (approvals, browser engine/window, MCP add): the same
+   glass track as the posture pill, with a neutral active segment. */
+.seg {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--bento-border);
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
+}
+
+.seg button {
+  flex: 1 1 0;
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    color 0.15s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.seg button:hover {
+  color: var(--fg);
+}
+
+.seg button[aria-pressed='true'] {
+  color: #fff;
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, var(--sec, var(--accent)) 82%, #000 6%),
+    color-mix(in srgb, var(--sec, var(--accent)) 55%, #fff 10%)
+  );
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--sec, var(--accent)) 40%, transparent);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 25%);
+}
+
+.seg.mini {
+  padding: 2px;
+}
+
+.seg.mini button {
+  padding: 2px 8px;
+  font-size: var(--fs-xs);
+}
+
+/* The agent card's sliders as glass rows: label + live meaning on one line,
+   a gradient-filled track under it, the hint last. */
 .agent-card {
   display: grid;
   gap: 8px;
@@ -246,7 +325,23 @@
 
 .agent-row {
   display: grid;
-  gap: 2px;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--bento-border);
+  border-radius: var(--radius-lg);
+  background: var(--bento-bg);
+  box-shadow: var(--bento-shadow);
+}
+
+.agent-row.prominent {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--bento-border));
+}
+
+.agent-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .agent-row label {
@@ -256,10 +351,195 @@
 
 .agent-meaning {
   color: var(--fg);
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.agent-row input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.agent-row input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--accent),
+    var(--violet) var(--p, 50%),
+    color-mix(in srgb, var(--muted) 24%, transparent) var(--p, 50%)
+  );
+}
+
+.agent-row input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent);
+  box-shadow: 0 1px 6px rgb(0 0 0 / 35%);
+}
+
+.agent-row input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--muted) 24%, transparent);
+}
+
+.agent-row input[type='range']::-moz-range-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--violet));
+}
+
+.agent-row input[type='range']::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent);
+  box-shadow: 0 1px 6px rgb(0 0 0 / 35%);
 }
 
 .agent-ask {
   color: var(--fg);
+}
+
+/* Token Budget bar (context fill), under the agent card. */
+.budget {
+  border: 1px solid var(--bento-border);
+  border-radius: var(--radius-lg);
+  background: var(--bento-bg);
+  box-shadow: var(--bento-shadow);
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.budget-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.budget-label {
+  font-weight: 600;
+}
+
+.budget-pct {
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-track {
+  height: 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+  overflow: hidden;
+}
+
+.budget-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--brand);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: width 0.3s ease;
+}
+
+.budget-fill.hot {
+  background: var(--warn);
+}
+
+.budget-sub {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+/* Live Stats card: real session telemetry, one row per stat that has a source. */
+.live-stats {
+  border: 1px solid var(--bento-border);
+  border-radius: var(--radius-lg);
+  background: var(--bento-bg);
+  box-shadow: var(--bento-shadow);
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.ls-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ls-title {
+  font-weight: 600;
+}
+
+.ls-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.ls-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--emerald);
+  box-shadow: 0 0 8px var(--emerald);
+  animation: mcp-pulse 1.6s ease-in-out infinite;
+}
+
+.ls-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ls-label {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.ls-value {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ls-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+  overflow: hidden;
+}
+
+.ls-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--brand);
+  transition: width 0.3s ease;
 }
 
 /* MCP gallery cards and server marks. */

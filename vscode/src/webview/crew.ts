@@ -33,6 +33,26 @@ const KIND_LABEL: Record<string, string> = {
   general: 'Helper',
 };
 
+/**
+ * Bento role styling per helper kind: the accent that tints the card's glow, the role eyebrow,
+ * and the present-tense status word shown while it works (EXPLORING / PLANNING / AUDITING…).
+ */
+const KIND_ROLE: Record<string, { accent: string; role: string; doing: string }> = {
+  explore: { accent: 'amber', role: 'EXPLORER', doing: 'EXPLORING' },
+  plan: { accent: 'violet', role: 'PLANNER', doing: 'PLANNING' },
+  review: { accent: 'green', role: 'REVIEWER', doing: 'AUDITING' },
+  general: { accent: 'blue', role: 'HELPER', doing: 'WORKING' },
+};
+
+const roleOf = (h: Helper): { accent: string; role: string; doing: string } =>
+  KIND_ROLE[h.kind] ?? { accent: 'blue', role: 'HELPER', doing: 'WORKING' };
+
+function statusLineHtml(h: Helper): string {
+  const word =
+    h.status === 'working' ? roleOf(h).doing : h.status === 'done' ? 'REPORTED' : 'STOPPED';
+  return `<div class="h-status"><span class="h-dot" aria-hidden="true"></span>${word}</div>`;
+}
+
 function el(id: string): HTMLElement {
   const found = document.getElementById(id);
   if (!found) throw new Error(`missing #${id}`);
@@ -57,7 +77,8 @@ function footHtml(h: Helper): string {
 
 function cardHtml(h: Helper): string {
   const name = h.agent ?? KIND_LABEL[h.kind] ?? h.kind;
-  return `<li class="helper ${h.status}"><span class="wire" aria-hidden="true"></span><div class="h-card"><div class="h-top">${badge(name)}<span class="h-name">${escapeHtml(name)}</span>${statusHtml(h)}</div><div class="h-task">${escapeHtml(h.description)}</div><div class="h-foot">${footHtml(h)}</div></div></li>`;
+  const role = roleOf(h);
+  return `<li class="helper ${h.status} accent-${role.accent}"><span class="wire" aria-hidden="true"></span><div class="h-card"><div class="h-top">${badge(name)}<span class="h-name">${escapeHtml(name)}</span><span class="h-role">${role.role}</span>${statusHtml(h)}</div>${statusLineHtml(h)}<div class="h-task">${escapeHtml(h.description)}</div><div class="h-foot">${footHtml(h)}</div></div></li>`;
 }
 
 export function drawCrew(helpers: readonly Helper[], logoSrc: string): void {

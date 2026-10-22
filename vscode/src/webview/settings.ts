@@ -8,6 +8,8 @@ import * as roles from './roles.js';
 import * as mcp from './mcp.js';
 import * as skills from './skills.js';
 import * as agentCard from './agentCard.js';
+import * as posture from './posture.js';
+import * as stats from './stats.js';
 import { badge } from './modelPicker.js';
 import { escapeHtml } from './render.js';
 import * as providerForm from './providerForm.js';
@@ -260,7 +262,7 @@ function draw(): void {
   page.innerHTML = `
 <div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
 ${layout.navHtml()}
-${sec('agent', `<div id="agent-box">${agentCard.html()}</div>`)}
+${sec('agent', `${posture.cardHtml()}<div id="agent-box">${agentCard.html()}</div><div id="token-budget">${stats.tokenBudgetHtml()}</div><div id="live-stats">${stats.liveStatsHtml()}</div>`)}
 ${sec('model', modelFieldHtml())}
 ${sec('models', `<div id="roles-box">${roles.html()}</div>`)}
 ${sec('skills', `<div id="skills-box">${skills.html()}</div>`)}
@@ -270,6 +272,8 @@ ${sec('approvals', approvalsHtml())}
 ${sec('mcp', `<div id="mcp-box">${mcp.html()}</div>`)}
 ${sec('browser', `<div id="browser-box">${browserHtml()}</div>`)}
 ${sec('advanced', advancedHtml())}`;
+  posture.render();
+  stats.refresh();
   syncForm();
   drawStatus();
 }
@@ -398,6 +402,7 @@ export function open(post: Post): void {
   mcp.request(post);
   skills.request(post);
   agentCard.request(post);
+  posture.request(post);
 }
 
 export function close(): void {

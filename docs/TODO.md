@@ -37,6 +37,23 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-22 (single agent), branch `feat/vscode-bento-ui` (uncommitted, in the working
+  tree):** VS Code panel redesigned to the bento-glass cockpit concepts. New shared tokens in
+  chat.css (`--bento-*`, `--radius-lg`, posture gradients, role accents) underpin: an Execution
+  Posture pill in the chat header and in Settings → Agent, bound to the real `[execution]` mode
+  — the extension host reads the effective mode with the config loader's precedence (env >
+  project omnexx.toml > user config.toml) and saves picks into the user config's `[execution]`
+  table, so a running task hot-switches at its next cycle. The Agent card's sliders became
+  glass rows (same `agentSettings` path), joined by a Token Budget bar and a Live Stats card fed
+  by the chat state's real usage/context (cache hit, tool success rate, token usage; no latency
+  row — the state carries none). Crew helpers are bento role cards (per-kind accent, a status
+  dot and word, an activity line) under a telemetry strip (tokens, avg tokens/sec, est. cost,
+  cache hit), and code blocks render as glass diff-stream panels using the existing
+  `.diff-add`/`.diff-del` marks. Tool Access chips and a "Max Turns" slider were deliberately
+  not added: the webview has no backing settings for either. Gates: typecheck and extension
+  build green; unit suite unchanged (5 pre-existing bench failures, identical on a clean tree);
+  lint/format complaints are the pre-existing ones in test/unit and src/core, none in vscode/.
+
 - **2026-10-17 (owner-approved release, no bench):** `v0.19.0` / extension 0.15.0 tagged
   (`05524df`); release CI green (npm, Marketplace, Open VSX). Removed worktrees
   `omnexx-wt-b0`, `omnexx-wt-conditional-tools`, `omnexx-wt-spark`; pruned 36 stale
