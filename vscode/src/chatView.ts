@@ -23,6 +23,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private view: vscode.WebviewView | undefined;
   private readonly server: ChatProcess;
   private readonly subscriptions: vscode.Disposable[] = [];
+  /** Listeners tied to the current webview instance; replaced when the view is re-resolved. */
+  private viewSubs: vscode.Disposable[] = [];
   /** Paths the latest contextFiles listed: the only files the explorer may open. */
   private contextPaths = new Map<string, boolean>();
   private modelsWaiter: ((items: ModelItem[], unreachable: string[]) => void) | undefined;
@@ -38,18 +40,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
+    for (const s of this.viewSubs) s.dispose();
+    this.viewSubs = [];
     this.view = view;
     const media = vscode.Uri.joinPath(this.extensionUri, 'media');
     const out = vscode.Uri.joinPath(this.extensionUri, 'out');
     view.webview.options = { enableScripts: true, localResourceRoots: [media, out] };
     view.webview.html = this.html(view.webview);
-    this.subscriptions.push(
+    this.viewSubs.push(
       view.webview.onDidReceiveMessage((m: { type?: unknown } & Record<string, unknown>) => {
         void this.fromWebview(m).catch((err: unknown) => {
           void vscode.window.showErrorMessage(
             `omnexx: ${err instanceof Error ? err.message : String(err)}`,
           );
         });
+      }),
+      view.onDidDispose(() => {
+        if (this.view === view) this.view = undefined;
       }),
     );
   }
@@ -357,13 +364,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   <div id="crew-body" class="crew-body"></div>
 </details>
 <details id="browser" class="section browser" open hidden>
-  <summary><span class="chev" aria-hidden="true"></span><span class="h">Browser Session</span><span class="sub-h">live agent viewport</span><span id="b-status" class="b-status"></span></summary>
+  <summary><span class="chev" aria-hidden="true"></span><span class="h">Browser Session</span><span class="sub-h">live viewport · console · network · visual diff</span><span id="b-status" class="b-status"></span></summary>
   <div class="bframe">
     <div class="bbar">
-      <div class="b-nav-btns">
-        <button id="b-btn-back" class="b-ctrl-btn" title="Back" aria-label="Back">‹</button>
-        <button id="b-btn-fwd" class="b-ctrl-btn" title="Forward" aria-label="Forward">›</button>
-        <button id="b-btn-reload" class="b-ctrl-btn" title="Reload" aria-label="Reload">↻</button>
+      <div class="b-tabs" role="tablist" aria-label="Browser cockpit">
+        <button class="b-tab active" data-btab="preview" role="tab" aria-selected="true">Preview</button>
+        <button class="b-tab" data-btab="console" role="tab" aria-selected="false">Console <span id="b-console-count" class="b-count" hidden></span></button>
+        <button class="b-tab" data-btab="network" role="tab" aria-selected="false">Network <span id="b-network-count" class="b-count" hidden></span></button>
+        <button class="b-tab" data-btab="visual" role="tab" aria-selected="false">Visual <span id="b-visual-count" class="b-count" hidden></span></button>
       </div>
       <div class="b-address-bar">
         <span class="b-lock-icon" aria-hidden="true">🔒</span>
@@ -371,9 +379,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       </div>
       <span id="b-action" class="baction"></span>
     </div>
-    <div class="b-canvas-wrapper">
-      <img id="b-img" alt="The agent's browser" title="Click to expand/collapse viewport">
-      <div id="b-dimmer" class="b-dimmer" hidden><span class="spinner"></span> Driving browser...</div>
+    <div class="b-panels">
+      <div class="b-panel" data-bpanel="preview">
+        <div class="b-canvas-wrapper">
+          <img id="b-img" alt="The agent's browser" title="Click to expand/collapse viewport">
+          <div id="b-dimmer" class="b-dimmer" hidden><span class="spinner"></span> Driving browser...</div>
+        </div>
+      </div>
+      <div class="b-panel" data-bpanel="console" hidden>
+        <ol id="b-console" class="b-list"></ol>
+      </div>
+      <div class="b-panel" data-bpanel="network" hidden>
+        <ol id="b-network" class="b-list"></ol>
+      </div>
+      <div class="b-panel" data-bpanel="visual" hidden>
+        <div id="b-visual-summary" class="b-visual"></div>
+        <img id="b-visual-img" class="b-visual-img" alt="Visual diff: red marks changed pixels" hidden>
+      </div>
     </div>
   </div>
 </details>
@@ -425,6 +447,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   }
 
   dispose(): void {
+    for (const s of this.viewSubs) s.dispose();
+    this.viewSubs = [];
+    this.view = undefined;
     for (const s of this.subscriptions) s.dispose();
   }
 }

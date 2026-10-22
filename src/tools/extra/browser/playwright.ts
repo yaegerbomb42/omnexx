@@ -22,6 +22,7 @@ interface PlaywrightLocator {
   setInputFiles(file: string, o: Timeout): Promise<void>;
   hover(o: Timeout): Promise<void>;
   innerText(o: Timeout): Promise<string>;
+  screenshot(options?: { type?: 'png' | 'jpeg' }): Promise<Buffer>;
   first(): PlaywrightLocator;
   waitFor(options: { state: 'visible'; timeout: number }): Promise<void>;
 }
@@ -34,6 +35,9 @@ interface PlaywrightResponse {
 
 interface PlaywrightPage {
   goto(url: string, options?: { timeout?: number }): Promise<unknown>;
+  goBack(options?: { timeout?: number }): Promise<unknown>;
+  goForward(options?: { timeout?: number }): Promise<unknown>;
+  reload(options?: { timeout?: number }): Promise<unknown>;
   locator(selector: string): PlaywrightLocator;
   getByText(text: string): PlaywrightLocator;
   getByLabel(text: string): PlaywrightLocator;
@@ -54,12 +58,24 @@ interface PlaywrightPage {
   close(): Promise<void>;
   waitForLoadState(state: 'networkidle', options: { timeout: number }): Promise<void>;
   evaluate<R>(fn: (() => R) | string): Promise<R>;
-  on(event: 'console', listener: (msg: { type(): string; text(): string }) => void): void;
+  on(
+    event: 'console',
+    listener: (msg: {
+      type(): string;
+      text(): string;
+      location?(): { url: string; lineNumber: number; columnNumber: number };
+    }) => void,
+  ): void;
   on(event: 'pageerror', listener: (err: Error) => void): void;
   on(event: 'response', listener: (res: PlaywrightResponse) => void): void;
   on(
     event: 'requestfailed',
-    listener: (req: { method(): string; url(): string; resourceType(): string }) => void,
+    listener: (req: {
+      method(): string;
+      url(): string;
+      resourceType(): string;
+      failure?(): { errorText: string } | null;
+    }) => void,
   ): void;
   on(event: 'close', listener: () => void): void;
 }
@@ -198,14 +214,20 @@ export class PlaywrightBackend implements BrowserBackend {
     if (this.pages.includes(page)) return;
     this.pages.push(page);
     page.on('console', (msg) => {
+      const location = msg.location?.();
       this.consoleLogs.push({
         type: msg.type(),
         text: msg.text(),
+        ...(location?.url
+          ? {
+              location: `${location.url}:${String(location.lineNumber)}:${String(location.columnNumber)}`,
+            }
+          : {}),
       });
     });
     // Uncaught exceptions never reach the console listener; report them as errors too.
     page.on('pageerror', (err) => {
-      this.consoleLogs.push({ type: 'error', text: err.message });
+      this.consoleLogs.push({ type: 'pageerror', text: err.message });
     });
     page.on('response', (res) => {
       this.record({
@@ -216,7 +238,13 @@ export class PlaywrightBackend implements BrowserBackend {
       });
     });
     page.on('requestfailed', (req) => {
-      this.record({ method: req.method(), url: req.url(), resourceType: req.resourceType() });
+      const failure = req.failure?.()?.errorText;
+      this.record({
+        method: req.method(),
+        url: req.url(),
+        resourceType: req.resourceType(),
+        ...(failure ? { failure } : {}),
+      });
     });
     page.on('close', () => {
       const i = this.pages.indexOf(page);
@@ -256,6 +284,18 @@ export class PlaywrightBackend implements BrowserBackend {
   async open(url: string): Promise<void> {
     const page = await this.ensurePage();
     await page.goto(url, { timeout: NAV_TIMEOUT_MS });
+  }
+
+  async reload(): Promise<void> {
+    await (await this.ensurePage()).reload({ timeout: NAV_TIMEOUT_MS });
+  }
+
+  async goBack(): Promise<void> {
+    await (await this.ensurePage()).goBack({ timeout: NAV_TIMEOUT_MS });
+  }
+
+  async goForward(): Promise<void> {
+    await (await this.ensurePage()).goForward({ timeout: NAV_TIMEOUT_MS });
   }
 
   async snapshot(): Promise<string> {
@@ -428,9 +468,24 @@ export class PlaywrightBackend implements BrowserBackend {
     };
   }
 
+  async screenshotElement(ref: string): Promise<ScreenshotResult> {
+    const buffer = await (await this.loc(ref)).screenshot({ type: 'png' });
+    return { base64: buffer.toString('base64'), mimeType: 'image/png' };
+  }
+
   async console(): Promise<BrowserConsoleMessage[]> {
     await this.ensurePage();
     return [...this.consoleLogs];
+  }
+
+  clearConsole(): Promise<void> {
+    this.consoleLogs.length = 0;
+    return Promise.resolve();
+  }
+
+  clearNetwork(): Promise<void> {
+    this.requests.length = 0;
+    return Promise.resolve();
   }
 
   async close(): Promise<void> {

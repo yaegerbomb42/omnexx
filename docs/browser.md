@@ -20,10 +20,14 @@ The `browser` tool enables Omnexx to navigate, inspect, interact with, and verif
   - `wait_for(ref | text, timeout_ms?)`: Waits (default 10s) for an element or text to appear. `open`, `click` and `new_tab` also wait for the page to finish loading (best-effort, 5s).
   - `get_text(ref)`, `get_url()`: read an element's text or the current URL.
   - `eval(expression)`: Evaluates a JS expression in the page and returns its JSON. Off unless `[browser] allow_eval = true`: page scripts can change app state, submit forms, or read cookies and storage, so treat it as a write.
-  - `network()`: Recent requests with status (failed ones show `FAILED`), to debug API calls.
   - `tabs()`, `switch_tab(tab)`, `new_tab(url)`, `close_tab(tab?)`: tabs, including ones opened by links (`target=_blank`), which become active.
+  - `network(failed_only?, limit?, clear?)`: Recent requests with status (failed ones show `FAILED`), to debug API calls. `clear` empties the buffer so later calls only show new traffic.
+  - `console(level?, limit?, clear?)`: Captured console logs and errors (last 50 by default); `level` narrows to `warning`/`error`, and `clear` empties the buffer.
+  - `diagnostics(limit?)`: The prioritized frontend report: uncaught exceptions first, then console errors/warnings, then 4xx/5xx and network-level request failures, with duplicates collapsed. New problems are also appended to the output of every page-changing action (see `report_errors`).
+  - `start_server(command?, port?)`, `stop_server()`, `server_status()`: Start the project's dev server (defaults to `serve`/`serve_port`), health-check it, keep its recent output, and stop its whole process group. A configured `serve` starts automatically when a local URL is opened.
+  - `visual_check(name, ref?, width?, height?, threshold?, update?)`: Captures the viewport (or one element) and compares it with a stored baseline under the run's `logs/browser/`. A size change always fails; otherwise the changed-pixel ratio must stay under the threshold (default `visual_diff_threshold`, 0.1%). The first call stores the baseline, `update: true` accepts an intended change, and failures write `current` and `diff` PNGs for inspection.
+  - `check_page(url?, width?)`: Screenshot, console, failed requests and layout problems for one page load.
   - `screenshot()`: Saves a PNG under the run's `logs/browser/` (never the repo) and returns its path, size and URL.
-  - `console()`: Returns captured console logs and errors (last 50 entries).
   - `close()`: Closes the browser session.
 
 Element actions given a stale snapshot ref retry once after a fresh snapshot; if the ref is still missing the error includes the current snapshot. Outputs are capped (snapshots 4,000 tokens, console/network 50 entries, text 4,000 chars). If the browser itself dies, the session is closed so no process is left behind. When a backend lacks an action the tool says so.
@@ -41,6 +45,8 @@ serve_port = 3000               # dev-server port to wait for
 serve_timeout = "60s"           # timeout to wait for dev-server port
 headless = true                 # headless browser execution
 allow_eval = false              # let the eval action run page JavaScript
+report_errors = true            # append new frontend errors after the action that caused them
+visual_diff_threshold = 0.1     # percent of pixels a visual_check may differ before failing
 ```
 
 ## Security & URL Allowlist
@@ -86,4 +92,9 @@ The browser tool and gates emit the following events:
 - `browser.open`: `{ url: string, backend: string }`
 - `browser.action`: `{ action: string, ... }`
 - `browser.denied`: `{ url: string, allow: string[], reason: string }`
+- `browser.diagnostics`: `{ action, url, errors, warnings, failedRequests, console[], requests[], summary }`
+- `browser.visual`: `{ action: "baseline" | "compare", name, pass, changedPixels, totalPixels, changedRatio, bounds, baseline, current, diff? }`
+- `browser.frame`: `{ path, mime, url, action }` when `live_view` is on
 - `browser.close`: `{ runId: string }`
+
+The VS Code extension renders these as a browser cockpit tab (Preview, Console, Network, Visual) beside the chat.

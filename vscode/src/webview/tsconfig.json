@@ -13,7 +13,8 @@
     "roles.ts",
     "contextPage.ts",
     "mcp.ts",
-    "agentCard.ts"
+    "agentCard.ts",
+    "browserCockpit.ts"
   ],
   "exclude": []
 }

@@ -8,7 +8,7 @@ import {
   detectBrowserBackend,
   createBrowserBackend,
 } from '../../src/tools/extra/browser/detector.js';
-import { createBrowserTool } from '../../src/tools/extra/browser.js';
+import { createBrowserTool, closeSession } from '../../src/tools/extra/browser.js';
 import { tempDir } from '../support/tmp.js';
 import { toolContext } from '../support/tool-context.js';
 import type { GateRunContext } from '../../src/verify/gates.js';
@@ -112,6 +112,92 @@ describe('browser integration', () => {
     }
   });
 
+  it('reports frontend problems and catches a visual change on a real page', async () => {
+    const backend = await detectBrowserBackend();
+    if (!backend.backend) {
+      console.log('Skipping cockpit integration test: no browser backend available');
+      return;
+    }
+
+    const title = 'Cockpit';
+    const server = http.createServer((_req, res) => {
+      if (_req.url === '/missing') {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('nope');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(`<!doctype html><html><body style="margin:0;background:#fff;color:#111;font-family:sans-serif">
+        <h1 id="title">${title}</h1>
+        <button id="go" onclick="console.error('request failed'); fetch('/missing'); document.getElementById('title').textContent = 'Clicked'">Go</button>
+      </body></html>`);
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(8997, '127.0.0.1', () => {
+        resolve();
+      });
+    });
+
+    const root = await tempDir('browser-cockpit-it-');
+    const ctx = await toolContext(root);
+    const tool = createBrowserTool(
+      {
+        enabled: true,
+        allow: ['localhost', '127.0.0.1', '*.local'],
+        headless: true,
+        serve_timeout: '60s',
+        allow_eval: false,
+        live_view: false,
+        report_errors: true,
+        visual_diff_threshold: 0.1,
+        engine: 'chromium' as const,
+      },
+      {
+        // Integration files run in parallel; a private agent-browser session keeps them apart.
+        createBackend: (session, headless, launch) =>
+          createBrowserBackend(`${session}-cockpit-it`, headless, launch),
+      },
+    );
+    const run = (input: Parameters<typeof tool.run>[0]) => tool.run(input, ctx);
+
+    try {
+      await run({ action: 'open', url: 'http://127.0.0.1:8997/' });
+      expect((await run({ action: 'visual_check', name: 'cockpit' })).content).toContain(
+        'First visual_check',
+      );
+      const same = await run({ action: 'visual_check', name: 'cockpit' });
+      expect(same.isError).toBeFalsy();
+      expect(same.content).toContain('No meaningful visual change');
+
+      const clicked = await run({ action: 'click', ref: '#go' });
+      expect(clicked.isError).toBeFalsy();
+      expect(clicked.content).toContain('Frontend diagnostics after this action');
+
+      await run({ action: 'wait_for', text: 'Clicked' });
+      const diag = await run({ action: 'diagnostics' });
+      expect(diag.content).toContain('[error] request failed');
+      expect(diag.content).toContain('404 GET http://127.0.0.1:8997/missing');
+
+      const changed = await run({ action: 'visual_check', name: 'cockpit' });
+      expect(changed.isError).toBe(true);
+      expect(changed.content).toContain('The UI moved or changed');
+
+      expect(
+        (await run({ action: 'visual_check', name: 'cockpit', update: true })).isError,
+      ).toBeFalsy();
+      const accepted = await run({ action: 'visual_check', name: 'cockpit' });
+      expect(accepted.isError).toBeFalsy();
+      expect(accepted.content).toContain('No meaningful visual change');
+    } finally {
+      await closeSession(ctx.store.runId);
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
+      });
+    }
+  }, 120_000);
+
   it('refuses disallowed URLs with a clear message and emits browser.denied', async () => {
     const root = await tempDir('browser-tool-root-');
     const ctx = await toolContext(root);
@@ -122,6 +208,8 @@ describe('browser integration', () => {
       serve_timeout: '60s',
       allow_eval: false,
       live_view: false,
+      report_errors: false,
+      visual_diff_threshold: 0.1,
       engine: 'chromium' as const,
     });
 

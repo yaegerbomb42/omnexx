@@ -1,9 +1,19 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import type { OmnexxConfig } from '../../config/schema.js';
+import { checkCommand } from '../../security/command-policy.js';
 import { checkBrowserToolPolicy } from '../../security/policy-extra.js';
+import {
+  collectBrowserDiagnostics,
+  diagnosticsNote,
+  formatBrowserDiagnostics,
+  hasDiagnostics,
+  isFailedRequest,
+  type BrowserDiagnostics,
+} from '../../browser/diagnostics.js';
+import { diffPng, formatDiff, summarizeDiff } from '../../browser/visual-diff.js';
 import type { ToolSource } from '../extra/types.js';
 import { fail, ok, resolvePath, type Tool, type ToolContext, type ToolOutput } from '../types.js';
 import { detectBrowserBackend } from './browser/detector.js';
@@ -11,7 +21,7 @@ import { BrowserSessionManager, type BrowserManagerOptions } from './browser/man
 import { isUrlAllowed } from './browser/security.js';
 import { trimSnapshot } from './browser/snapshot.js';
 import { asLayoutReport, formatPageCheck, LAYOUT_PROBE } from './browser/page-check.js';
-import type { BrowserBackend } from './browser/types.js';
+import type { BrowserBackend, BrowserRequest } from './browser/types.js';
 
 const ACTIONS = [
   'open',
@@ -31,18 +41,28 @@ const ACTIONS = [
   'get_url',
   'eval',
   'network',
+  'console',
+  'diagnostics',
   'tabs',
   'switch_tab',
   'new_tab',
   'close_tab',
+  'back',
+  'forward',
+  'reload',
+  'start_server',
+  'stop_server',
+  'server_status',
   'screenshot',
-  'console',
+  'visual_check',
   'check_page',
   'close',
 ] as const;
 
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 3840;
+const MIN_HEIGHT = 200;
+const MAX_HEIGHT = 2160;
 /** Viewport height used when `check` sets a width. */
 const CHECK_HEIGHT = 900;
 const TIMEOUT = /timeout \d+ ?ms exceeded|timed out after/i;
@@ -88,7 +108,55 @@ const browserActionSchema = z.strictObject({
     .min(MIN_WIDTH)
     .max(MAX_WIDTH)
     .optional()
-    .describe('check_page: viewport width in px, e.g. 375 for a phone'),
+    .describe('check_page/visual_check: viewport width in px, e.g. 375 for a phone'),
+  height: z
+    .number()
+    .int()
+    .min(MIN_HEIGHT)
+    .max(MAX_HEIGHT)
+    .optional()
+    .describe('visual_check: viewport height in px (default 900)'),
+  command: z
+    .string()
+    .optional()
+    .describe('start_server: dev-server command, e.g. "npm run dev" (defaults to browser.serve)'),
+  port: z
+    .number()
+    .int()
+    .min(1)
+    .max(65535)
+    .optional()
+    .describe('start_server: port the server listens on (defaults to browser.serve_port)'),
+  level: z
+    .enum(['all', 'warning', 'error'])
+    .optional()
+    .describe('console: show all messages (default), warnings and above, or errors only'),
+  failed_only: z.boolean().optional().describe('network: only 4xx/5xx and network failures'),
+  clear: z.boolean().optional().describe('console/network: clear the buffer before returning'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('console/network/diagnostics: maximum entries to show (default 50)'),
+  name: z
+    .string()
+    .regex(/^[A-Za-z0-9][\w.-]{0,63}$/)
+    .optional()
+    .describe('visual_check: baseline name, e.g. "checkout-button" or "home-375"'),
+  update: z
+    .boolean()
+    .optional()
+    .describe('visual_check: replace the stored baseline with the current screenshot'),
+  threshold: z
+    .number()
+    .min(0)
+    .max(100)
+    .optional()
+    .describe(
+      'visual_check: percent of pixels allowed to differ (default browser.visual_diff_threshold)',
+    ),
 });
 
 export type BrowserActionInput = z.infer<typeof browserActionSchema>;
@@ -116,16 +184,11 @@ export function getOrCreateSession(
   runId: string,
   config: OmnexxConfig['browser'],
   worktreeRoot: string,
-  createBackend?: BrowserManagerOptions['createBackend'],
+  options: Pick<BrowserManagerOptions, 'createBackend' | 'createDevServer'> = {},
 ): BrowserSessionManager {
   let session = activeSessions.get(runId);
   if (!session) {
-    session = new BrowserSessionManager({
-      runId,
-      config,
-      worktreeRoot,
-      ...(createBackend ? { createBackend } : {}),
-    });
+    session = new BrowserSessionManager({ runId, config, worktreeRoot, ...options });
     activeSessions.set(runId, session);
   }
   return session;
@@ -198,10 +261,19 @@ async function settle(backend: BrowserBackend): Promise<void> {
 }
 
 /** Width and height from a PNG's IHDR chunk. */
-function pngSize(buf: Buffer): string {
-  if (buf.length < 24 || buf.toString('ascii', 1, 4) !== 'PNG') return 'unknown size';
-  return `${buf.readUInt32BE(16)}x${buf.readUInt32BE(20)}`;
+function pngDims(buf: Buffer): { width: number; height: number } {
+  if (buf.length < 24 || buf.toString('ascii', 1, 4) !== 'PNG') return { width: 0, height: 0 };
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
+
+/** Width and height from a PNG's IHDR chunk. */
+function pngSize(buf: Buffer): string {
+  const { width, height } = pngDims(buf);
+  return width ? `${String(width)}x${String(height)}` : 'unknown size';
+}
+
+const pngWidth = (buf: Buffer): number => pngDims(buf).width;
+const pngHeight = (buf: Buffer): number => pngDims(buf).height;
 
 /** Saves a screenshot under the run's logs, never the repo, so it can't end up in a commit. */
 async function saveScreenshot(
@@ -221,6 +293,80 @@ async function saveScreenshot(
   };
 }
 
+/** A screenshot of the page, or of one element when `ref` is given. */
+async function captureVisual(backend: BrowserBackend, ref: string | undefined): Promise<Buffer> {
+  if (!ref) return Buffer.from((await backend.screenshot()).base64, 'base64');
+  if (!backend.screenshotElement) {
+    throw new Error(
+      `the ${backend.name} browser backend cannot screenshot an element; call visual_check without "ref" to compare the whole viewport`,
+    );
+  }
+  return Buffer.from((await backend.screenshotElement(ref)).base64, 'base64');
+}
+
+/** Baselines and diff images stay under the run's logs, keyed by a model-chosen name. */
+function visualPaths(
+  ctx: ToolContext,
+  name: string,
+): {
+  baseline: string;
+  current: string;
+  diff: string;
+} {
+  const root = join(ctx.store.logsDir, 'browser');
+  return {
+    baseline: join(root, 'baselines', `${name}.png`),
+    current: join(root, 'visual', `${name}-current.png`),
+    diff: join(root, 'visual', `${name}-diff.png`),
+  };
+}
+
+async function writeUnderLogs(file: string, buf: Buffer): Promise<void> {
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+  await writeFile(file, buf, { mode: 0o600 });
+}
+
+/** Parse a stored baseline; a missing one is not an error worth throwing. */
+async function readBaseline(file: string): Promise<Buffer | undefined> {
+  try {
+    return await readFile(file);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw err;
+  }
+}
+
+const visualEvent = (
+  name: string,
+  summary: ReturnType<typeof summarizeDiff>,
+  files: { baseline: string; current: string; diff?: string },
+): Record<string, unknown> => ({
+  action: 'compare',
+  name,
+  ...summary,
+  baseline: files.baseline,
+  current: files.current,
+  ...(files.diff ? { diff: files.diff } : {}),
+});
+
+function emitDiagnostics(
+  ctx: ToolContext,
+  d: BrowserDiagnostics,
+  url: string,
+  action = 'diagnostics',
+): void {
+  ctx.events.emit('browser.diagnostics', {
+    action,
+    url,
+    errors: d.errors,
+    warnings: d.warnings,
+    failedRequests: d.failedRequests,
+    console: d.console,
+    requests: d.requests,
+    summary: d.summary,
+  });
+}
+
 const unsupported = (backend: BrowserBackend, action: string): ToolOutput =>
   fail(
     `action "${action}" is not supported by the ${backend.name} browser backend; use snapshot and the core actions (open, click, type, press) instead`,
@@ -229,6 +375,8 @@ const unsupported = (backend: BrowserBackend, action: string): ToolOutput =>
 export interface BrowserToolOptions {
   /** Tests inject a fake backend; default: detect one. */
   createBackend?: BrowserManagerOptions['createBackend'];
+  /** Tests inject a fake dev server; default: spawn the command. */
+  createDevServer?: BrowserManagerOptions['createDevServer'];
 }
 
 /** Actions after which the page may look different, so the live view takes a new frame. */
@@ -248,6 +396,30 @@ const PAGE_CHANGING = new Set([
   'close_tab',
   'upload',
   'hover',
+  'back',
+  'forward',
+  'reload',
+]);
+
+/** Actions whose output carries a diagnostics summary when new problems appeared. */
+const DIAGNOSTIC_ACTIONS = new Set([
+  'open',
+  'click',
+  'type',
+  'fill',
+  'press',
+  'scroll',
+  'hover',
+  'select',
+  'check',
+  'uncheck',
+  'upload',
+  'wait_for',
+  'switch_tab',
+  'new_tab',
+  'back',
+  'forward',
+  'reload',
 ]);
 
 /**
@@ -322,11 +494,32 @@ export function createBrowserTool(
         if (typeof url !== 'string') return url;
         await session.ensureDevServerForUrl(url);
         const backend = await session.getBackend();
+        await session.resetDiagnostics();
         await backend.open(url);
         await settle(backend);
         ctx.events.emit('browser.open', { url, backend: backend.name });
         const snap = await backend.snapshot();
         return ok(`Opened ${url}\n\nSnapshot:\n${trimSnapshot(snap)}`);
+      }
+
+      case 'reload':
+      case 'back':
+      case 'forward': {
+        const backend = await session.getBackend();
+        const nav =
+          input.action === 'reload'
+            ? backend.reload?.bind(backend)
+            : input.action === 'back'
+              ? backend.goBack?.bind(backend)
+              : backend.goForward?.bind(backend);
+        if (!nav) return unsupported(backend, input.action);
+        await nav();
+        await settle(backend);
+        const url = backend.getUrl ? await backend.getUrl().catch(() => '') : '';
+        emit({ url });
+        return ok(
+          `${input.action === 'reload' ? 'Reloaded' : input.action === 'back' ? 'Went back' : 'Went forward'}${url ? ` to ${url}` : ''}\n\nSnapshot:\n${trimSnapshot(await backend.snapshot())}`,
+        );
       }
 
       case 'snapshot': {
@@ -473,15 +666,93 @@ export function createBrowserTool(
       case 'network': {
         const backend = await session.getBackend();
         if (!backend.network) return unsupported(backend, 'network');
-        const reqs = await backend.network();
+        if (input.clear) {
+          if (!backend.clearNetwork) return unsupported(backend, 'network with clear');
+          await backend.clearNetwork();
+          session.forgetNetwork();
+          emit({ cleared: true });
+          return ok('Network log cleared.');
+        }
+        const all = await backend.network();
+        const reqs = input.failed_only ? all.filter(isFailedRequest) : all;
         emit({ count: reqs.length });
-        if (reqs.length === 0) return ok('No network requests recorded.');
-        const failed = reqs.filter((r) => r.status === undefined || r.status >= 400).length;
-        const lines = reqs.map(
+        if (reqs.length === 0) {
+          return ok(
+            input.failed_only ? 'No failed requests recorded.' : 'No network requests recorded.',
+          );
+        }
+        const failed = all.filter(isFailedRequest).length;
+        const shown = reqs.slice(-(input.limit ?? MAX_LIST_ITEMS));
+        const dropped = reqs.length - shown.length;
+        const lines = shown.map(
           (r) =>
-            `${r.status ?? 'FAILED'} ${r.method} ${r.url}${r.resourceType ? ` (${r.resourceType})` : ''}`,
+            `${r.status ?? (r.failure ? `FAILED (${r.failure})` : 'FAILED')} ${r.method} ${r.url}${r.resourceType ? ` (${r.resourceType})` : ''}`,
         );
-        return ok(`Requests (${reqs.length}, ${failed} failed):\n${capList(lines)}`);
+        const header = input.failed_only
+          ? `Failed requests (${reqs.length}):`
+          : `Requests (${reqs.length}, ${failed} failed):`;
+        return ok(
+          `${header}\n${[...(dropped > 0 ? [`… ${dropped} earlier entries omitted`] : []), ...lines].join('\n')}`,
+        );
+      }
+
+      case 'diagnostics': {
+        const backend = await session.getBackend();
+        const [logs, reqs] = await Promise.all([
+          backend.console(),
+          backend.network ? backend.network() : Promise.resolve([] as BrowserRequest[]),
+        ]);
+        const d = collectBrowserDiagnostics(
+          { console: logs, requests: reqs },
+          { limit: input.limit ?? 20 },
+        );
+        const url = backend.getUrl ? await backend.getUrl().catch(() => '') : '';
+        emitDiagnostics(ctx, d, url);
+        return ok(
+          hasDiagnostics(d)
+            ? `${formatBrowserDiagnostics(d, { heading: `Browser diagnostics for ${url || 'the current page'}` })}\n\nFix these before calling the UI done; then re-check with check_page or visual_check.`
+            : `Browser diagnostics for ${url || 'the current page'}: no console errors and no failed requests.`,
+        );
+      }
+
+      case 'console': {
+        const backend = await session.getBackend();
+        if (input.clear) {
+          if (!backend.clearConsole) return unsupported(backend, 'console with clear');
+          await backend.clearConsole();
+          session.forgetConsole();
+          emit({ cleared: true });
+          return ok('Console messages cleared.');
+        }
+        const logs = await backend.console();
+        const level = input.level ?? 'all';
+        const filtered =
+          level === 'all'
+            ? logs
+            : logs.filter(
+                (l) =>
+                  l.type === 'error' ||
+                  l.type === 'pageerror' ||
+                  l.type === 'assert' ||
+                  (level === 'warning' && l.type === 'warning'),
+              );
+        emit({ count: filtered.length });
+        if (filtered.length === 0) {
+          return ok(
+            level === 'all'
+              ? 'No console messages recorded.'
+              : `No console ${level === 'error' ? 'errors' : 'warnings or errors'} recorded.`,
+          );
+        }
+        const cap = input.limit ?? MAX_LIST_ITEMS;
+        const shown = filtered.slice(-cap);
+        const dropped = filtered.length - shown.length;
+        const lines = shown.map(
+          (l) => `[${l.type}] ${l.text}${l.location ? ` (${l.location})` : ''}`,
+        );
+        return ok(
+          `Console messages (${filtered.length})${level === 'all' ? '' : ` matching ${level}`}:\n${[...(dropped > 0 ? [`… ${dropped} earlier entries omitted`] : []), ...lines].join('\n')}`,
+        );
       }
 
       case 'tabs': {
@@ -515,6 +786,7 @@ export function createBrowserTool(
         await session.ensureDevServerForUrl(url);
         const backend = await session.getBackend();
         if (!backend.newTab) return unsupported(backend, 'new_tab');
+        await session.resetDiagnostics();
         await backend.newTab(url);
         await settle(backend);
         emit({ url });
@@ -550,12 +822,166 @@ export function createBrowserTool(
 
       case 'screenshot': {
         const backend = await session.getBackend();
+        if (input.ref) {
+          if (!backend.screenshotElement) return unsupported(backend, 'screenshot with ref');
+          const shot = await backend.screenshotElement(input.ref);
+          const buf = Buffer.from(shot.base64, 'base64');
+          const dir = join(ctx.store.logsDir, 'browser');
+          await mkdir(dir, { recursive: true, mode: 0o700 });
+          const file = join(dir, `element-${ctx.cycle}-${Date.now()}.png`);
+          await writeFile(file, buf, { mode: 0o600 });
+          emit({ path: file, ref: input.ref });
+          return ok(
+            `Screenshot of ${input.ref} saved to ${file} (${pngSize(buf)}, ${Math.round(buf.length / 1024)} KB). It is outside the repo.`,
+          );
+        }
         const { file, info } = await saveScreenshot(ctx, backend);
         const url = backend.getUrl ? await backend.getUrl().catch(() => '') : '';
         emit({ path: file });
         return ok(
           `Screenshot saved to ${file} (${info}${url ? `, of ${url}` : ''}). It is outside the repo; use snapshot or get_text to read what the page says.`,
         );
+      }
+
+      case 'start_server': {
+        const command = input.command ?? config.serve;
+        if (!command) {
+          return fail(
+            'start_server needs "command" (or set browser.serve in omnexx.toml), e.g. "npm run dev"',
+          );
+        }
+        const verdict = checkCommand(command, ctx.policy);
+        const allowed =
+          verdict.allowed ||
+          (ctx.ask !== undefined &&
+            (await ctx.ask(
+              `start dev server \`${command}\`? Normally refused: ${verdict.reason}`,
+            )));
+        if (!verdict.allowed && !allowed) {
+          return fail(`refused by policy (${verdict.rule}): ${verdict.reason}`);
+        }
+        const port = input.port ?? config.serve_port;
+        if (port !== undefined && (port < 1 || port > 65_535)) {
+          return fail(`invalid port ${String(port)}`);
+        }
+        try {
+          const status = await session.startDevServer(command, port);
+          emit({ command, port, running: status.running });
+          const output = status.output.trim();
+          return ok(
+            `Dev server running: \`${command}\`${port !== undefined ? ` on http://localhost:${String(port)}` : ''}.${output ? `\n\nOutput:\n${clip(output, 2_000)}` : ''}`,
+          );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          emit({ command, port, running: false });
+          return fail(`dev server failed to start: ${msg}`);
+        }
+      }
+
+      case 'stop_server': {
+        await session.stopDevServer();
+        emit({ running: false });
+        return ok('Dev server stopped.');
+      }
+
+      case 'server_status': {
+        const status = session.devServerStatus();
+        if (!status) return ok('No dev server started by this session.');
+        emit({ running: status.running, port: status.port });
+        const output = status.output.trim();
+        return ok(
+          `Dev server ${status.running ? 'running' : 'stopped'}: \`${status.command}\`${status.port !== undefined ? ` on port ${String(status.port)}` : ''}${status.exitCode !== undefined ? ` (exit ${String(status.exitCode)})` : ''}.${output ? `\n\nRecent output:\n${clip(output, 2_000)}` : ''}`,
+        );
+      }
+
+      case 'visual_check': {
+        const name = input.name;
+        if (!name) {
+          return fail(
+            'visual_check needs "name" (a stable label such as "home" or "checkout-button")',
+          );
+        }
+        const backend = await session.getBackend();
+        if (input.width !== undefined && input.height !== undefined && !backend.setViewport) {
+          return unsupported(backend, 'visual_check with width and height');
+        }
+        if (input.width !== undefined) {
+          await backend.setViewport?.(input.width, input.height ?? CHECK_HEIGHT);
+        }
+        const current = await captureVisual(backend, input.ref);
+        const paths = visualPaths(ctx, name);
+        const thresholdPct = Math.min(
+          100,
+          Math.max(0, input.threshold ?? config.visual_diff_threshold),
+        );
+        const threshold = thresholdPct / 100;
+
+        if (input.update === true) {
+          await writeUnderLogs(paths.baseline, current);
+          ctx.events.emit('browser.visual', {
+            action: 'baseline',
+            name,
+            pass: true,
+            changedPixels: 0,
+            totalPixels: 0,
+            changedRatio: 0,
+            width: pngWidth(current),
+            height: pngHeight(current),
+            baseline: paths.baseline,
+            current: paths.baseline,
+          });
+          emit({ name, update: true });
+          return ok(
+            `Baseline "${name}" saved (${pngSize(current)}) to ${paths.baseline}. Later visual_check calls compare against it.`,
+          );
+        }
+
+        const baseline = await readBaseline(paths.baseline);
+        if (!baseline) {
+          await writeUnderLogs(paths.baseline, current);
+          ctx.events.emit('browser.visual', {
+            action: 'baseline',
+            name,
+            pass: true,
+            changedPixels: 0,
+            totalPixels: 0,
+            changedRatio: 0,
+            width: pngWidth(current),
+            height: pngHeight(current),
+            baseline: paths.baseline,
+            current: paths.baseline,
+          });
+          emit({ name, baseline: true });
+          return ok(
+            `First visual_check for "${name}": baseline saved (${pngSize(current)}) to ${paths.baseline}. Change the UI, then call visual_check with the same name to verify it.`,
+          );
+        }
+
+        const diff = diffPng(baseline, current, {
+          changeThreshold: threshold,
+          includeDiff: true,
+        });
+        await writeUnderLogs(paths.current, current);
+        if (diff.changedPixels > 0 && diff.diffPng) {
+          await writeUnderLogs(paths.diff, diff.diffPng);
+        }
+        const summary = summarizeDiff(diff);
+        ctx.events.emit(
+          'browser.visual',
+          visualEvent(name, summary, {
+            baseline: paths.baseline,
+            current: paths.current,
+            ...(diff.changedPixels > 0 && diff.diffPng ? { diff: paths.diff } : {}),
+          }),
+        );
+        emit({ name, pass: diff.pass, changedRatio: diff.changedRatio });
+        const verdict = formatDiff(`visual_check "${name}"`, diff, threshold);
+        const files = `Baseline: ${paths.baseline}\nCurrent: ${paths.current}${diff.changedPixels > 0 && diff.diffPng ? `\nDiff (red = changed): ${paths.diff}` : ''}`;
+        return diff.pass
+          ? ok(`${verdict}. No meaningful visual change.\n${files}`)
+          : fail(
+              `${verdict}. The UI moved or changed. Inspect the diff image, fix the layout, or pass update: true if the change is intended.\n${files}`,
+            );
       }
 
       case 'check_page': {
@@ -597,18 +1023,6 @@ export function createBrowserTool(
         );
       }
 
-      case 'console': {
-        const backend = await session.getBackend();
-        const logs = await backend.console();
-        emit({ count: logs.length });
-        if (logs.length === 0) {
-          return ok('No console messages recorded.');
-        }
-        return ok(
-          `Console messages (${logs.length}):\n${capList(logs.map((l) => `[${l.type}] ${l.text}`))}`,
-        );
-      }
-
       case 'close': {
         ctx.events.emit('browser.close', { runId: ctx.store.runId });
         await closeSession(ctx.store.runId);
@@ -620,18 +1034,25 @@ export function createBrowserTool(
   return {
     name: 'browser',
     description:
-      'Headless browser to inspect, drive and verify web apps. Use refs from the latest snapshot or text=/role= targets; wait_for after actions that load content. check_page opens a URL or repo HTML file and reports screenshot, console errors, failed requests and layout problems (overflow, overlap, broken images): use it to verify UI changes. Only URLs in browser.allow.',
+      'Headless browser to inspect, drive and verify web apps. Use refs from the latest snapshot or text=/role= targets; wait_for after actions that load content. start_server/stop_server run a dev server; open a localhost URL. console (level, clear), network (failed_only) and diagnostics report frontend errors and 4xx/5xx failures, which are also appended after page-changing actions. visual_check(name) captures a screenshot (or element with ref) and compares it to the stored baseline; use it before and after UI changes at phone width (width: 375) to catch layout regressions. check_page reports screenshot, console, failed requests and layout problems. Only URLs in browser.allow.',
     schema: browserActionSchema,
     readOnly: false,
     async run(input: BrowserActionInput, ctx: ToolContext): Promise<ToolOutput> {
-      const session = getOrCreateSession(
-        ctx.store.runId,
-        config,
-        ctx.jail.root,
-        opts.createBackend,
-      );
+      const session = getOrCreateSession(ctx.store.runId, config, ctx.jail.root, {
+        ...(opts.createBackend ? { createBackend: opts.createBackend } : {}),
+        ...(opts.createDevServer ? { createDevServer: opts.createDevServer } : {}),
+      });
       try {
         const out = await run(input, ctx, session);
+        if (!out.isError && config.report_errors && DIAGNOSTIC_ACTIONS.has(input.action)) {
+          const d = await session.newDiagnostics().catch(() => null);
+          if (d) {
+            const backend = await session.getBackend().catch(() => null);
+            const url = backend?.getUrl ? await backend.getUrl().catch(() => '') : '';
+            emitDiagnostics(ctx, d, url, input.action);
+            out.content = `${out.content}\n\n${diagnosticsNote(d)}`;
+          }
+        }
         if (config.live_view && PAGE_CHANGING.has(input.action) && !out.isError)
           await liveFrame(ctx, session, input.action);
         return out;

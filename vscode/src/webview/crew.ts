@@ -1,7 +1,6 @@
 /**
- * Two live views next to the conversation: the crew (helpers the agent started, each a small
- * card wired to the head agent) and the agent's browser (the latest screenshot after a
- * page-changing action).
+ * The crew view next to the conversation: helpers the agent started, each a small card wired to
+ * the head agent. The browser cockpit lives in `browserCockpit.ts`.
  */
 import { badge } from './modelPicker.js';
 import { escapeHtml, formatUsd } from './render.js';
@@ -16,14 +15,6 @@ export interface Helper {
   usd: number;
   startedAt: number;
   finishedAt?: number;
-}
-
-export interface BrowserFrameMsg {
-  seq: number;
-  mime: string;
-  url: string;
-  action: string;
-  data: string;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -72,46 +63,6 @@ export function drawCrew(helpers: readonly Helper[], logoSrc: string): void {
     `<div class="head-agent"><img src="${logoSrc}" alt=""><span>omnexx</span></div><ul class="helpers">${helpers.map(cardHtml).join('')}</ul>`;
 }
 
-let lastSeq = 0;
-
-export function drawBrowser(f: BrowserFrameMsg): void {
-  if (f.seq <= lastSeq) return;
-  lastSeq = f.seq;
-  const section = el('browser');
-  section.hidden = false;
-  el('b-url').textContent = f.url || 'about:blank';
-  el('b-action').textContent = f.action;
-  const statusEl = document.getElementById('b-status');
-  if (statusEl) {
-    statusEl.textContent = `frame #${String(f.seq)}`;
-  }
-  const img = el('b-img');
-  if (img instanceof HTMLImageElement) img.src = `data:${f.mime};base64,${f.data}`;
-  const dimmer = document.getElementById('b-dimmer');
-  if (dimmer) {
-    dimmer.hidden = true;
-  }
-}
-
 export function resetViews(): void {
-  lastSeq = 0;
   el('crew').hidden = true;
-  el('browser').hidden = true;
-}
-
-export function wire(onAction?: (action: string) => void): void {
-  // Click the screenshot to toggle full-width canvas
-  el('b-img').addEventListener('click', () => {
-    el('browser').classList.toggle('big');
-  });
-
-  document.getElementById('b-btn-back')?.addEventListener('click', () => {
-    onAction?.('back');
-  });
-  document.getElementById('b-btn-fwd')?.addEventListener('click', () => {
-    onAction?.('forward');
-  });
-  document.getElementById('b-btn-reload')?.addEventListener('click', () => {
-    onAction?.('reload');
-  });
 }

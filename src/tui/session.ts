@@ -27,7 +27,14 @@ import {
 } from '../cli/connect.js';
 import { maskKey } from '../auth/keys.js';
 import { Chat, defaultChatRef, hasProvider } from './chat.js';
-import { CodeChat, type BrowserFrame, type ChatLine, type HelperEvent } from './code-chat.js';
+import {
+  CodeChat,
+  type BrowserDiagnosticsView,
+  type BrowserFrame,
+  type BrowserVisualView,
+  type ChatLine,
+  type HelperEvent,
+} from './code-chat.js';
 import { todoItemsOf, type TodoItem } from '../tools/todo.js';
 import { classifyMarkdown, type MdKind } from './markdown.js';
 import { parseDiff, type DiffViewState } from './diff.js';
@@ -235,6 +242,10 @@ export class Session {
   todos: TodoItem[] = [];
   /** The agent's browser after its latest page-changing action; `seq` grows with each frame. */
   browserFrame: (BrowserFrame & { seq: number; at: number }) | undefined;
+  /** Latest frontend errors/failed requests from the browser tool. */
+  browserDiagnostics: (BrowserDiagnosticsView & { seq: number; at: number }) | undefined;
+  /** Latest visual comparison, with `seq` so the panel only reloads a new diff. */
+  browserVisual: (BrowserVisualView & { seq: number; at: number }) | undefined;
   /** Helpers (subagents) started for the current message, in start order. */
   helpers: Helper[] = [];
   /** The animated character is off unless OMNEXX_MASCOT=1; the header is just the name. */
@@ -1176,6 +1187,18 @@ export class Session {
       this.browserFrame = { ...f, seq: (this.browserFrame?.seq ?? 0) + 1, at: this.now() };
       this.changed();
     },
+    browserDiagnostics: (d: BrowserDiagnosticsView) => {
+      this.browserDiagnostics = {
+        ...d,
+        seq: (this.browserDiagnostics?.seq ?? 0) + 1,
+        at: this.now(),
+      };
+      this.changed();
+    },
+    browserVisual: (v: BrowserVisualView) => {
+      this.browserVisual = { ...v, seq: (this.browserVisual?.seq ?? 0) + 1, at: this.now() };
+      this.changed();
+    },
     helper: (h: HelperEvent) => {
       if (h.phase === 'start') {
         this.helpers = [
@@ -1476,6 +1499,8 @@ export class Session {
         this.todos = [];
         this.helpers = [];
         this.browserFrame = undefined;
+        this.browserDiagnostics = undefined;
+        this.browserVisual = undefined;
         await this.code?.clear();
         this.push('system', 'chat conversation cleared');
         return;

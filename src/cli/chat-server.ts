@@ -77,6 +77,24 @@ export interface ChatState {
   estimate: string | null;
   /** The latest browser frame's number and page; the image comes as a `browserFrame` message. */
   browser: { seq: number; url: string; action: string; at: number } | null;
+  /** Latest frontend diagnostics counts; the full lists come as a `browserDiagnostics` message. */
+  browserDiagnostics: {
+    seq: number;
+    at: number;
+    summary: string;
+    errors: number;
+    warnings: number;
+    failedRequests: number;
+  } | null;
+  /** Latest visual comparison; the diff image comes as a `browserVisual` message. */
+  browserVisual: {
+    seq: number;
+    at: number;
+    name: string;
+    pass: boolean;
+    changedRatio: number;
+    dimensionsMatch: boolean;
+  } | null;
 }
 
 /** Frames larger than this are skipped rather than pushed through the pipe. */
@@ -121,14 +139,24 @@ export async function serveChat(
   const { Session } = await import('../tui/session.js');
   const session = new Session(io, runCli);
   const write = (msg: object): void => {
-    println(io.stdout, JSON.stringify(msg));
+    if (!io.stdout.writable) return;
+    try {
+      println(io.stdout, JSON.stringify(msg));
+    } catch {
+      // Client closed the pipe (EPIPE / destroyed stream).
+    }
   };
   const fail = (err: unknown): void => {
     write({ type: 'error', message: describeError(err) });
   };
+  io.stdout.on('error', () => {
+    // Writes after the editor disconnects surface as EPIPE; don't crash the process.
+  });
 
   let sentUpTo = -1;
   let sentFrame = 0;
+  let sentDiagnostics = 0;
+  let sentVisual = 0;
   /** Send the browser's latest screenshot once per new frame. */
   const sendFrame = async (): Promise<void> => {
     const f = session.browserFrame;
@@ -143,6 +171,28 @@ export async function serveChat(
       url: f.url,
       action: f.action,
       data: data.toString('base64'),
+    });
+  };
+  /** Send the full console/network report once per new diagnostics event. */
+  const sendDiagnostics = (): void => {
+    const d = session.browserDiagnostics;
+    if (!d || d.seq === sentDiagnostics) return;
+    sentDiagnostics = d.seq;
+    write({ type: 'browserDiagnostics', ...d });
+  };
+  /** Send the visual comparison (diff image when there is one) once per result. */
+  const sendVisual = async (): Promise<void> => {
+    const v = session.browserVisual;
+    if (!v || v.seq === sentVisual) return;
+    sentVisual = v.seq;
+    const file = v.diff ?? v.current;
+    const data = await readFile(file).catch(() => undefined);
+    write({
+      type: 'browserVisual',
+      ...v,
+      ...(data && data.length <= MAX_FRAME_BYTES
+        ? { mime: 'image/png', data: data.toString('base64') }
+        : {}),
     });
   };
   /** The last entry before the latest new chat; a reloaded panel starts after it. */
@@ -191,14 +241,36 @@ export async function serveChat(
             at: session.browserFrame.at,
           }
         : null,
+      browserDiagnostics: session.browserDiagnostics
+        ? {
+            seq: session.browserDiagnostics.seq,
+            at: session.browserDiagnostics.at,
+            summary: session.browserDiagnostics.summary,
+            errors: session.browserDiagnostics.errors,
+            warnings: session.browserDiagnostics.warnings,
+            failedRequests: session.browserDiagnostics.failedRequests,
+          }
+        : null,
+      browserVisual: session.browserVisual
+        ? {
+            seq: session.browserVisual.seq,
+            at: session.browserVisual.at,
+            name: session.browserVisual.name,
+            pass: session.browserVisual.pass,
+            changedRatio: session.browserVisual.changedRatio,
+            dimensionsMatch: session.browserVisual.dimensionsMatch,
+          }
+        : null,
     };
     write(state);
-    void sendFrame();
+    void sendFrame().catch(() => undefined);
+    sendDiagnostics();
+    void sendVisual().catch(() => undefined);
   };
   const schedule = (): void => {
     timer ??= setTimeout(emit, EMIT_EVERY_MS);
   };
-  session.onChange(schedule);
+  const offChange = session.onChange(schedule);
 
   const sendModels = async (): Promise<void> => {
     const { loadModelChoices } = await import('../tui/model-picker.js');
@@ -534,21 +606,27 @@ export async function serveChat(
   emit();
 
   const lines = createInterface({ input: io.stdin, crlfDelay: Infinity });
-  for await (const line of lines) {
-    if (!line.trim()) continue;
-    try {
-      handle(parseCommand(line));
-    } catch (err) {
-      fail(err);
+  try {
+    for await (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        handle(parseCommand(line));
+      } catch (err) {
+        fail(err);
+      }
     }
-  }
-  // The editor closed the pipe: end any turn in progress, let running commands finish, then
-  // flush the last state.
-  if (session.chatBusy) await session.command('stop');
-  await Promise.allSettled([...inflight]);
-  if (timer) {
-    clearTimeout(timer);
-    emit();
+    // The editor closed the pipe: end any turn in progress, let running commands finish, then
+    // flush the last state.
+    if (session.chatBusy) await session.command('stop').catch(fail);
+    await Promise.allSettled([...inflight]);
+    if (timer) {
+      clearTimeout(timer);
+      if (io.stdout.writable) emit();
+    }
+  } finally {
+    offChange();
+    if (timer) clearTimeout(timer);
+    lines.close();
   }
   return 0;
 }

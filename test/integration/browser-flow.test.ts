@@ -41,6 +41,8 @@ describe('browser multi-step flow (real browser)', () => {
       serve_timeout: '60s',
       allow_eval: false,
       live_view: false,
+      report_errors: false,
+      visual_diff_threshold: 0.1,
       engine: 'chromium' as const,
     });
     const run = async (input: Parameters<typeof tool.run>[0]) => {

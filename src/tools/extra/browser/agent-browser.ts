@@ -1,4 +1,6 @@
-import { readFile, unlink } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { execa } from 'execa';
 import type {
   BrowserBackend,
@@ -104,6 +106,18 @@ export class AgentBrowserBackend implements BrowserBackend {
 
   async open(url: string): Promise<void> {
     await this.runCli(['open', url]);
+  }
+
+  async reload(): Promise<void> {
+    await this.runCli(['reload']);
+  }
+
+  async goBack(): Promise<void> {
+    await this.runCli(['back']);
+  }
+
+  async goForward(): Promise<void> {
+    await this.runCli(['forward']);
   }
 
   async snapshot(): Promise<string> {
@@ -300,6 +314,28 @@ export class AgentBrowserBackend implements BrowserBackend {
     } finally {
       await unlink(filePath).catch(() => undefined);
     }
+  }
+
+  /** Screenshot of one element: `agent-browser screenshot <selector> <path>`. */
+  async screenshotElement(ref: string): Promise<ScreenshotResult> {
+    const dir = await mkdtemp(join(tmpdir(), 'omnexx-shot-'));
+    const file = join(dir, 'element.png');
+    try {
+      const data = await this.json<{ path?: string }>(['screenshot', this.formatTarget(ref), file]);
+      const buffer = await readFile(data.path ?? file);
+      return { base64: buffer.toString('base64'), mimeType: 'image/png' };
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
+  async clearConsole(): Promise<void> {
+    await this.runCli(['console', '--clear']);
+    await this.runCli(['errors', '--clear']).catch(() => undefined);
+  }
+
+  async clearNetwork(): Promise<void> {
+    await this.runCli(['network', 'requests', '--clear']);
   }
 
   /** Console messages, plus uncaught page exceptions as `error` entries. */

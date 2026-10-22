@@ -146,6 +146,44 @@ export interface BrowserFrame {
   action: string;
 }
 
+/** Frontend problems found after a browser action, shown in the cockpit's console/network tabs. */
+export interface BrowserDiagnosticsView {
+  action: string;
+  url: string;
+  errors: number;
+  warnings: number;
+  failedRequests: number;
+  console: { type: string; text: string; location?: string }[];
+  requests: {
+    method: string;
+    url: string;
+    status?: number;
+    resourceType?: string;
+    failure?: string;
+  }[];
+  summary: string;
+}
+
+/** A visual comparison result, with the diff image path when something changed. */
+export interface BrowserVisualView {
+  name: string;
+  pass: boolean;
+  changedPixels: number;
+  totalPixels: number;
+  changedRatio: number;
+  width: number;
+  height: number;
+  dimensionsMatch: boolean;
+  baselineWidth: number;
+  baselineHeight: number;
+  currentWidth: number;
+  currentHeight: number;
+  meanDelta: number;
+  baseline: string;
+  current: string;
+  diff?: string;
+}
+
 /** A helper (subagent) starting or finishing, for a live view of who is doing what. */
 export type HelperEvent =
   | { phase: 'start'; id: number; kind: string; agent?: string; description: string }
@@ -154,6 +192,8 @@ export type HelperEvent =
 export interface ChatView {
   line: (l: ChatLine) => void;
   browser?: (f: BrowserFrame) => void;
+  browserDiagnostics?: (d: BrowserDiagnosticsView) => void;
+  browserVisual?: (v: BrowserVisualView) => void;
   helper?: (h: HelperEvent) => void;
   /** Reply text as it streams in (cleared when the reply lands as an `out` line). */
   stream: (delta: string) => void;
@@ -577,6 +617,8 @@ export class CodeChat {
     if (closed) v.line({ kind: 'feed', text: turnTraceLine(closed) });
     const str = (x: unknown): string => (typeof x === 'string' ? x : '');
     const num = (x: unknown): number => (typeof x === 'number' ? x : 0);
+    const bool = (x: unknown): boolean => x === true;
+    const list = <T>(x: unknown): T[] => (Array.isArray(x) ? (x as T[]) : []);
     switch (e.type) {
       case 'browser.frame':
         v.browser?.({
@@ -584,6 +626,44 @@ export class CodeChat {
           mime: str(e.mime),
           url: str(e.url),
           action: str(e.action),
+        });
+        return;
+      case 'browser.diagnostics':
+        v.browserDiagnostics?.({
+          action: str(e.action),
+          url: str(e.url),
+          errors: num(e.errors),
+          warnings: num(e.warnings),
+          failedRequests: num(e.failedRequests),
+          console: list<{ type: string; text: string; location?: string }>(e.console),
+          requests: list<{
+            method: string;
+            url: string;
+            status?: number;
+            resourceType?: string;
+            failure?: string;
+          }>(e.requests),
+          summary: str(e.summary),
+        });
+        return;
+      case 'browser.visual':
+        v.browserVisual?.({
+          name: str(e.name),
+          pass: bool(e.pass),
+          changedPixels: num(e.changedPixels),
+          totalPixels: num(e.totalPixels),
+          changedRatio: num(e.changedRatio),
+          width: num(e.width),
+          height: num(e.height),
+          dimensionsMatch: bool(e.dimensionsMatch),
+          baselineWidth: num(e.baselineWidth),
+          baselineHeight: num(e.baselineHeight),
+          currentWidth: num(e.currentWidth),
+          currentHeight: num(e.currentHeight),
+          meanDelta: num(e.meanDelta),
+          baseline: str(e.baseline),
+          current: str(e.current),
+          ...(typeof e.diff === 'string' ? { diff: e.diff } : {}),
         });
         return;
       case 'subagent.start':
