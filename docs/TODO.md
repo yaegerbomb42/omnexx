@@ -37,6 +37,9 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-22 (single agent), branch `feat/multi-agent-swarm-core`:** merged
+  `origin/main` to resolve PR conflicts; fixed the `docs/TODO.md` session-log conflict and
+  verified merge commit `048d4ec`.
 - **2026-10-22 (single agent), branch `feat/multi-agent-swarm-core`:** hierarchical swarm core.
   `src/workers/scratchpad.ts`: namespaced, versioned shared board (optimistic-concurrency
   claims via `putIfVersion`), append-only event log, live subscribers.
