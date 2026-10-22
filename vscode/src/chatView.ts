@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import * as vscode from 'vscode';
 import { ChatProcess, type ServerMessage } from './chatProcess.js';
 import { BUNDLED_VERSION, engine, refreshEngine } from './engine.js';
@@ -157,6 +158,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     else if (type === 'openContextFile' && typeof m.path === 'string')
       await this.openContext(m.path);
     else if (type === 'engineInfo') await this.postEngine();
+    else if (type === 'executionMode') await this.postExecutionMode();
+    else if (type === 'setExecutionMode' && typeof m.mode === 'string')
+      await this.setExecutionMode(m.mode);
     else if (type === 'installCli') this.installCli();
     else if (type === 'editToml')
       await openSettingsFile(join(primaryFolder() ?? homedir(), 'omnexx.toml'), PROJECT_STARTER);
@@ -184,6 +188,48 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         error: String(err),
       });
     }
+  }
+
+  /** The effective [execution] mode for the posture pill, and which config layer set it. */
+  private async postExecutionMode(): Promise<void> {
+    this.post({ type: 'executionMode', ...(await this.executionMode()) });
+  }
+
+  /**
+   * The mode the config loader would compute for this workspace: the environment wins, then
+   * the project's omnexx.toml, then the user config.toml; "normal" is the built-in default.
+   */
+  private async executionMode(): Promise<{ mode: string; source: string }> {
+    const env = process.env.OMNEXX_EXECUTION_MODE;
+    if (env && EXECUTION_MODES.includes(env)) return { mode: env, source: 'env' };
+    const folder = primaryFolder();
+    if (folder) {
+      const fromProject = await readExecutionMode(join(folder, 'omnexx.toml'));
+      if (fromProject) return { mode: fromProject, source: 'project' };
+    }
+    const fromUser = await readExecutionMode(userConfigPath());
+    if (fromUser) return { mode: fromUser, source: 'user' };
+    return { mode: 'normal', source: 'default' };
+  }
+
+  /**
+   * Save a posture pick to the user config's [execution] table (the same file the browser
+   * settings land in). The running task re-reads config at its next cycle, so the switch is
+   * live without a restart; a stronger layer (env, project file) still wins, and the reply
+   * says so via the effective mode it reports back.
+   */
+  private async setExecutionMode(mode: string): Promise<void> {
+    if (!EXECUTION_MODES.includes(mode)) return;
+    const path = userConfigPath();
+    let text = USER_STARTER;
+    try {
+      text = await readFile(path, 'utf8');
+    } catch {
+      // No user config yet: start from the stub.
+    }
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, withExecutionMode(text, mode), 'utf8');
+    await this.postExecutionMode();
   }
 
   /** Install omnexx for the terminal: Homebrew when it's there, else npm (needs Node 22+). */
@@ -349,6 +395,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   <summary><span class="chev" aria-hidden="true"></span><span id="steps-now" class="now"></span><span id="steps-count" class="count"></span><span class="track"><span id="steps-bar" class="fill"></span></span></summary>
   <ol id="steps-body" class="timeline"></ol>
 </details>
+<section id="posture" class="posture" aria-label="Execution posture">
+  <div data-posture-slot></div>
+</section>
 <div id="model-picker" class="model-picker" hidden role="dialog" aria-label="Pick a model"></div>
 <section id="welcome" class="welcome">
   <h2>What should omnexx do?</h2>
@@ -361,6 +410,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 </section>
 <details id="crew" class="section crew" open hidden>
   <summary><span class="chev" aria-hidden="true"></span><span class="h">Crew</span><span class="sub-h">helpers report to omnexx</span><span id="crew-count" class="count"></span></summary>
+  <div id="crew-telemetry" class="telemetry" hidden></div>
   <div id="crew-body" class="crew-body"></div>
 </details>
 <details id="browser" class="section browser" open hidden>
@@ -441,6 +491,65 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
 /** A dropped string that is a URI (`file:///…`, `vscode-remote://…`), not plain dragged text. */
 const URI_SCHEME = /^[a-z][\w+.-]*:\/\//i;
+
+/** The [execution] postures, mirroring EXECUTION_MODES in src/config/execution.ts. */
+const EXECUTION_MODES: readonly string[] = ['efficient', 'normal', 'extreme'];
+
+/** The `mode` key of one TOML file's [execution] table, via a narrow line scan (no TOML dep). */
+function tomlExecutionMode(text: string): string | undefined {
+  let inExecution = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    const table = /^\[([^\]]+)\]/.exec(line);
+    if (table) {
+      inExecution = (table[1] ?? '').trim() === 'execution';
+      continue;
+    }
+    if (!inExecution || line.startsWith('#')) continue;
+    const kv = /^mode\s*=\s*["']([a-z]+)["']/.exec(line);
+    if (kv && EXECUTION_MODES.includes(kv[1] ?? '')) return kv[1];
+  }
+  return undefined;
+}
+
+async function readExecutionMode(path: string): Promise<string | undefined> {
+  try {
+    return tomlExecutionMode(await readFile(path, 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The config text with [execution] mode set: replace the key in place when the table has one,
+ * insert it under the header when it doesn't, append the table when there is none.
+ */
+function withExecutionMode(text: string, mode: string): string {
+  const lines = text.split('\n');
+  let start = -1;
+  let end = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    const header = /^\s*\[([^\]]+)\]/.exec(lines[i] ?? '');
+    if (!header) continue;
+    if (start >= 0) {
+      end = i;
+      break;
+    }
+    if ((header[1] ?? '').trim() === 'execution') start = i;
+  }
+  if (start < 0) {
+    const base = text === '' || text.endsWith('\n') ? text : `${text}\n`;
+    return `${base}\n[execution]\nmode = "${mode}"\n`;
+  }
+  for (let i = start + 1; i < end; i++) {
+    if (/^\s*mode\s*=/.test(lines[i] ?? '')) {
+      lines[i] = `mode = "${mode}"`;
+      return lines.join('\n');
+    }
+  }
+  lines.splice(start + 1, 0, `mode = "${mode}"`);
+  return lines.join('\n');
+}
 
 /** Files offered for `@` mentions; past this a big repo is sampled, not listed in full. */
 const FILE_MENTION_LIMIT = 5000;
