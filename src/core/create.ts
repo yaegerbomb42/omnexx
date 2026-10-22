@@ -5,6 +5,7 @@ import { readRepoNotes } from './repo-memory.js';
 import { worktreesDir, type OmnexxPaths } from './paths.js';
 import { newRunId } from './run-id.js';
 import { RunStore, type RunState } from './run-store.js';
+import type { ExecutionMode } from '../config/execution.js';
 
 export interface CreateRunOptions {
   paths: OmnexxPaths;
@@ -15,7 +16,9 @@ export interface CreateRunOptions {
   now: number;
   noChecks?: boolean;
   writing?: boolean;
-}
+  /** The execution mode the run starts under, so the state records it from the first cycle. */
+  executionMode?: ExecutionMode;
+  }
 
 /** Create the run directory, the worktree on `omnexx/<runId>` and the initial state. */
 export async function createRun(o: CreateRunOptions): Promise<RunStore> {
@@ -67,6 +70,7 @@ export async function createRun(o: CreateRunOptions): Promise<RunStore> {
     disabledWorkers: [],
     noChecks: o.noChecks ?? false,
     writing: o.writing ?? false,
+    executionMode: o.executionMode ?? 'normal',
     budgetExhausted: false,
     spendLedger: [],
     dailyCapHit: false,

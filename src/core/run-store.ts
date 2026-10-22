@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { appendFile, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { EXECUTION_MODES } from '../config/execution.js';
 import { StateError } from '../errors.js';
 import { readJson, readTextOr, writeFileAtomic, writeJsonAtomic } from './atomic.js';
 import { notesSchema, renderNotes, type Note } from './notes.js';
@@ -188,6 +189,8 @@ export const stateSchema = z.object({
   noChecks: z.boolean().default(false),
   /** A writing run (prose, no tests): see core/writing.ts. */
   writing: z.boolean().default(false),
+  /** The execution mode the run currently runs under (see src/config/execution.ts). */
+  executionMode: z.enum(EXECUTION_MODES).default('normal'),
   /** Set when a pre-flight check refused a call for max_usd; cleared when a supervisor starts. */
   budgetExhausted: z.boolean().default(false),
   /** Set when every model stayed unavailable past budget.max_provider_wait: why. */

@@ -10,6 +10,7 @@ export { agents } from './agents.js';
 export { autonomous } from './autonomous.js';
 export { beyond } from './beyond.js';
 export { browser } from './browser.js';
+export { execution } from './execution.js';
 export { hooks } from './hooks.js';
 export { mcp } from './mcp.js';
 export { plan } from './plan.js';

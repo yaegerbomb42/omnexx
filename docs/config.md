@@ -235,6 +235,16 @@ The fast path is one worker cycle with the whole goal as its task, done when eve
 
 **Writing runs** (`--kind writing`, or detected from goals like "write me a book about…"): no tests are needed. The planner writes an outline and a bible (names, facts, style rules) first, then one milestone per part and one task per chapter or section (kinds `writing` and `research`), each checked mechanically (the file exists, a minimum word count, no placeholders). An editor-style reviewer reads every piece against the bible before it is kept. The agent works as an Author through the four context scopes: general (goal and its bible notes), repo (the manuscript map, with a one-line summary of every chapter, refreshed after each commit), heat (the chapters changing most) and recent (this chapter's running notes). The run keeps adding chapters until the plan is done; an empty folder starts as a writing project (no `package.json`, `[plan] kind = "writing"`).
 
+## `[execution]`: plan/loop presets
+
+One knob for how hard the agent tries per task. It picks a preset that fills in `[plan]` keys you do not set yourself; anything you set explicitly anywhere still wins. Set it in `omnexx.toml` (`[execution] mode = "efficient"`) or with the `OMNEXX_EXECUTION_MODE` env var (flags > env > project file).
+
+| Key    | Default    | Meaning                                                                                                                                                                                                                                                                                                                         |
+| ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mode` | `"normal"` | `"normal"`: today's defaults, byte-identical. `"efficient"`: cheaper and faster — always tries the fast path first (`mode = "fast"`), one fast attempt, 4 think turns, 4 rounds, 1 re-think, 1 rewind, 1 flaky rerun. `"extreme"`: deeper — 3 fast attempts, 16 think turns, 10 rounds, 4 re-thinks, 3 rewinds, 3 flaky reruns. |
+
+The preset never overwrites a `[plan]` key you set yourself (for example `loop_rounds`). Switching the mode mid-run applies at the next cycle boundary without a restart: the supervisor re-reads `omnexx.toml` and the environment each cycle, records the mode in the run state, and emits an `execution.mode_change` event with the old and new modes (no event when nothing changed). The re-read config applies as if the run had just restarted — plan/loop presets, budget, gates and review hot-apply; model chains and the judge are fixed for the run. A project file that fails to parse mid-run is ignored: the run keeps the previous config and emits `config.reload_failed`.
+
 ## `[context]`
 
 | Key                     | Default                                                                                                 |
