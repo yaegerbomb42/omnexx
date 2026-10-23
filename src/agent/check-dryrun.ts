@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import type { PlanUpdate } from '../core/plan.js';
 import type { Run } from '../core/run.js';
+import { workModeOf } from '../config/work-mode.js';
 
 /** Plan-time dry runs are quick probes, not the real verification. */
 const DRYRUN_TIMEOUT_MS = 60_000;
@@ -28,6 +29,11 @@ export async function dryRunChecks(
   cache: Map<string, { exitCode: number | null; output: string }>,
 ): Promise<DryRunFindings> {
   const found: DryRunFindings = { broken: [], alreadyPass: [] };
+  // "Every check already passes" indicts a code task (nothing can show the change). An
+  // artifact task in the general domain may legitimately start from a passing check —
+  // the file exists; the work is what goes into it — so the signal is swe-only there.
+  // Unparseable checks are broken in both domains.
+  const general = workModeOf(run.config) === 'general';
   for (const m of update.milestones)
     for (const t of m.tasks ?? []) {
       const checks = t.checks ?? [];
@@ -54,7 +60,7 @@ export async function dryRunChecks(
             `${t.id}: \`${c}\` cannot run as written:\n${r.output.trim().split('\n').slice(-4).join('\n')}`,
           );
       }
-      if (passing === checks.length)
+      if (passing === checks.length && !general)
         found.alreadyPass.push(`${t.id}: ${checks.map((c) => `\`${c}\``).join(', ')}`);
     }
   return found;

@@ -49,6 +49,7 @@ const ENV_MAP: readonly (readonly [string, readonly string[], EnvKind])[] = [
   ['OMNEXX_MODELS_CHEAP', ['models', 'cheap'], 'string'],
   ['OMNEXX_GIT_PUSH', ['git', 'push'], 'string'],
   ['OMNEXX_EXECUTION_MODE', ['execution', 'mode'], 'string'],
+  ['OMNEXX_EXECUTION_DOMAIN', ['execution', 'domain'], 'string'],
   ['OMNEXX_JUDGE_KIND', ['judge', 'kind'], 'string'],
   ['OMNEXX_JUDGE_MODE', ['judge', 'mode'], 'string'],
   ['OMNEXX_JUDGE_NIMBLE_URL', ['judge', 'nimble', 'url'], 'string'],

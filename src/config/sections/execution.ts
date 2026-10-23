@@ -8,6 +8,12 @@ import { z } from 'zod';
 export const execution = z
   .strictObject({
     mode: z.enum(['efficient', 'normal', 'extreme']).default('normal'),
+    /**
+     * The work domain (src/config/work-mode.ts): "swe" is software engineering with the
+     * full code toolset and test gates; "general" is artifact work (documents, data,
+     * research) with code-only tools suppressed and checks instead of test suites.
+     */
+    domain: z.enum(['swe', 'general']).default('swe'),
   })
   .prefault({});
 

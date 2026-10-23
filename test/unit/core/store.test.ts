@@ -33,6 +33,7 @@ export function sampleState(over: Partial<RunState> = {}): RunState {
     goalHash: 'h',
     setupDone: false,
     executionMode: 'normal',
+    workDomain: 'swe',
     spend: {
       usd: 0,
       tokens: { uncached: 0, cacheWrite: 0, cacheRead: 0, output: 0 },

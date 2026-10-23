@@ -6,7 +6,7 @@ import type { OmnexxEvent } from '../../../src/core/events.js';
 
 type FakeRun = {
   config: OmnexxConfig;
-  state: { executionMode: 'efficient' | 'normal' | 'extreme' };
+  state: { executionMode: 'efficient' | 'normal' | 'extreme'; workDomain: 'swe' | 'general' };
   save: () => Promise<void>;
   events: { emit: (type: string, data?: Record<string, unknown>) => OmnexxEvent };
 };
@@ -18,7 +18,7 @@ function makeRun(mode: 'efficient' | 'normal' | 'extreme' = 'normal'): {
   const emitted: { type: string; data: Record<string, unknown> }[] = [];
   const run: FakeRun = {
     config: defaultConfig({ execution: { mode }, plan: { mode: 'full' } }),
-    state: { executionMode: mode },
+    state: { executionMode: mode, workDomain: 'swe' },
     save: async () => {},
     events: {
       emit: (type: string, data: Record<string, unknown> = {}) => {

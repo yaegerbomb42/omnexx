@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { OmnexxConfig } from '../config/schema.js';
+import { workModeOf } from '../config/work-mode.js';
 import type { Run } from '../core/run.js';
 import { estimateTokens } from '../core/tokens.js';
 
@@ -34,7 +35,9 @@ export function countRequirements(goal: string): number {
 /** Whether this goal gets spec tests: `on`, or `auto` for a big goal or one listing many rules. */
 export function specTestsWanted(config: OmnexxConfig, goal: string, writing: boolean): boolean {
   const mode = config.review.spec_tests;
-  if (mode === 'off' || writing) return false;
+  // Spec tests are written against a codebase's public interface; the general domain
+  // verifies artifacts with task checks and gates instead, so it never wants a suite.
+  if (mode === 'off' || writing || workModeOf(config) === 'general') return false;
   if (mode === 'on') return true;
   return (
     goal.trim().length > config.plan.fast_max_goal_chars ||

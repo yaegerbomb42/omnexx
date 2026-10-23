@@ -37,6 +37,18 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-22 (single agent), branch `feat/dual-execution-modes`:** dual execution modes —
+  a work-domain axis (`[execution] domain = "swe" | "general"`, `src/config/work-mode.ts`)
+  separate from the posture (`mode`). Default `swe` is byte-identical behavior. `general`
+  swaps in artifact-oriented worker/planner prompts (`getWorkerPrompt`/`getPlannerPrompt`),
+  suppresses the AST tools (`outline`, `read_symbol`) in the registry, skips spec tests,
+  restricts anti-cheat to protected paths, and verifies with task checks plus a new
+  `kind = "exists"` artifact gate. Set via `omnexx run --mode`, `omnexx init --mode`,
+  `OMNEXX_EXECUTION_DOMAIN`, TOML, or the VS Code panel's new Work Mode selector (user
+  config, env > project > user precedence, hot-switch at cycle boundaries with an
+  `execution.domain_change` event; `workDomain` recorded in run state). 30 new tests;
+  full unit suite 5,875 pass with only the 5 pre-existing bench failures; lint, typecheck
+  and format clean on all touched files.
 - **2026-10-22 (single agent), branch `feat/speculative-cache`:** speculative cache recovered
   from the `omnexx-perf` checkout and landed: persistent AST cache (`src/core/ast-cache.ts`)
   wired into the codemap (`buildCodemapCached`, cache-aware `updateCodemap`), provider prefix

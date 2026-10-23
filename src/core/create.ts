@@ -6,6 +6,7 @@ import { worktreesDir, type OmnexxPaths } from './paths.js';
 import { newRunId } from './run-id.js';
 import { RunStore, type RunState } from './run-store.js';
 import type { ExecutionMode } from '../config/execution.js';
+import type { WorkMode } from '../config/work-mode.js';
 
 export interface CreateRunOptions {
   paths: OmnexxPaths;
@@ -18,7 +19,9 @@ export interface CreateRunOptions {
   writing?: boolean;
   /** The execution mode the run starts under, so the state records it from the first cycle. */
   executionMode?: ExecutionMode;
-  }
+  /** The work domain the run starts under (swe | general), recorded alongside the mode. */
+  workDomain?: WorkMode;
+}
 
 /** Create the run directory, the worktree on `omnexx/<runId>` and the initial state. */
 export async function createRun(o: CreateRunOptions): Promise<RunStore> {
@@ -71,6 +74,7 @@ export async function createRun(o: CreateRunOptions): Promise<RunStore> {
     noChecks: o.noChecks ?? false,
     writing: o.writing ?? false,
     executionMode: o.executionMode ?? 'normal',
+    workDomain: o.workDomain ?? 'swe',
     budgetExhausted: false,
     spendLedger: [],
     dailyCapHit: false,

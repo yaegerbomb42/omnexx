@@ -161,6 +161,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     else if (type === 'executionMode') await this.postExecutionMode();
     else if (type === 'setExecutionMode' && typeof m.mode === 'string')
       await this.setExecutionMode(m.mode);
+    else if (type === 'workDomain') await this.postWorkDomain();
+    else if (type === 'setWorkDomain' && typeof m.domain === 'string')
+      await this.setWorkDomain(m.domain);
     else if (type === 'installCli') this.installCli();
     else if (type === 'editToml')
       await openSettingsFile(join(primaryFolder() ?? homedir(), 'omnexx.toml'), PROJECT_STARTER);
@@ -230,6 +233,47 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, withExecutionMode(text, mode), 'utf8');
     await this.postExecutionMode();
+  }
+
+  /** The effective [execution] domain for the work-domain selector, and its config layer. */
+  private async postWorkDomain(): Promise<void> {
+    this.post({ type: 'workDomain', ...(await this.workDomain()) });
+  }
+
+  /**
+   * The domain the config loader would compute for this workspace: the environment wins,
+   * then the project's omnexx.toml, then the user config.toml; "swe" is the default.
+   */
+  private async workDomain(): Promise<{ domain: string; source: string }> {
+    const env = process.env.OMNEXX_EXECUTION_DOMAIN;
+    if (env && WORK_DOMAINS.includes(env)) return { domain: env, source: 'env' };
+    const folder = primaryFolder();
+    if (folder) {
+      const fromProject = await readExecutionDomain(join(folder, 'omnexx.toml'));
+      if (fromProject) return { domain: fromProject, source: 'project' };
+    }
+    const fromUser = await readExecutionDomain(userConfigPath());
+    if (fromUser) return { domain: fromUser, source: 'user' };
+    return { domain: 'swe', source: 'default' };
+  }
+
+  /**
+   * Save a work-domain pick to the user config's [execution] table, beside the posture
+   * mode. Same live-switch semantics as a posture pick: the running task re-reads config
+   * at its next cycle; a stronger layer (env, project file) still wins and is reported.
+   */
+  private async setWorkDomain(domain: string): Promise<void> {
+    if (!WORK_DOMAINS.includes(domain)) return;
+    const path = userConfigPath();
+    let text = USER_STARTER;
+    try {
+      text = await readFile(path, 'utf8');
+    } catch {
+      // No user config yet: start from the stub.
+    }
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, withExecutionDomain(text, domain), 'utf8');
+    await this.postWorkDomain();
   }
 
   /** Install omnexx for the terminal: Homebrew when it's there, else npm (needs Node 22+). */
@@ -397,6 +441,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 </details>
 <section id="posture" class="posture" aria-label="Execution posture">
   <div data-posture-slot></div>
+  <div data-domain-slot></div>
 </section>
 <div id="model-picker" class="model-picker" hidden role="dialog" aria-label="Pick a model"></div>
 <section id="welcome" class="welcome">
@@ -510,8 +555,15 @@ const URI_SCHEME = /^[a-z][\w+.-]*:\/\//i;
 /** The [execution] postures, mirroring EXECUTION_MODES in src/config/execution.ts. */
 const EXECUTION_MODES: readonly string[] = ['efficient', 'normal', 'extreme'];
 
-/** The `mode` key of one TOML file's [execution] table, via a narrow line scan (no TOML dep). */
-function tomlExecutionMode(text: string): string | undefined {
+/** The [execution] work domains, mirroring WORK_MODES in src/config/work-mode.ts. */
+const WORK_DOMAINS: readonly string[] = ['swe', 'general'];
+
+/** One `key = "value"` of a TOML file's [execution] table, via a narrow line scan (no TOML dep). */
+function tomlExecutionValue(
+  text: string,
+  key: string,
+  allowed: readonly string[],
+): string | undefined {
   let inExecution = false;
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
@@ -521,10 +573,20 @@ function tomlExecutionMode(text: string): string | undefined {
       continue;
     }
     if (!inExecution || line.startsWith('#')) continue;
-    const kv = /^mode\s*=\s*["']([a-z]+)["']/.exec(line);
-    if (kv && EXECUTION_MODES.includes(kv[1] ?? '')) return kv[1];
+    const kv = new RegExp(`^${key}\\s*=\\s*["']([a-z]+)["']`).exec(line);
+    if (kv && allowed.includes(kv[1] ?? '')) return kv[1];
   }
   return undefined;
+}
+
+/** The `mode` key of one TOML file's [execution] table. */
+function tomlExecutionMode(text: string): string | undefined {
+  return tomlExecutionValue(text, 'mode', EXECUTION_MODES);
+}
+
+/** The `domain` key of one TOML file's [execution] table. */
+function tomlExecutionDomain(text: string): string | undefined {
+  return tomlExecutionValue(text, 'domain', WORK_DOMAINS);
 }
 
 async function readExecutionMode(path: string): Promise<string | undefined> {
@@ -535,11 +597,19 @@ async function readExecutionMode(path: string): Promise<string | undefined> {
   }
 }
 
+async function readExecutionDomain(path: string): Promise<string | undefined> {
+  try {
+    return tomlExecutionDomain(await readFile(path, 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * The config text with [execution] mode set: replace the key in place when the table has one,
- * insert it under the header when it doesn't, append the table when there is none.
+ * The config text with one [execution] key set: replace the key in place when the table
+ * has one, insert it under the header when it doesn't, append the table when there is none.
  */
-function withExecutionMode(text: string, mode: string): string {
+function withExecutionValue(text: string, key: string, value: string): string {
   const lines = text.split('\n');
   let start = -1;
   let end = lines.length;
@@ -554,16 +624,27 @@ function withExecutionMode(text: string, mode: string): string {
   }
   if (start < 0) {
     const base = text === '' || text.endsWith('\n') ? text : `${text}\n`;
-    return `${base}\n[execution]\nmode = "${mode}"\n`;
+    return `${base}\n[execution]\n${key} = "${value}"\n`;
   }
+  const kv = new RegExp(`^\\s*${key}\\s*=`);
   for (let i = start + 1; i < end; i++) {
-    if (/^\s*mode\s*=/.test(lines[i] ?? '')) {
-      lines[i] = `mode = "${mode}"`;
+    if (kv.test(lines[i] ?? '')) {
+      lines[i] = `${key} = "${value}"`;
       return lines.join('\n');
     }
   }
-  lines.splice(start + 1, 0, `mode = "${mode}"`);
+  lines.splice(start + 1, 0, `${key} = "${value}"`);
   return lines.join('\n');
+}
+
+/** The config text with [execution] mode set. */
+function withExecutionMode(text: string, mode: string): string {
+  return withExecutionValue(text, 'mode', mode);
+}
+
+/** The config text with [execution] domain set. */
+function withExecutionDomain(text: string, domain: string): string {
+  return withExecutionValue(text, 'domain', domain);
 }
 
 /** Files offered for `@` mentions; past this a big repo is sampled, not listed in full. */

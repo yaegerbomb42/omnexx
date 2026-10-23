@@ -184,7 +184,7 @@ export function relatedGate(
   scripts: Readonly<Record<string, string>>,
   crates: ReadonlyMap<string, string> = new Map(),
 ): GateConfig | undefined {
-  if (gate.kind === 'browser') return undefined;
+  if (gate.kind !== 'command') return undefined;
   const direct = narrowCommand(gate.run, files, crates);
   if (direct) return { ...gate, run: direct };
   const script = scriptCommand(gate.run, scripts);

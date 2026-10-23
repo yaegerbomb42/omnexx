@@ -21,7 +21,8 @@ import { fail, ok, type Tool, type ToolContext } from '../tools/types.js';
 import { renderCodemap, type Codemap } from './codemap.js';
 import { runAgentLoop } from './loop.js';
 import { subagentRunner } from './subagent.js';
-import { PLANNER_SYSTEM } from './prompts.js';
+import { getPlannerPrompt } from './prompts.js';
+import { workModeOf } from '../config/work-mode.js';
 import { readIntent, writeIntentTool } from './intent.js';
 import { dryRunChecks } from './check-dryrun.js';
 import type { RouteAction } from '../router/actions.js';
@@ -73,11 +74,16 @@ export const BEYOND_RUBRIC = [
 const NO_TESTS_NOTE =
   "No test command is configured for this project, so each task's checks are the only proof it works: give every task a check that exercises the change (run the script or page, a build, `node -e` calling the function, a small test you add and run), never just a file or text search. When a task adds a test, its check runs that test.";
 
+/** A general-domain run: no test suite exists or is expected; artifact checks verify. */
+const GENERAL_CHECKS_NOTE =
+  "No test suite is expected for this work: each task's checks are the proof its artifact is right — a shell assertion, a file-exists or schema validation, a count, a parse of the output. Give every task at least one check that would fail if the artifact were wrong or missing.";
+
 function effortNote(run: Run, mode: PlannerMode): string {
   const planning = mode.kind === 'initial' || mode.kind === 'expand';
   let writing = '';
   if (planning && run.state.writing) writing = `\n\n${WRITING_PLANNER_NOTE}`;
-  else if (planning && run.state.noChecks) writing = `\n\n${NO_TESTS_NOTE}`;
+  else if (planning && run.state.noChecks)
+    writing = `\n\n${workModeOf(run.config) === 'general' ? GENERAL_CHECKS_NOTE : NO_TESTS_NOTE}`;
   // The user's agent settings: how big to plan, how deep to analyse, how long it may take.
   const brief = planning ? agentBriefFor(run.config) : undefined;
   return writing + effortOnly(run, mode) + (brief ? `\n\n${brief}` : '');
@@ -398,7 +404,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   const result = await runAgentLoop(
     {
       system: [
-        { text: PLANNER_SYSTEM },
+        { text: getPlannerPrompt(workModeOf(run.config)) },
         { text: codemap },
         { text: goalBlock(goal.text, intent) },
         { text: `# Lessons (notes.md)\n\n${notes}`, cacheBreakpoint: true },

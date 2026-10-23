@@ -1,6 +1,7 @@
 import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { GateParser } from '../config/schema.js';
+import type { WorkMode } from '../config/work-mode.js';
 
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
@@ -194,7 +195,7 @@ export async function detectProject(root: string): Promise<Detection> {
 const q = (s: string): string => JSON.stringify(s);
 
 /** Render omnexx.toml by hand so it carries comments; parsed back by the loader in tests. */
-export function renderProjectToml(d: Detection): string {
+export function renderProjectToml(d: Detection, domain: WorkMode = 'swe'): string {
   const lines = [
     '# omnexx.toml: project config for Omnexx. Every key and default: docs/config.md',
     '',
@@ -248,6 +249,16 @@ export function renderProjectToml(d: Detection): string {
     '#',
     '# Paid models outside Anthropic need a [pricing.<alias>] entry: see docs/config.md.',
     '',
+    // "swe" is the default domain, so only a general project records it.
+    ...(domain === 'general'
+      ? [
+          '[execution]',
+          '# Work domain: general = documents, data and research artifacts;',
+          '# checks and artifact gates verify the work, no test suite is expected.',
+          'domain = "general"',
+          '',
+        ]
+      : []),
   );
   return lines.join('\n');
 }
