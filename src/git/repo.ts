@@ -116,32 +116,37 @@ export async function workingTreeDiff(
   cwd: string,
   base: string,
 ): Promise<{ changes: FileChange[]; patch: string; treeHash: string }> {
-  const abs = await indexEnv(cwd, 'omnexx-index');
-  const treeHash = await stageTree(cwd, base, abs);
-  const raw = (await git(cwd, ['diff', '--cached', '--binary', '-M', base], { env: abs })).stdout;
-  // The git wrapper strips the final newline; `git apply` needs it back.
-  const patch = raw && !raw.endsWith('\n') ? `${raw}\n` : raw;
-  const status = (await git(cwd, ['diff', '--cached', '--name-status', '-M', base], { env: abs }))
-    .stdout;
-  const numstat = (await git(cwd, ['diff', '--cached', '--numstat', '-M', base], { env: abs }))
-    .stdout;
-  const counts = numstat
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => {
-      const [a, r] = l.split('\t');
-      return { added: Number(a) || 0, removed: Number(r) || 0 };
-    });
-  const changes = status
-    .split('\n')
-    .filter(Boolean)
-    .map((line, i): FileChange => {
-      const [code = 'M', p1 = '', p2] = line.split('\t');
-      const c = counts[i] ?? { added: 0, removed: 0 };
-      if (code.startsWith('R')) return { status: 'R', oldPath: p1, path: p2 ?? p1, ...c };
-      return { status: code.charAt(0) as FileChange['status'], path: p1, ...c };
-    });
-  return { changes, patch, treeHash };
+  // An index per call: two diffs at once would fight over one index's lock file.
+  const abs = await indexEnv(cwd, `omnexx-index-${randomUUID()}`);
+  try {
+    const treeHash = await stageTree(cwd, base, abs);
+    const raw = (await git(cwd, ['diff', '--cached', '--binary', '-M', base], { env: abs })).stdout;
+    // The git wrapper strips the final newline; `git apply` needs it back.
+    const patch = raw && !raw.endsWith('\n') ? `${raw}\n` : raw;
+    const status = (await git(cwd, ['diff', '--cached', '--name-status', '-M', base], { env: abs }))
+      .stdout;
+    const numstat = (await git(cwd, ['diff', '--cached', '--numstat', '-M', base], { env: abs }))
+      .stdout;
+    const counts = numstat
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => {
+        const [a, r] = l.split('\t');
+        return { added: Number(a) || 0, removed: Number(r) || 0 };
+      });
+    const changes = status
+      .split('\n')
+      .filter(Boolean)
+      .map((line, i): FileChange => {
+        const [code = 'M', p1 = '', p2] = line.split('\t');
+        const c = counts[i] ?? { added: 0, removed: 0 };
+        if (code.startsWith('R')) return { status: 'R', oldPath: p1, path: p2 ?? p1, ...c };
+        return { status: code.charAt(0) as FileChange['status'], path: p1, ...c };
+      });
+    return { changes, patch, treeHash };
+  } finally {
+    await rm(abs.GIT_INDEX_FILE, { force: true });
+  }
 }
 
 /** Blob id of `path` at `ref`, or undefined when the file doesn't exist there. */
