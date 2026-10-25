@@ -48,6 +48,8 @@ describe('darwinx meta-harness', () => {
       'looping on read',
       'loopback address unreachable',
       'loophole in gate',
+      'event loop is blocked',
+      'cannot find loop device',
     ]) {
       const symptom = diagnoseFailure(
         [{ turn: 1, calls: [], fresh: 0, cached: 0, ms: 1, gates: 'ok' }],
@@ -62,6 +64,10 @@ describe('darwinx meta-harness', () => {
       'detected a doom loop',
       'stuck in a tombstone',
       'going through oscillation',
+      'doomloop detected',
+      'doom loop: repeated same edit',
+      'doom_loop',
+      'detected doom_loop',
     ]) {
       const symptom = diagnoseFailure(
         [{ turn: 1, calls: [], fresh: 0, cached: 0, ms: 1, gates: 'ok' }],
