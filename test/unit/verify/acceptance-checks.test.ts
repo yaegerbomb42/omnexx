@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPreflightChecks,
+  deriveAcceptanceContract,
   inferCheckCommand,
   inferGoalChecks,
   preflightSuiteSchema,
+  runVerificationLoop,
 } from '../../../src/verify/acceptance-checks.js';
+import { fileURLToPath } from 'node:url';
+
+const fixtureDir = fileURLToPath(new URL('../../fixtures/verify/contract-app', import.meta.url));
 
 describe('acceptance-checks', () => {
   it('generates preflight checks from task title when no separate requirements given', () => {
@@ -48,5 +53,65 @@ describe('acceptance-checks', () => {
     expect(checks).toContain(
       'node --input-type=module -e \'import { exportUsers } from "./src/export.js"; const r = exportUsers([]); if (!r.startsWith("id,name,email")) process.exit(1);\'',
     );
+  });
+});
+
+describe('acceptance-contract', () => {
+  it('derives a contract and passes when every command exits 0', async () => {
+    const contract = deriveAcceptanceContract({
+      id: 'task-1',
+      requirements: [`node ${fixtureDir}/pass.js`],
+    });
+    expect(contract.commands).toContain(`node ${fixtureDir}/pass.js`);
+
+    const verdict = await runVerificationLoop({ cwd: fixtureDir, contract });
+    expect(verdict.pass).toBe(true);
+    expect(verdict.attempts).toBe(1);
+    expect(verdict.runs[0]?.exitCode).toBe(0);
+  });
+
+  it('fails the contract when a command exits non-zero (planted regression)', async () => {
+    const contract = deriveAcceptanceContract({
+      id: 'task-2',
+      requirements: [`node ${fixtureDir}/fail.js`],
+    });
+    expect(contract.commands).toContain(`node ${fixtureDir}/fail.js`);
+
+    const verdict = await runVerificationLoop({ cwd: fixtureDir, contract, maxAttempts: 2 });
+    expect(verdict.pass).toBe(false);
+    expect(verdict.attempts).toBe(2);
+    expect(verdict.runs[0]?.exitCode).toBe(1);
+  });
+
+  it('completion-with-failing-contract rate is zero: never returns pass=true if any command failed', async () => {
+    const contract = deriveAcceptanceContract({
+      id: 'task-3',
+      requirements: [`node ${fixtureDir}/pass.js`, `node ${fixtureDir}/fail.js`],
+    });
+    expect(contract.commands).toHaveLength(2);
+
+    const verdict = await runVerificationLoop({ cwd: fixtureDir, contract });
+    expect(verdict.pass).toBe(false);
+    expect(verdict.runs.some((r) => r.exitCode !== 0)).toBe(true);
+  });
+
+  it('stops at the first failing command per attempt', async () => {
+    const contract = deriveAcceptanceContract({
+      id: 'task-4',
+      requirements: [`node ${fixtureDir}/fail.js`, `node ${fixtureDir}/pass.js`],
+    });
+    const verdict = await runVerificationLoop({ cwd: fixtureDir, contract });
+    expect(verdict.pass).toBe(false);
+    // Only the first (failing) command ran
+    expect(verdict.runs).toHaveLength(1);
+    expect(verdict.runs[0]?.command).toContain('fail.js');
+  });
+
+  it('deduplicates identical commands from criteria and goal checks', () => {
+    const contract = deriveAcceptanceContract({
+      id: 'task-5',
+      requirements: [`node ${fixtureDir}/pass.js`, `node ${fixtureDir}/pass.js`],
+    });
+    expect(contract.commands).toHaveLength(1);
   });
 });
