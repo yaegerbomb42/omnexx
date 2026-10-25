@@ -125,6 +125,8 @@ export async function bootstrapEmptyProject(
   opts: { browser?: boolean; writing?: boolean } = {},
 ): Promise<string[]> {
   if (opts.writing) return bootstrapWritingProject(dir);
+  if (!(await isEmptyProject(dir)))
+    throw new Error('Refusing to bootstrap a folder that already has files');
   const browser = opts.browser ?? (await detectBrowserBackend()).backend !== null;
   const detection = browser
     ? { ...STARTER_DETECTION, gates: [...STARTER_DETECTION.gates, PAGE_GATE] }
@@ -161,6 +163,8 @@ export async function bootstrapEmptyProject(
 
 /** A folder for prose: config and notes only, no package.json and no test gates. */
 async function bootstrapWritingProject(dir: string): Promise<string[]> {
+  if (!(await isEmptyProject(dir)))
+    throw new Error('Refusing to bootstrap a folder that already has files');
   const head = await git(dir, ['rev-parse', '--git-dir'], { allowFailure: true });
   if (head.exitCode !== 0) await git(dir, ['init', '-q']);
   const files: Record<string, string> = {
