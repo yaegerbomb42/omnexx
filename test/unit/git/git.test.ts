@@ -226,4 +226,13 @@ describe('sanitizePatch', () => {
     expect(out).not.toContain('KEY=abc');
     expect(out).toContain('+const t = "[R]";');
   });
+  it('drops credential files whose paths contain spaces', async () => {
+    const { sanitizePatch } = await import('../../../src/git/rollback.js');
+    const patch =
+      'diff --git a/path/to/my file.pem b/path/to/my file.pem\n+-----BEGIN SECRET KEY-----\n' +
+      'diff --git a/src/keep.txt b/src/keep.txt\n+const v = 1;\n';
+    const out = sanitizePatch(patch, (s) => s);
+    expect(out).not.toContain('SECRET');
+    expect(out).toContain('+const v = 1;');
+  });
 });
