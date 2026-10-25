@@ -20,7 +20,7 @@ describe('acceptance-checks', () => {
       title: 'Rename API',
       requirements: ['No file other than `src/usr.js` mentions `getUsr`'],
     });
-    expect(checks[0]?.command).toBe('! grep -rn "getUsr" --exclude="src/usr.js" src/ test/');
+    expect(checks[0]?.command).toBe("! grep -rn 'getUsr' --exclude='src/usr.js' src/ test/");
     const parsed = preflightSuiteSchema.safeParse({ checks });
     expect(parsed.success).toBe(true);
   });
