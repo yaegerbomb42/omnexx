@@ -79,10 +79,7 @@ export async function installedSkills(io: CliIO): Promise<SkillRow[]> {
   const off = new Set([...state.disabled, ...state.hidden]);
   const hidden = new Set(state.hidden);
   return skills.map((s) => {
-    const from =
-      s.source === 'user'
-        ? state.installed[dirname(s.path).split('/').at(-1) ?? '']?.id
-        : undefined;
+    const from = s.source === 'user' ? state.installed[basename(dirname(s.path))]?.id : undefined;
     return {
       ...s,
       sourceLabel: SOURCE_LABEL[s.source],
@@ -109,7 +106,7 @@ export async function removeSkill(io: CliIO, name: string): Promise<void> {
     throw new Error(`"${name}" comes from ${skill.sourceLabel}; remove it there`);
   const folder = dirname(skill.path);
   await rm(folder, { recursive: true, force: true });
-  await forgetInstalled(folder.split('/').at(-1) ?? name, io.env);
+  await forgetInstalled(basename(folder), io.env);
 }
 
 /** Hide a skill from omnexx without touching its files, or bring a hidden one back (off). */
@@ -134,7 +131,7 @@ export async function deleteSkillFiles(
   const folder = dirname(skill.path);
   if (confirmPath !== folder) throw new Error(`confirm the folder to delete: ${folder}`);
   await rm(folder, { recursive: true, force: true });
-  if (skill.owned) await forgetInstalled(folder.split('/').at(-1) ?? name, io.env);
+  if (skill.owned) await forgetInstalled(basename(folder), io.env);
   await updateSkillsState(io.env, (s) => forgetSkill(s, name));
   return folder;
 }
