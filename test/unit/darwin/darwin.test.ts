@@ -43,6 +43,34 @@ describe('darwinx meta-harness', () => {
     });
   });
 
+  it('does not misclassify ordinary words containing "loop" as a doom loop', () => {
+    for (const lastError of [
+      'looping on read',
+      'loopback address unreachable',
+      'loophole in gate',
+    ]) {
+      const symptom = diagnoseFailure(
+        [{ turn: 1, calls: [], fresh: 0, cached: 0, ms: 1, gates: 'ok' }],
+        { lastError },
+      );
+      expect(symptom?.kind).toBe('tool_error');
+    }
+  });
+
+  it('classifies actual doom-loop language as a doom loop', () => {
+    for (const lastError of [
+      'detected a doom loop',
+      'stuck in a tombstone',
+      'going through oscillation',
+    ]) {
+      const symptom = diagnoseFailure(
+        [{ turn: 1, calls: [], fresh: 0, cached: 0, ms: 1, gates: 'ok' }],
+        { lastError },
+      );
+      expect(symptom?.kind).toBe('doom_loop');
+    }
+  });
+
   it('ratchets accepted mutation when gates pass', async () => {
     const commits: string[] = [];
     const sandbox: SandboxRunner = {
