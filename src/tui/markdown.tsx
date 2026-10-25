@@ -1,5 +1,5 @@
 import { Text } from 'ink';
-import { CYAN, GRAY, GREEN } from './colors.js';
+import { INFO, MUTED, OK } from './colors.js';
 
 /** How one line of a model reply renders: inside a code block, a heading, a bullet, or prose. */
 export type MdKind = 'fence' | 'code' | 'heading' | 'bullet' | 'text';
@@ -40,7 +40,7 @@ function Inline({ line }: { line: string }) {
     <Text>
       {inlineSpans(line).map((s, i) =>
         s.style === 'code' ? (
-          <Text key={i} color={CYAN}>
+          <Text key={i} color={INFO}>
             {s.text}
           </Text>
         ) : s.style === 'bold' ? (
@@ -58,17 +58,17 @@ function Inline({ line }: { line: string }) {
 export function MarkdownLine({ text, md }: { text: string; md: MdKind }) {
   switch (md) {
     case 'fence':
-      return <Text color={GRAY}>{text.replace(/^\s*```/, '──── ').trimEnd()}</Text>;
+      return <Text color={MUTED}>{text.replace(/^\s*```/, '──── ').trimEnd()}</Text>;
     case 'code':
       return (
         <Text>
-          <Text color={GRAY}>{'│ '}</Text>
-          <Text color={CYAN}>{text}</Text>
+          <Text color={MUTED}>{'│ '}</Text>
+          <Text color={INFO}>{text}</Text>
         </Text>
       );
     case 'heading':
       return (
-        <Text color={GREEN} bold>
+        <Text color={OK} bold>
           {text.replace(/^#{1,6}\s/, '')}
         </Text>
       );
@@ -77,7 +77,7 @@ export function MarkdownLine({ text, md }: { text: string; md: MdKind }) {
       return (
         <Text>
           {m?.[1]}
-          <Text color={GREEN}>{m?.[2] === '-' || m?.[2] === '*' ? '•' : m?.[2]}</Text>{' '}
+          <Text color={OK}>{m?.[2] === '-' || m?.[2] === '*' ? '•' : m?.[2]}</Text>{' '}
           <Inline line={m?.[3] ?? text} />
         </Text>
       );
