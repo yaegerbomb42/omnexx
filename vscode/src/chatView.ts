@@ -29,7 +29,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   private viewSubs: vscode.Disposable[] = [];
   /** Paths the latest contextFiles listed: the only files the explorer may open. */
   private contextPaths = new Map<string, boolean>();
-  private modelsWaiter: ((items: ModelItem[], unreachable: string[]) => void) | undefined;
+  private modelsWaiters = new Map<number, (items: ModelItem[], unreachable: string[]) => void>();
+  private modelsWaiterId = 0;
 
   constructor(private readonly extensionUri: vscode.Uri) {
     this.server = new ChatProcess(primaryFolder());
@@ -126,12 +127,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         ),
       );
     }
-    if (m.type === 'models' && this.modelsWaiter) {
-      this.modelsWaiter(
-        (m.items as ModelItem[] | undefined) ?? [],
-        (m.unreachable as string[] | undefined) ?? [],
-      );
-      this.modelsWaiter = undefined;
+    if (m.type === 'models') {
+      const items = (m.items as ModelItem[] | undefined) ?? [];
+      const unreachable = (m.unreachable as string[] | undefined) ?? [];
+      for (const resolve of this.modelsWaiters.values()) resolve(items, unreachable);
+      this.modelsWaiters.clear();
     }
     this.post(m);
   }
@@ -319,14 +319,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
   private listModels(): Promise<{ items: ModelItem[]; unreachable: string[] }> {
     return new Promise((resolve, reject) => {
+      const id = ++this.modelsWaiterId;
       const timer = setTimeout(() => {
-        this.modelsWaiter = undefined;
+        this.modelsWaiters.delete(id);
         reject(new Error('omnexx took too long to list models'));
       }, MODEL_LIST_TIMEOUT_MS);
-      this.modelsWaiter = (items, unreachable) => {
+      this.modelsWaiters.set(id, (items, unreachable) => {
         clearTimeout(timer);
         resolve({ items, unreachable });
-      };
+      });
       this.server.send({ type: 'models' });
     });
   }
