@@ -78,7 +78,12 @@ export const register: CommandRegistrar = (program: Command, io: CliIO, setExit)
           }),
         );
         const card = await fetchCard(url, io.fetch ?? fetch, headers);
-        const name = (opts.name ?? card.name).replace(/[^A-Za-z0-9_-]+/g, '-').toLowerCase();
+        const rawName = opts.name ?? card.name;
+        const name = rawName.replace(/[^A-Za-z0-9_-]+/g, '-').toLowerCase();
+        if (!/^[a-z][a-z0-9_-]{0,39}$/.test(name))
+          throw new Error(
+            `"${rawName}" does not produce a valid agent name (sanitized to "${name}"); pass --name starting with a letter, followed only by letters, digits, '_', or '-'`,
+          );
         const file = configFile();
         const next = setTable(await readConfigText(file), ['agents', 'remote', name], {
           url,
