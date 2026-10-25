@@ -5,6 +5,7 @@ import {
   parseVersion,
   describeRun,
   isActive,
+  newlyFinishedRuns,
   parsePlan,
   parseRuns,
   progressOf,
@@ -176,5 +177,39 @@ describe('compareVersions and parseVersion (picking the global or the bundled om
     expect(parseVersion('0.9.0\n')).toBe('0.9.0');
     expect(parseVersion('omnexx 1.2.3 (darwin)')).toBe('1.2.3');
     expect(parseVersion('command not found')).toBeUndefined();
+  });
+});
+
+const runMap = (runs: RunRow[]): Map<string, RunRow> => new Map(runs.map((r) => [r.runId, r]));
+
+describe('newlyFinishedRuns (badge count)', () => {
+  it('counts a run that started and finished between refreshes', () => {
+    const finished = row({ runId: 'r_fast', status: 'finished', supervisorAlive: false });
+    const previous = new Map<string, RunRow>();
+    expect(newlyFinishedRuns([finished], previous)).toHaveLength(1);
+  });
+
+  it('does not count a run that vanished from the listing', () => {
+    const active = row({ runId: 'r_gone', status: 'running', supervisorAlive: true });
+    const previous = runMap([active]);
+    expect(newlyFinishedRuns([], previous)).toHaveLength(0);
+  });
+
+  it('counts a run that was active and is now finished', () => {
+    const active = row({ runId: 'r_done', status: 'running', supervisorAlive: true });
+    const finished = row({ runId: 'r_done', status: 'finished', supervisorAlive: false });
+    const previous = runMap([active]);
+    expect(newlyFinishedRuns([finished], previous)).toHaveLength(1);
+  });
+
+  it('does not recount a run that was already finished in the previous listing', () => {
+    const finished = row({ runId: 'r_old', status: 'finished', supervisorAlive: false });
+    const previous = runMap([finished]);
+    expect(newlyFinishedRuns([finished], previous)).toHaveLength(0);
+  });
+
+  it('ignores runs that are still active', () => {
+    const active = row({ runId: 'r_live', status: 'running', supervisorAlive: true });
+    expect(newlyFinishedRuns([active], new Map())).toHaveLength(0);
   });
 });

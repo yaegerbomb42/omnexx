@@ -11,6 +11,7 @@ import {
   type HistoryGroup,
   isActive,
   needsFix,
+  newlyFinishedRuns,
   progressOf,
   runsForFolders,
   type PlanNodeRow,
@@ -59,7 +60,8 @@ export class RunsProvider implements vscode.TreeDataProvider<Node> {
   unseenFinished = 0;
   /** Whether the History view is on screen; a run ending in plain sight needs no badge. */
   private watched = false;
-  private lastActive = new Set<string>();
+  /** All runs from the previous listing, keyed by id, to detect transitions. */
+  private lastRuns = new Map<string, RunRow>();
 
   refresh(): void {
     this.changed.fire(undefined);
@@ -127,14 +129,12 @@ export class RunsProvider implements vscode.TreeDataProvider<Node> {
       caseInsensitive: process.platform !== 'linux',
     });
     this.hasActiveRun = runs.some(isActive);
-    // Tell apart "still working" from "finished while you were elsewhere": a run that was active
-    // in the previous listing and is not anymore just ended.
     const active = runs.filter(isActive);
     this.activeCount = active.length;
-    const activeIds = new Set(active.map((run) => run.runId));
-    if (!this.watched)
-      for (const id of this.lastActive) if (!activeIds.has(id)) this.unseenFinished++;
-    this.lastActive = activeIds;
+    if (!this.watched) {
+      this.unseenFinished += newlyFinishedRuns(runs, this.lastRuns).length;
+    }
+    this.lastRuns = new Map(runs.map((run) => [run.runId, run]));
     this.updated.fire();
     const dated = [
       ...chats.map((chat) => ({ at: chat.savedAt, node: { kind: 'chat' as const, chat } })),

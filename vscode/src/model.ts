@@ -232,6 +232,24 @@ export function needsFix(run: RunRow): boolean {
   return run.health === 'dead' || run.health === 'stalled';
 }
 
+/**
+ * Runs that just finished: in the current listing but not in the previous one (started and
+ * finished between refreshes), or previously active and now finished. Runs that vanished from
+ * the listing are ignored; runs that were already finished in the previous listing are not counted.
+ */
+export function newlyFinishedRuns(
+  currentRuns: readonly RunRow[],
+  previousRuns: ReadonlyMap<string, RunRow>,
+): RunRow[] {
+  const result: RunRow[] = [];
+  for (const run of currentRuns) {
+    if (isActive(run)) continue;
+    const prev = previousRuns.get(run.runId);
+    if (!prev || isActive(prev)) result.push(run);
+  }
+  return result;
+}
+
 export function describeRun(run: RunRow): string {
   const note = run.health ? HEALTH_NOTE[run.health] : undefined;
   if (note) return `${note} · cycle ${String(run.cycle)} · ${String(run.commits)} commits`;
