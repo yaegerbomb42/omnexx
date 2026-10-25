@@ -8,8 +8,10 @@
  * it, even if the later arrival conflicts with nothing currently held — otherwise a stream of
  * small edits could starve a big one forever. Waiters that conflict with nothing ahead of them
  * are granted out of order, so unrelated files never queue behind each other. A lock may carry
- * a TTL as a backstop against a dead owner; expiry is checked lazily on acquire/snapshot
- * rather than by a background timer, which keeps the manager deterministic to test.
+ * a TTL as a backstop against a dead owner. Expiry is enforced on acquire/snapshot and by one
+ * unref'd timer armed for the earliest expiresAt, so a waiter queued behind a dead owner's lock
+ * is woken at expiry instead of idling out its own timeoutMs. The timer is unref'd, so it never
+ * keeps a process alive on its own.
  *
  * Not re-entrant: an owner that already holds a region conflicts with itself and must release
  * first. That is deliberate — silent re-entry hides exactly the coordination bugs this exists
@@ -98,6 +100,7 @@ export class RegionLockManager {
   private readonly now: () => number;
   private readonly held: HeldLock[] = [];
   private readonly waiters: Waiter[] = [];
+  private ttlTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(opts: RegionLockManagerOptions = {}) {
     this.now = opts.now ?? Date.now;
@@ -181,6 +184,7 @@ export class RegionLockManager {
       expiresAt: ttlMs !== undefined ? acquiredAt + ttlMs : undefined,
     };
     this.held.push(lock);
+    this.scheduleExpiry();
     let released = false;
     return {
       ownerId,
@@ -190,6 +194,7 @@ export class RegionLockManager {
         released = true;
         const at = this.held.indexOf(lock);
         if (at >= 0) this.held.splice(at, 1);
+        this.scheduleExpiry();
         this.wakeWaiters();
       },
     };
@@ -222,6 +227,30 @@ export class RegionLockManager {
         freed = true;
       }
     }
+    this.scheduleExpiry();
     if (freed) this.wakeWaiters();
+  }
+
+  /**
+   * Keep exactly one unref'd timer armed for the earliest held expiresAt. The timer's job is
+   * narrow: a waiter queued behind a TTL lock has no acquire() of its own to prune that lock
+   * (the only call sites before this), so without it the waiter idles out its whole timeoutMs.
+   * Called after every mutation of held; an empty tick with no TTL locks left arms nothing.
+   */
+  private scheduleExpiry(): void {
+    if (this.ttlTimer !== undefined) clearTimeout(this.ttlTimer);
+    this.ttlTimer = undefined;
+    let earliest: number | undefined;
+    for (const lock of this.held) {
+      if (lock.expiresAt === undefined) continue;
+      if (earliest === undefined || lock.expiresAt < earliest) earliest = lock.expiresAt;
+    }
+    if (earliest === undefined) return;
+    const delay = Math.max(0, earliest - this.now());
+    this.ttlTimer = setTimeout(() => {
+      this.ttlTimer = undefined;
+      this.pruneExpired();
+    }, delay);
+    this.ttlTimer.unref();
   }
 }
