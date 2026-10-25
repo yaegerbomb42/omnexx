@@ -24,7 +24,7 @@
     "noEmit": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "test", "vscode/src", "*.ts"],
+  "include": ["src", "test", "vscode/src", "*.ts", "trigger.config.ts"],
   "exclude": [
     "vscode/src/webview/chat.ts",
     "vscode/src/webview/settings.ts",

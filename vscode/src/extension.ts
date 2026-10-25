@@ -27,9 +27,51 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     });
 
+  // Two places to see what a background run is doing, and that it finished while the panel was
+  // hidden: a count on the History view's icon and a status-bar item that opens it.
+  const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  status.command = 'omnexx.showHistory';
+  const paintStatus = (): void => {
+    if (provider.unseenFinished > 0) {
+      const n = provider.unseenFinished;
+      view.badge = { value: n, tooltip: `${String(n)} run${n === 1 ? '' : 's'} finished` };
+      status.text = `$(check) omnexx: ${String(n)} done`;
+      status.tooltip = 'Open History to see what finished';
+      status.show();
+      return;
+    }
+    if (provider.activeCount > 0) {
+      const n = provider.activeCount;
+      view.badge = { value: n, tooltip: `${String(n)} run${n === 1 ? '' : 's'} in progress` };
+      status.text = `$(sync~spin) omnexx: ${String(n)} running`;
+      status.tooltip = 'Open History to watch the plan';
+      status.show();
+      return;
+    }
+    view.badge = undefined;
+    status.hide();
+  };
+
   const chat = new ChatViewProvider(context.extensionUri);
+  provider.setVisible(view.visible);
+  paintStatus();
 
   context.subscriptions.push(
+    provider,
+    status,
+    provider.onDidUpdate(paintStatus),
+    view.onDidChangeVisibility(() => {
+      provider.setVisible(view.visible);
+      paintStatus();
+    }),
+    cmd('omnexx.showHistory', async () => {
+      // Focus the History view itself, so opening the container on the Chat tab still lands here.
+      try {
+        await vscode.commands.executeCommand('omnexx.runs.focus');
+      } catch {
+        await vscode.commands.executeCommand('workbench.view.extension.omnexx');
+      }
+    }),
     chat,
     vscode.window.registerWebviewViewProvider(ChatViewProvider.viewId, chat, {
       // Keep the conversation drawn while the panel is hidden instead of rebuilding it.

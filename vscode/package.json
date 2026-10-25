@@ -84,6 +84,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "omnexx.showHistory",
+        "title": "Show History",
+        "category": "omnexx",
+        "icon": "$(history)"
+      },
+      {
         "command": "omnexx.attach",
         "title": "Watch in Terminal",
         "category": "omnexx",
@@ -312,6 +318,11 @@
         "command": "omnexx.focusChat",
         "key": "ctrl+alt+o",
         "mac": "cmd+alt+o"
+      },
+      {
+        "command": "omnexx.showHistory",
+        "key": "ctrl+alt+h",
+        "mac": "cmd+alt+h"
       }
     ]
   },

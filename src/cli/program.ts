@@ -44,6 +44,9 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
       writeErr: (s) => io.stderr.write(s),
     })
     .exitOverride()
+    // Parse root options only before the subcommand, so a subcommand's own --json is not
+    // swallowed by this program's --json (used with -p).
+    .enablePositionalOptions()
     .showHelpAfterError('(run `omnexx --help` for usage)');
 
   // Brand the help screen on a terminal; piped output stays plain for scripts.
@@ -63,6 +66,10 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
   program.option('-p, --print <prompt>', 'one chat turn without the TUI; "-" reads stdin');
   program.option('-m, --model <model>', 'with -p: the model to use (provider:model)');
   program.option(
+    '--json',
+    'with -p: print one JSON object (reply, actions, errors, usage) and nothing else on stdout',
+  );
+  program.option(
     '--ollama [model]',
     'use your local Ollama (picks and tunes the best tool-capable model unless you name one)',
   );
@@ -72,6 +79,7 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
       continue?: boolean;
       print?: string;
       model?: string;
+      json?: boolean;
       ollama?: string | boolean;
     }) => {
       if (opts.ollama !== undefined) {
@@ -83,7 +91,12 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
       }
       if (opts.print !== undefined) {
         const { printCommand } = await import('./print.js');
-        setExit(await printCommand(io, opts.print, opts.model ? { model: opts.model } : {}));
+        setExit(
+          await printCommand(io, opts.print, {
+            ...(opts.model ? { model: opts.model } : {}),
+            ...(opts.json === true ? { json: true } : {}),
+          }),
+        );
         return;
       }
       if (!io.isTTY || !opts.tui || io.env.TERM === 'dumb') {

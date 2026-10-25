@@ -48,11 +48,37 @@ export function primaryFolder(): string | undefined {
 export class RunsProvider implements vscode.TreeDataProvider<Node> {
   private readonly changed = new vscode.EventEmitter<Node | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
+  /** Fires after a listing was computed, so the badge and status bar can follow it. */
+  private readonly updated = new vscode.EventEmitter<void>();
+  readonly onDidUpdate = this.updated.event;
   /** Whether the last listing had a run a supervisor is still working on. */
   hasActiveRun = false;
+  /** Runs a supervisor is working on right now. */
+  activeCount = 0;
+  /** Runs that ended since the History view was last looked at. */
+  unseenFinished = 0;
+  /** Whether the History view is on screen; a run ending in plain sight needs no badge. */
+  private watched = false;
+  private lastActive = new Set<string>();
 
   refresh(): void {
     this.changed.fire(undefined);
+  }
+
+  /** The History view is open: everything that finished has now been seen. */
+  markSeen(): void {
+    this.unseenFinished = 0;
+  }
+
+  /** The view was opened or closed; opening it also clears the count. */
+  setVisible(visible: boolean): void {
+    this.watched = visible;
+    if (visible) this.markSeen();
+  }
+
+  dispose(): void {
+    this.changed.dispose();
+    this.updated.dispose();
   }
 
   getTreeItem(n: Node): vscode.TreeItem {
@@ -101,6 +127,15 @@ export class RunsProvider implements vscode.TreeDataProvider<Node> {
       caseInsensitive: process.platform !== 'linux',
     });
     this.hasActiveRun = runs.some(isActive);
+    // Tell apart "still working" from "finished while you were elsewhere": a run that was active
+    // in the previous listing and is not anymore just ended.
+    const active = runs.filter(isActive);
+    this.activeCount = active.length;
+    const activeIds = new Set(active.map((run) => run.runId));
+    if (!this.watched)
+      for (const id of this.lastActive) if (!activeIds.has(id)) this.unseenFinished++;
+    this.lastActive = activeIds;
+    this.updated.fire();
     const dated = [
       ...chats.map((chat) => ({ at: chat.savedAt, node: { kind: 'chat' as const, chat } })),
       ...runs.map((run) => ({ at: run.startedAt, node: { kind: 'run' as const, run } })),

@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import { ChatProcess, type ServerMessage } from './chatProcess.js';
 import { BUNDLED_VERSION, engine, refreshEngine } from './engine.js';
 import { FORWARD } from './forward.js';
+import { parseLocation } from './location.js';
 import { primaryFolder } from './tree.js';
 
 const BREW_PATHS = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'];
@@ -673,20 +674,22 @@ async function openSettingsFile(path: string, starter: string): Promise<void> {
   await vscode.window.showTextDocument(uri);
 }
 
-/** Open `src/a.ts` or `src/a.ts:12` from a reply, relative to the workspace. */
+/**
+ * Open `src/a.ts`, `src/a.ts:12` or `src/a.ts:12:5` from a reply, relative to the workspace.
+ * The column is part of the reference the renderer links, so it has to be honoured here too.
+ */
 async function openPath(spec: string): Promise<void> {
-  const m = /^(.*?)(?::(\d+))?$/.exec(spec);
-  const file = m?.[1] ?? spec;
-  const line = m?.[2] ? Number(m[2]) - 1 : undefined;
+  const { file, line, column } = parseLocation(spec);
   const root = primaryFolder();
   const path = isAbsolute(file) || !root ? file : join(root, file);
   try {
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(path));
     const editor = await vscode.window.showTextDocument(doc, { preview: true });
     if (line !== undefined) {
-      const pos = new vscode.Position(Math.max(0, line), 0);
-      editor.selection = new vscode.Selection(pos, pos);
-      editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      // Both are 1-based in the text and 0-based in a Position.
+      const at = new vscode.Position(Math.max(0, line - 1), Math.max(0, (column ?? 1) - 1));
+      editor.selection = new vscode.Selection(at, at);
+      editor.revealRange(new vscode.Range(at, at), vscode.TextEditorRevealType.InCenter);
     }
   } catch {
     void vscode.window.showWarningMessage(`omnexx: couldn't open ${file}`);
