@@ -31,6 +31,29 @@ describe('darwinx meta-harness', () => {
     });
   });
 
+  it('selects the most recent failing call as the root cause', () => {
+    const symptom = diagnoseFailure([
+      {
+        turn: 1,
+        calls: [
+          { tool: 'read', isError: false, error: '' },
+          { tool: 'bash', isError: true, error: 'First failing call' },
+          { tool: 'grep', isError: true, error: 'Last failing call' },
+        ],
+        fresh: 100,
+        cached: 0,
+        ms: 50,
+        gates: 'ok',
+      },
+    ]);
+    expect(symptom).toEqual({
+      turn: 1,
+      kind: 'tool_error',
+      tool: 'grep',
+      detail: 'Last failing call',
+    });
+  });
+
   it('diagnoses gate failures when flagged', () => {
     const symptom = diagnoseFailure(
       [{ turn: 3, calls: [], fresh: 10, cached: 50, ms: 20, gates: 'fail' }],
