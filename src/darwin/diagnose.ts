@@ -39,7 +39,9 @@ export function diagnoseFailure(
   if (options?.lastError) {
     return {
       turn: traces.at(-1)?.turn ?? 0,
-      kind: /(?:\bloop\b|tombstone|oscillation)/i.test(options.lastError)
+      kind: /doom[\s_-]?loop|\b(stuck|repeat(ed|ing)?|oscillat\w*|tombstone)\b/i.test(
+        options.lastError,
+      )
         ? 'doom_loop'
         : 'tool_error',
       detail: options.lastError,
