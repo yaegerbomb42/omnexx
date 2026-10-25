@@ -149,4 +149,52 @@ describe('darwinx meta-harness', () => {
     expect(reverted).toBe(true);
     expect(res.rejectionReason).toBe('test:quick failed');
   });
+
+  it('reverts when runGates rejects and rethrows the original error', async () => {
+    let reverted = false;
+    const boom = new Error('gate runner crashed');
+    const sandbox: SandboxRunner = {
+      runGates: () => Promise.reject(boom),
+      revert: () => {
+        reverted = true;
+        return Promise.resolve();
+      },
+      commit: () => Promise.resolve(''),
+    };
+
+    const symptom: FailureSymptom = { turn: 1, kind: 'tool_error', detail: 'SyntaxError' };
+    const mutation: MutationProposal = {
+      target: 'prompt',
+      file: 'src/instructions/base.ts',
+      rationale: 'Clarify JSON schema requirements',
+      diffPatch: '+ Ensure JSON is escaped',
+    };
+
+    await expect(evaluateMutation(1, symptom, mutation, sandbox)).rejects.toBe(boom);
+    expect(reverted).toBe(true);
+  });
+
+  it('reverts when commit rejects and rethrows the original error', async () => {
+    let reverted = false;
+    const boom = new Error('commit failed');
+    const sandbox: SandboxRunner = {
+      runGates: () => Promise.resolve({ ok: true }),
+      revert: () => {
+        reverted = true;
+        return Promise.resolve();
+      },
+      commit: () => Promise.reject(boom),
+    };
+
+    const symptom: FailureSymptom = { turn: 1, kind: 'tool_error', detail: 'SyntaxError' };
+    const mutation: MutationProposal = {
+      target: 'prompt',
+      file: 'src/instructions/base.ts',
+      rationale: 'Clarify JSON schema requirements',
+      diffPatch: '+ Ensure JSON is escaped',
+    };
+
+    await expect(evaluateMutation(1, symptom, mutation, sandbox)).rejects.toBe(boom);
+    expect(reverted).toBe(true);
+  });
 });
