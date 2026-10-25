@@ -316,6 +316,34 @@ describe('applyMigration', () => {
   });
 });
 
+describe('unknown-field preservation', () => {
+  it('keeps unrecognized claude-code settings under [raw.claude-code.user]', async () => {
+    const f = await setupFixture();
+    await mkdir(join(f.home, '.claude'), { recursive: true });
+    await writeFile(
+      join(f.home, '.claude', 'settings.json'),
+      JSON.stringify({
+        model: 'opus',
+        include: ['**/*.md'],
+        permissions: { deny: ['rm -rf /'], allow: ['Bash(npm run *)'] },
+        someUnknown: { nested: true, arr: [1, 2] },
+      }),
+    );
+    const plan = await planMigration(await detectAgentConfigs(f.io), f.io);
+    expect(plan.items.some((i) => i.kind === 'raw')).toBe(true);
+    await applyMigration(plan, f.io);
+    const text = await readFile(join(f.configHome, 'config.toml'), 'utf8');
+    const parsed = parseToml(text) as { raw?: Record<string, Record<string, unknown>> };
+    const user = parsed.raw?.['claude-code']?.user;
+    expect(user).toBeDefined();
+    expect(user).toMatchObject({
+      include: ['**/*.md'],
+      permissions: { allow: ['Bash(npm run *)'] },
+      someUnknown: { nested: true, arr: [1, 2] },
+    });
+  });
+});
+
 describe('runMigrate', () => {
   it('prints the plan as JSON with --json and writes nothing', async () => {
     const f = await setupFixture();

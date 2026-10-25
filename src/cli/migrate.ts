@@ -2,12 +2,17 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { Command } from 'commander';
-import { parse as parseToml } from 'smol-toml';
+import { parse as parseToml, stringify } from 'smol-toml';
 import { resolvePaths, userConfigFile } from '../core/paths.js';
 import { parseJsonc, serversFrom, type FoundServer } from '../integrations/importers.js';
 import { SECRET_PREFIX, writeServerSecrets } from '../integrations/secrets.js';
 import { readConfigText } from '../integrations/install.js';
-import { mergeTableKeys, setTable, type TomlValue } from '../integrations/toml-edit.js';
+import {
+  mergeTableKeys,
+  removeTable,
+  setTable,
+  type TomlValue,
+} from '../integrations/toml-edit.js';
 import { AMBER, CYAN, GREEN, MUTED, RED, VIOLET } from '../tui/colors.js';
 import type { CommandRegistrar } from './commands/extra/types.js';
 import { EXIT } from './exit-codes.js';
@@ -45,6 +50,8 @@ export interface ExternalAgentSettings {
   skippedHooks: number;
   /** Recognized-but-unmappable things (e.g. a model ref we can't name a provider for). */
   notes: string[];
+  /** Unrecognized settings fields, preserved verbatim under `[raw.<tool>.<scope>]`. */
+  raw?: Record<string, unknown>;
 }
 
 export interface AgentConfigDetection {
@@ -69,7 +76,7 @@ export interface PlannedServer {
   headers: Record<string, string>;
 }
 
-export type MigrationItemKind = 'server' | 'model' | 'policy-env' | 'policy-deny' | 'hook';
+export type MigrationItemKind = 'server' | 'model' | 'policy-env' | 'policy-deny' | 'hook' | 'raw';
 
 export interface MigrationItem {
   id: string;
@@ -86,6 +93,7 @@ export interface MigrationItem {
   envNames?: string[];
   deny?: string[];
   hook?: MappedHook;
+  raw?: Record<string, unknown>;
 }
 
 export interface MigratePlan {
@@ -204,6 +212,28 @@ function settingsFrom(raw: unknown): ExternalAgentSettings | undefined {
     notes.push(`model "${model}" (no known provider to attach it to)`);
   const out: ExternalAgentSettings = { envNames: env, deny, hooks, skippedHooks, notes };
   if (model !== undefined) out.model = model;
+  const rawFields = unknownSettingsFields(raw);
+  if (Object.keys(rawFields).length) out.raw = rawFields;
+  return out;
+}
+
+/** Settings keys the migration consumes; every other field is preserved verbatim. */
+const KNOWN_SETTINGS_KEYS = new Set(['model', 'env', 'permissions', 'hooks']);
+
+/** Fields a config carries that omnexx has no mapping for, kept for round-tripping. */
+function unknownSettingsFields(source: unknown): Record<string, unknown> {
+  if (!isRecord(source)) return {};
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(source)) {
+    if (KNOWN_SETTINGS_KEYS.has(k)) continue;
+    out[k] = v;
+  }
+  const perms = source.permissions;
+  if (isRecord(perms)) {
+    const rest: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(perms)) if (k !== 'deny') rest[k] = v;
+    if (Object.keys(rest).length) out.permissions = rest;
+  }
   return out;
 }
 
@@ -412,6 +442,18 @@ export async function planMigration(
           detail: h.run,
           hook: h,
         });
+      if (s.raw && Object.keys(s.raw).length) {
+        const n = Object.keys(s.raw).length;
+        add({
+          tool: d.tool,
+          scope: d.scope,
+          kind: 'raw',
+          file,
+          label: 'unrecognized settings',
+          detail: `${n} field${n === 1 ? '' : 's'} preserved`,
+          raw: s.raw,
+        });
+      }
     }
   }
 
@@ -494,6 +536,10 @@ export async function applyMigration(
         text = appendHooks(text, [item.hook]);
         dirty = true;
         lines.push(`${okGlyph()} ${item.label} → [[hooks]] (${file})`);
+      } else if (item.kind === 'raw' && item.raw) {
+        text = appendRawSection(text, item.tool, item.scope, item.raw);
+        dirty = true;
+        lines.push(`${okGlyph()} ${item.label} → [raw] (${file})`);
       }
     }
     if (dirty) {
@@ -540,6 +586,20 @@ function appendHooks(text: string, hooks: readonly MappedHook[]): string {
     ].join('\n'),
   );
   const next = `${text.replace(/\s*$/, '')}${text.trim() ? '\n\n' : ''}${blocks.join('\n\n')}\n`;
+  parseToml(next); // validate before returning
+  return next;
+}
+
+/** Write unrecognized fields under `[raw.<tool>.<scope>]`, replacing any prior copy. */
+function appendRawSection(
+  text: string,
+  tool: AgentTool,
+  scope: ToolScope,
+  raw: Record<string, unknown>,
+): string {
+  const { text: cleared } = removeTable(text, ['raw', tool, scope]);
+  const block = stringify({ raw: { [tool]: { [scope]: raw } } }).replace(/\s*$/, '');
+  const next = `${cleared.replace(/\s*$/, '')}${cleared.trim() ? '\n\n' : ''}${block}\n`;
   parseToml(next); // validate before returning
   return next;
 }

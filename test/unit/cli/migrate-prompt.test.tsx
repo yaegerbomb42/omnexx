@@ -100,7 +100,11 @@ function plan(): MigratePlan {
 describe('MigratePrompt', () => {
   it('lists detected and not-detected tools with the same tokens as the report', async () => {
     const { lastFrame, unmount } = render(
-      <MigratePrompt plan={plan()} onMigrate={async () => []} onExit={() => undefined} />,
+      <MigratePrompt
+        plan={plan()}
+        onMigrate={() => Promise.resolve([])}
+        onExit={() => undefined}
+      />,
     );
     await tick();
     const frame = lastFrame();
@@ -116,7 +120,9 @@ describe('MigratePrompt', () => {
   });
 
   it('space toggles a row; enter applies only the selected items, then closes', async () => {
-    const onMigrate = vi.fn(async (ids: readonly string[]) => ids.map((id) => `✓ ${id}`));
+    const onMigrate = vi.fn((ids: readonly string[]) =>
+      Promise.resolve(ids.map((id) => `✓ ${id}`)),
+    );
     const onExit = vi.fn();
     const { lastFrame, stdin, unmount } = render(
       <MigratePrompt plan={plan()} onMigrate={onMigrate} onExit={onExit} />,
@@ -144,7 +150,7 @@ describe('MigratePrompt', () => {
   });
 
   it('q quits without applying', async () => {
-    const onMigrate = vi.fn(async () => []);
+    const onMigrate = vi.fn(() => Promise.resolve([]));
     const onExit = vi.fn();
     const { stdin, unmount } = render(
       <MigratePrompt plan={plan()} onMigrate={onMigrate} onExit={onExit} />,
@@ -157,8 +163,22 @@ describe('MigratePrompt', () => {
     unmount();
   });
 
+  it('esc cancels without applying', async () => {
+    const onMigrate = vi.fn(() => Promise.resolve([]));
+    const onExit = vi.fn();
+    const { stdin, unmount } = render(
+      <MigratePrompt plan={plan()} onMigrate={onMigrate} onExit={onExit} />,
+    );
+    await tick();
+    stdin.write('\u001B');
+    await tick();
+    expect(onMigrate).not.toHaveBeenCalled();
+    expect(onExit).toHaveBeenCalledWith({ cancelled: true, lines: [] });
+    unmount();
+  });
+
   it('enter with nothing selected hints instead of applying', async () => {
-    const onMigrate = vi.fn(async () => []);
+    const onMigrate = vi.fn(() => Promise.resolve([]));
     const onExit = vi.fn();
     const { lastFrame, stdin, unmount } = render(
       <MigratePrompt plan={plan()} onMigrate={onMigrate} onExit={onExit} />,

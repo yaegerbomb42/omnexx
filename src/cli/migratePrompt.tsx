@@ -185,6 +185,15 @@ export function MigratePrompt({ plan, onMigrate, onExit }: MigratePromptProps): 
           <Text dimColor>nothing detected — claude-code / cursor configs will show up here</Text>
         ) : null}
       </Box>
+      {lines.length ? (
+        <Box marginTop={1} flexDirection="column">
+          {lines.map((l, i) => (
+            <Text key={i} color={ok}>
+              {l}
+            </Text>
+          ))}
+        </Box>
+      ) : null}
       <Box marginTop={1} flexDirection="column">
         <Text dimColor>→ {files}</Text>
         {notice ? <Text color={warn}>{notice}</Text> : null}
