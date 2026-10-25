@@ -57,8 +57,28 @@ async function fetchJson(
 async function judgeChecks(deps: DoctorDeps): Promise<Check[]> {
   const { nimble } = deps.config.judge;
   const base = nimble.url.replace(/\/+$/, '');
-  const host = new URL(base).hostname;
   const checks: Check[] = [];
+  let host: string;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(base)) {
+    host = '';
+  } else {
+    try {
+      host = new URL(base).hostname;
+    } catch {
+      host = '';
+    }
+  }
+  if (!host) {
+    checks.push(
+      {
+        name: 'judge endpoint',
+        status: 'warn',
+        detail: `${base} is not a valid judge URL (expected e.g. http://localhost:11434)`,
+      },
+      { name: 'judge reachability', status: 'skip', detail: 'invalid judge URL' },
+    );
+    return checks;
+  }
   checks.push(
     isTrustedJudgeHost(host)
       ? { name: 'judge endpoint', status: 'ok', detail: `${base} (loopback or Tailscale)` }
