@@ -168,6 +168,30 @@ describe('worktree + checkpoint + rollback', () => {
       delete process.env.GIT_CONFIG_NOSYSTEM;
     }
   });
+  it('overrides only the missing identity value', async () => {
+    const repo = await seeded();
+    await git(repo, ['config', '--unset', 'user.name']);
+    await writeFile(join(repo, 'b.txt'), 'b\n');
+    const env = { HOME: await tempDir(), XDG_CONFIG_HOME: await tempDir() };
+    const prev = { HOME: process.env.HOME, XDG: process.env.XDG_CONFIG_HOME };
+    Object.assign(process.env, {
+      HOME: env.HOME,
+      XDG_CONFIG_HOME: env.XDG_CONFIG_HOME,
+      GIT_CONFIG_NOSYSTEM: '1',
+    });
+    try {
+      const sha = await commitCheckpoint(repo, 's', '', { run: 'r', task: 't', cycle: 1 });
+      expect((await git(repo, ['log', '-1', '--format=%an', sha])).stdout).toBe('omnexx');
+      expect((await git(repo, ['log', '-1', '--format=%ae', sha])).stdout).toBe(
+        'test@omnexx.invalid',
+      );
+    } finally {
+      process.env.HOME = prev.HOME;
+      if (prev.XDG === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = prev.XDG;
+      delete process.env.GIT_CONFIG_NOSYSTEM;
+    }
+  });
 
   it('createWorktree fails clearly when the branch exists', async () => {
     const repo = await seeded();
