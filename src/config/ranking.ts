@@ -50,8 +50,20 @@ export async function readPoolMode(p: OmnexxPaths): Promise<PoolMode> {
   return parsePoolMode((await readFileJson(p)).mode);
 }
 
-export async function writePoolMode(p: OmnexxPaths, mode: PoolMode): Promise<void> {
-  await save(p, await readRanking(p), mode);
+/** Serialize read-modify-write of models.json so concurrent writers don't clobber each other. */
+let writeQueue: Promise<unknown> = Promise.resolve();
+
+function enqueueWrite<T>(work: () => Promise<T>): Promise<T> {
+  const run = writeQueue.then(work, work);
+  writeQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+export function writePoolMode(p: OmnexxPaths, mode: PoolMode): Promise<void> {
+  return enqueueWrite(async () => save(p, await readRanking(p), mode));
 }
 
 function cleanRanked(value: unknown): string[] {
@@ -67,20 +79,20 @@ async function save(p: OmnexxPaths, ranked: readonly string[], mode: PoolMode): 
 }
 
 /** Save the list and its mode together (the editor sends both). */
-export async function writePool(
+export function writePool(
   p: OmnexxPaths,
   ranked: readonly string[],
   mode: PoolMode,
 ): Promise<void> {
-  await save(p, ranked, mode);
+  return enqueueWrite(() => save(p, ranked, mode));
 }
 
 export async function readRanking(p: OmnexxPaths): Promise<string[]> {
   return cleanRanked((await readFileJson(p)).ranked);
 }
 
-export async function writeRanking(p: OmnexxPaths, ranked: readonly string[]): Promise<void> {
-  await save(p, ranked, await readPoolMode(p));
+export function writeRanking(p: OmnexxPaths, ranked: readonly string[]): Promise<void> {
+  return enqueueWrite(async () => save(p, ranked, await readPoolMode(p)));
 }
 
 /**
