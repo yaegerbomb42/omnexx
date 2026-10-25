@@ -5,9 +5,7 @@ describe('pollControl', () => {
   it('swallows control() failures so the watcher cannot unhandle a rejection', async () => {
     const run = {
       abort: new AbortController(),
-      control: async () => {
-        throw new Error('control.json unreadable');
-      },
+      control: () => Promise.reject(new Error('control.json unreadable')),
     };
     await expect(pollControl(run)).resolves.toBeUndefined();
     expect(run.abort.signal.aborted).toBe(false);
@@ -16,7 +14,7 @@ describe('pollControl', () => {
   it('aborts the run on stop-now', async () => {
     const run = {
       abort: new AbortController(),
-      control: async () => 'stop-now' as const,
+      control: () => Promise.resolve('stop-now' as const),
     };
     await pollControl(run);
     expect(run.abort.signal.aborted).toBe(true);

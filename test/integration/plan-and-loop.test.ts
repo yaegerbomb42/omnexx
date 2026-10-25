@@ -97,11 +97,13 @@ describe('run --plan-only', () => {
     expect(provider.requests[0]?.tools.map((t) => t.name).sort()).toEqual([
       'context',
       'outline',
+      'query_artifact',
       'read',
       'read_log',
       'read_symbol',
       'recall',
       'remember',
+      'repl_projection',
       'search',
       'write_intent',
       'write_plan',

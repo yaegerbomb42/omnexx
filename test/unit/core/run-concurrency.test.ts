@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Run } from '../../../src/core/run.js';
+import type { Run } from '../../../src/core/run.js';
 import { startTestRun } from '../../support/harness.js';
 import { say, ScriptedProvider } from '../../support/scripted-provider.js';
 

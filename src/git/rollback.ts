@@ -49,6 +49,10 @@ export async function rollbackTo(
     'target',
     '-e',
     'vendor',
+    // Omnexx's own spec-test suite and dispute note live untracked (info/exclude) across
+    // rollbacks; wiping them loses a worker's pending dispute.
+    '-e',
+    '.omnexx-spec*',
   ]);
   return { savedPatch, exact };
 }
