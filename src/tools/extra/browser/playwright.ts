@@ -9,6 +9,18 @@ import type {
 } from './types.js';
 import { parseSemantic } from './selector.js';
 
+/**
+ * Optional peer deps are imported via a non-literal specifier so TypeScript and
+ * bundlers (tsup/vite) never try to resolve them at build time; whether they
+ * happen to be installed somewhere on the machine must not change the build.
+ */
+/** How long a click waits for a tab it may have opened. */
+const POPUP_GRACE_MS = 500;
+
+function optionalModule(name: string): string {
+  return name;
+}
+
 interface Timeout {
   timeout: number;
 }
@@ -56,7 +68,11 @@ interface PlaywrightPage {
   title(): Promise<string>;
   bringToFront(): Promise<void>;
   close(): Promise<void>;
-  waitForLoadState(state: 'networkidle', options: { timeout: number }): Promise<void>;
+  waitForLoadState(
+    state: 'networkidle' | 'domcontentloaded',
+    options: { timeout: number },
+  ): Promise<void>;
+  waitForEvent?(event: 'popup', options: { timeout: number }): Promise<PlaywrightPage>;
   evaluate<R>(fn: (() => R) | string): Promise<R>;
   on(
     event: 'console',
@@ -153,8 +169,7 @@ export class PlaywrightBackend implements BrowserBackend {
     if (this.launch.engine !== 'camoufox') return { type: pw.chromium, options: { headless } };
     let cf: CamoufoxModule;
     try {
-      // @ts-expect-error optional dependency, installed only by people who want Camoufox
-      cf = (await import('camoufox-js')) as CamoufoxModule;
+      cf = (await import(/* @vite-ignore */ optionalModule('camoufox-js'))) as CamoufoxModule;
     } catch (err) {
       throw new Error(CAMOUFOX_HELP, { cause: err });
     }
@@ -167,8 +182,9 @@ export class PlaywrightBackend implements BrowserBackend {
     let pw: PlaywrightCoreModule;
     try {
       // Dynamic import of playwright-core as optional peer dependency
-      // @ts-expect-error dynamic import of optional peer dependency
-      pw = (await import('playwright-core')) as PlaywrightCoreModule;
+      pw = (await import(
+        /* @vite-ignore */ optionalModule('playwright-core')
+      )) as PlaywrightCoreModule;
     } catch (importErr) {
       throw new Error(
         this.launch.engine === 'camoufox'
@@ -337,7 +353,19 @@ export class PlaywrightBackend implements BrowserBackend {
   }
 
   async click(ref: string): Promise<void> {
+    const page = await this.ensurePage();
+    // A click can open a tab (target=_blank, window.open). Playwright reports it a moment after
+    // click() resolves, so wait briefly for it: a following `tabs` call must already list it.
+    const popup = page.waitForEvent
+      ? page.waitForEvent('popup', { timeout: POPUP_GRACE_MS }).catch(() => null)
+      : Promise.resolve(null);
     await (await this.loc(ref)).click(T);
+    const opened = await popup;
+    if (opened) {
+      this.track(opened);
+      this.page = opened;
+      await opened.waitForLoadState('domcontentloaded', T).catch(() => undefined);
+    }
   }
 
   async type(ref: string, text: string): Promise<void> {

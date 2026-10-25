@@ -4,6 +4,15 @@ import { AgentBrowserBackend } from './agent-browser.js';
 import { PlaywrightBackend } from './playwright.js';
 import type { BrowserLaunch } from './types.js';
 
+/**
+ * Optional peer deps are imported via a non-literal specifier so TypeScript and
+ * bundlers (tsup/vite) never try to resolve them at build time; whether they
+ * happen to be installed somewhere on the machine must not change the build.
+ */
+function optionalModule(name: string): string {
+  return name;
+}
+
 let cachedDetection: BackendDetectResult | null = null;
 
 export async function detectBrowserBackend(): Promise<BackendDetectResult> {
@@ -32,8 +41,7 @@ export async function detectBrowserBackend(): Promise<BackendDetectResult> {
 
   // 2. Check for playwright-core
   try {
-    // @ts-expect-error dynamic import of optional peer dependency
-    const pw: unknown = await import('playwright-core');
+    const pw: unknown = await import(/* @vite-ignore */ optionalModule('playwright-core'));
     if (pw !== null && pw !== undefined) {
       cachedDetection = {
         backend: 'playwright',

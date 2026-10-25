@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { PtyDaemon, connectPty } from '../../../src/cli/pty.js';
 import { tempDir } from '../../support/tmp.js';
 
-async function alive(pid: number): Promise<boolean> {
+function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -34,13 +34,13 @@ describe('PtyDaemon client disconnect', () => {
         await new Promise((r) => setTimeout(r, 20));
       }
       expect(pid).toBeGreaterThan(0);
-      expect(await alive(pid)).toBe(true);
+      expect(alive(pid)).toBe(true);
       client.end();
       const goneBy = Date.now() + 2_000;
-      while (Date.now() < goneBy && (await alive(pid))) {
+      while (Date.now() < goneBy && alive(pid)) {
         await new Promise((r) => setTimeout(r, 20));
       }
-      expect(await alive(pid)).toBe(false);
+      expect(alive(pid)).toBe(false);
     } finally {
       await daemon.stop();
     }

@@ -6,12 +6,12 @@ import { task } from '@trigger.dev/sdk';
  */
 export const helloWorld = task({
   id: 'hello-world',
-  run: async (payload: { name?: string }) => {
+  run: (payload: { name?: string }) => {
     const name = payload.name ?? 'world';
 
-    return {
+    return Promise.resolve({
       message: `Hello, ${name}!`,
       timestamp: new Date().toISOString(),
-    };
+    });
   },
 });

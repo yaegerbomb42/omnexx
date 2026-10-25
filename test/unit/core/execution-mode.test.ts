@@ -4,12 +4,12 @@ import type { OmnexxConfig } from '../../../src/config/schema.js';
 import { refreshRunConfig } from '../../../src/core/supervisor.js';
 import type { OmnexxEvent } from '../../../src/core/events.js';
 
-type FakeRun = {
+interface FakeRun {
   config: OmnexxConfig;
   state: { executionMode: 'efficient' | 'normal' | 'extreme'; workDomain: 'swe' | 'general' };
   save: () => Promise<void>;
   events: { emit: (type: string, data?: Record<string, unknown>) => OmnexxEvent };
-};
+}
 
 function makeRun(mode: 'efficient' | 'normal' | 'extreme' = 'normal'): {
   run: FakeRun;
@@ -19,7 +19,7 @@ function makeRun(mode: 'efficient' | 'normal' | 'extreme' = 'normal'): {
   const run: FakeRun = {
     config: defaultConfig({ execution: { mode }, plan: { mode: 'full' } }),
     state: { executionMode: mode, workDomain: 'swe' },
-    save: async () => {},
+    save: () => Promise.resolve(),
     events: {
       emit: (type: string, data: Record<string, unknown> = {}) => {
         emitted.push({ type, data });
@@ -48,7 +48,7 @@ const efficientConfig = () =>
 describe('refreshRunConfig (hot execution-mode switch)', () => {
   it('applies the new preset in place, records the mode and emits execution.mode_change', async () => {
     const { run, emitted } = makeRun('normal');
-    const changed = await refreshRunConfig(run, async () => efficientConfig());
+    const changed = await refreshRunConfig(run, () => Promise.resolve(efficientConfig()));
 
     expect(changed).toBe(true);
     expect(run.state.executionMode).toBe('efficient');
@@ -66,8 +66,8 @@ describe('refreshRunConfig (hot execution-mode switch)', () => {
 
   it('switching back to normal drops the preset and records it', async () => {
     const { run, emitted } = makeRun('extreme');
-    const changed = await refreshRunConfig(run, async () =>
-      defaultConfig({ execution: { mode: 'normal' } }),
+    const changed = await refreshRunConfig(run, () =>
+      Promise.resolve(defaultConfig({ execution: { mode: 'normal' } })),
     );
 
     expect(changed).toBe(true);
@@ -84,8 +84,8 @@ describe('refreshRunConfig (hot execution-mode switch)', () => {
 
   it('no mode change: no event, state untouched', async () => {
     const { run, emitted } = makeRun('normal');
-    const changed = await refreshRunConfig(run, async () =>
-      defaultConfig({ execution: { mode: 'normal' } }),
+    const changed = await refreshRunConfig(run, () =>
+      Promise.resolve(defaultConfig({ execution: { mode: 'normal' } })),
     );
 
     expect(changed).toBe(false);
@@ -96,9 +96,9 @@ describe('refreshRunConfig (hot execution-mode switch)', () => {
   it('a failed reload keeps the previous config and emits config.reload_failed', async () => {
     const { run, emitted } = makeRun('extreme');
     const before = run.config.plan.loop_rounds;
-    const changed = await refreshRunConfig(run, async () => {
-      throw new Error('omnexx.toml:3:4: invalid TOML');
-    });
+    const changed = await refreshRunConfig(run, () =>
+      Promise.reject(new Error('omnexx.toml:3:4: invalid TOML')),
+    );
 
     expect(changed).toBe(false);
     expect(run.state.executionMode).toBe('extreme');

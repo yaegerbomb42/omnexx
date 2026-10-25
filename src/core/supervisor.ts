@@ -117,7 +117,8 @@ export const EXIT_FOR: Record<RunStatus, number> = {
 const MAX_MILESTONE_REPLANS = 2;
 
 /** Fold this run's lessons into the repo's memory so the next run or chat starts with them. */
-async function rememberForRepo(run: Run, facts?: FactRecorder): Promise<void> {  try {
+async function rememberForRepo(run: Run, facts?: FactRecorder): Promise<void> {
+  try {
     facts?.promoteNotes(await run.store.readNotes());
     await facts?.flush();
     const added = await saveToRepoMemory(

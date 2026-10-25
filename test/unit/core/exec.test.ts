@@ -9,7 +9,7 @@ describe('runDisposableShell timeout / abort', () => {
     const seen: { pid: number; sig: NodeJS.Signals | number | undefined }[] = [];
     const real = process.kill.bind(process);
     const spy = vi.spyOn(process, 'kill').mockImplementation((pid, sig) => {
-      seen.push({ pid: pid as number, sig: sig as NodeJS.Signals });
+      seen.push({ pid, sig: sig as NodeJS.Signals });
       return real(pid, sig);
     });
     try {
@@ -72,13 +72,17 @@ describe('ShellSession interrupt vs next command', () => {
       await Promise.race([
         s.exec('kill -9 $$', { cwd: tmpdir(), env, timeoutMs: 2_000 }),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('kill -9 $$ hung')), 3_000),
+          setTimeout(() => {
+            reject(new Error('kill -9 $$ hung'));
+          }, 3_000),
         ),
       ]);
       const r = await Promise.race([
         s.exec('echo hello', { cwd: tmpdir(), env, timeoutMs: 2_000 }),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('follow-up hung')), 3_000),
+          setTimeout(() => {
+            reject(new Error('follow-up hung'));
+          }, 3_000),
         ),
       ]);
       expect(r.output).toContain('hello');

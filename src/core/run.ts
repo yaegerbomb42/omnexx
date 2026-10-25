@@ -75,7 +75,10 @@ export class Run {
    * Cached `AbortSignal.any` of run + cycle. Recreating it on every `signal` read would add a
    * listener to `abort` per call and leak them until the run ends.
    */
-  private combinedSignal: AbortSignal = AbortSignal.any([this.abort.signal, this.cycleAbort.signal]);
+  private combinedSignal: AbortSignal = AbortSignal.any([
+    this.abort.signal,
+    this.cycleAbort.signal,
+  ]);
   /** Serialize state.json writes so overlapping save() calls cannot persist a stale snapshot. */
   private saveChain: Promise<void> = Promise.resolve();
   /** Set by the watchdog when it aborted the current cycle for silence: what it saw. */
