@@ -16,6 +16,7 @@ import { EXIT } from '../exit-codes.js';
 import { println, type CliIO } from '../io.js';
 import { pickRun, supervisorAlive } from './control.js';
 import { brand } from '../brand.js';
+import { resumeSummary } from '../run-deps.js';
 import { emptyTelemetry, fold, tokensPerCommit } from '../../telemetry/aggregate.js';
 import { EventTail } from '../../telemetry/feed.js';
 import { humanize, type Verbosity } from '../../telemetry/humanize.js';
@@ -133,6 +134,7 @@ export async function statusCommand(
 /** One `omnexx runs --json` row: enough for an editor to list runs and match them to a folder. */
 async function runRow(store: RunStore, now: number) {
   const s = await store.readState();
+  const plan = await store.readPlan();
   const alive = await supervisorAlive(store);
   // Only live runs need their events read for health; ended ones are simply ended.
   let health: RunHealth = 'ended';
@@ -149,6 +151,7 @@ async function runRow(store: RunStore, now: number) {
   }
   // The goal's first line names the run in the editor's History.
   const goal = (await store.readGoal()).text.split('\n').find((l) => l.trim()) ?? '';
+  const summary = resumeSummary(s, plan);
   return {
     runId: s.runId,
     goal: goal.replace(/^#+\s*/, '').trim(),
@@ -166,6 +169,9 @@ async function runRow(store: RunStore, now: number) {
     commits: s.acceptedCommits,
     supervisorAlive: alive,
     health,
+    mode: summary.mode,
+    progress: summary.progress,
+    lastCheckpoint: summary.lastCheckpoint,
   };
 }
 
@@ -188,12 +194,23 @@ export async function runsCommand(io: CliIO, json = false): Promise<number> {
   }
   if (!ids.length) println(io.stdout, 'no runs yet');
   for (const id of ids) {
-    const s = await new RunStore(paths, id).readState().catch(() => undefined);
+    const store = new RunStore(paths, id);
+    const s = await store.readState().catch(() => undefined);
+    if (!s) {
+      println(io.stdout, `${id}  (unreadable state)`);
+      continue;
+    }
+    const plan = await store.readPlan().catch(() => undefined);
+    const summary = resumeSummary(s, plan);
+    const mode = summary.mode === 'normal' ? '' : ` [${summary.mode}]`;
+    const progress =
+      summary.progress.tasks > 0 ? ` ${summary.progress.done}/${summary.progress.tasks} tasks` : '';
+    const cp = summary.lastCheckpoint
+      ? ` ✓${summary.lastCheckpoint.milestoneId} ${new Date(summary.lastCheckpoint.at).toISOString().slice(0, 16).replace('T', ' ')}`
+      : '';
     println(
       io.stdout,
-      s
-        ? `${id}  ${s.status.padEnd(12)} ${s.repoName}  cycle ${s.cycle}  $${s.spend.usd.toFixed(2)}  ${s.acceptedCommits} commits`
-        : `${id}  (unreadable state)`,
+      `${id}  ${s.status.padEnd(12)} ${s.repoName}  cycle ${s.cycle}${mode}${progress}${cp}  $${s.spend.usd.toFixed(2)}  ${s.acceptedCommits} commits`,
     );
   }
   return EXIT.ok;

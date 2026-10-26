@@ -15,6 +15,8 @@ import { makeEndpointProvider } from '../providers/make.js';
 import { ProviderRouter } from '../providers/router.js';
 import { withTurnEffort } from '../providers/turn-effort.js';
 import type { Provider } from '../providers/types.js';
+import { planCounts, type Plan } from '../core/plan.js';
+import type { RunState } from '../core/run-store.js';
 import type { CliIO } from './io.js';
 
 export interface ResolvedDeps {
@@ -38,6 +40,28 @@ export function stallTimeoutMs(setting: string | undefined, baseUrl: string): nu
 export function prefixTtl(setting: 'auto' | '5m' | '1h', maxHours: number): '5m' | '1h' {
   if (setting !== 'auto') return setting;
   return maxHours > 1 ? '1h' : '5m';
+}
+
+export interface ResumeSummary {
+  /** The execution mode the run is under (efficient | normal | extreme). */
+  mode: string;
+  /** Planned tasks done vs total, from the run's plan. */
+  progress: { done: number; tasks: number };
+  /** The last milestone checkpoint, so a resumed run can say where it left off. */
+  lastCheckpoint: { milestoneId: string; tag: string; at: number } | undefined;
+}
+
+/** The subset of a run's state `omnexx runs` shows so a run can be chosen and resumed. */
+export function resumeSummary(state: RunState, plan?: Plan): ResumeSummary {
+  const counts = plan ? planCounts(plan) : undefined;
+  const last = state.checkpoints.at(-1);
+  return {
+    mode: state.executionMode,
+    progress: { done: counts?.done ?? 0, tasks: counts?.tasks ?? 0 },
+    lastCheckpoint: last
+      ? { milestoneId: last.milestoneId, tag: last.tag, at: last.at }
+      : undefined,
+  };
 }
 
 /** Config + key + provider for any command that talks to the model. The key never leaves this process. */
