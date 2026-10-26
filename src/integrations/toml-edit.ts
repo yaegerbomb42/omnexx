@@ -116,3 +116,98 @@ export function setTable(
   parse(next);
   return next;
 }
+
+/** The line range of a table's body: [after its header, next sibling header). Undefined when absent. */
+function tableBody(raw: string, path: readonly string[]): [number, number] | undefined {
+  const target = path.join('\u0000');
+  const lines = raw.split('\n');
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (headerPath(lines[i] ?? '') === target) {
+      start = i + 1;
+      break;
+    }
+  }
+  if (start === -1) return undefined;
+  let end = lines.length;
+  for (let i = start; i < lines.length; i++) {
+    const h = headerPath(lines[i] ?? '');
+    if (h !== undefined && h !== target && !h.startsWith(`${target}\u0000`)) {
+      end = i;
+      break;
+    }
+  }
+  return [start, end];
+}
+
+/** Whether `line` starts a `key = …` statement (not a comment or a table header). */
+function hasKey(line: string, name: string): boolean {
+  const trimmed = line.trimStart();
+  return (
+    !trimmed.startsWith('#') &&
+    !trimmed.startsWith('[') &&
+    new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=`).test(trimmed)
+  );
+}
+
+/** How many lines a `key = …` statement spans, so replacements cover multiline arrays/tables. */
+function statementSpan(lines: readonly string[], start: number, end: number): number {
+  let depth = 0;
+  let inString = false;
+  for (let i = start; i < end; i++) {
+    let seen = false;
+    for (const ch of lines[i] ?? '') {
+      if (inString) {
+        if (ch === '"') inString = false;
+      } else if (ch === '"') {
+        inString = true;
+      } else if (ch === '[') {
+        depth++;
+        seen = true;
+      } else if (ch === ']') {
+        depth--;
+        seen = true;
+      } else if (!/\s/.test(ch)) {
+        seen = true;
+      }
+    }
+    if (depth <= 0 && seen && !inString) return i - start + 1;
+  }
+  return end - start;
+}
+
+/**
+ * Add or replace keys inside an existing table, leaving its comments, ordering and other keys
+ * alone (unlike setTable, which would replace the whole table). Array values replace whatever was
+ * there; callers merge when they want a union. When the table is missing, it is appended. The
+ * result is parsed before it's returned, so a bad edit throws instead of breaking the config.
+ */
+export function mergeTableKeys(
+  raw: string,
+  path: readonly string[],
+  values: Readonly<Record<string, TomlValue | undefined>>,
+): string {
+  const body = tableBody(raw, path);
+  if (!body) return setTable(raw, path, values);
+  const [start, end] = body;
+  const lines = raw.split('\n');
+  const inserts: string[] = [];
+  for (const [k, v] of Object.entries(values)) {
+    if (v === undefined) continue;
+    const name = key(k);
+    const line = `${name} = ${value(v)}`;
+    let replaced = false;
+    for (let i = start; i < end; i++) {
+      if (hasKey(lines[i] ?? '', name)) {
+        lines.splice(i, statementSpan(lines, i, end), line);
+        replaced = true;
+        break;
+      }
+    }
+    if (!replaced) inserts.push(line);
+  }
+  if (inserts.length) lines.splice(start, 0, ...inserts);
+  const next = lines.join('\n');
+  parse(next);
+  return next;
+}
