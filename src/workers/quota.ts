@@ -23,7 +23,14 @@ export class QuotaStore {
 
   private async read(): Promise<QuotaFile> {
     const text = await readTextOr(this.path, '{}');
-    const parsed = fileSchema.safeParse(JSON.parse(text));
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      // Corrupt state.json: treat as empty rather than crashing blocked()/record().
+      return {};
+    }
+    const parsed = fileSchema.safeParse(raw);
     return parsed.success ? parsed.data : {};
   }
 
