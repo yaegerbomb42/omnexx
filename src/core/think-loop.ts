@@ -69,6 +69,11 @@ export interface Segment {
   maxTurns?: number;
   /** The analysis so far: a fold keeps it word for word. */
   pinned?: string;
+  /**
+   * Reasoning-effort level (1-10) for this segment; unset leaves the provider's default.
+   * The session budgets it per mode and turn intent, escalating only after a failure.
+   */
+  turnEffort?: number;
 }
 
 export interface CheckOutcome {
@@ -98,6 +103,53 @@ export interface SessionIO {
   onFixed?: (signature: string, summary: string) => Promise<void>;
 }
 
+export type ThinkMode = 'quick' | 'balanced' | 'deep' | 'marathon';
+
+/** What a segment is for: where the reasoning effort cap comes from. */
+export type TurnIntent = 'explore' | 'decide' | 'execute' | 'rethink';
+
+/** Per-intent effort caps (1-10 agent effort levels) for one mode. */
+export type EffortCaps = Partial<Record<TurnIntent, number>>;
+
+/** A mode's effort budget for one intent: where it starts and how high failures may push it. */
+interface EffortBudgetSpec {
+  start: number;
+  cap: number;
+}
+
+/**
+ * Reasoning effort per mode and per turn intent (1-10 agent effort levels; the provider maps
+ * them to a thinking budget / reasoning_effort). Easy turns start cheap; a failed check
+ * escalates the intent that has to cope with it by one level, up to the mode's cap. Deep and
+ * marathon modes start high and barely cap: their whole point is the extra reasoning.
+ */
+const MODE_EFFORT: Record<ThinkMode, Record<TurnIntent, EffortBudgetSpec>> = {
+  quick: {
+    explore: { start: 2, cap: 4 },
+    decide: { start: 2, cap: 4 },
+    execute: { start: 2, cap: 4 },
+    rethink: { start: 3, cap: 6 },
+  },
+  balanced: {
+    explore: { start: 3, cap: 6 },
+    decide: { start: 3, cap: 6 },
+    execute: { start: 2, cap: 5 },
+    rethink: { start: 4, cap: 8 },
+  },
+  deep: {
+    explore: { start: 6, cap: 10 },
+    decide: { start: 6, cap: 10 },
+    execute: { start: 5, cap: 10 },
+    rethink: { start: 7, cap: 10 },
+  },
+  marathon: {
+    explore: { start: 8, cap: 10 },
+    decide: { start: 8, cap: 10 },
+    execute: { start: 7, cap: 10 },
+    rethink: { start: 9, cap: 10 },
+  },
+};
+
 export interface SessionLimits {
   rounds: number;
   rethinks: number;
@@ -107,6 +159,15 @@ export interface SessionLimits {
   rewinds?: number;
   /** A small goal writes its analysis from the exploring turns and skips the extra decide step. */
   skipDecide?: boolean;
+  /**
+   * Run mode: where reasoning effort starts and how high failures may escalate it.
+   * Unset: the session runs at the provider's default effort, as before.
+   */
+  mode?: ThinkMode;
+  /** Cap overrides per mode (+ intent); the defaults hold where unset. */
+  turnEffortCaps?: Partial<Record<ThinkMode, EffortCaps>>;
+  /** The user's [agent] turn_effort: a ceiling no mode may pass. */
+  turnEffort?: number;
 }
 
 /** A goal this short, naming at most this many mapped files, does not get a full think round. */
@@ -135,6 +196,38 @@ export function thinkSizing(
   return small
     ? { thinkTurns: SMALL_THINK_TURNS, skipDecide: true }
     : { thinkTurns, skipDecide: false };
+}
+
+/** A mode's live effort: current level per intent, ticked up only after a failure. */
+class EffortBudgetLive {
+  readonly current: Record<TurnIntent, number> = {} as Record<TurnIntent, number>;
+
+  constructor(
+    readonly mode: ThinkMode,
+    caps: Partial<Record<ThinkMode, EffortCaps>>,
+    userLevel: number | undefined,
+  ) {
+    const defaultCaps = MODE_EFFORT[mode];
+    for (const intent of Object.keys(defaultCaps) as TurnIntent[]) {
+      const ceiling = Math.min(
+        defaultCaps[intent].cap,
+        caps[mode]?.[intent] ?? 10,
+        userLevel ?? 10,
+      );
+      this.current[intent] = Math.min(defaultCaps[intent].start, ceiling);
+    }
+  }
+
+  /** The current effort level for an intent, or undefined when the mode has none. */
+  level(intent: TurnIntent): number | undefined {
+    return this.current[intent];
+  }
+
+  /** One step up after a failure, up to the mode's cap for that intent. */
+  escalate(intent: TurnIntent): void {
+    const cap = MODE_EFFORT[this.mode][intent].cap;
+    this.current[intent] = Math.min(this.current[intent] + 1, cap);
+  }
 }
 
 type Node = StateNode & { failures: string };
@@ -204,6 +297,8 @@ interface Step {
   /** A think step's final text replaces the analysis. */
   thinking: boolean;
   maxTurns?: number;
+  /** The intent of this step (for reasoning effort budgeting). */
+  intent?: TurnIntent;
 }
 
 /** Run one task as a think-first loop session. `first` is the task's opening context. */
@@ -245,15 +340,23 @@ export async function runThinkLoop(
     io.emit('todo.update', { items: stepsTodo(steps), source: 'analysis' });
   };
 
+  /** Effort budget for this session (only when a mode is set). */
+  const effortBudget = limits.mode
+    ? new EffortBudgetLive(limits.mode, limits.turnEffortCaps ?? {}, limits.turnEffort)
+    : null;
+
   const run = async (step: Step | undefined): Promise<LoopResult> => {
     const seg = step ? continueWith(messages, step.text) : { history: [], first: anchor };
     const maxTurns = step ? step.maxTurns : limits.thinkTurns;
+    const intent: TurnIntent = step?.intent ?? (step?.chain === 'think' ? 'explore' : 'execute');
+    const turnEffort = effortBudget ? effortBudget.level(intent) : undefined;
     const r = await io.segment(
       {
         ...seg,
         anchor,
         ...(maxTurns === undefined ? {} : { maxTurns }),
         ...(analysis ? { pinned: analysis } : {}),
+        ...(turnEffort !== undefined ? { turnEffort } : {}),
       },
       step?.chain ?? 'think',
     );
@@ -301,7 +404,13 @@ export async function runThinkLoop(
   // Thinking that ran out of exploring turns writes its analysis from what it has read.
   const decide = async (r: LoopResult): Promise<LoopResult> =>
     r.end === 'max_turns_per_cycle' && !limits.skipDecide
-      ? run({ text: DECIDE_PROMPT, chain: 'think', thinking: true, maxTurns: 1 })
+      ? run({
+          text: DECIDE_PROMPT,
+          chain: 'think',
+          thinking: true,
+          maxTurns: 1,
+          intent: 'decide',
+        })
       : r;
 
   const thought = await decide(await run(undefined));
