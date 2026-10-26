@@ -20,8 +20,9 @@ import { EventLog, type OmnexxEvent } from '../core/events.js';
 import { RunStore } from '../core/run-store.js';
 import { RunningContext } from '../core/running-context.js';
 import { readTextOr, writeJsonAtomic } from '../core/atomic.js';
-import { runsDir } from '../core/paths.js';
+import { runsDir, usageFile } from '../core/paths.js';
 import { QuotaLedger } from '../providers/quota-ledger.js';
+import { UsageLedger } from '../providers/usage-ledger.js';
 import { restoreTree, snapshotTree } from './undo.js';
 import { renderNotes } from '../core/notes.js';
 import type { OmnexxPaths } from '../core/paths.js';
@@ -272,6 +273,8 @@ export class CodeChat {
   private resumedFrom: string | undefined;
   /** Set by open(); where repo memory lives. */
   paths: OmnexxPaths | undefined;
+  /** The shared usage ledger, so chat and its helpers are attributed like a run. */
+  private ledger: UsageLedger | undefined;
   /** Records what passed into the repo's verified facts. */
   facts: FactRecorder | undefined;
   /** Before each message: the files as they were, and how long the conversation was. */
@@ -411,6 +414,7 @@ export class CodeChat {
     ];
     const chat = new CodeChat(config, deps.provider, tools, system, ctx, events, store, model);
     chat.paths = paths;
+    chat.ledger = new UsageLedger(usageFile(paths), store.runId, 'chat');
     chat.facts = facts;
     chat.latency = await loadLatency(latencyFile(paths));
     chat.estimator = new ChatEstimate(runHistoryFile(paths), {
@@ -439,8 +443,14 @@ export class CodeChat {
           clock,
           events: this.events,
           spentUsd: () => this.usd,
-          onUsage: (_u, usd) => {
+          onUsage: (u, usd, model, provider, meta) => {
             this.usd += usd;
+            this.ledger?.recordCall(meta ?? { purpose: 'subagent' }, {
+              model,
+              provider,
+              usage: u,
+              usd,
+            });
             return Promise.resolve();
           },
           control: () => Promise.resolve(this.paused ? 'pause' : 'continue'),
@@ -808,8 +818,9 @@ export class CodeChat {
         clock: realClock,
         events: this.events,
         spentUsd: () => this.usd,
-        onUsage: (_u, usd) => {
+        onUsage: (u, usd, model, provider, meta) => {
           this.usd += usd;
+          this.ledger?.recordCall({ ...meta, purpose: 'chat' }, { model, provider, usage: u, usd });
           return Promise.resolve();
         },
         control: () => Promise.resolve(this.paused ? 'pause' : 'continue'),

@@ -9,12 +9,17 @@ export default defineConfig({
     alias: { vscode: fileURLToPath(new URL('./test/support/vscode-stub.ts', import.meta.url)) },
   },
   test: {
+    // These tests spawn git/npm and clean temp dirs. Running every file on every core races those
+    // cleanups and hits the per-test timeout; two workers is faster end to end and reliable.
+    maxWorkers: 2,
     projects: [
       {
         extends: true,
         test: {
           name: 'unit',
           include: ['test/unit/**/*.test.{ts,tsx}', 'src/core/**/*.test.{ts,tsx}'],
+          // Unit tests spawn git/npm on cold temp dirs; 5s is too tight when the suite runs in parallel.
+          testTimeout: 20_000,
           globalSetup: ['test/support/global-setup.ts'],
         },
       },

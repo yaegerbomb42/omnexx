@@ -28,6 +28,10 @@ export interface RunFlags {
   goalFile?: string;
   planOnly?: boolean;
   budget?: string;
+  /** Per-task dollar cap; the task is parked (checkpointed) when it is reached. */
+  taskBudget?: string;
+  /** Per-task token cap. */
+  taskTokens?: string;
   hours?: string;
   /** Autonomous mode for this long, e.g. "8h" or "2d". */
   for?: string;
@@ -57,13 +61,15 @@ export function flagsToConfig(f: RunFlags): ConfigInput {
   const auto = autonomousHours(f);
   const budget = {
     max_usd: num(f.budget, 'budget'),
+    ...(f.taskBudget ? { task_max_usd: num(f.taskBudget, 'task-budget') } : {}),
+    ...(f.taskTokens ? { task_max_tokens: Math.floor(num(f.taskTokens, 'task-tokens') ?? 0) } : {}),
     max_hours: auto ?? num(f.hours, 'hours'),
     // A day of work is many cycles; the clock is the cap, not the cycle count.
     ...(auto ? { max_cycles: AUTONOMOUS_MAX_CYCLES } : {}),
   };
   return {
     ...(auto ? { autonomous: { enabled: true } } : {}),
-    ...(budget.max_usd !== undefined || budget.max_hours !== undefined
+    ...(Object.values(budget).some((v) => v !== undefined)
       ? { budget: Object.fromEntries(Object.entries(budget).filter(([, v]) => v !== undefined)) }
       : {}),
     ...(f.gate?.length ? { gates: f.gate.map((run, i) => ({ name: `gate${i + 1}`, run })) } : {}),

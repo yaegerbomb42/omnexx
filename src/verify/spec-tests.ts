@@ -192,6 +192,7 @@ async function askTool(
       estimatedInputTokens: estimateTokens(prompt) + 800,
       maxOutputTokens: maxTokens,
       role,
+      purpose: role === 'spec_judge' ? 'reviewer' : 'verification',
       chain: run.config.review.spec_tests_models,
     },
   );

@@ -25,6 +25,8 @@ export interface ToolContext {
   redactor: Redactor;
   policy: PolicyContext;
   cycle: number;
+  /** 1-based model turn inside the cycle; the agent loop updates it before tools run. */
+  turn?: number;
   maxCmdTimeoutMs: number;
   notesMaxTokens: number;
   today: string;
@@ -75,6 +77,8 @@ export interface ToolOutput {
   final?: boolean;
   /** `str_replace` matched nothing. The loop copies this onto the `tool.call` event. */
   miss?: boolean;
+  /** Read output answered from the re-read guard instead of the file's bytes. */
+  savedTokens?: number;
 }
 
 export interface Tool<S extends z.ZodType = z.ZodType> {

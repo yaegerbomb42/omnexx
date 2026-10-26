@@ -17,8 +17,10 @@ import {
 } from '../core/token-calibration.js';
 import { applyTokenRatio, estimateTokens } from '../core/tokens.js';
 import { preflight, type BudgetStop } from '../guard/budget.js';
+import type { TaskGovernor } from '../guard/task-governor.js';
 import { costUsd, type ResolvedModel } from '../providers/pricing.js';
 import { ProvidersUnavailable, StopRequested, withRetry } from '../providers/retry.js';
+import type { CallMeta, CallPurpose } from '../providers/usage-ledger.js';
 import { narrateTool } from '../telemetry/narrate.js';
 import { shouldFailover } from '../providers/router.js';
 import { isQuotaError } from '../providers/sticky.js';
@@ -194,12 +196,29 @@ export interface LoopDeps {
   events: EventLog;
   /** Stable id for this run, sent as OpenAI's prompt_cache_key. */
   cacheKey?: string;
+  /**
+   * What this loop exists for: main agent, a helper, or a think loop. Every billed call inherits
+   * it, so the usage ledger can explain spend without guessing from the prompt text.
+   */
+  purpose?: CallPurpose;
+  /** The task the loop is working on, read at call time (`run.state.taskId`). */
+  taskId?: () => string | undefined;
+  /** The run's cycle, read at call time. */
+  cycle?: () => number;
+  /** Per-task token/dollar caps; checked before every call. */
+  taskBudget?: TaskGovernor;
   /** Spend so far across the run, before this call. */
   spentUsd: () => number;
   /** Spend in the rolling 24 h window, for the daily cap. */
   spentTodayUsd?: () => number;
   /** Persist spend after every call so a crash never forgets money already spent. */
-  onUsage: (usage: Usage, usd: number, model: string, provider: string) => Promise<void>;
+  onUsage: (
+    usage: Usage,
+    usd: number,
+    model: string,
+    provider: string,
+    meta?: CallMeta,
+  ) => Promise<void>;
   control: () => Promise<ControlSignal>;
   /** How often to re-check control.json while paused. */
   pausePollMs?: number;
@@ -510,10 +529,16 @@ export async function runAgentLoop(
     let res: CompletionResponse;
     let learned: { model: string; raw: number } | undefined;
     const callStart = deps.clock.now();
+    // One logical turn can make several provider attempts (failover, retry). The successful
+    // provider still bills once; failures are recorded as retry waste if the signature repeats.
+    let callAttempts = 1;
+    let lastEstimate = 0;
+    const lastPreviousPrompt = previousPromptTokens;
     // Attempts in a row where some provider answered 5xx, and the last one that did.
     let serverFailures = 0;
     let badRequests = 0;
     let lastServerFailure: ResolvedModel | undefined;
+    let attempted: { provider: string; id: string } | undefined;
     try {
       res = await withRetry(
         async () => {
@@ -522,21 +547,34 @@ export async function runAgentLoop(
           // outage fails both, and one that just ended lets this attempt through.
           if (serverFailures >= POISON_PROBE_AFTER && lastServerFailure) {
             const m = lastServerFailure;
-            const up = await deps.provider
-              .complete({
-                model: m.id,
-                route: m.provider,
-                system: [{ text: 'Reply with: ok' }],
-                tools: [],
-                messages: [{ role: 'user', content: [{ type: 'text', text: 'ok' }] }],
-                maxTokens: 16,
-                messageBreakpoints: [],
-              })
-              .then(
-                () => true,
-                () => false,
+            const probeReq: CompletionRequest = {
+              model: m.id,
+              route: m.provider,
+              system: [{ text: 'Reply with: ok' }],
+              tools: [],
+              messages: [{ role: 'user', content: [{ type: 'text', text: 'ok' }] }],
+              maxTokens: 16,
+              messageBreakpoints: [],
+            };
+            const probe = await deps.provider.complete(probeReq).catch(() => undefined);
+            if (probe) {
+              // The probe is a real billed call: attribute it too, or spend would have a hole.
+              await deps.onUsage(
+                probe.usage,
+                costUsd(probe.usage, m.price),
+                probe.model,
+                m.provider,
+                {
+                  purpose: 'verification',
+                  ...(deps.taskId?.() ? { taskId: deps.taskId() } : {}),
+                  ...(deps.cycle?.() !== undefined ? { cycle: deps.cycle() } : {}),
+                  turn: turns,
+                  step: `c${String(deps.cycle?.() ?? 0)}.probe`,
+                  attempt: callAttempts,
+                  promptTokens: 16,
+                  previousPromptTokens: 0,
+                },
               );
-            if (up) {
               // The provider is up: send the real request once more, cooling or not.
               try {
                 const req = {
@@ -548,6 +586,7 @@ export async function runAgentLoop(
                 const r = await deps.provider.complete(req);
                 chosen = m;
                 learned = { model: quote.key, raw: quote.raw };
+                lastEstimate = quote.estimate;
                 return r;
               } catch (err) {
                 if (err instanceof ProviderError && (err.status ?? 0) >= 500)
@@ -610,6 +649,7 @@ export async function runAgentLoop(
             );
             const quote = pricedPrompt(tokenRatios, m, req);
             const estimate = quote.estimate;
+            lastEstimate = estimate;
             const pf = preflight(deps.budget, {
               spentUsd: deps.spentUsd(),
               ...(deps.spentTodayUsd ? { spentTodayUsd: deps.spentTodayUsd() } : {}),
@@ -619,7 +659,28 @@ export async function runAgentLoop(
               price: m.price,
             });
             if (!pf.ok) throw new BudgetStopSignal(pf.stop, pf.detail);
+            const taskId = deps.taskId?.();
+            // Planning/between-task calls belong to the run, not to the previous task.
+            const tb =
+              taskId && deps.purpose !== 'planning'
+                ? deps.taskBudget?.check({
+                    taskId,
+                    promptTokens: estimate,
+                    maxOutputTokens: deps.maxTokens,
+                    price: m.price,
+                  })
+                : undefined;
+            if (tb && !tb.allowed)
+              throw new BudgetStopSignal(tb.kind ?? 'task_max_tokens', tb.detail ?? 'task cap');
+            if (tb?.warning)
+              deps.events.emit('budget.task_warn', {
+                task: taskId,
+                cap: tb.warning.cap,
+                fraction: tb.warning.fraction,
+                cycle: deps.cycle?.(),
+              });
             triedAny = true;
+            attempted = { provider: m.provider, id: m.id };
             const ref = `${m.provider}:${m.id}`;
             const sentAt = deps.clock.now();
             deps.onRequest?.({ model: ref, inputTokens: estimate });
@@ -675,6 +736,8 @@ export async function runAgentLoop(
                 model: m.id,
                 error: err.message,
                 status: err.status,
+                purpose: deps.purpose ?? 'main',
+                estimatedInputTokens: lastEstimate,
               });
               skipped.push(`${m.provider}: ${err.message}`);
             }
@@ -698,13 +761,19 @@ export async function runAgentLoop(
             const c = await deps.control();
             return c === 'stop' || c === 'stop-now';
           },
-          onRetry: (i) =>
+          onRetry: (i) => {
+            callAttempts = Math.max(callAttempts, i.attempt + 1);
             deps.events.emit('provider.retry', {
               attempt: i.attempt,
               delayMs: i.delayMs,
               error: i.error,
               outageMs: i.outageMs,
-            }),
+              purpose: deps.purpose ?? 'main',
+              estimatedInputTokens: lastEstimate,
+              provider: attempted?.provider ?? 'unknown',
+              model: attempted?.id ?? 'unknown',
+            });
+          },
           onOutage: (ms) => {
             deps.events.emit('provider.outage', { outageMs: ms });
             deps.retry?.onOutage?.(ms);
@@ -762,11 +831,23 @@ export async function runAgentLoop(
     const model = chosen ?? deps.models[0];
     if (!model) throw new ProviderError('empty model chain', { retryable: false });
     turns++;
+    deps.toolCtx.turn = turns;
     const cost = costUsd(res.usage, model.price);
     usd += cost;
     for (const k of Object.keys(usage) as (keyof Usage)[]) usage[k] += res.usage[k];
     cycleTokens += budgetTokens(res.usage);
-    await deps.onUsage(res.usage, cost, res.model, model.provider);
+    const attributedTask = deps.taskId?.();
+    const attributedCycle = deps.cycle?.();
+    await deps.onUsage(res.usage, cost, res.model, model.provider, {
+      purpose: deps.purpose ?? 'main',
+      ...(attributedTask ? { taskId: attributedTask } : {}),
+      ...(attributedCycle !== undefined ? { cycle: attributedCycle } : {}),
+      turn: turns,
+      step: `c${String(attributedCycle ?? 0)}.t${String(turns)}`,
+      attempt: callAttempts,
+      promptTokens: lastEstimate,
+      previousPromptTokens: lastPreviousPrompt,
+    });
     const input = totalInput(res.usage);
     deps.events.emit('turn', {
       turn: turns,
@@ -832,6 +913,7 @@ export async function runAgentLoop(
       let content: string;
       let isError: boolean;
       let miss = false;
+      let savedTokens = 0;
       const toolStart = deps.clock.now();
       deps.events.emit('tool.start', {
         tool: call.name,
@@ -874,6 +956,7 @@ export async function runAgentLoop(
           content = out.content;
           isError = out.isError === true;
           miss = out.miss === true;
+          savedTokens = out.savedTokens ?? 0;
           if (out.final && !isError) finished.now = true;
         }
       }
@@ -883,6 +966,7 @@ export async function runAgentLoop(
         input: summarizeInput(call.input),
         isError,
         ...(miss ? { miss: true } : {}),
+        ...(savedTokens ? { savedTokens } : {}),
         // Already redacted above. Enough to see why it failed without opening the transcript.
         ...(isError ? { error: content.slice(0, 500) } : {}),
         bytes: content.length,

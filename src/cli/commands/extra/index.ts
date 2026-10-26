@@ -11,3 +11,4 @@ export { register as migrate } from '../../migrate.js';
 export { register as models } from '../models.js';
 export { register as providers } from '../providers.js';
 export { register as skills } from '../skills.js';
+export { register as usage } from '../usage.js';

@@ -200,6 +200,8 @@ export function createProgram(
     .option('--detach', 'run the supervisor in the background and return')
     .option('--plan-only', 'run the planner, print the plan, and stop')
     .option('--budget <usd>', 'run-level spend cap in USD')
+    .option('--task-budget <usd>', 'per-task spend cap; the task is checkpointed and parked at it')
+    .option('--task-tokens <n>', 'per-task token cap; the task is checkpointed and parked at it')
     .option('--hours <n>', 'wall-clock cap in hours')
     .option(
       '--plan <mode>',

@@ -36,6 +36,21 @@ describe('autonomousFocus', () => {
   });
 });
 
+describe('per-task budget flags', () => {
+  it('maps --task-budget and --task-tokens onto [budget]', () => {
+    expect(flagsToConfig({ taskBudget: '0.5', taskTokens: '25000' }).budget).toMatchObject({
+      task_max_usd: 0.5,
+      task_max_tokens: 25_000,
+    });
+    expect(flagsToConfig({})).not.toHaveProperty('budget');
+  });
+
+  it('rejects non-positive task caps', () => {
+    expect(() => flagsToConfig({ taskBudget: '0' })).toThrow(UsageError);
+    expect(() => flagsToConfig({ taskTokens: '-1' })).toThrow(UsageError);
+  });
+});
+
 describe('planning flags', () => {
   it('maps --plan, --plan-helpers and --plan-milestones onto [plan]', () => {
     expect(flagsToConfig({ plan: 'full', planHelpers: '0', planMilestones: '6' })).toMatchObject({

@@ -15,11 +15,23 @@ import { createJudge } from '../judge/factory.js';
 import type { FailOpenJudge } from '../judge/fail-open.js';
 import { LlmJudge } from '../judge/llm.js';
 import { preflight, spentInWindow } from '../guard/budget.js';
+import { TaskGovernor, type TaskCapKind } from '../guard/task-governor.js';
 import { costUsd, resolveChain, type ResolvedModel } from '../providers/pricing.js';
 import { shouldFailover } from '../providers/router.js';
 import { QuotaLedger } from '../providers/quota-ledger.js';
 import { isQuotaError } from '../providers/sticky.js';
-import type { CompletionRequest, CompletionResponse, Provider, Usage } from '../providers/types.js';
+import {
+  UsageLedger,
+  purposeForRole,
+  type CallMeta,
+  type CallPurpose,
+} from '../providers/usage-ledger.js';
+import {
+  type CompletionRequest,
+  type CompletionResponse,
+  type Provider,
+  type Usage,
+} from '../providers/types.js';
 import { scrubEnv } from '../security/env-scrub.js';
 import type { PolicyContext } from '../security/command-policy.js';
 import { Redactor } from '../security/redact.js';
@@ -28,7 +40,7 @@ import type { ControlSignal } from '../agent/loop.js';
 import type { Clock } from './clock.js';
 import { EventLog } from './events.js';
 import { runShell, type Executor } from './exec.js';
-import type { OmnexxPaths } from './paths.js';
+import { usageFile, type OmnexxPaths } from './paths.js';
 import type { Plan } from './plan.js';
 import { RunStore, type Phase, type RunState } from './run-store.js';
 
@@ -151,7 +163,79 @@ export class Run {
     this.baseActiveMs = state.activeMs;
     this.quota = new QuotaLedger(join(deps.paths.configHome, 'quota.json'), () => deps.clock.now());
     this.redactor = Redactor.fromEnv(deps.env, deps.secrets ?? []);
+    this.usage = new UsageLedger(
+      usageFile(deps.paths),
+      state.runId,
+      deps.env.OMNEXX_TASK_LABEL ?? state.runId,
+      () => deps.clock.now(),
+    );
+    this.taskBudget = new TaskGovernor(
+      {
+        maxTokens: deps.config.budget.task_max_tokens,
+        maxUsd: deps.config.budget.task_max_usd,
+        warnAt: deps.config.budget.warn_at,
+      },
+      () => deps.clock.now(),
+    );
     this.events = new EventLog(store.eventsPath, state.runId, this.redactor, deps.clock);
+    // Waste is derived from events that already know the tool/compaction outcome: no extra
+    // bookkeeping in the loop, and every run (even one interrupted mid-call) leaves a trail.
+    this.events.onEvent((e) => {
+      if (e.type === 'read.dedup') {
+        this.usage.recordReadSaved({
+          ...(typeof e.task === 'string' ? { taskId: e.task } : {}),
+          cycle: typeof e.cycle === 'number' ? e.cycle : undefined,
+          ...(typeof e.turn === 'number' ? { turn: e.turn } : {}),
+          tokens: typeof e.savedTokens === 'number' ? e.savedTokens : 0,
+          ...(typeof e.path === 'string' ? { path: e.path } : {}),
+          ...(typeof e.fromStep === 'number' ? { fromStep: e.fromStep } : {}),
+        });
+      } else if (e.type === 'provider.retry') {
+        const tokens = typeof e.estimatedInputTokens === 'number' ? e.estimatedInputTokens : 0;
+        // A failed attempt is still a model call: record it (zero billed usage) so the ledger has
+        // no unattributed attempt, then coalesce the repeated ones as waste.
+        this.usage.recordCall(
+          {
+            purpose: 'retry',
+            ...(state.taskId ? { taskId: state.taskId } : {}),
+            cycle: state.cycle,
+            turn: typeof e.turn === 'number' ? e.turn : 0,
+            step: `c${String(state.cycle)}.retry`,
+            attempt: typeof e.attempt === 'number' ? e.attempt : 1,
+            promptTokens: tokens,
+          },
+          {
+            model: typeof e.model === 'string' ? e.model : 'unknown',
+            provider: typeof e.provider === 'string' ? e.provider : 'unknown',
+            usage: { uncached: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0, output: 0 },
+            usd: 0,
+          },
+        );
+        this.usage.recordRetry({
+          signature: typeof e.error === 'string' ? e.error : 'unknown error',
+          tokens,
+          ...(state.taskId ? { taskId: state.taskId } : {}),
+          cycle: state.cycle,
+          turn: typeof e.turn === 'number' ? e.turn : undefined,
+        });
+      } else if (e.type === 'context.compacted') {
+        this.usage.recordCompaction({
+          before: typeof e.tokensBefore === 'number' ? e.tokensBefore : 0,
+          after: typeof e.tokensAfter === 'number' ? e.tokensAfter : 0,
+          ...(state.taskId ? { taskId: state.taskId } : {}),
+          cycle: state.cycle,
+        });
+      } else if (e.type === 'context.compact_failed') {
+        const tokens = typeof e.tokens === 'number' ? e.tokens : 0;
+        this.usage.recordCompaction({
+          before: tokens,
+          after: tokens,
+          ...(state.taskId ? { taskId: state.taskId } : {}),
+          cycle: state.cycle,
+          detail: typeof e.reason === 'string' ? e.reason : 'summary failed',
+        });
+      }
+    });
     this.events.cycle = state.cycle;
     this.tmpDir = join('/tmp', `omnexx-${state.runId}`);
     this.childEnv = scrubEnv(deps.env, {
@@ -188,6 +272,7 @@ export class Run {
               estimatedInputTokens: estimate,
               maxOutputTokens: maxOut,
               role: 'judge',
+              purpose: 'judge',
             }),
         }),
     });
@@ -248,6 +333,56 @@ export class Run {
   requirePlan(): Plan {
     if (!this.plan) throw new StateError(`run ${this.state.runId} has no plan yet`);
     return this.plan;
+  }
+
+  /**
+   * Park the current task at a cap: write a resumable checkpoint (plan node, transcript tail,
+   * task and run spend), mark the state, and tell the feed before the supervisor stops. Doing
+   * this here keeps both the main loop and cheap calls (a review or fold that crossed the cap)
+   * on the same path.
+   */
+  async parkAtTaskCap(kind: TaskCapKind, detail?: string): Promise<string> {
+    const taskId = this.state.taskId ?? 'run';
+    const snapshot = this.taskBudget.snapshot(taskId);
+    const node = this.plan?.nodes.find((n) => n.id === taskId);
+    const checkpoint = await this.store.writeTaskCheckpoint(
+      `task-${taskId}-c${String(this.state.cycle)}`,
+      this.redactor.value({
+        kind: 'task-park',
+        runId: this.state.runId,
+        taskId,
+        title: node?.title,
+        cycle: this.state.cycle,
+        at: this.clock.now(),
+        cap: kind,
+        taskSpend: snapshot,
+        runSpend: this.state.spend,
+        act: this.state.act,
+        messages: this.workerPrefix?.messages ?? [],
+        plan: node ?? null,
+      }),
+    );
+    this.state.taskCapHit = {
+      taskId,
+      kind,
+      cycle: this.state.cycle,
+      at: this.clock.now(),
+      usd: snapshot.usd,
+      tokens: snapshot.tokens,
+      detail:
+        detail ??
+        `task parked at ${kind} (${snapshot.fraction === undefined ? 'cap reached' : `${String(Math.round(snapshot.fraction * 100))}%`})`,
+      checkpoint,
+    };
+    await this.save();
+    this.events.emit('budget.task_park', {
+      task: taskId,
+      kind,
+      tokens: snapshot.tokens,
+      usd: snapshot.usd,
+      checkpoint,
+    });
+    return checkpoint;
   }
 
   async save(): Promise<void> {
@@ -316,6 +451,10 @@ export class Run {
 
   /** Models out of quota, shared with every other run and chat on this machine. */
   readonly quota: QuotaLedger;
+  /** Append-only attribution of every billed call, shared by every run on this machine. */
+  readonly usage: UsageLedger;
+  /** Per-task token/dollar caps (off unless budget.task_max_* is set). */
+  readonly taskBudget: TaskGovernor;
 
   modelExhausted(ref: string): boolean {
     return this.quota.isOut(ref);
@@ -360,12 +499,15 @@ export class Run {
       estimatedInputTokens: number;
       maxOutputTokens: number;
       role: string;
+      /** What this call was for; defaults from `role` so no call can be untagged. */
+      purpose?: CallPurpose;
       /** Which role's chain to try: the cheap one (default), or the worker's / planner's. */
       chain?: 'cheap' | 'worker' | 'planner';
     },
   ): Promise<{ res: CompletionResponse; model: ResolvedModel } | undefined> {
     const errors: string[] = [];
     const strategy = this.strategy(opts.chain ?? 'cheap');
+    const purpose = opts.purpose ?? purposeForRole(opts.role);
     for (const model of callOrder(this.chains[opts.chain ?? 'cheap'], strategy)) {
       if (skipsOutModels(strategy) && this.modelExhausted(`${model.provider}:${model.id}`)) {
         errors.push(`${model.provider}:${model.id}: out of quota`);
@@ -385,6 +527,26 @@ export class Run {
         price: model.price,
       });
       if (!pf.ok) return undefined;
+      const tb =
+        this.state.taskId && purpose !== 'planning'
+          ? this.taskBudget.check({
+              taskId: this.state.taskId,
+              promptTokens: opts.estimatedInputTokens,
+              maxOutputTokens: opts.maxOutputTokens,
+              price: model.price,
+            })
+          : undefined;
+      if (tb && !tb.allowed) {
+        await this.parkAtTaskCap(tb.kind ?? 'task_max_tokens', tb.detail);
+        return undefined;
+      }
+      if (tb?.warning)
+        this.events.emit('budget.task_warn', {
+          task: this.state.taskId,
+          cap: tb.warning.cap,
+          fraction: tb.warning.fraction,
+          cycle: this.state.cycle,
+        });
       try {
         const res = await this.deps.provider.complete({
           ...req,
@@ -397,6 +559,14 @@ export class Run {
           res.model,
           opts.role,
           model.provider,
+          {
+            purpose,
+            ...(this.state.taskId ? { taskId: this.state.taskId } : {}),
+            cycle: this.state.cycle,
+            turn: 0,
+            step: `c${String(this.state.cycle)}.${opts.role}`,
+            promptTokens: opts.estimatedInputTokens,
+          },
         );
         return { res, model };
       } catch (err) {
@@ -425,6 +595,7 @@ export class Run {
     model: string,
     role = 'worker',
     provider = 'anthropic',
+    meta: CallMeta = { purpose: purposeForRole(role) },
   ): Promise<void> {
     const s = this.state.spend;
     s.usd += usd;
@@ -442,6 +613,31 @@ export class Run {
       ...this.state.spendLedger.filter((e) => e.at > now - 25 * 3_600_000),
       { at: now, usd, provider },
     ];
+    // Planning runs between tasks: never bill it to the task that just finished.
+    const taskId = meta.taskId ?? (meta.purpose === 'planning' ? undefined : this.state.taskId);
+    this.usage.recordCall(
+      { ...meta, ...(taskId ? { taskId } : {}) },
+      { model, provider, usage, usd, ...(taskId ? { taskId } : {}) },
+    );
+    const observed = this.taskBudget.observe({
+      taskId: taskId ?? (meta.purpose === 'planning' ? 'run' : (this.state.taskId ?? 'run')),
+      tokens:
+        usage.uncached + usage.cacheWrite5m + usage.cacheWrite1h + usage.cacheRead + usage.output,
+      usd,
+    });
+    if (observed.warning) {
+      const warningKey = this.taskBudget.warningKey(observed.snapshot, observed.warning.cap);
+      if (!this.state.warned.includes(warningKey)) {
+        this.state.warned.push(warningKey);
+        this.events.emit('budget.task_warn', {
+          task: taskId,
+          cap: observed.warning.cap,
+          fraction: observed.warning.fraction,
+          tokens: observed.snapshot.tokens,
+          usd: observed.snapshot.usd,
+        });
+      }
+    }
     await this.save();
   }
 }

@@ -67,7 +67,7 @@ const CHECK_TIMEOUT_MS = 10 * 60_000;
 const FAST_NOTES_TOKENS = 1_000;
 
 /** Rejection reason for a cycle a budget cap cut short before it changed anything: not an attempt. */
-export const INTERRUPTED_BY_BUDGET = 'interrupted by a budget cap before any change';
+export const INTERRUPTED_BY_BUDGET = 'interrupted by a budget cap before the task finished';
 
 /**
  * An in-cycle signal (cut short, hung) climbs the ladder only when it also cut the previous
@@ -333,6 +333,7 @@ async function summarizeCycle(
       estimatedInputTokens: estimateTokens(prompt) + 400,
       maxOutputTokens: SUMMARY_MAX_TOKENS,
       role: 'cheap',
+      purpose: 'compaction',
     },
   );
   const call = done?.res.content.find((b) => b.type === 'tool_use');
@@ -482,11 +483,16 @@ export async function stepAct(run: Run): Promise<void> {
     clock: run.clock,
     events: run.events,
     cacheKey: run.state.runId,
+    purpose: 'main',
+    taskId: () => run.state.taskId,
+    cycle: () => run.state.cycle,
+    taskBudget: run.taskBudget,
     // Quotas gone or every provider down: stop after a while instead of waiting for ever.
     retry: { giveUpAfterMs: parseDuration(run.config.budget.max_provider_wait) },
     spentUsd: () => run.state.spend.usd,
     spentTodayUsd: () => run.spentToday(),
-    onUsage: (u, usd, model, provider) => run.addSpend(u, usd, model, 'worker', provider),
+    onUsage: (u, usd, model, provider, meta) =>
+      run.addSpend(u, usd, model, 'worker', provider, meta),
     control: () => run.control(),
     onPauseChange: (p) => {
       run.paused = p;
@@ -551,6 +557,8 @@ export async function stepAct(run: Run): Promise<void> {
   if (result.end === 'providers_unavailable')
     run.state.providersUnavailable = result.detail ?? 'no model could take a call';
   if (result.end === 'max_usd_per_day') run.state.dailyCapHit = true;
+  const taskCap =
+    result.end === 'task_max_usd' || result.end === 'task_max_tokens' ? result.end : undefined;
   run.events.emit('act.end', {
     end: result.end,
     turns: result.turns,
@@ -576,6 +584,7 @@ export async function stepAct(run: Run): Promise<void> {
   if ('reviewed' in result && result.reviewed && task.id === FAST_TASK)
     run.state.loopReviewed = true;
   run.workerPrefix = { system: ctx.system, tools: ctx.tools, messages: result.messages };
+  if (taskCap) await run.parkAtTaskCap(taskCap);
   await run.setPhase('verify');
 }
 
@@ -629,7 +638,11 @@ export async function stepVerify(run: Run): Promise<void> {
   for (const c of checks.filter((x) => !x.pass))
     evidence.push(`Check failed: \`${c.command}\`\n${c.output}`);
 
-  const budgetCut = act.end === 'max_usd' || act.end === 'max_usd_per_day';
+  const taskCapCut = act.end === 'task_max_usd' || act.end === 'task_max_tokens';
+  const budgetCut = act.end === 'max_usd' || act.end === 'max_usd_per_day' || taskCapCut;
+  // A task cap can stop mid-edit: never commit a partial task. Run-level caps keep the old
+  // behavior and may still commit work that passes every gate.
+  if (taskCapCut) reasons.push(INTERRUPTED_BY_BUDGET);
   // A task with no checks of its own that only verifies ("Run the full test suite…"), or that came
   // back with nothing to change twice in a row, is done: the tree is lastGreen, which passed every
   // gate. Rejecting it again only burns cycles; the final audit still checks the goal.
@@ -642,8 +655,8 @@ export async function stepVerify(run: Run): Promise<void> {
   // The fast path's checks are the gates, which usually pass before any work: it must change code.
   const mustChange = task.id === FAST_TASK && run.state.fastPath === 'tried';
   if (!changes.length) {
-    if (budgetCut) reasons.push(INTERRUPTED_BY_BUDGET);
-    else if ((mustChange || !(task.checks.length && checksPass)) && !nothingToChange)
+    if (budgetCut && !taskCapCut) reasons.push(INTERRUPTED_BY_BUDGET);
+    else if (!budgetCut && (mustChange || !(task.checks.length && checksPass)) && !nothingToChange)
       reasons.push('no changes');
   } else if (!reasons.length) {
     const { results, flaky } = await runGatesWithFlakyCheck(

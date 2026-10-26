@@ -109,7 +109,12 @@ export async function consolidateNotes(run: Run): Promise<boolean> {
         maxTokens: 2_000,
         messageBreakpoints: [],
       },
-      { estimatedInputTokens: estimateTokens(text) + 400, maxOutputTokens: 2_000, role: 'cheap' },
+      {
+        estimatedInputTokens: estimateTokens(text) + 400,
+        maxOutputTokens: 2_000,
+        role: 'cheap',
+        purpose: 'planning',
+      },
     );
     if (!done) return false;
     const { res } = done;
