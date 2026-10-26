@@ -52,12 +52,12 @@ describe('in-cycle compaction', () => {
     const t = await startTestRun({
       fixture: 'ts-failing-test',
       provider: tap(
-        new ProviderRouter(
-          new Map<string, Provider>([
+        new ProviderRouter({
+          providers: new Map<string, Provider>([
             ['anthropic', worker],
             ['side', summarizer],
           ]),
-        ),
+        }),
       ),
       plan,
       config: {

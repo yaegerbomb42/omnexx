@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../../src/config/load.js';
@@ -26,6 +26,14 @@ describe('empty-folder bootstrap', () => {
     await git(repo, ['add', '-A']);
     await git(repo, ['commit', '-q', '-m', 'init']);
     expect(await isEmptyProject(repo)).toBe(false);
+  });
+
+  it('refuses to overwrite files in a non-empty folder', async () => {
+    const dir = await tempDir();
+    await writeFile(join(dir, 'package.json'), '{"name":"mine"}\n');
+    await expect(bootstrapEmptyProject(dir, { browser: false })).rejects.toThrow();
+    expect(await readFile(join(dir, 'package.json'), 'utf8')).toBe('{"name":"mine"}\n');
+    expect(await readdir(dir)).toEqual(['package.json']);
   });
 
   it('inits git, writes starter gates and commits once', async () => {

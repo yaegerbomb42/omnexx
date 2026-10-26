@@ -112,3 +112,100 @@ export function tombstone(trip: Trip): string {
   const text = parts.filter(Boolean).join(' ');
   return text.length > TOMBSTONE_CHARS ? `${text.slice(0, TOMBSTONE_CHARS - 1)}…` : text;
 }
+
+/** A failed action, fingerprinted by what was run and what came back, so identical failures are recognized. */
+export interface ActionFingerprint {
+  readonly tool: string;
+  readonly args: string;
+  readonly result: string;
+}
+
+/** What to try instead of doing the same thing again. */
+export type TripStrategy = 'different-approach' | 'wider-read' | 'subagent';
+
+/** Strategies tried in order as a fingerprint repeats past the trip threshold. */
+export const TRIP_STRATEGIES: readonly TripStrategy[] = [
+  'different-approach',
+  'wider-read',
+  'subagent',
+];
+
+/** The identical (tool, args, result) failure twice is a coincidence; the third is a pattern. */
+export const REPEAT_TRIP = 3;
+
+/** Average tokens (input + output) one failed action attempt burns; used for waste math. */
+export const AVG_ATTEMPT_TOKENS = 1500;
+
+/** A strategy change forced when an action keeps failing identically. */
+export interface StrategyChange {
+  /** The exact (tool, args, result) fingerprint that kept coming back. */
+  readonly fingerprint: string;
+  /** How many times the failure has repeated so far. */
+  readonly repeats: number;
+  /** What the loop should try instead of doing the same thing again. */
+  readonly strategy: TripStrategy;
+}
+
+const fingerprintOf = (a: ActionFingerprint): string => `${a.tool}\u0000${a.args}\u0000${a.result}`;
+
+/**
+ * Ledger of failing-action fingerprints. Detects the identical (tool, args, result) failure
+ * repeating and forces a strategy change on the third occurrence, so the loop stops hammering a
+ * dead end. The fingerprint is O(1) per record, so it never adds meaningful latency or context.
+ */
+export class DoomLedger {
+  private readonly counts = new Map<string, number>();
+  private readonly deadEnd = new Set<string>();
+
+  /** Record a failed action. Returns a strategy change once it has repeated three times. */
+  record(action: ActionFingerprint): StrategyChange | undefined {
+    const fingerprint = fingerprintOf(action);
+    const n = (this.counts.get(fingerprint) ?? 0) + 1;
+    this.counts.set(fingerprint, n);
+    if (n === REPEAT_TRIP) this.deadEnd.add(fingerprint);
+    if (n < REPEAT_TRIP) return undefined;
+    const strategy =
+      TRIP_STRATEGIES[(n - REPEAT_TRIP) % TRIP_STRATEGIES.length] ?? 'different-approach';
+    return { fingerprint, repeats: n, strategy };
+  }
+
+  /** How many times this exact failure has been recorded. */
+  repeats(action: ActionFingerprint): number {
+    return this.counts.get(fingerprintOf(action)) ?? 0;
+  }
+
+  /** Fingerprints that hit the trip threshold: confirmed dead ends. */
+  get deadEnds(): readonly string[] {
+    return [...this.deadEnd].sort((a, b) => a.localeCompare(b));
+  }
+
+  /** Attempts a breaker would have spared past its trip thresholds, across all fingerprints. */
+  prevented(): number {
+    let saved = 0;
+    for (const count of this.counts.values()) {
+      if (count > REPEAT_TRIP) saved += count - REPEAT_TRIP;
+    }
+    return saved;
+  }
+}
+
+/**
+ * Tokens the breaker spends on repeated failing attempts: each fingerprint is paid for up to the
+ * trip threshold, after which a change is forced.
+ */
+export function repeatedTokens(actions: readonly ActionFingerprint[]): number {
+  const counts = new Map<string, number>();
+  let tokens = 0;
+  for (const action of actions) {
+    const fingerprint = fingerprintOf(action);
+    const n = (counts.get(fingerprint) ?? 0) + 1;
+    counts.set(fingerprint, n);
+    if (n <= REPEAT_TRIP) tokens += AVG_ATTEMPT_TOKENS;
+  }
+  return tokens;
+}
+
+/** Tokens spent on all attempts without any breaker (the raw waste). */
+export function baselineTokens(actions: readonly ActionFingerprint[]): number {
+  return actions.length * AVG_ATTEMPT_TOKENS;
+}

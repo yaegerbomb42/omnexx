@@ -6,10 +6,14 @@ import { formatTrailers, type OmnexxTrailers } from './trailers.js';
 const SAFE = ['-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null'];
 
 async function identity(cwd: string): Promise<string[]> {
-  const email = await git(cwd, ['config', 'user.email'], { allowFailure: true });
-  return email.stdout.trim()
-    ? []
-    : ['-c', 'user.name=omnexx', '-c', 'user.email=omnexx@users.noreply.invalid'];
+  const [name, email] = await Promise.all([
+    git(cwd, ['config', 'user.name'], { allowFailure: true }),
+    git(cwd, ['config', 'user.email'], { allowFailure: true }),
+  ]);
+  const overrides: string[] = [];
+  if (!name.stdout.trim()) overrides.push('-c', 'user.name=omnexx');
+  if (!email.stdout.trim()) overrides.push('-c', 'user.email=omnexx@users.noreply.invalid');
+  return overrides;
 }
 
 /** Stage everything and commit with Omnexx trailers. Returns the new SHA. */

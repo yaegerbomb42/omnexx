@@ -161,6 +161,7 @@ async function runRow(store: RunStore, now: number) {
     worktree: s.worktree,
     branch: s.branch,
     startedAt: s.startedAt,
+    finishedAt: health === 'ended' ? s.updatedAt : undefined,
     usd: s.spend.usd,
     commits: s.acceptedCommits,
     supervisorAlive: alive,
