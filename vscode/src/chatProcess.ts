@@ -58,6 +58,7 @@ export class ChatProcess implements vscode.Disposable {
         type: 'down',
         message: 'omnexx keeps exiting. Check `omnexx doctor` in a terminal, then use Restart.',
       });
+      this.notifyNotSent();
       return;
     }
     this.buffer = '';
@@ -71,6 +72,7 @@ export class ChatProcess implements vscode.Disposable {
         type: 'down',
         message: err instanceof Error ? err.message : String(err),
       });
+      this.notifyNotSent();
       return;
     }
     if (!this.stillCurrent(generation)) return;
@@ -80,6 +82,10 @@ export class ChatProcess implements vscode.Disposable {
       env: e.env,
       shell: e.shell,
       windowsHide: true,
+      // A detached child leads its own process group, so we can kill its whole tree with
+      // process.kill(-pid, ...) on POSIX. On Windows this would open a console window; taskkill
+      // /T handles the tree there instead.
+      detached: process.platform !== 'win32',
     });
     if (!this.stillCurrent(generation)) {
       this.killTree(child, 'SIGKILL');
@@ -97,6 +103,9 @@ export class ChatProcess implements vscode.Disposable {
     child.stderr.on('data', (chunk: string) => {
       this.stderr = (this.stderr + chunk).slice(-STDERR_TAIL_CHARS);
     });
+    child.on('spawn', () => {
+      if (this.child === child) this.flushPending();
+    });
     child.on('error', (err: NodeJS.ErrnoException) => {
       if (this.child !== child) return;
       this.child = undefined;
@@ -107,6 +116,7 @@ export class ChatProcess implements vscode.Disposable {
             ? 'omnexx is not installed or not on PATH. Install it with: npm i -g omnexx (or brew install yaegerbomb42/omnexx/omnexx), or set omnexx.path.'
             : `omnexx could not start: ${err.message}`,
       });
+      this.notifyNotSent();
     });
     child.on('exit', () => {
       this.clearKillTimer();
@@ -125,14 +135,10 @@ export class ChatProcess implements vscode.Disposable {
 
   send(cmd: Record<string, unknown>): void {
     const line = `${JSON.stringify(cmd)}\n`;
-    if (this.child) {
-      this.writeStdin(line);
-      return;
-    }
+    if (this.child && this.writeStdin(line)) return;
+    // No server (or one that is exiting): hold the line and flush it once a fresh launch succeeds.
+    this.pending.push(line);
     this.start();
-    void this.starting?.then(() => {
-      this.writeStdin(line);
-    });
   }
 
   restart(): void {
@@ -147,14 +153,34 @@ export class ChatProcess implements vscode.Disposable {
     } else this.start();
   }
 
-  private writeStdin(line: string): void {
+  /** Lines that could not be written yet; flushed after the next successful launch. */
+  private pending: string[] = [];
+
+  /** Writes one line; false means the line was not accepted and should stay queued. */
+  private writeStdin(line: string): boolean {
     const stdin = this.child?.stdin;
-    if (!stdin || stdin.destroyed || !stdin.writable) return;
+    if (!stdin || stdin.destroyed || !stdin.writable) return false;
     try {
       stdin.write(line);
+      return true;
     } catch {
-      // EPIPE while the process is exiting; the next command restarts it.
+      // EPIPE while the process is exiting; keep the line for the next launch.
+      return false;
     }
+  }
+
+  private flushPending(): void {
+    if (!this.child || this.pending.length === 0) return;
+    this.pending = this.pending.filter((line) => !this.writeStdin(line));
+  }
+
+  /** A launch failed while lines were waiting; tell the user instead of dropping them. */
+  private notifyNotSent(): void {
+    if (this.pending.length === 0) return;
+    this.emitter.fire({
+      type: 'error',
+      message: 'not sent — server is down',
+    });
   }
 
   private stop(): void {
@@ -186,7 +212,8 @@ export class ChatProcess implements vscode.Disposable {
       return;
     }
     try {
-      child.kill(signal);
+      // The child is detached, so -pid is its whole process group: grandchildren die with it.
+      process.kill(-pid, signal);
     } catch {
       // already gone
     }
