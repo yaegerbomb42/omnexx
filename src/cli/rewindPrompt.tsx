@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from 'ink';
 import { useEffect, useState } from 'react';
-import { CYAN, GRAY, GREEN } from '../tui/colors.js';
+import { ACCENT, MUTED, OK } from '../tui/colors.js';
 import type { DiffStats, RestoreAction, RewindTurn } from './rewind.js';
 import { RESTORE_CHOICES, parseRestoreChoice } from './rewind.js';
 
@@ -115,37 +115,39 @@ export function RewindPrompt({
   }
 
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={GREEN} paddingX={1} width={width}>
+    <Box flexDirection="column" borderStyle="single" borderColor={OK} paddingX={1} width={width}>
       <Text>
-        <Text color={GREEN} bold>
+        <Text color={OK} bold>
           {header}
         </Text>
-        <Text color={GRAY}>{`  ${hint}`}</Text>
+        <Text color={MUTED}>{`  ${hint}`}</Text>
       </Text>
       {phase === 'pick' &&
         page.map((t, i) => {
           const at = start + i === safeCursor;
           return (
             <Text key={t.id} inverse={at}>
-              <Text color={at ? CYAN : GRAY}>{`${String(start + i + 1).padStart(2, '0')}  `}</Text>
+              <Text
+                color={at ? ACCENT : MUTED}
+              >{`${String(start + i + 1).padStart(2, '0')}  `}</Text>
               <Text>{t.label}</Text>
-              {t.checkpoint ? <Text color={GRAY}> ●</Text> : null}
+              {t.checkpoint ? <Text color={MUTED}> ●</Text> : null}
             </Text>
           );
         })}
       {phase !== 'pick' && (
         <Text>
-          <Text color={CYAN}>› </Text>
+          <Text color={ACCENT}>› </Text>
           <Text>{selected?.label ?? ''}</Text>
         </Text>
       )}
       {phase !== 'pick' && (
-        <Text color={GRAY}>
-          <Text color={CYAN}>› </Text>
+        <Text color={MUTED}>
+          <Text color={ACCENT}>› </Text>
           {phase === 'restore' ? input : '(y/n)'}
         </Text>
       )}
-      {footer && <Text color={GRAY}>{footer}</Text>}
+      {footer && <Text color={MUTED}>{footer}</Text>}
     </Box>
   );
 }
