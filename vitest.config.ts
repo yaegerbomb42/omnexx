@@ -1,8 +1,13 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 const gated = { lines: 85 };
 
 export default defineConfig({
+  resolve: {
+    // `vscode` only exists inside the editor; tests mock it. See test/support/vscode-stub.ts.
+    alias: { vscode: fileURLToPath(new URL('./test/support/vscode-stub.ts', import.meta.url)) },
+  },
   test: {
     projects: [
       {
