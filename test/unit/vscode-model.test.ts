@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   childrenOf,
   compareVersions,
+  countNewlyFinished,
   parseVersion,
   describeRun,
   isActive,
@@ -47,12 +48,47 @@ describe('parseRuns', () => {
     });
   });
 
+  it('reads an optional finish time when the CLI provides one', () => {
+    const done = { ...row({ status: 'finished', supervisorAlive: false }), finishedAt: 99 };
+    expect(parseRuns(JSON.stringify([done]))[0]).toMatchObject({ finishedAt: 99 });
+    expect(parseRuns(JSON.stringify([row()]))[0]?.finishedAt).toBeUndefined();
+  });
+
   it('explains non-JSON output (an old CLI) and wrong shapes', () => {
     expect(() => parseRuns('r_1  finished')).toThrow(/isn't JSON/);
     expect(() => parseRuns('{}')).toThrow(/list of runs/);
     expect(() => parseRuns('[1]')).toThrow(/object/);
     expect(() => parseRuns(JSON.stringify([{ ...row(), cycle: '3' }]))).toThrow(/"cycle"/);
     expect(() => parseRuns(JSON.stringify([{ ...row(), runId: 7 }]))).toThrow(/"runId"/);
+  });
+});
+
+describe('countNewlyFinished', () => {
+  const finished = (over: Partial<RunRow> = {}): RunRow =>
+    row({ status: 'finished', supervisorAlive: false, finishedAt: 100, ...over });
+
+  it('counts a run that started and finished within one refresh window', () => {
+    expect(countNewlyFinished([finished()], new Set(), 50)).toBe(1);
+  });
+
+  it('counts a run that was active and then finished', () => {
+    expect(countNewlyFinished([finished()], new Set(['r_1']), 50)).toBe(1);
+  });
+
+  it('does not count a run that simply vanished from the listing', () => {
+    expect(countNewlyFinished([], new Set(['r_1']), 50)).toBe(0);
+  });
+
+  it('does not count a run that finished before the previous listing', () => {
+    expect(countNewlyFinished([finished()], new Set(), 200)).toBe(0);
+  });
+
+  it('ignores runs that are still active', () => {
+    expect(countNewlyFinished([row()], new Set(), 10)).toBe(0);
+  });
+
+  it('counts nothing on the first refresh before any listing time', () => {
+    expect(countNewlyFinished([finished()], new Set(), null)).toBe(0);
   });
 });
 

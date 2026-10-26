@@ -46,6 +46,7 @@ import * as modelPicker from './modelPicker.js';
 import * as posture from './posture.js';
 import * as settings from './settings.js';
 import * as stats from './stats.js';
+import { emptyStateHtml } from './emptyState.js';
 
 interface State {
   entries: Entry[];
@@ -366,6 +367,14 @@ function hasActiveSelectionIn(container: HTMLElement): boolean {
  */
 function drawConversation(): void {
   welcome.hidden = blocks.length > 0 || Boolean(state?.live) || Boolean(state?.busy);
+
+  const empty = blocks.length === 0 && !state?.live && !state?.busy;
+  if (empty) {
+    blocksRoot.innerHTML = emptyStateHtml();
+    liveRoot.innerHTML = '';
+    lastLiveHtml = '';
+    return;
+  }
 
   const { start, hidden } = mountedRange(blocks.length);
   const shown = blocks.slice(start);

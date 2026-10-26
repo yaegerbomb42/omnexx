@@ -19,14 +19,33 @@ afterEach(async () => {
 });
 
 describe('dev server supervisor', () => {
-  it('finds a free port and sees nothing listening on it', async () => {
-    const port = await freePort();
+  it('reserves a free port until the consumer releases it', async () => {
+    const { port, release } = await freePort();
     expect(port).toBeGreaterThan(0);
+    // Still listening at resolve time: the port was never given up before the
+    // consumer learned about it.
+    expect(await portOpen(port)).toBe(true);
+    await release();
     expect(await portOpen(port)).toBe(false);
+
+    // Re-binding right after release succeeds without conflict.
+    const http = createServer();
+    await new Promise<void>((resolve, reject) => {
+      http.once('error', reject);
+      http.listen(port, '127.0.0.1', () => {
+        resolve();
+      });
+    });
+    await new Promise<void>((resolve) =>
+      http.close(() => {
+        resolve();
+      }),
+    );
   });
 
   it('starts a server, exposes its status and output, and stops its process group', async () => {
-    const port = await freePort();
+    const { port, release } = await freePort();
+    await release();
     const s = server({
       command: `${node} -e "console.log('ready soon'); require('node:http').createServer((q,r)=>r.end('ok')).listen(${String(port)})"`,
       cwd: process.cwd(),
@@ -74,7 +93,8 @@ describe('dev server supervisor', () => {
   }, 15_000);
 
   it('explains a server that exits before it is ready', async () => {
-    const port = await freePort();
+    const { port, release } = await freePort();
+    await release();
     const s = server({
       command: `${node} -e "console.error('missing config'); process.exit(3)"`,
       cwd: process.cwd(),
@@ -86,7 +106,8 @@ describe('dev server supervisor', () => {
   }, 15_000);
 
   it('times out and cleans up a server that never answers', async () => {
-    const port = await freePort();
+    const { port, release } = await freePort();
+    await release();
     const s = server({
       command: `${node} -e "setTimeout(()=>{},5000)"`,
       cwd: process.cwd(),

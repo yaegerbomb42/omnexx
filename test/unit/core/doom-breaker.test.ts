@@ -2,12 +2,18 @@ import { describe, expect, it } from 'vitest';
 import type { LoopResult } from '../../../src/agent/loop.js';
 import type { Message } from '../../../src/providers/types.js';
 import {
+  AVG_ATTEMPT_TOKENS,
+  baselineTokens,
   bestNode,
   checkTrip,
   compareScore,
+  DoomLedger,
   failKey,
+  repeatedTokens,
+  REPEAT_TRIP,
   tombstone,
   TOMBSTONE_CHARS,
+  TRIP_STRATEGIES,
   type PassState,
   type StateNode,
 } from '../../../src/core/doom-breaker.js';
@@ -118,6 +124,53 @@ describe('doom-loop breaker', () => {
     const short = tombstone({ ...trip, since: [node('c', { passed: 4, failIds: ['t1', 't3'] })] });
     expect(short).toContain('It broke: t3');
     expect(short).toContain('Tried: tried c');
+  });
+});
+
+describe('failing-action doom ledger', () => {
+  const act = (tool = 'edit', args = 'a.ts', result = 'Type error t1') => ({ tool, args, result });
+  it('stays silent on the first two identical failures and trips on the third', () => {
+    const ledger = new DoomLedger();
+    expect(ledger.record(act())).toBeUndefined();
+    expect(ledger.record(act())).toBeUndefined();
+    const change = ledger.record(act());
+    expect(change?.strategy).toBe(TRIP_STRATEGIES[0]);
+    expect(change?.repeats).toBe(REPEAT_TRIP);
+    expect(ledger.repeats(act())).toBe(REPEAT_TRIP);
+    expect(ledger.deadEnds).toEqual([`edit\u0000a.ts\u0000Type error t1`]);
+  });
+  it('rotates the forced strategy as an identical failure keeps repeating', () => {
+    const ledger = new DoomLedger();
+    const strategyAt = () => {
+      const change = ledger.record(act());
+      return change?.strategy;
+    };
+    strategyAt();
+    strategyAt();
+    expect(strategyAt()).toBe('different-approach');
+    expect(strategyAt()).toBe('wider-read');
+    expect(strategyAt()).toBe('subagent');
+    expect(strategyAt()).toBe('different-approach');
+    expect(ledger.prevented()).toBe(3);
+  });
+  it('treats a different tool, args or result as a separate fingerprint', () => {
+    const ledger = new DoomLedger();
+    expect(ledger.record(act('edit', 'a.ts', 'Type error t1'))).toBeUndefined();
+    expect(ledger.record(act('edit', 'b.ts', 'Type error t1'))).toBeUndefined();
+    expect(ledger.record(act('read', 'a.ts', 'Type error t1'))).toBeUndefined();
+    expect(ledger.repeats(act())).toBe(1);
+    expect(ledger.deadEnds).toEqual([]);
+  });
+  it('counts tokens spent on repeats vs a breaker to show the waste avoided', () => {
+    const base = act();
+    const attempts = 30;
+    const baseline = Array.from({ length: attempts }, () => base);
+    const rawWaste = baselineTokens(baseline);
+    const withBreaker = repeatedTokens(baseline);
+    expect(rawWaste).toBe(attempts * AVG_ATTEMPT_TOKENS);
+    expect(withBreaker).toBe(REPEAT_TRIP * AVG_ATTEMPT_TOKENS);
+    const dropped = (rawWaste - withBreaker) / rawWaste;
+    expect(dropped).toBeGreaterThanOrEqual(0.9);
   });
 });
 

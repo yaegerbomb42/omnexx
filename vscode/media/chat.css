@@ -1679,6 +1679,13 @@ details.msg.think[open] > summary::after {
   color: var(--muted);
 }
 
+/* Empty state: a quiet, centered hint when there are no runs yet. */
+.conversation .empty {
+  padding: 24px var(--pad-x);
+  color: var(--muted);
+  text-align: center;
+}
+
 .welcome h2 {
   color: var(--fg);
   font-size: var(--fs-lg);

@@ -6,6 +6,7 @@ import type { RunningContext } from '../core/running-context.js';
 import type { PolicyContext } from '../security/command-policy.js';
 import { OutsideRootError, type PathJail } from '../security/paths.js';
 import type { Redactor } from '../security/redact.js';
+import type { SubagentResult } from '../agent/subagent.js';
 
 /** An agent card a helper plays: its instructions and the tools it asked for. */
 export interface HelperCard {
@@ -57,7 +58,11 @@ export interface ToolContext {
    * Runs a read-only child agent (the `task` and `agent` tools), optionally playing an agent
    * card. Unset inside a child: no recursion.
    */
-  subagent?: (description: string, kind: SubagentKind, card?: HelperCard) => Promise<string>;
+  subagent?: (
+    description: string,
+    kind: SubagentKind,
+    card?: HelperCard,
+  ) => Promise<SubagentResult>;
 }
 
 export const SUBAGENT_KINDS = ['explore', 'research', 'review'] as const;

@@ -7,12 +7,13 @@ import { fetchCard, sendMessage, type RemoteCard } from '../../integrations/a2a.
 import { readSecrets, SECRET_PREFIX } from '../../integrations/secrets.js';
 import { fail, ok, type Tool } from '../types.js';
 import type { ToolSource, ToolWhere } from './types.js';
+import type { SubagentResult } from '../../agent/subagent.js';
 
 /** A remote agent's reply is capped like a web page, and marked as untrusted text. */
 const REPLY_MAX_CHARS = 16_000;
 
 const schema = z.strictObject({
-  name: z.string().min(1).describe('The agent, from the list in this tool’s description'),
+  name: z.string().min(1).describe("The agent, from the list in this tool's description"),
   message: z
     .string()
     .min(10)
@@ -47,6 +48,15 @@ export function agentCatalog(local: readonly AgentCard[], remote: readonly strin
   return lines.join('\n');
 }
 
+function formatSubagentResult(result: SubagentResult): string {
+  let out = result.findings;
+  if (result.files.length) {
+    out += '\n\nFiles:\n' + result.files.map((f) => `  - ${f}`).join('\n');
+  }
+  out += `\n\nConfidence: ${Math.round(result.confidence * 100)}%`;
+  return out;
+}
+
 export function agentTool(
   local: readonly AgentCard[],
   remote: Readonly<Record<string, Remote>>,
@@ -56,7 +66,7 @@ export function agentTool(
   const cards = new Map<string, RemoteCard>();
   return {
     name: 'agent',
-    description: `Hand a question or a review to a named agent. Local agents are read-only helpers with their own instructions and a fresh context; remote agents are other services reached over A2A. You get back their answer only.\nAgents:\n${agentCatalog(local, Object.keys(remote))}`,
+    description: `Hand a question or a review to a named agent. Local agents are read-only helpers with their own instructions and a fresh context; remote agents are other services reached over A2A. You get back their structured answer only.\nAgents:\n${agentCatalog(local, Object.keys(remote))}`,
     schema,
     readOnly: true,
     async run(input, ctx) {
@@ -65,13 +75,12 @@ export function agentTool(
         if (!ctx.subagent)
           return fail('agents are not available here (helpers cannot start helpers)');
         ctx.events.emit('agent.ask', { agent: card.name, kind: 'local' });
-        return ok(
-          await ctx.subagent(input.message, 'explore', {
-            name: card.name,
-            prompt: card.prompt,
-            tools: card.tools,
-          }),
-        );
+        const result = await ctx.subagent(input.message, 'explore', {
+          name: card.name,
+          prompt: card.prompt,
+          tools: card.tools,
+        });
+        return ok(formatSubagentResult(result));
       }
       const r = remote[input.name];
       if (!r)

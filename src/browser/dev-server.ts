@@ -179,17 +179,41 @@ export function portOpen(port: number, host = '127.0.0.1'): Promise<boolean> {
   });
 }
 
-/** A free localhost port, picked by the OS. */
-export function freePort(): Promise<number> {
+/** A localhost port kept reserved until the caller releases it. */
+export interface ReservedPort {
+  port: number;
+  /**
+   * Stop reserving the port. Call after the consumer has bound to it so the
+   * port is never left unreserved before the consumer can take it.
+   */
+  release: () => Promise<void>;
+}
+
+/**
+ * Reserve a free localhost port, picked by the OS. The reservation stays
+ * listening until `release()` is called, so another process cannot grab the
+ * port between discovery and the consumer binding to it (the server is closed
+ * only after the consumer binds, not before the promise resolves).
+ */
+export function freePort(): Promise<ReservedPort> {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.unref();
+    let released: Promise<void> | undefined;
     server.on('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const address = server.address();
       const port = typeof address === 'object' && address ? address.port : 0;
-      server.close(() => {
-        resolve(port);
+      resolve({
+        port,
+        release: () => {
+          released ??= new Promise<void>((closeResolve) => {
+            server.close(() => {
+              closeResolve();
+            });
+          });
+          return released;
+        },
       });
     });
   });

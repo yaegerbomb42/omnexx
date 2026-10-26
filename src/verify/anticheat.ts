@@ -4,6 +4,13 @@ import type { FileChange } from '../git/repo.js';
 import { matchesAny } from '../security/glob.js';
 import type { GateResult } from './gates.js';
 
+function stripStringContent(line: string): string {
+  return line
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``');
+}
+
 export interface Violation {
   rule: 'deleted-test' | 'test-count-drop' | 'skip-marker' | 'snapshot-rewrite' | 'protected-path';
   detail: string;
@@ -109,8 +116,9 @@ export function antiCheat(input: AntiCheatInput): Violation[] {
         continue;
       }
       if (!line.startsWith('+') || matchesAny(file, GENERATED_OUTPUT) !== undefined) continue;
+      const lineWithoutStrings = stripStringContent(line);
       for (const [re, label] of MARKERS) {
-        if (re.test(line)) {
+        if (re.test(lineWithoutStrings)) {
           out.push({
             rule: 'skip-marker',
             detail: `${label} added in ${file}: ${line.slice(1).trim().slice(0, 120)}`,
