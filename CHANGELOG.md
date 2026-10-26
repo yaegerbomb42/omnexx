@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.21.0
+
+Includes everything from the unpublished 0.20.0 tag. Extension 0.17.0.
+
+- **Long unattended runs:** provider failover and quota-aware routing (#330), bounded memory
+  growth for multi-day runs (#334), pre-limit staged compaction that cannot deadlock (#318),
+  pre-flight budget governor (#307), doom-loop breaker for repeated failing actions (#329).
+- **Context efficiency:** subagent context isolation with compact returns (#331), tool-output
+  compression with on-demand expansion (#319), stale file-read eviction (#316), speculative cache
+  (AST cache, prefix pinning, cache metrics).
+- **Verification:** autonomous self-verification loop with acceptance contract (#328),
+  verify-after-write atomic file semantics (#306), formal planner/executor contract (#304),
+  opt-in full-suite regression sentinel with bisect and auto-revert (#287), multi-phase session
+  rewind with file checkpoints (#305).
+- **Execution modes:** dual work domains (swe and general), hot-switchable execution modes and a
+  SWE-bench preset; hierarchical multi-agent swarm core (#285).
+- **CLI and VS Code:** screen-reader accessibility mode (#311), config migration wizard for other
+  agents (#310), keyboard shortcuts (#340), message navigation (#309), empty states (#308),
+  chat UI polish, browser diagnostics and visual diff (#286), status badge, `print --json`.
+- **Fixes:** 40+ reliability fixes, including chat process tree kill and queued sends on POSIX
+  (#342), `replace_lines` hash on multi-line ranges (#341), abort-signal loss in `realClock.sleep`
+  (#345), heartbeat clock (#344), shell-quoted check commands (#322), corrupt secrets backed up
+  instead of wiped (#323), file-lock waiter wakeups (#321), cyclic `dependsOn` rejected (#317),
+  Windows skill paths (#299), and the race conditions in ranking, freePort and workingTreeDiff.
+- **CI:** fast lanes, with affected tests on PRs and the sharded full suite on main and nightly (#347).
+
 ## 0.19.0
 
 - **Token efficiency:** multi-file reads, bookkeeping outside the main loop, related tests before
