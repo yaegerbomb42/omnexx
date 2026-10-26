@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { z } from 'zod';
+import { pickHighPort } from '../browser/dev-server.js';
 import { parseDuration } from '../config/duration.js';
 import { runShell, type SessionName } from '../core/exec.js';
 import { checkCommand } from '../security/command-policy.js';
@@ -253,11 +254,22 @@ export const bashTool: Tool<typeof schema> = {
     if (devServer) timeoutMs = Math.min(timeoutMs, DEV_SERVER_PEEK_MS);
     const id = ctx.nextCommandId();
     const sessionName = inferSession(command, input.session);
+    // Dev servers bind high by default (vite/next read PORT): pick a free high port and hand
+    // it over. The reservation is released at once — it cannot stay listening while the
+    // server (a child of the persistent shell) binds the port.
+    const execEnv = { ...ctx.env };
+    if (devServer && execEnv.PORT === undefined) {
+      const reserved = await pickHighPort().catch(() => undefined);
+      if (reserved) {
+        await reserved.release();
+        execEnv.PORT = String(reserved.port);
+      }
+    }
 
     const r = await (ctx.exec ?? runShell)(command, {
       ...(heredoc ? { stdin: heredoc.stdin } : {}),
       cwd: ctx.jail.root,
-      env: ctx.env,
+      env: execEnv,
       timeoutMs,
       logPath: join(ctx.store.logsDir, `${id}.log`),
       redact: (s) => ctx.redactor.text(s),

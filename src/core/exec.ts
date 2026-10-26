@@ -5,6 +5,7 @@ import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execa } from 'execa';
+import { registerChild, unregisterChild } from './process-registry.js';
 
 export type SessionName = 'main' | 'test' | 'repl' | (string & {});
 
@@ -210,6 +211,7 @@ export class ShellSession {
     const p = this.proc;
     this.proc = null;
     if (!p?.pid) return;
+    unregisterChild(p.pid);
     try {
       process.kill(-p.pid, 'SIGKILL');
     } catch {
@@ -264,12 +266,23 @@ export class ShellSession {
     proc.stdin.write(`${bootstrapLines.join('\n')}\n`);
     proc.on('exit', () => {
       if (this.proc === proc) this.proc = null;
+      if (proc.pid !== undefined) unregisterChild(proc.pid);
     });
     proc.on('error', () => {
       if (this.proc === proc) this.proc = null;
     });
 
     this.proc = proc;
+    // A persistent shell outlives every turn: register it so run end (or a reaper after a
+    // crash) kills the whole group, including servers backgrounded inside it.
+    if (proc.pid !== undefined)
+      registerChild({
+        pid: proc.pid,
+        pgid: proc.pid,
+        kind: 'shell',
+        command: `bash (${this.name} session)`,
+        startedAt: Date.now(),
+      });
     return proc;
   }
 

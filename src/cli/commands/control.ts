@@ -4,13 +4,15 @@ import { loadConfig } from '../../config/load.js';
 import { readTextOr } from '../../core/atomic.js';
 import { pidAlive, readLock } from '../../core/lock.js';
 import { listRunIds, RunStore, TERMINAL } from '../../core/run-store.js';
-import { resolvePaths, type OmnexxPaths } from '../../core/paths.js';
+import { resolvePaths, worktreesDir, type OmnexxPaths } from '../../core/paths.js';
+import { killPid, killRunChildren } from '../../core/process-registry.js';
+import { listWorktrees, removeWorktreeByPath } from '../../git/worktree.js';
 import { supervise, type SuperviseOptions } from '../../core/supervisor.js';
 import { selfEntry, spawnDetached } from '../../daemon/detach.js';
 import { resumeAll } from '../../daemon/resume-all.js';
 import { UsageError } from '../../errors.js';
 import { EXIT } from '../exit-codes.js';
-import { println, type CliIO } from '../io.js';
+import { confirm, println, type CliIO } from '../io.js';
 import { resolveRunDeps } from '../run-deps.js';
 
 /** Explicit run id, or the most recent run. */
@@ -88,6 +90,63 @@ export async function requestControl(
     io.stdout,
     `${request} requested for ${store.runId}${alive ? '' : ' (no supervisor is running; it takes effect when the run resumes)'}`,
   );
+  // A stop with nobody to hear it still has to clean up: kill what the dead supervisor left.
+  if (!alive && (request === 'stop' || request === 'stop-now')) {
+    const killed = await killRunChildren(resolvePaths(io.env), store.runId);
+    if (killed.killed > 0)
+      println(io.stdout, `killed ${killed.killed} child process(es) the run had left behind`);
+  }
+  return EXIT.ok;
+}
+
+/** `stop --all`: terminate every live supervisor and every registered child/server. */
+export async function stopAllCommand(io: CliIO, opts: { yes?: boolean } = {}): Promise<number> {
+  const paths = resolvePaths(io.env);
+  const ids = await listRunIds(paths);
+  let stopped = 0;
+  let killedChildren = 0;
+  for (const id of ids) {
+    const store = new RunStore(paths, id);
+    const lock = await readLock(store.dir);
+    if (lock && lock.pid !== process.pid && pidAlive(lock.pid)) {
+      // SIGTERM first (a supervisor stops gracefully at the next turn), SIGKILL after 5s.
+      await killPid(lock.pid, { graceMs: 5_000 });
+      println(io.stdout, `stopped supervisor for ${id} (pid ${lock.pid})`);
+      stopped++;
+    }
+    const killed = await killRunChildren(paths, id);
+    killedChildren += killed.killed;
+  }
+  if (killedChildren > 0)
+    println(io.stdout, `killed ${killedChildren} registered child process(es)`);
+
+  // Stale worktrees (>24h) are offered, never taken silently.
+  const stale = (await listWorktrees(worktreesDir(paths))).filter(
+    (w) => Date.now() - w.mtimeMs > 24 * 3_600_000,
+  );
+  if (stale.length > 0) {
+    let remove = opts.yes === true;
+    if (!remove && !io.isTTY) {
+      println(
+        io.stdout,
+        `${stale.length} worktree(s) older than 24h left in place (not a terminal; re-run with --yes to remove them)`,
+      );
+    } else if (!remove) {
+      for (const w of stale) println(io.stdout, `  stale worktree: ${w.path}`);
+      remove = await confirm(io, `Remove these ${stale.length} stale worktree(s)?`);
+    }
+    if (remove) {
+      let removed = 0;
+      for (const w of stale) {
+        if (await removeWorktreeByPath(w.path)) removed++;
+        else println(io.stdout, `could not remove ${w.path}`);
+      }
+      println(io.stdout, `removed ${removed} of ${stale.length} stale worktree(s)`);
+    } else if (io.isTTY) {
+      println(io.stdout, 'stale worktrees left in place');
+    }
+  }
+  println(io.stdout, `stop --all: ${stopped} supervisor(s) stopped`);
   return EXIT.ok;
 }
 

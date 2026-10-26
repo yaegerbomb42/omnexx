@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/stdio.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
+import { registerChild, unregisterChild } from '../core/process-registry.js';
 
 /** How much of a server's stderr is kept, for "why didn't it start?" messages and the Logs view. */
 export const STDERR_TAIL_CHARS = 8_000;
@@ -55,6 +56,16 @@ export class NodeStdioClientTransport implements Transport {
       });
 
       this._process = child;
+      if (child.pid !== undefined)
+        // Not detached: it shares the supervisor's group, so register pgid = pid and the
+        // group kill falls through to a direct kill of the server itself.
+        registerChild({
+          pid: child.pid,
+          pgid: child.pid,
+          kind: 'daemon',
+          command: [this._params.command, ...(this._params.args ?? [])].join(' '),
+          startedAt: Date.now(),
+        });
 
       child.on('error', (err) => {
         reject(err);
@@ -73,6 +84,7 @@ export class NodeStdioClientTransport implements Transport {
         if (this._process === child && (code || signal))
           this._exit = `(exited with ${signal ? `signal ${signal}` : `code ${String(code)}`})`;
         this._process = undefined;
+        if (child.pid !== undefined) unregisterChild(child.pid);
         this.onclose?.();
       });
 
@@ -104,6 +116,7 @@ export class NodeStdioClientTransport implements Transport {
     if (this._process) {
       const proc = this._process;
       this._process = undefined;
+      if (proc.pid !== undefined) unregisterChild(proc.pid);
 
       const closePromise = new Promise<void>((resolve) => {
         proc.once('close', () => {

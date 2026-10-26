@@ -131,6 +131,11 @@ export class Run {
   plan: Plan | undefined;
   /** True while the agent loop is blocked on a pause request (shown by the heartbeat). */
   paused = false;
+  /**
+   * Set by the supervisor's idle watchdog when no event has arrived for `idleTimeoutMs`.
+   * The next cycle boundary ends the run as needs-human; a pause loop does not reset it.
+   */
+  idleTimedOut = false;
   /** Where commands run. The supervisor swaps in the docker sandbox when sandbox = "docker". */
   exec: Executor = runShell;
   private readonly baseActiveMs: number;
