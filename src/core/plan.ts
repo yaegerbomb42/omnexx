@@ -285,7 +285,46 @@ export function applyPlanUpdate(prev: Plan | undefined, update: PlanUpdate, goal
     const bad = n.dependsOn.find((d) => !ids.has(d) || d === n.id);
     if (bad) throw new StateError(`${n.id} depends on unknown node ${bad}`);
   }
+  const cycle = findDependsCycle(nodes);
+  if (cycle) {
+    // `cycle` is the dependency chain starting at its head; the last id depends back on the head.
+    const [head, ...chain] = cycle;
+    throw new StateError(`${head} depends on ${chain.join(' -> ')} in a cycle`);
+  }
   return { version: 1, goal, nodes };
+}
+
+/**
+ * DFS over the dependsOn edges. Returns the ids of one cycle in dependency order,
+ * or null if the graph is acyclic. O(nodes + edges); self-deps never reach here.
+ */
+function findDependsCycle(nodes: PlanNode[]): string[] | null {
+  const deps = new Map<string, readonly string[]>(nodes.map((n) => [n.id, n.dependsOn]));
+  const done = new Set<string>();
+  const path: string[] = [];
+  const onPath = new Set<string>();
+  const dfs = (u: string): string[] | null => {
+    onPath.add(u);
+    path.push(u);
+    for (const v of deps.get(u) ?? []) {
+      if (onPath.has(v)) return path.slice(path.indexOf(v));
+      if (!done.has(v)) {
+        const found = dfs(v);
+        if (found) return found;
+      }
+    }
+    path.pop();
+    onPath.delete(u);
+    done.add(u);
+    return null;
+  };
+  for (const n of nodes) {
+    if (!done.has(n.id) && !onPath.has(n.id)) {
+      const found = dfs(n.id);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 const isDone = (plan: Plan, depId: string): boolean =>
