@@ -100,6 +100,42 @@ describe('darwinx meta-harness', () => {
     }
   });
 
+  // An old failing tool call followed by a clean turn; `gates` is the final turn's gate result.
+  const staleToolErrorTraces = (gates: 'ok' | 'fail') => [
+    {
+      turn: 1,
+      calls: [{ tool: 'bash', isError: true, error: 'ancient tool error' }],
+      fresh: 10,
+      cached: 0,
+      ms: 50,
+      gates: 'ok' as const,
+    },
+    {
+      turn: 2,
+      calls: [{ tool: 'read', isError: false, error: '' }],
+      fresh: 20,
+      cached: 10,
+      ms: 40,
+      gates,
+    },
+  ];
+
+  it.each([
+    ['lastError', 'ok', { lastError: 'doom loop: repeated same read' }, 'doom_loop'],
+    [
+      'gateFailed',
+      'fail',
+      { gateFailed: true, lastError: 'Unit tests failed: 2 broken' },
+      'gate_failure',
+    ],
+  ] as const)('prefers newer %s signal over an ancient tool error', (_n, gates, options, kind) => {
+    expect(diagnoseFailure(staleToolErrorTraces(gates), options)).toEqual({
+      turn: 2,
+      kind,
+      detail: options.lastError,
+    });
+  });
+
   it('ratchets accepted mutation when gates pass', async () => {
     const commits: string[] = [];
     const sandbox: SandboxRunner = {

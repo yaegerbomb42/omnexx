@@ -323,6 +323,42 @@
         "command": "omnexx.showHistory",
         "key": "ctrl+alt+h",
         "mac": "cmd+alt+h"
+      },
+      {
+        "command": "omnexx.pause",
+        "key": "ctrl+shift+alt+p",
+        "mac": "cmd+shift+alt+p",
+        "when": "view == omnexx.chat"
+      },
+      {
+        "command": "omnexx.resume",
+        "key": "ctrl+shift+alt+r",
+        "mac": "cmd+shift+alt+r",
+        "when": "view == omnexx.chat"
+      },
+      {
+        "command": "omnexx.stop",
+        "key": "ctrl+shift+alt+s",
+        "mac": "cmd+shift+alt+s",
+        "when": "view == omnexx.chat"
+      },
+      {
+        "command": "omnexx.newChat",
+        "key": "ctrl+shift+alt+n",
+        "mac": "cmd+shift+alt+n",
+        "when": "view == omnexx.chat"
+      },
+      {
+        "command": "omnexx.undoLast",
+        "key": "ctrl+shift+alt+z",
+        "mac": "cmd+shift+alt+z",
+        "when": "view == omnexx.chat"
+      },
+      {
+        "command": "omnexx.pickModel",
+        "key": "ctrl+shift+alt+m",
+        "mac": "cmd+shift+alt+m",
+        "when": "view == omnexx.chat"
       }
     ]
   },
