@@ -4,12 +4,17 @@ const gated = { lines: 85 };
 
 export default defineConfig({
   test: {
+    // These tests spawn git/npm and clean temp dirs. Running every file on every core races those
+    // cleanups and hits the per-test timeout; two workers is faster end to end and reliable.
+    maxWorkers: 2,
     projects: [
       {
         extends: true,
         test: {
           name: 'unit',
           include: ['test/unit/**/*.test.{ts,tsx}', 'src/core/**/*.test.{ts,tsx}'],
+          // Unit tests spawn git/npm on cold temp dirs; 5s is too tight when the suite runs in parallel.
+          testTimeout: 20_000,
         },
       },
       {
