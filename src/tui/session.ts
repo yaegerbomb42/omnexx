@@ -61,7 +61,7 @@ import { estimateForStore, PROGRESS_EVENTS, remainingForRun } from '../core/run-
 import { describeError } from '../errors.js';
 import { emptyTelemetry, fold, type Telemetry } from '../telemetry/aggregate.js';
 import { EventTail } from '../telemetry/feed.js';
-import { humanize, turnTraceLine, type Verbosity } from '../telemetry/humanize.js';
+import { FeedLines, turnTraceLine, type Verbosity } from '../telemetry/humanize.js';
 import { emptyTrace, pushTrace, type TraceAcc } from '../telemetry/turn-trace.js';
 import { AgentSettingsHost } from './agent-settings-host.js';
 import type { PanelKey } from './agent-panel.js';
@@ -220,6 +220,8 @@ export class Session {
   info: { phase: string; done: number; tasks: number } | undefined;
   busy: string | undefined;
   verbosity: Verbosity = 'normal';
+  /** Collapses consecutive tool calls in the run feed at the default verbosity. */
+  private feedLines: FeedLines | undefined;
   quit = false;
   chat: Chat | undefined;
   /** What plain text does: start or steer a long run, or code turn by turn. */
@@ -518,19 +520,25 @@ export class Session {
   /** Pull new events into the feed and refresh liveness and the plan (every ~2 s). */
   async poll(): Promise<void> {
     if (!this.tail || !this.runId) return;
+    // A verbosity switch mid-burst flushes what the old level buffered first.
+    if (this.feedLines && this.feedLines.verbosity !== this.verbosity) {
+      for (const line of this.feedLines.flush()) this.push('feed', line);
+      this.feedLines = undefined;
+    }
+    this.feedLines ??= new FeedLines({ brand: this.b, verbosity: this.verbosity });
     const events = await this.tail.read();
     for (const e of events) {
       fold(this.telemetry, e);
       this.trackRunTodos(e);
       await this.trackRunEstimate(e);
-      const line = humanize(e, { brand: this.b, verbosity: this.verbosity });
-      if (line) this.push('feed', line);
+      for (const line of this.feedLines.push(e)) this.push('feed', line);
       if (this.trace) {
         const closed = pushTrace(this.traceAcc, e);
         if (closed) this.push('feed', turnTraceLine(closed));
       }
       this.reactToRun(e);
     }
+    for (const line of this.feedLines.flush()) this.push('feed', line);
     this.digest();
     if (this.now() - this.lastPlanAt > 2_000) {
       this.lastPlanAt = this.now();
@@ -876,7 +884,7 @@ export class Session {
     };
   }
 
-  /** Keys while the ranking editor is open; every change is saved to models.json at once. */
+  /** Keys while the ranking editor is open; every change is saved to config.toml at once. */
   async rankKey(k: { key?: RankKey; add?: boolean; close?: boolean }): Promise<void> {
     const v = this.rankView;
     if (!v) return;
@@ -1019,6 +1027,12 @@ export class Session {
     }
     this.push('system', `chat model: ${ref}`);
     this.react('happy', `hello from ${ref.split(':').pop() ?? ref}!`);
+  }
+
+  /** The chat's current memory note, or undefined before the first condensation. */
+  get chatMemoryNote(): string | undefined {
+    const note = this.code?.memoryNote;
+    return note === '' || note === undefined ? undefined : note;
   }
 
   /** Context in use / the limit chat compacts at, once a chat is open. */

@@ -2,16 +2,19 @@ import { Command, CommanderError } from 'commander';
 import pkg from '../../package.json' with { type: 'json' };
 import { assertProvider, clearKey, storeKey } from '../auth/keys.js';
 import { loadConfig } from '../config/load.js';
+import { isExperimental } from '../config/experimental.js';
 import { resolvePaths } from '../core/paths.js';
 import { describeError, UsageError } from '../errors.js';
 import {
   requestControl,
   resumeAllCommand,
   resumeRun,
+  stopAllCommand,
   superviseForeground,
 } from './commands/control.js';
 import { binaryVersion, doctorRun, renderChecks, runDoctorChecks } from './commands/doctor.js';
 import { runInit } from './commands/init.js';
+import { ensureFirstRun } from './first-run.js';
 import {
   checkpointsCommand,
   diffCommand,
@@ -21,7 +24,9 @@ import {
   runsCommand,
   statusCommand,
 } from './commands/inspect.js';
+import { psCommand } from './commands/ps.js';
 import { readGoal, runCommand, runPlanOnly, type FullRunFlags } from './commands/run.js';
+import { reapStaleSupervisors } from '../core/process-registry.js';
 import * as extraCommands from './commands/extra/index.js';
 import type { CommandRegistrar } from './commands/extra/types.js';
 import { serviceCommand } from './commands/service.js';
@@ -34,8 +39,53 @@ import { println, readSecret, type CliIO } from './io.js';
 export const VERSION: string = pkg.version;
 const EXTRA_COMMANDS: Record<string, CommandRegistrar> = extraCommands;
 
+/**
+ * The default help shows one mode and eight commands: start a run, watch it, check it,
+ * set it up, fix it. Everything else — run controls, history, integrations, experiments —
+ * still works, but lives behind `--experimental` (flag, OMNEXX_EXPERIMENTAL=1, or
+ * `experimental = true` in the user config) and stays out of the default help.
+ */
+export const DEFAULT_COMMANDS = [
+  'run',
+  'watch',
+  'status',
+  'logs',
+  'plan',
+  'init',
+  'doctor',
+  'auth',
+];
+
+/** `run` options that are modes, presets or experiments: hidden unless experimental. */
+const RUN_EXPERIMENTAL_OPTIONS = [
+  '--plan',
+  '--kind',
+  '--mode',
+  '--plan-helpers',
+  '--plan-milestones',
+  '--for',
+  '--sandbox',
+  '--model-worker',
+  '--push',
+  '--from',
+  '--i-know-there-are-no-checks',
+  '--debug',
+];
+
+/** Hide one command's options (by long flag) from help; they still parse. */
+function hideOptions(cmd: Command, longs: readonly string[]): void {
+  for (const opt of cmd.options) {
+    if (opt.long && longs.includes(opt.long)) opt.hideHelp();
+  }
+}
+
 /** Build the commander program. Actions report their exit code through `setExit`. */
-export function createProgram(io: CliIO, setExit: (code: number) => void): Command {
+export function createProgram(
+  io: CliIO,
+  setExit: (code: number) => void,
+  opts: { experimental?: boolean } = {},
+): Command {
+  const experimental = opts.experimental === true;
   const program = new Command('omnexx')
     .description('Set a goal, walk away, come back to commits.')
     .version(VERSION, '-v, --version')
@@ -62,6 +112,10 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
   });
   // Bare `omnexx`: the interactive session on a terminal, help otherwise.
   program.option('--no-tui', 'print help instead of opening the interactive session');
+  program.option(
+    '--experimental',
+    'show the experimental commands and options (extra modes, integrations, run controls)',
+  );
   program.option('-c, --continue', 'continue the last chat in this folder');
   program.option('-p, --print <prompt>', 'one chat turn without the TUI; "-" reads stdin');
   program.option('-m, --model <model>', 'with -p: the model to use (provider:model)');
@@ -81,6 +135,7 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
       model?: string;
       json?: boolean;
       ollama?: string | boolean;
+      experimental?: boolean;
     }) => {
       if (opts.ollama !== undefined) {
         const { startWithOllama } = await import('./ollama-start.js');
@@ -91,6 +146,7 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
       }
       if (opts.print !== undefined) {
         const { printCommand } = await import('./print.js');
+        if (io.isTTY) await ensureFirstRun(io);
         setExit(
           await printCommand(io, opts.print, {
             ...(opts.model ? { model: opts.model } : {}),
@@ -179,6 +235,7 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .option('--verbose', 'feed: every model turn and tool call')
     .option('--debug', 'feed: every raw event')
     .action(async (goal: string | undefined, opts: FullRunFlags) => {
+      if (io.isTTY) await ensureFirstRun(io);
       const text = await readGoal(io, goal, opts.goalFile);
       setExit(opts.planOnly ? await runPlanOnly(io, text, opts) : await runCommand(io, text, opts));
     });
@@ -268,9 +325,27 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .command('stop')
     .argument('[runId]')
     .option('--now', 'abort the current turn and roll back')
+    .option('--all', 'terminate every live supervisor and every registered child/server')
+    .option('--yes', 'with --all: remove stale worktrees (>24h) without asking')
     .description('stop at the next turn boundary (finishing the cycle), or immediately with --now')
-    .action(async (runId: string | undefined, opts: { now?: boolean }) => {
-      setExit(await requestControl(io, runId, opts.now ? 'stop-now' : 'stop'));
+    .action(
+      async (runId: string | undefined, opts: { now?: boolean; all?: boolean; yes?: boolean }) => {
+        if (opts.all && (runId || opts.now))
+          throw new UsageError('give a run id or --all, not both');
+        setExit(
+          opts.all
+            ? await stopAllCommand(io, { yes: opts.yes === true })
+            : await requestControl(io, runId, opts.now ? 'stop-now' : 'stop'),
+        );
+      },
+    );
+
+  program
+    .command('ps')
+    .option('--json', 'machine-readable output')
+    .description('running supervisors, dev servers and worktrees')
+    .action(async (opts: { json?: boolean }) => {
+      setExit(await psCommand(io, opts.json === true));
     });
 
   program
@@ -402,15 +477,43 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     register(program, io, setExit);
   }
 
+  if (!experimental) {
+    // One mode, eight commands: everything else stays usable but leaves the default help.
+    // (`_hidden` is how commander stores the `{ hidden: true }` command option.)
+    for (const cmd of program.commands) {
+      if (!DEFAULT_COMMANDS.includes(cmd.name())) {
+        (cmd as unknown as { _hidden: boolean })._hidden = true;
+      }
+    }
+    const run = program.commands.find((c) => c.name() === 'run');
+    if (run) hideOptions(run, RUN_EXPERIMENTAL_OPTIONS);
+    const init = program.commands.find((c) => c.name() === 'init');
+    if (init) hideOptions(init, ['--mode']);
+  }
+
   return program;
 }
 
 /** Parse argv, run the command, and return the exit code. Never throws. */
 export async function runCli(argv: readonly string[], io: CliIO): Promise<number> {
   let code: number = EXIT.ok;
+  // Cheap, silent, best effort: a previous supervisor that stopped beating (or crashed)
+  // leaves its orphans behind; reap them before dispatching. Never blocks startup long.
+  await reapStaleSupervisors(resolvePaths(io.env), {
+    log: (line) => {
+      println(io.stderr, line);
+    },
+  }).catch(() => undefined);
   const program = createProgram(io, (c) => {
     code = c;
   });
+  const program = createProgram(
+    io,
+    (c) => {
+      code = c;
+    },
+    { experimental: isExperimental(argv, io.env) },
+  );
   try {
     await program.parseAsync([...argv], { from: 'user' });
     return code;

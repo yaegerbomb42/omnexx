@@ -1,12 +1,16 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { portOpen } from '../../src/browser/dev-server.js';
 import { supervisorAlive } from '../../src/cli/commands/control.js';
 import { readEvents } from '../../src/core/events.js';
 import { readLock } from '../../src/core/lock.js';
 import { resolvePaths } from '../../src/core/paths.js';
+import { readChildren } from '../../src/core/process-registry.js';
 import { listRunIds, RunStore } from '../../src/core/run-store.js';
 import { git } from '../../src/git/git.js';
 import { parseTrailers } from '../../src/git/trailers.js';
-import { entry, processRepo, waitFor } from '../support/proc.js';
+import { entry, processRepo, reapOrphanedChildren, waitFor } from '../support/proc.js';
 
 async function commitsByCycle(worktree: string, from: string): Promise<string[]> {
   const log = (await git(worktree, ['log', '--format=%B%x00', `${from}..HEAD`])).stdout;
@@ -146,4 +150,112 @@ describe('real processes: simulated reboot', () => {
       'nothing to resume',
     );
   });
+});
+
+describe('real processes: no orphans after a run ends', () => {
+  it('a run that starts a server leaves no child processes and no bound ports behind', async () => {
+    const { repo, env } = await processRepo({
+      OMNEXX_TEST_TASKS: '2',
+      OMNEXX_TEST_SCENARIO: 'server',
+    });
+    const paths = resolvePaths(env);
+    // reapChildren: false — this test asserts on what the run itself left behind; the
+    // harness must not clean up before the assertions run.
+    const r = await entry(['run', 'Create the files and start the server'], {
+      cwd: repo,
+      env,
+      reapChildren: false,
+    });
+    expect(r.code).toBe(0);
+    const [runId] = await listRunIds(paths);
+    expect(runId).toBeDefined();
+    const store = new RunStore(paths, runId ?? '');
+    try {
+      const state = await waitFor(
+        async () => {
+          const s = await store.readState().catch(() => undefined);
+          return s?.phase === 'done' ? s : undefined;
+        },
+        90_000,
+        'run to finish',
+      );
+      expect(state.status).toBe('finished');
+      expect(state.acceptedCommits).toBe(2);
+      const pid = Number(await readFile(join(state.worktree, 'server-a.pid'), 'utf8'));
+      const port = Number(await readFile(join(state.worktree, 'server-a.port'), 'utf8'));
+      expect(pid).toBeGreaterThan(0);
+      expect(port).toBeGreaterThan(0);
+      // The supervisor writes the report and releases the lock after the final phase.
+      await waitFor(
+        async () => (!(await supervisorAlive(store)) ? true : undefined),
+        30_000,
+        'supervisor exit',
+      );
+      // The server was backgrounded inside the persistent shell, so it outlived the turn
+      // that started it; run end must have killed the shell's whole process group.
+      await waitFor(
+        () => {
+          try {
+            process.kill(pid, 0);
+            return undefined;
+          } catch {
+            return true;
+          }
+        },
+        10_000,
+        `server pid ${pid} to die`,
+      );
+      expect(await portOpen(port)).toBe(false);
+      // And the registry is empty: nothing is left for a reaper to find.
+      expect(readChildren(paths, runId ?? '')).toEqual([]);
+    } finally {
+      // Leave nothing for the global teardown to trip over, even on failure.
+      await reapOrphanedChildren(env);
+    }
+  }, 180_000);
+
+  it('a SIGKILLed supervisor leaves orphans that the next CLI invocation reaps', async () => {
+    const { repo, env } = await processRepo({
+      OMNEXX_TEST_TASKS: '3',
+      OMNEXX_TEST_SCENARIO: 'server',
+    });
+    const paths = resolvePaths(env);
+    const killed = await entry(['run', 'Create the files and start the server'], {
+      cwd: repo,
+      env: { ...env, OMNEXX_TEST_KILL: 'act:2' },
+      reapChildren: false,
+    });
+    expect(killed.code).not.toBe(0);
+    const [runId] = await listRunIds(paths);
+    expect(runId).toBeDefined();
+    const store = new RunStore(paths, runId ?? '');
+    const state = await store.readState();
+    expect(state).toMatchObject({ phase: 'act', cycle: 2, status: 'running' });
+    const pid = Number(await readFile(join(state.worktree, 'server-a.pid'), 'utf8'));
+    const port = Number(await readFile(join(state.worktree, 'server-a.port'), 'utf8'));
+    try {
+      // The supervisor died mid-run: the backgrounded server is an orphan (still alive,
+      // still holding its port) until something reaps it.
+      expect(() => process.kill(pid, 0)).not.toThrow();
+      expect(await portOpen(port)).toBe(true);
+      // Any CLI invocation reaps orphans of runs with no live supervisor before dispatch.
+      expect((await entry(['ps', '--json'], { cwd: repo, env })).code).toBe(0);
+      await waitFor(
+        () => {
+          try {
+            process.kill(pid, 0);
+            return undefined;
+          } catch {
+            return true;
+          }
+        },
+        10_000,
+        `server pid ${pid} to die`,
+      );
+      expect(await portOpen(port)).toBe(false);
+      expect(readChildren(paths, runId ?? '')).toEqual([]);
+    } finally {
+      await reapOrphanedChildren(env);
+    }
+  }, 180_000);
 });

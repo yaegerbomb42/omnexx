@@ -6,8 +6,8 @@ import { readOnlyTools, toolSpec } from '../tools/registry.js';
 import type { HelperCard, SubagentKind, Tool, ToolContext } from '../tools/types.js';
 import { runAgentLoop, type LoopDeps } from './loop.js';
 
-/** The summary handed back to the parent is capped at about 1k tokens. */
-const ANSWER_MAX_CHARS = 4_000;
+/** Token budget for the structured result handed back to the parent (acceptance: <=1.5k). */
+const RESULT_MAX_TOKENS = 1_500;
 
 const BRIEF: Record<SubagentKind, string> = {
   explore: 'Find the relevant code and explain how it works, with file paths and line numbers.',
@@ -72,13 +72,27 @@ export interface HelperEnv {
 }
 
 /**
- * A child agent with its own fresh context and token cap. Returns its final answer only, so
- * the parent pays for the summary, not the exploration.
+ * Structured, token-bounded result a subagent hands back to its parent, so the parent only
+ * pays for the summary — never the full transcript (which is stored as an artifact event).
+ */
+export interface SubagentResult {
+  /** The key findings, truncated to stay within {@link RESULT_MAX_TOKENS}. */
+  findings: string;
+  /** File paths the findings rely on (at most 20). */
+  files: readonly string[];
+  /** Confidence in the findings, 0..1. */
+  confidence: number;
+}
+
+/**
+ * A child agent with its own fresh context and token cap. Returns a bounded structured result, so
+ * the parent pays for the summary, not the exploration. The full transcript is emitted as a
+ * `subagent.artifact` event and never injected into the parent context.
  */
 export function helperRunner(
   env: HelperEnv,
   parent: ToolContext,
-): (description: string, kind: SubagentKind, card?: HelperCard) => Promise<string> {
+): (description: string, kind: SubagentKind, card?: HelperCard) => Promise<SubagentResult> {
   let n = 0;
   /** Helpers running per provider, for least-busy routing. */
   const busy = new Map<string, number>();
@@ -148,11 +162,49 @@ export function helperRunner(
       turns: result.turns,
       usd: result.usd,
     });
+
+    // Emit full transcript as an artifact event (not injected into parent context).
+    env.loop.events.emit('subagent.artifact', {
+      id,
+      kind,
+      ...(card ? { agent: card.name } : {}),
+      description: description.slice(0, 200),
+      turns: result.turns,
+      usd: result.usd,
+      messages: result.messages,
+      usage: result.usage,
+    });
+
+    // Build the bounded structured result.
     const answer = result.finalText.trim();
-    const capped =
-      answer.length > ANSWER_MAX_CHARS ? `${answer.slice(0, ANSWER_MAX_CHARS)}…` : answer;
-    if (result.end === 'done') return capped || '(the helper found nothing to report)';
-    return `${capped}\n\n(helper stopped early: ${result.end})`.trim();
+    const findings =
+      answer.length > RESULT_MAX_TOKENS * 3
+        ? `${answer.slice(0, RESULT_MAX_TOKENS * 3 - 1)}…`
+        : answer;
+    const files: string[] = [];
+    const filePattern =
+      /(?:^|\s)([a-zA-Z0-9_\-./]+?\.(?:ts|js|tsx|jsx|py|rs|go|java|cpp|c|h|hpp|json|yaml|yml|md|txt))(?::(\d+))?/g;
+    let m: RegExpExecArray | null;
+    while ((m = filePattern.exec(answer)) !== null) {
+      const path = m[1];
+      const line = m[2];
+      if (path && !path.startsWith('http') && path.length > 2) {
+        files.push(line ? `${path}:${line}` : path);
+        if (files.length >= 20) break;
+      }
+    }
+    let confidence = 0.7;
+    const confMatch =
+      /confidence[:\s]+(0?\.\d+|1\.0?)/i.exec(answer) ?? /confidence[:\s]+(\d+)%/i.exec(answer);
+    if (confMatch?.[1]) {
+      const val = parseFloat(confMatch[1]);
+      confidence =
+        confMatch[1].includes('%') || val > 1
+          ? Math.min(1, val / 100)
+          : Math.min(1, Math.max(0, val));
+    }
+
+    return { findings, files, confidence };
   };
 }
 
@@ -163,7 +215,7 @@ const chainOf = (c: string | readonly string[]): readonly string[] =>
 export function subagentRunner(
   run: Run,
   parent: ToolContext,
-): (description: string, kind: SubagentKind, card?: HelperCard) => Promise<string> {
+): (description: string, kind: SubagentKind, card?: HelperCard) => Promise<SubagentResult> {
   const cfg = run.config.context;
   return helperRunner(
     {

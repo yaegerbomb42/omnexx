@@ -3,7 +3,7 @@ import type { Writable } from 'node:stream';
 import type { Brand } from '../cli/brand.js';
 import type { OmnexxEvent } from '../core/events.js';
 import { emptyTelemetry, fold, cacheHitRate, type Telemetry } from './aggregate.js';
-import { fmtMs, fmtTokens, humanize, type Verbosity } from './humanize.js';
+import { FeedLines, fmtMs, fmtTokens, type Verbosity } from './humanize.js';
 
 /**
  * Tails an events.jsonl from a byte offset (never re-reads the whole file), so a feed over a
@@ -87,11 +87,15 @@ export class LiveFeed {
   private timer: NodeJS.Timeout | undefined;
   private footerShown = false;
   private busy = false;
+  /** Collapses consecutive tool calls into one line at the default verbosity. */
+  private readonly lines: FeedLines;
 
   constructor(
     private readonly tail: EventTail,
     private readonly opts: FeedOptions,
-  ) {}
+  ) {
+    this.lines = new FeedLines({ brand: opts.brand, verbosity: opts.verbosity });
+  }
 
   start(): void {
     this.timer = setInterval(() => void this.tick(), this.opts.intervalMs ?? 250);
@@ -107,6 +111,7 @@ export class LiveFeed {
     if (this.timer) clearInterval(this.timer);
     this.opts.footer = false;
     await this.tick();
+    for (const line of this.lines.flush()) this.opts.out.write(`${line}\n`);
     this.clearFooter();
   }
 
@@ -119,8 +124,7 @@ export class LiveFeed {
       this.clearFooter();
       for (const e of events) {
         fold(this.telemetry, e);
-        const line = humanize(e, { brand: this.opts.brand, verbosity: this.opts.verbosity });
-        if (line) this.opts.out.write(`${line}\n`);
+        for (const line of this.lines.push(e)) this.opts.out.write(`${line}\n`);
         const extra = await this.opts.after?.(e);
         if (extra) this.opts.out.write(`${extra}\n`);
       }

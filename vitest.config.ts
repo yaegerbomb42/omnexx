@@ -1,8 +1,13 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 const gated = { lines: 85 };
 
 export default defineConfig({
+  resolve: {
+    // `vscode` only exists inside the editor; tests mock it. See test/support/vscode-stub.ts.
+    alias: { vscode: fileURLToPath(new URL('./test/support/vscode-stub.ts', import.meta.url)) },
+  },
   test: {
     // These tests spawn git/npm and clean temp dirs. Running every file on every core races those
     // cleanups and hits the per-test timeout; two workers is faster end to end and reliable.
@@ -15,6 +20,7 @@ export default defineConfig({
           include: ['test/unit/**/*.test.{ts,tsx}', 'src/core/**/*.test.{ts,tsx}'],
           // Unit tests spawn git/npm on cold temp dirs; 5s is too tight when the suite runs in parallel.
           testTimeout: 20_000,
+          globalSetup: ['test/support/global-setup.ts'],
         },
       },
       {
@@ -37,7 +43,12 @@ export default defineConfig({
       },
       {
         extends: true,
-        test: { name: 'e2e', include: ['test/e2e/**/*.test.ts'], testTimeout: 600_000 },
+        test: {
+          name: 'e2e',
+          include: ['test/e2e/**/*.test.ts'],
+          testTimeout: 600_000,
+          globalSetup: ['test/support/global-setup.ts'],
+        },
       },
     ],
     coverage: {

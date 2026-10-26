@@ -3,7 +3,7 @@
  * drag it in, drag to reorder, × to remove), with a mode toggle for how the list is used
  * (random, rank priority, fallback on quota). An "Advanced" expander gives chat, planning, work
  * and quick jobs their own lists with the same widget. The main list is the /models pool
- * (models.json); per-role lists are roles.json. Saved by omnexx.
+ * ([pool] in config.toml); per-role lists are [roles] in the same file. Saved by omnexx.
  */
 import * as modelPicker from './modelPicker.js';
 import type { ModelItem } from './modelPicker.js';

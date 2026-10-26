@@ -5,7 +5,7 @@ import { agentBriefFor } from '../config/agent-settings.js';
 import { InCycleWatch } from '../guard/stuck.js';
 import { orderForStrategy, strategyFor, type Strategy } from '../config/routing.js';
 import { randomBytes } from 'node:crypto';
-import { mkdir, readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildCodemap, renderCodemap } from '../agent/codemap.js';
 import { capChatHistory, trimChatHistory } from '../agent/chat-context.js';
@@ -262,6 +262,13 @@ export class CodeChat {
   private estimator = new ChatEstimate(undefined, { model: () => this.model, repoFiles: 0 });
   /** The agent's latest todo list (a plan's steps). */
   private todos: TodoItem[] = [];
+  /** The rolling memory note, rewritten every few turns; the panel shows it. */
+  private memoryNoteText = '';
+
+  /** The current memory note, or '' before the first condensation. */
+  get memoryNote(): string {
+    return this.memoryNoteText;
+  }
   /** The saved chat this one continues, if it was reopened from History. */
   private resumedFrom: string | undefined;
   /** Set by open(); where repo memory lives. */
@@ -721,6 +728,12 @@ export class CodeChat {
       case 'context.cleared':
         v.line({ kind: 'feed', text: 'trimmed old tool output to keep the context small' });
         return;
+      case 'context.condensed':
+        v.line({
+          kind: 'feed',
+          text: `rewrote memory into a compact note (${num(e.turnsSummarized)} turns folded; the raw transcript stays in logs/transcript.md)`,
+        });
+        return;
       case 'provider.retry':
         v.line({
           kind: 'feed',
@@ -830,6 +843,7 @@ export class CodeChat {
             void saveLatency(latencyFile(this.paths), this.latency).catch(() => undefined);
         },
         // Within one long turn only old tool output is trimmed; summaries happen between turns.
+        // (Rolling memory condenses in-loop instead; see `rolling` below.)
         compaction: {
           settings: {
             clearAt: this.config.context.clear_tool_results_at,
@@ -838,6 +852,20 @@ export class CodeChat {
             keepTurns: this.config.context.compact_keep_turns,
           },
         },
+        ...(this.config.context.memory === 'rolling'
+          ? {
+              rolling: {
+                every: this.config.context.memory_condense_every,
+                keepTurns: this.config.context.memory_keep_turns,
+                goal: text.split('\n')[0]?.slice(0, 200) ?? '',
+                readFile: (p: string) =>
+                  readFile(join(this.ctx.jail.root, p), 'utf8').catch(() => undefined),
+                onNote: (note: string) => {
+                  this.memoryNoteText = note;
+                },
+              },
+            }
+          : {}),
       };
       let result = await runAgentLoop(
         {

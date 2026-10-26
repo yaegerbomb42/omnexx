@@ -10,6 +10,30 @@ export function diagnoseFailure(
 ): FailureSymptom | undefined {
   if (traces.length === 0 && !options?.lastError) return undefined;
 
+  // A gate/last-error signal reflects the terminal outcome after the final tool
+  // call of the run, so it is chronologically newer than any tool error earlier in
+  // history. Check it before the tool-error scan so a stale (ancient) tool error
+  // never masks the newer signal.
+  const lastTurn = traces.at(-1)?.turn ?? 0;
+  if (options?.gateFailed) {
+    return {
+      turn: lastTurn,
+      kind: 'gate_failure',
+      detail: options.lastError ?? 'Verification gates rejected working tree',
+    };
+  }
+  if (options?.lastError) {
+    return {
+      turn: lastTurn,
+      kind: /doom[\s_-]?loop|\b(stuck|repeat(ed|ing)?|oscillat\w*|tombstone)\b/i.test(
+        options.lastError,
+      )
+        ? 'doom_loop'
+        : 'tool_error',
+      detail: options.lastError,
+    };
+  }
+
   // 1. Look for tool errors in the most recent turns
   for (let i = traces.length - 1; i >= 0; i--) {
     const trace = traces[i];
@@ -23,29 +47,6 @@ export function diagnoseFailure(
         detail: failedCall.error || `Tool ${failedCall.tool} failed`,
       };
     }
-  }
-
-  // 2. Check for gate failure
-  if (options?.gateFailed) {
-    const lastTurn = traces.at(-1)?.turn ?? 0;
-    return {
-      turn: lastTurn,
-      kind: 'gate_failure',
-      detail: options.lastError ?? 'Verification gates rejected working tree',
-    };
-  }
-
-  // 3. Fallback on last error if recorded
-  if (options?.lastError) {
-    return {
-      turn: traces.at(-1)?.turn ?? 0,
-      kind: /doom[\s_-]?loop|\b(stuck|repeat(ed|ing)?|oscillat\w*|tombstone)\b/i.test(
-        options.lastError,
-      )
-        ? 'doom_loop'
-        : 'tool_error',
-      detail: options.lastError,
-    };
   }
 
   return undefined;

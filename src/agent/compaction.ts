@@ -40,6 +40,12 @@ export interface CompactionSettings {
   budget?: number;
   /** Text the fold keeps word for word (the think phase's analysis). */
   pinned?: string;
+  /**
+   * Fraction of the effective budget at which to trigger a fold pre-emptively (default 0.75).
+   * Prevents the summary call from seeing a near-full context and deadlocking.
+   * Only applies when `budget` is set; otherwise `compactAt` is used directly.
+   */
+  compactAtFraction?: number;
 }
 
 /** A cache read's price as a share of an uncached input token (Anthropic and DeepSeek: 0.1). */
@@ -100,6 +106,32 @@ export const cycleSummarySchema = z.object({
 });
 export type CycleSummary = z.infer<typeof cycleSummarySchema>;
 
+/**
+ * Staged fallback: when the whole-head summarize overflows, split the head into halves,
+ * summarize oldest-first, and merge. If a half also fails, fall back to factSummary for it.
+ * Guarantees at most 3 total summarize invocations (1 failed whole-head + 2 chunk calls).
+ */
+export async function stagedSummary(
+  head: readonly Message[],
+  prior: CycleSummary | undefined,
+  summarize: Summarize,
+): Promise<CycleSummary | undefined> {
+  const mid = Math.floor(head.length / 2);
+  if (mid === 0) return undefined;
+  const chunks = [head.slice(0, mid), head.slice(mid)];
+  let merged: CycleSummary | undefined = prior;
+  for (const chunk of chunks) {
+    let s: CycleSummary | undefined;
+    try {
+      s = await summarize(chunk, merged);
+    } catch {
+      s = factSummary(chunk);
+    }
+    if (s) merged = mergeWorkingState(merged, s);
+  }
+  return merged;
+}
+
 /** Roughly what a vision model charges for one image, whatever its base64 length. */
 const IMAGE_TOKENS = 1_500;
 
@@ -130,6 +162,19 @@ export function clearedStub(
 }
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+/**
+ * Provider errors that mean the summarize input itself did not fit the model's context window
+ * (Anthropic: "prompt is too long"; OpenAI: "maximum context length"; Claude Code:
+ * "conversation too long"). Only these trigger the staged chunk-and-merge fallback; an
+ * unrelated failure (network, auth) must still surface as `compact_failed`.
+ */
+const OVERFLOW_ERROR = /too long|context length|context window|max(imum)? tokens|overflow|exceed/i;
+
+export function isOverflowError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  return OVERFLOW_ERROR.test(msg);
+}
 
 /**
  * Replace the content of all but the newest `keep` tool results that are large, with a note that
@@ -475,6 +520,9 @@ type Emit = (e: CompactionEvent) => void;
 /** After a fold, the kept tail is digested down to this share of the budget (newest turn spared). */
 export const SETTLE_FRACTION = 0.4;
 
+/** Default pre-limit trigger: fold when context reaches 75% of the effective budget. */
+const DEFAULT_COMPACT_FRACTION = 0.75;
+
 const minClearChars = (settings: CompactionSettings): number =>
   (settings.minClearTokens ?? Math.min(MIN_CLEAR_TOKENS, settings.clearAt / 10)) * CHARS_PER_TOKEN;
 
@@ -562,8 +610,18 @@ async function fold(
   try {
     summary = await summarize(split.head, prior);
   } catch (err) {
-    emit({ kind: 'compact_failed', reason: (err as Error).message, tokens });
-    return current;
+    // The summary call itself overflowed the summarizer's window (Claude Code #26317/#28728:
+    // /compact fails with "conversation too long" at the limit). Fall back to staged compaction:
+    // summarize oldest chunks first, then merge, so every call fits. Unrelated failures
+    // (network, auth) still surface as compact_failed.
+    const staged = isOverflowError(err)
+      ? await stagedSummary(split.head, prior, summarize)
+      : undefined;
+    if (!staged) {
+      emit({ kind: 'compact_failed', reason: (err as Error).message, tokens });
+      return current;
+    }
+    summary = staged;
   }
   if (!summary) {
     emit({ kind: 'compact_failed', reason: 'no summary (budget or malformed answer)', tokens });
@@ -591,7 +649,8 @@ async function fold(
  * Before a turn:
  * 1. Clamp the active budget to `LSF_TOKEN_CEILING` (10,240 tokens).
  * 2. Run amortized `prune` and `clear` (only mutating mid-history if savings pay for the miss).
- * 3. Trigger an LSF `fold` past `compactAt` (or when tokens exceed `effectiveBudget`).
+ * 3. Trigger an LSF `fold` pre-emptively at `compactAtFraction` (default 0.75) of the budget,
+ *    or past `compactAt`, whichever comes first — so the summary call never sees a full window.
  * 4. Enforce hard budget ceiling on the exit path.
  */
 export async function manageContext(
@@ -601,12 +660,21 @@ export async function manageContext(
   summarize: Summarize | undefined,
   emit: Emit,
 ): Promise<Message[]> {
-  const effectiveCompactAt = settings.compactAt;
+  const budget = settings.budget ?? LSF_TOKEN_CEILING;
+  // Pre-limit trigger: with an explicit budget, fold at a fraction of it (default 0.75) so the
+  // summarizer is never handed a transcript at the window limit (the /compact deadlock).
+  const effectiveCompactAt =
+    settings.budget === undefined
+      ? settings.compactAt
+      : Math.min(
+          settings.compactAt,
+          Math.floor(budget * (settings.compactAtFraction ?? DEFAULT_COMPACT_FRACTION)),
+        );
 
   const cleared = clear(prune(messages, settings, emit, false), settings, emit, false);
   const current =
     cleared.tokens > effectiveCompactAt && summarize
-      ? await fold(cleared, first, settings, summarize, emit, settings.budget ?? LSF_TOKEN_CEILING)
+      ? await fold(cleared, first, settings, summarize, emit, budget)
       : cleared.messages;
 
   if (settings.budget === undefined) {

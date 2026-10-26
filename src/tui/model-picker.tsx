@@ -7,7 +7,8 @@ import { discoverModels } from '../providers/discovery.js';
 import { envKeys } from '../cli/connect.js';
 import { nextPoolMode, POOL_MODES, type PoolMode } from '../config/ranking.js';
 import { STRATEGY_HINT, STRATEGY_LABEL } from '../config/routing.js';
-import { CYAN, GRAY, GREEN } from './colors.js';
+import { INFO, MUTED, OK } from './colors.js';
+import { BORDER, SPACE } from './tokens.js';
 
 export type PickerItem =
   | { kind: 'model'; ref: string; provider: string; model: string }
@@ -100,19 +101,25 @@ export function ModelPicker({ state, width }: { state: ModelPickerState; width: 
   const page = shown.slice(start, start + VISIBLE);
   const models = shown.filter((i) => i.kind === 'model').length;
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={GREEN} paddingX={1} width={width}>
+    <Box
+      flexDirection="column"
+      borderStyle={BORDER.card}
+      borderColor={OK}
+      paddingX={SPACE.sm}
+      width={width}
+    >
       <Text>
-        <Text color={GREEN} bold>
+        <Text color={OK} bold>
           choose a model
         </Text>
         <Text
-          color={GRAY}
+          color={MUTED}
         >{`  ${models} match${models === 1 ? '' : 'es'} · type to filter · ↑↓ ·${state.checked ? ` tab tick (${state.checked.size}) · enter add ticked ·` : ' enter ·'} esc`}</Text>
       </Text>
       <Text>
-        <Text color={GRAY}>{'filter: '}</Text>
+        <Text color={MUTED}>{'filter: '}</Text>
         <Text>{state.query}</Text>
-        <Text color={GREEN}>█</Text>
+        <Text color={OK}>█</Text>
       </Text>
       {page.map((it, i) => {
         const at = start + i === cursor;
@@ -124,15 +131,15 @@ export function ModelPicker({ state, width }: { state: ModelPickerState; width: 
             : it.label;
         return (
           <Text key={it.kind === 'model' ? it.ref : it.kind} inverse={at} wrap="truncate-end">
-            <Text {...(at ? {} : { color: it.kind === 'model' ? CYAN : GREEN })}>{label}</Text>
+            <Text {...(at ? {} : { color: it.kind === 'model' ? INFO : OK })}>{label}</Text>
           </Text>
         );
       })}
       {shown.length > VISIBLE && (
-        <Text color={GRAY}>{`  … ${shown.length - VISIBLE} more, keep typing to narrow`}</Text>
+        <Text color={MUTED}>{`  … ${shown.length - VISIBLE} more, keep typing to narrow`}</Text>
       )}
       {state.unreachable.length > 0 && (
-        <Text color={GRAY}>{`not reachable right now: ${state.unreachable.join(', ')}`}</Text>
+        <Text color={MUTED}>{`not reachable right now: ${state.unreachable.join(', ')}`}</Text>
       )}
     </Box>
   );
@@ -203,36 +210,42 @@ const modeLine = (mode: PoolMode): string =>
 /** /models: the ranked provider:model list every role uses, and how it is used. */
 export function RankEditor({ state, width }: { state: RankState; width: number }) {
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={GREEN} paddingX={1} width={width}>
+    <Box
+      flexDirection="column"
+      borderStyle={BORDER.card}
+      borderColor={OK}
+      paddingX={SPACE.sm}
+      width={width}
+    >
       <Text>
-        <Text color={GREEN} bold>
+        <Text color={OK} bold>
           your models, ranked
         </Text>
-        <Text color={GRAY}>
+        <Text color={MUTED}>
           {'  ↑↓ select · shift+↑↓ or space move · a add · x remove · m mode · esc done'}
         </Text>
       </Text>
       <Text>
         {POOL_MODES.map((m) =>
           m === state.mode ? (
-            <Text key={m} color={CYAN} bold>{`[${STRATEGY_LABEL[m]}] `}</Text>
+            <Text key={m} color={INFO} bold>{`[${STRATEGY_LABEL[m]}] `}</Text>
           ) : (
-            <Text key={m} color={GRAY}>{` ${STRATEGY_LABEL[m]}  `}</Text>
+            <Text key={m} color={MUTED}>{` ${STRATEGY_LABEL[m]}  `}</Text>
           ),
         )}
       </Text>
-      <Text color={GRAY}>{modeLine(state.mode)}</Text>
+      <Text color={MUTED}>{modeLine(state.mode)}</Text>
       {state.ranked.length === 0 && (
-        <Text color={GRAY}>
+        <Text color={MUTED}>
           empty: roles use your config.toml models. press a to add your best model first.
         </Text>
       )}
       {state.ranked.map((ref, i) => (
         <Text key={ref} inverse={i === state.cursor} wrap="truncate-end">
-          <Text color={i === state.cursor && state.grabbed ? CYAN : GREEN}>
+          <Text color={i === state.cursor && state.grabbed ? INFO : OK}>
             {`${i + 1}. ${i === state.cursor && state.grabbed ? '⇕ ' : ''}${ref}`}
           </Text>
-          <Text color={GRAY}>{`  ${rankNote(state.mode, i, state.exhausted.has(ref))}`}</Text>
+          <Text color={MUTED}>{`  ${rankNote(state.mode, i, state.exhausted.has(ref))}`}</Text>
         </Text>
       ))}
     </Box>

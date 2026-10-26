@@ -1,8 +1,13 @@
 import { once } from 'node:events';
 import { createServer } from 'node:http';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DevServer, freePort, portOpen } from '../../../src/browser/dev-server.js';
+import { resolvePaths } from '../../../src/core/paths.js';
+import { bindRun, readChildren, unbindRun } from '../../../src/core/process-registry.js';
 
 const node = JSON.stringify(process.execPath);
 const running = new Set<DevServer>();
@@ -131,6 +136,53 @@ describe('dev server supervisor', () => {
     expect(status.url).toBeUndefined();
     expect(status.output).toContain('started');
   }, 10_000);
+
+  it('autoPort picks a free high port, hands it over via PORT, and the server answers on it', async () => {
+    const s = server({
+      command: `${node} -e "require('node:http').createServer((q,r)=>r.end('ok')).listen(Number(process.env.PORT||0),'127.0.0.1')"`,
+      cwd: process.cwd(),
+      autoPort: true,
+      timeoutMs: 10_000,
+    });
+    const started = await s.start();
+    expect(started.running).toBe(true);
+    expect(started.port).toBeDefined();
+    expect(started.port).toBeGreaterThanOrEqual(10_000);
+    expect(started.port).not.toBe(3000);
+    expect(started.port).not.toBe(5173);
+    expect(started.port).not.toBe(8080);
+    expect(await portOpen(started.port ?? 0)).toBe(true);
+    await s.stop();
+    expect(await portOpen(started.port ?? 0)).toBe(false);
+  }, 20_000);
+
+  it('registers the server in the run registry while it runs, and unregisters on stop', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'omnexx-registry-'));
+    try {
+      const paths = resolvePaths({ OMNEXX_HOME: home });
+      bindRun(paths, 'r_test');
+      const { port, release } = await freePort();
+      await release();
+      const s = server({
+        command: `${node} -e "require('node:http').createServer((q,r)=>r.end('ok')).listen(${String(port)},'127.0.0.1')"`,
+        cwd: process.cwd(),
+        port,
+        runId: 'r_test',
+        timeoutMs: 5_000,
+      });
+      const started = await s.start();
+      expect(started.running).toBe(true);
+      const children = readChildren(paths, 'r_test');
+      expect(children).toHaveLength(1);
+      expect(children[0]?.kind).toBe('server');
+      expect(typeof children[0]?.pid).toBe('number');
+      await s.stop();
+      expect(readChildren(paths, 'r_test')).toEqual([]);
+    } finally {
+      unbindRun();
+      await rm(home, { recursive: true, force: true });
+    }
+  }, 20_000);
 
   it('reports a command that dies without a health check', async () => {
     const s = server({

@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink';
 import { parseDuration } from '../config/duration.js';
-import { CYAN, GRAY, GREEN } from './colors.js';
+import { INFO, MUTED, OK } from './colors.js';
+import { BORDER, SPACE } from './tokens.js';
 
 /**
  * The guided way into an autonomous run: pick how long it works (or type a time), then say what
@@ -47,20 +48,26 @@ export function timeLabel(value: string): string {
 export function AutoTimePicker({ state, width }: { state: AutoSetup; width: number }) {
   if (state.step !== 'time') return null;
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={GREEN} paddingX={1} width={width}>
+    <Box
+      flexDirection="column"
+      borderStyle={BORDER.panel}
+      borderColor={OK}
+      paddingX={SPACE.sm}
+      width={width}
+    >
       <Text>
-        <Text color={GREEN} bold>
+        <Text color={OK} bold>
           autonomous run · how long should it work?
         </Text>
-        <Text color={GRAY}>{'  ↑↓ or 1-8 · enter choose · esc cancel'}</Text>
+        <Text color={MUTED}>{'  ↑↓ or 1-8 · enter choose · esc cancel'}</Text>
       </Text>
       {AUTO_TIMES.map((t, i) => (
         <Text key={t.label} inverse={i === state.cursor}>
-          <Text color={i === state.cursor ? CYAN : GRAY}>{`${String(i + 1)}  `}</Text>
+          <Text color={i === state.cursor ? INFO : MUTED}>{`${String(i + 1)}  `}</Text>
           <Text>{t.label}</Text>
         </Text>
       ))}
-      <Text color={GRAY}>
+      <Text color={MUTED}>
         next: what it should work on. It plans, works, checks every change, and stops at the time.
       </Text>
     </Box>

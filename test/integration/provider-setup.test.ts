@@ -135,6 +135,47 @@ describe('provider setup: custom endpoints from a URL and key', () => {
     expect(await testProvider(x, 'corp')).toMatchObject({ ok: true, models: 2 });
   });
 
+  it('saves keyEnv and probes with that key (never the value)', async () => {
+    const x = await io((url, h) =>
+      url === 'https://inception.example/v1/models' && h.get('authorization') === 'Bearer k1'
+        ? list('mercury-3')
+        : undefined,
+    );
+    x.env.MY_KEY = 'k1';
+    const r = await setupProvider(x, {
+      provider: 'inception',
+      url: 'https://inception.example/v1',
+      keyEnv: 'MY_KEY',
+      flavor: 'openai-chat',
+    });
+    expect(r.message).toMatch(/key from \$MY_KEY/);
+    expect(r.probe).toMatchObject({ ok: true, models: ['mercury-3'] });
+    const { config } = await loadConfig({ cwd: x.cwd, env: x.env });
+    expect(config.providers.endpoints.inception).toMatchObject({
+      base_url: 'https://inception.example/v1',
+      api_key_env: 'MY_KEY',
+    });
+    expect(await configText(x)).not.toContain('k1');
+  });
+
+  it('keeps --key-env on the providers add smart path (flavor forces it)', async () => {
+    const x = await io((url, h) =>
+      url === 'https://inception.example/v1/models' && h.get('authorization') === 'Bearer k1'
+        ? list('mercury-3')
+        : undefined,
+    );
+    x.env.MY_KEY = 'k1';
+    expect(
+      await providersAddSmart(x, 'inception', {
+        baseUrl: 'https://inception.example/v1',
+        keyEnv: 'MY_KEY',
+        flavor: 'openai-chat',
+      }),
+    ).toBe(0);
+    const { config } = await loadConfig({ cwd: x.cwd, env: x.env });
+    expect(config.providers.endpoints.inception).toMatchObject({ api_key_env: 'MY_KEY' });
+  });
+
   it('does not save a remote endpoint that fails, and says why', async () => {
     const x = await io();
     await expect(

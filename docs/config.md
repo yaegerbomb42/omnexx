@@ -4,13 +4,47 @@ Precedence, highest first: **CLI flags > `OMNEXX_*` env > `./omnexx.toml` (proje
 
 Durations are strings: `"30s"`, `"5m"`, `"2h"`, `"1h30m"`.
 
+## The user settings (one file)
+
+Everything a person sets lives in `~/.config/omnexx/config.toml`. First run asks for two things only — a provider plus a key, and a model — and writes them as `provider` and `model` there; everything else keeps its default. The ten settings most people ever touch:
+
+| Setting               | Meaning                                                                                                   |
+| --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `provider`            | Default provider (a `[providers.endpoints]` name, or `"anthropic"`).                                      |
+| `model`               | Default model for every role (`provider:model`); the pool and `[roles]` override it per role.             |
+| `pool`                | The ranked provider:model list every role uses, in failover order (`[pool] ranked`, `mode = "fallback"`). |
+| `roles`               | Per-role model lists and routing for the roles that differ from the pool (`[roles]`).                     |
+| `budget.max_usd`      | Run-level spend cap in USD (default 50).                                                                  |
+| `sandbox`             | `"host"` or `"docker"`.                                                                                   |
+| `policy.auto_approve` | Answer yes to every "allow this?" question (default false).                                               |
+| `git.push`            | `"none"` or `"branch"`.                                                                                   |
+| `experimental`        | Show the experimental commands, modes and settings (default false).                                       |
+| `providers.endpoints` | Named model endpoints, with key rotation (`api_key_env` + `api_key_envs`).                                |
+
+The old `roles.json` and `models.json` are gone: on startup they are folded into `[roles]` and `[pool]` in this file and renamed to `*.migrated` (a key already in `config.toml` wins). The readers still understand the old files, so restoring one re-migrates it. Migration never touches `[providers.endpoints]`, so key rotation survives it byte for byte.
+
 ## Top level
 
-| Key         | Default                                                                                                                                                                                      | Meaning                                                                                         |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `setup`     | `[]`                                                                                                                                                                                         | Commands run once in the run's worktree before planning (e.g. `["npm ci"]`).                    |
-| `sandbox`   | `"host"`                                                                                                                                                                                     | `"host"` only. `"docker"` fails with "not implemented (M3)".                                    |
-| `protected` | `omnexx.toml`, `.github/**`, `.gitlab-ci.yml`, `.circleci/**`, lockfiles (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock[b]`, `poetry.lock`, `Cargo.lock`, `go.sum`), `.env*` | Globs the agent may not change (anti-cheat). A task can lift this with `allow = ["protected"]`. |
+| Key            | Default                                                                                                                                                                                      | Meaning                                                                                                      |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `experimental` | `false`                                                                                                                                                                                      | Show the experimental commands, modes and settings (`--experimental`, `OMNEXX_EXPERIMENTAL=1`, or this key). |
+| `provider`     | —                                                                                                                                                                                            | Default provider: a `[providers.endpoints]` name, or `"anthropic"`. Set on first run.                        |
+| `model`        | —                                                                                                                                                                                            | Default model for every role (`provider:model`). Set on first run.                                           |
+| `setup`        | `[]`                                                                                                                                                                                         | Commands run once in the run's worktree before planning (e.g. `["npm ci"]`).                                 |
+| `sandbox`      | `"host"`                                                                                                                                                                                     | `"host"` only. `"docker"` fails with "not implemented (M3)".                                                 |
+| `protected`    | `omnexx.toml`, `.github/**`, `.gitlab-ci.yml`, `.circleci/**`, lockfiles (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock[b]`, `poetry.lock`, `Cargo.lock`, `go.sum`), `.env*` | Globs the agent may not change (anti-cheat). A task can lift this with `allow = ["protected"]`.              |
+
+## `[pool]` and `[roles]`
+
+The one ranked model list and the per-role overrides, in this file (migrated from the old `models.json` / `roles.json` on startup; see above).
+
+| Key                       | Default      | Meaning                                                                                                                                         |
+| ------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pool.ranked`             | `[]`         | Every model the person uses, in failover order (`provider:model`). Chat and every run role use it unless `[roles]` gives the role its own list. |
+| `pool.mode`               | `"fallback"` | How the pool is used: `fallback` (#1 until its quota runs out), `priority` (#1 first each call), `random`.                                      |
+| `roles.models.<role>`     | —            | A role's own list (`chat`, `planner`, `worker`, `cheap`, `helpers`); empty falls back to the pool.                                              |
+| `roles.strategies.<role>` | —            | How the role routes between its models (`fallback`, `priority`, `random`, `least-busy`, `smart`).                                               |
+| `roles.spread_helpers`    | `true`       | Helpers running at the same time start on different providers.                                                                                  |
 
 ## `[docker]` (when `sandbox = "docker"`)
 
@@ -239,7 +273,7 @@ The fast path is one worker cycle with the whole goal as its task, done when eve
 
 ## `[execution]`: plan/loop presets
 
-One knob for how hard the agent tries per task. It picks a preset that fills in `[plan]` keys you do not set yourself; anything you set explicitly anywhere still wins. Set it in `omnexx.toml` (`[execution] mode = "efficient"`) or with the `OMNEXX_EXECUTION_MODE` env var (flags > env > project file).
+One knob for how hard the agent tries per task. It is experimental: the posture pill in the VS Code panel only shows when experimental mode is on (`--experimental`, `OMNEXX_EXPERIMENTAL=1`, or `experimental = true` in the user config). It picks a preset that fills in `[plan]` keys you do not set yourself; anything you set explicitly anywhere still wins. Set it in `omnexx.toml` (`[execution] mode = "efficient"`) or with the `OMNEXX_EXECUTION_MODE` env var (flags > env > project file).
 
 | Key    | Default    | Meaning                                                                                                                                                                                                                                                                                                                         |
 | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -249,7 +283,7 @@ The preset never overwrites a `[plan]` key you set yourself (for example `loop_r
 
 ### `[execution] domain`: the work domain
 
-A second, independent knob: what kind of work the run does. Set it with `omnexx run --mode <swe|general>`, `omnexx init --mode general`, the `OMNEXX_EXECUTION_DOMAIN` env var, `[execution] domain` in `omnexx.toml`, or the Work Mode selector in the VS Code panel (same precedence as everything else: flags > env > project file > user file). Switching it mid-run applies at the next cycle boundary like the posture, records `workDomain` in the run state, and emits an `execution.domain_change` event.
+A second, independent knob: what kind of work the run does. It is experimental: set it with `omnexx run --mode <swe|general>` (needs `--experimental`), `omnexx init --mode general`, the `OMNEXX_EXECUTION_DOMAIN` env var, `[execution] domain` in `omnexx.toml`, or the Work Mode selector in the VS Code panel under Settings → Advanced (same precedence as everything else: flags > env > project file > user file). Switching it mid-run applies at the next cycle boundary like the posture, records `workDomain` in the run state, and emits an `execution.domain_change` event.
 
 | Key      | Default | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -259,20 +293,23 @@ In the general domain, gates keep their usual meaning with one addition: `kind =
 
 ## `[context]`
 
-| Key                     | Default                                                                                                 |
-| ----------------------- | ------------------------------------------------------------------------------------------------------- |
-| `progress_tail`         | `5` progress entries in each cycle's context                                                            |
-| `notes_max_tokens`      | `1500` (lessons file cap)                                                                               |
-| `repo_map_max_tokens`   | `3000` (codebase map cap)                                                                               |
-| `clear_tool_results_at` | `60000` estimated context tokens: elide old tool results over 1,000 chars                               |
-| `keep_tool_results`     | `6` newest tool results never cleared                                                                   |
-| `compact_at`            | `100000` estimated context tokens: summarize older turns                                                |
-| `compact_keep_turns`    | `4` recent assistant turns kept verbatim                                                                |
-| `lazy_tools`            | `false`; serve remember, running_context, recall, outline and read_symbol through one `more_tools` tool |
-| `budget_tokens`         | unset (no cap); set by `context_level`: history is never sent above it                                  |
-| `subagents`             | `false`: run agents get no `task` tool (one agent reads for itself)                                     |
+| Key                     | Default                                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `progress_tail`         | `5` progress entries in each cycle's context                                                                       |
+| `notes_max_tokens`      | `1500` (lessons file cap)                                                                                          |
+| `repo_map_max_tokens`   | `3000` (codebase map cap)                                                                                          |
+| `clear_tool_results_at` | `60000` estimated context tokens: elide old tool results over 1,000 chars                                          |
+| `keep_tool_results`     | `6` newest tool results never cleared                                                                              |
+| `compact_at`            | `100000` estimated context tokens: summarize older turns                                                           |
+| `compact_keep_turns`    | `4` recent assistant turns kept verbatim                                                                           |
+| `memory`                | `rolling`: rewrite working memory into a compact note every few turns; `full` keeps raw history until `compact_at` |
+| `memory_condense_every` | `7` turns between memory condensations (6–8)                                                                       |
+| `memory_keep_turns`     | `2` raw turns kept verbatim after the memory note                                                                  |
+| `lazy_tools`            | `false`; serve remember, running_context, recall, outline and read_symbol through one `more_tools` tool            |
+| `budget_tokens`         | unset (no cap); set by `context_level`: history is never sent above it                                             |
+| `subagents`             | `false`: run agents get no `task` tool (one agent reads for itself)                                                |
 
-In-cycle context control runs before each turn and works on every provider (details and measured costs: [architecture.md](architecture.md#working-state-context-within-a-cycle-and-a-chat)). Superseded material (re-reads, reads made stale by an edit, failed edits and commands later fixed, searches whose files were read, old narration) is pruned as soon as at least 4k tokens would go, and always past `clear_tool_results_at`, where old large tool results also become a one-line note telling the model how to get them back. Past `compact_at`, the cheap chain folds the older turns into the **working state** (done, decisions, what didn't work, open todos, key files, in progress, last error, next step), merged with the previous one; the think phase's analysis and the doom-loop tombstones are kept word for word, and the last `compact_keep_turns` turns verbatim. At least two older turns are needed, so it never re-folds on consecutive turns. With `budget_tokens` set, the kept tail is settled to 40% of it after a fold, and if the context is still over the budget the largest blocks become digests (head and tail lines, plus the `read_log` id). A failed or budget-refused fold leaves the context as is (then the digests keep it in budget), and `max_tokens_per_cycle` still ends a cycle that outgrows both. Events: `context.pruned`, `context.cleared`, `context.compacted`, `context.compact_failed`, `context.digested`. Keep `compact_at` under the smallest context window in your worker chain. When the provider's prompt cache keeps missing (a `cache.miss` event: a turn read under 80% of the previous prompt from cache), both `clear_tool_results_at` and `compact_at` scale down with the observed miss rate, to no less than half, because every miss re-sends the whole prompt. A command run again supersedes its older output. `lazy_tools` keeps five rarely called tool schemas out of the cached prefix (about 15% of the tool definitions); it stays off until a bench confirms the model still uses them.
+In-cycle context control runs before each turn and works on every provider (details and measured costs: [architecture.md](architecture.md#working-state-context-within-a-cycle-and-a-chat)). Superseded material (re-reads, reads made stale by an edit, failed edits and commands later fixed, searches whose files were read, old narration) is pruned as soon as at least 4k tokens would go, and always past `clear_tool_results_at`, where old large tool results also become a one-line note telling the model how to get them back. With the default `memory = "rolling"`, every `memory_condense_every` turns (7) the working memory is rewritten into a compact **memory note** — current goal, active work (newest first, in detail), decisions and why, facts (file paths with content hashes), open threads (older work, one line each, fading with age), failed attempts — and only the last `memory_keep_turns` turns (2) stay raw, so the prompt stays roughly flat over a long run. The folded turns are appended to the raw transcript in `logs/transcript.md` first, and `recall("<query>")` pulls any trimmed detail back. The note is also written to `memory.md` in the run directory, and the VS Code panel shows it under "What I remember". Events: `context.condensed`. With `memory = "full"` there is no rolling note: past `compact_at`, the cheap chain folds the older turns into the **working state** (done, decisions, what didn't work, open todos, key files, in progress, last error, next step), merged with the previous one; the think phase's analysis and the doom-loop tombstones are kept word for word, and the last `compact_keep_turns` turns verbatim. At least two older turns are needed, so it never re-folds on consecutive turns. With `budget_tokens` set, the kept tail is settled to 40% of it after a fold, and if the context is still over the budget the largest blocks become digests (head and tail lines, plus the `read_log` id). A failed or budget-refused fold leaves the context as is (then the digests keep it in budget), and `max_tokens_per_cycle` still ends a cycle that outgrows both. Events: `context.pruned`, `context.cleared`, `context.compacted`, `context.compact_failed`, `context.digested`. Keep `compact_at` under the smallest context window in your worker chain. When the provider's prompt cache keeps missing (a `cache.miss` event: a turn read under 80% of the previous prompt from cache), both `clear_tool_results_at` and `compact_at` scale down with the observed miss rate, to no less than half, because every miss re-sends the whole prompt. A command run again supersedes its older output. `lazy_tools` keeps five rarely called tool schemas out of the cached prefix (about 15% of the tool definitions); it stays off until a bench confirms the model still uses them.
 
 ## `[policy]`
 
@@ -307,7 +344,7 @@ In-cycle context control runs before each turn and works on every provider (deta
 
 ## Environment variables
 
-`OMNEXX_HOME` (state, default `~/.omnexx`), `OMNEXX_CONFIG_HOME` (default `~/.config/omnexx`), `OMNEXX_ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEY`, and overrides: `OMNEXX_SANDBOX`, `OMNEXX_BUDGET_MAX_USD`, `OMNEXX_BUDGET_MAX_USD_PER_DAY`, `OMNEXX_BUDGET_MAX_HOURS`, `OMNEXX_BUDGET_MAX_CYCLES`, `OMNEXX_BUDGET_MAX_TURNS_PER_CYCLE`, `OMNEXX_MODELS_PLANNER`, `OMNEXX_MODELS_WORKER`, `OMNEXX_MODELS_CHEAP`, `OMNEXX_GIT_PUSH`, `OMNEXX_JUDGE_KIND`, `OMNEXX_JUDGE_MODE`, `OMNEXX_JUDGE_NIMBLE_URL`, `OMNEXX_NTFY_SERVER`, `OMNEXX_NTFY_TOPIC`.
+`OMNEXX_HOME` (state, default `~/.omnexx`), `OMNEXX_CONFIG_HOME` (default `~/.config/omnexx`), `OMNEXX_ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEY`, and overrides: `OMNEXX_SANDBOX`, `OMNEXX_BUDGET_MAX_USD`, `OMNEXX_BUDGET_MAX_USD_PER_DAY`, `OMNEXX_BUDGET_MAX_HOURS`, `OMNEXX_BUDGET_MAX_CYCLES`, `OMNEXX_BUDGET_MAX_TURNS_PER_CYCLE`, `OMNEXX_MODELS_PLANNER`, `OMNEXX_MODELS_WORKER`, `OMNEXX_MODELS_CHEAP`, `OMNEXX_GIT_PUSH`, `OMNEXX_EXECUTION_MODE`, `OMNEXX_EXECUTION_DOMAIN`, `OMNEXX_EXPERIMENTAL`, `OMNEXX_JUDGE_KIND`, `OMNEXX_JUDGE_MODE`, `OMNEXX_JUDGE_NIMBLE_URL`, `OMNEXX_NTFY_SERVER`, `OMNEXX_NTFY_TOPIC`.
 
 ## `[search]`
 

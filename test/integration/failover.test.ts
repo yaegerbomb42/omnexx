@@ -77,8 +77,8 @@ const overloaded: Provider = {
 
 async function run(primary: Provider, config: object) {
   const srv = await backupServer();
-  const router = new ProviderRouter(
-    new Map<string, Provider>([
+  const router = new ProviderRouter({
+    providers: new Map<string, Provider>([
       ['anthropic', primary],
       [
         'backup',
@@ -90,7 +90,7 @@ async function run(primary: Provider, config: object) {
         }),
       ],
     ]),
-  );
+  });
   const t = await startTestRun({
     fixture: 'ts-failing-test',
     provider: router,
@@ -150,8 +150,8 @@ describe('provider failover inside a cycle', () => {
   it('a provider over its own max_usd is skipped without an error; the next one does the work', async () => {
     const primary = new ScriptedProvider(() => say('should not be called'));
     const srv = await backupServer();
-    const router = new ProviderRouter(
-      new Map<string, Provider>([
+    const router = new ProviderRouter({
+      providers: new Map<string, Provider>([
         ['anthropic', primary],
         [
           'backup',
@@ -163,7 +163,7 @@ describe('provider failover inside a cycle', () => {
           }),
         ],
       ]),
-    );
+    });
     const t = await startTestRun({
       fixture: 'ts-failing-test',
       provider: router,
@@ -186,8 +186,8 @@ describe('provider failover inside a cycle', () => {
   it('when every provider in the chain is over its cap, the cycle ends as a budget stop', async () => {
     const srv = await backupServer();
     const primary = new ScriptedProvider(() => call('read', { path: 'src/math.js' }));
-    const router = new ProviderRouter(
-      new Map<string, Provider>([
+    const router = new ProviderRouter({
+      providers: new Map<string, Provider>([
         ['anthropic', primary],
         [
           'backup',
@@ -199,7 +199,7 @@ describe('provider failover inside a cycle', () => {
           }),
         ],
       ]),
-    );
+    });
     const t = await startTestRun({
       fixture: 'ts-failing-test',
       provider: router,

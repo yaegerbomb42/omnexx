@@ -15,7 +15,8 @@ export type SectionId =
   | 'approvals'
   | 'mcp'
   | 'browser'
-  | 'advanced';
+  | 'advanced'
+  | 'shortcuts';
 
 export interface SectionMeta {
   id: SectionId;
@@ -39,6 +40,7 @@ approvals|Approvals|Approvals|What omnexx may do without asking you first|<path 
 mcp|MCP servers|MCP|Extra tools: a browser, your database, GitHub…|<path d="M9 3v5M15 3v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v3"/>
 browser|Browser|Browser|The browser the agent drives for web tasks|<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c3 3 3 13 0 16M12 4c-3 3-3 13 0 16"/>
 advanced|Advanced|More|Config files, the engine, restart|<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>
+shortcuts|Shortcuts|Keys|Keyboard shortcuts for the chat panel|<path d="M6 8a4 4 0 1 1 8 0 4 4 0 0 1-8 0z"/><path d="M18 16a4 4 0 1 1 8 0 4 4 0 0 1-8 0z"/><path d="M6 8h12M18 16h4"/>
 `;
 
 export const SECTIONS: readonly SectionMeta[] = TABLE.trim()
@@ -49,7 +51,14 @@ export const SECTIONS: readonly SectionMeta[] = TABLE.trim()
   });
 
 /** Sections that start folded until the person opens them. */
-export const FOLDED_BY_DEFAULT: readonly SectionId[] = ['add', 'browser', 'advanced'];
+export const FOLDED_BY_DEFAULT: readonly SectionId[] = [
+  'add',
+  'browser',
+  'advanced',
+  'skills',
+  'mcp',
+  'shortcuts',
+];
 
 export function icon(svg: string): string {
   return `<svg class="sec-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${svg}</svg>`;

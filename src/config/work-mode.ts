@@ -9,9 +9,9 @@
  *   (shell assertions, validators, artifact checks) instead of a test suite, and the spec
  *   test gate is skipped: no suite is expected to exist.
  *
- * Set it with `--mode <swe|general>`, the OMNEXX_EXECUTION_DOMAIN env var, or
- * `[execution] domain` in omnexx.toml; the usual layer precedence applies
- * (flags > env > project file > user file).
+ * Set it with `--mode <swe|general>` (experimental: needs `--experimental`), the
+ * OMNEXX_EXECUTION_DOMAIN env var, or `[execution] domain` in omnexx.toml; the usual layer
+ * precedence applies (flags > env > project file > user file).
  */
 export type WorkMode = 'swe' | 'general';
 

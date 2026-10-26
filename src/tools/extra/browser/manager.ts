@@ -81,6 +81,9 @@ export class BrowserSessionManager {
           port,
           cwd: this.options.worktreeRoot,
           timeoutMs,
+          runId: this.options.runId,
+          // No port given: pick a free high one instead of the server's 3000/5173 default.
+          autoPort: port === undefined,
         });
     this.devServer = server;
     this.devServerStarted = true;

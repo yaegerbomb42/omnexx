@@ -67,6 +67,8 @@ export interface ChatState {
     limit: number;
     parts?: { system: number; tools: number; conversation: number };
   } | null;
+  /** The rolling memory note (what the agent remembers), or null before the first condensation. */
+  memoryNote: string | null;
   usage: ChatUsage | null;
   run: { id: string; alive: boolean; phase?: string; done?: number; tasks?: number } | null;
   /** Helpers (subagents) for the current message. */
@@ -218,6 +220,7 @@ export async function serveChat(
       model: session.chatModelName ?? null,
       routing: session.chatRouting ?? null,
       context: session.context ?? null,
+      memoryNote: session.chatMemoryNote ?? null,
       usage: t
         ? {
             startedAt: t.startedAt ?? null,

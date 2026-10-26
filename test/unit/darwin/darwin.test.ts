@@ -100,6 +100,42 @@ describe('darwinx meta-harness', () => {
     }
   });
 
+  // An old failing tool call followed by a clean turn; `gates` is the final turn's gate result.
+  const staleToolErrorTraces = (gates: 'ok' | 'fail') => [
+    {
+      turn: 1,
+      calls: [{ tool: 'bash', isError: true, error: 'ancient tool error' }],
+      fresh: 10,
+      cached: 0,
+      ms: 50,
+      gates: 'ok' as const,
+    },
+    {
+      turn: 2,
+      calls: [{ tool: 'read', isError: false, error: '' }],
+      fresh: 20,
+      cached: 10,
+      ms: 40,
+      gates,
+    },
+  ];
+
+  it.each([
+    ['lastError', 'ok', { lastError: 'doom loop: repeated same read' }, 'doom_loop'],
+    [
+      'gateFailed',
+      'fail',
+      { gateFailed: true, lastError: 'Unit tests failed: 2 broken' },
+      'gate_failure',
+    ],
+  ] as const)('prefers newer %s signal over an ancient tool error', (_n, gates, options, kind) => {
+    expect(diagnoseFailure(staleToolErrorTraces(gates), options)).toEqual({
+      turn: 2,
+      kind,
+      detail: options.lastError,
+    });
+  });
+
   it('ratchets accepted mutation when gates pass', async () => {
     const commits: string[] = [];
     const sandbox: SandboxRunner = {
@@ -148,5 +184,53 @@ describe('darwinx meta-harness', () => {
     expect(res.status).toBe('rejected');
     expect(reverted).toBe(true);
     expect(res.rejectionReason).toBe('test:quick failed');
+  });
+
+  it('reverts when runGates rejects and rethrows the original error', async () => {
+    let reverted = false;
+    const boom = new Error('gate runner crashed');
+    const sandbox: SandboxRunner = {
+      runGates: () => Promise.reject(boom),
+      revert: () => {
+        reverted = true;
+        return Promise.resolve();
+      },
+      commit: () => Promise.resolve(''),
+    };
+
+    const symptom: FailureSymptom = { turn: 1, kind: 'tool_error', detail: 'SyntaxError' };
+    const mutation: MutationProposal = {
+      target: 'prompt',
+      file: 'src/instructions/base.ts',
+      rationale: 'Clarify JSON schema requirements',
+      diffPatch: '+ Ensure JSON is escaped',
+    };
+
+    await expect(evaluateMutation(1, symptom, mutation, sandbox)).rejects.toBe(boom);
+    expect(reverted).toBe(true);
+  });
+
+  it('reverts when commit rejects and rethrows the original error', async () => {
+    let reverted = false;
+    const boom = new Error('commit failed');
+    const sandbox: SandboxRunner = {
+      runGates: () => Promise.resolve({ ok: true }),
+      revert: () => {
+        reverted = true;
+        return Promise.resolve();
+      },
+      commit: () => Promise.reject(boom),
+    };
+
+    const symptom: FailureSymptom = { turn: 1, kind: 'tool_error', detail: 'SyntaxError' };
+    const mutation: MutationProposal = {
+      target: 'prompt',
+      file: 'src/instructions/base.ts',
+      rationale: 'Clarify JSON schema requirements',
+      diffPatch: '+ Ensure JSON is escaped',
+    };
+
+    await expect(evaluateMutation(1, symptom, mutation, sandbox)).rejects.toBe(boom);
+    expect(reverted).toBe(true);
   });
 });

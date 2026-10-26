@@ -62,6 +62,8 @@ export function sourceNote(source: ModeSource): string {
 
 let current: ExecutionMode = 'normal';
 let source: ModeSource = 'default';
+/** The mode pickers only show in the chat header while experimental mode is on. */
+let experimental = false;
 
 /** The pill: three gradient segments, the active mode's caption, and any override note. */
 export function pillHtml(): string {
@@ -88,6 +90,9 @@ export function render(): void {
   document.querySelectorAll<HTMLElement>('[data-posture-slot]').forEach((slot) => {
     slot.innerHTML = pillHtml();
   });
+  // The header pill is default UI: hidden until the host says experimental is on.
+  // The settings card (under Advanced) keeps its pill either way.
+  document.getElementById('posture')?.toggleAttribute('hidden', !experimental);
 }
 
 /** Ask the extension host for the effective mode. */
@@ -101,6 +106,7 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
   if (isExecutionMode(m.mode)) current = m.mode;
   if (m.source === 'env' || m.source === 'project' || m.source === 'user' || m.source === 'default')
     source = m.source;
+  if (typeof m.experimental === 'boolean') experimental = m.experimental;
   render();
   return true;
 }

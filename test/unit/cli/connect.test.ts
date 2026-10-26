@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
@@ -112,6 +112,38 @@ describe('omnexx connect / disconnect', () => {
     const r = await run(['disconnect', 'github']);
     expect(r.out).toContain('Disconnected github');
     const config = await readFile(join(home(env), 'config.toml'), 'utf8');
+    expect(config).not.toContain('github');
+    const secrets = await readFile(join(home(env), 'mcp-secrets.json'), 'utf8');
+    expect(secrets).not.toContain('ghp_abc');
+  });
+
+  it('disconnect strips dotted-key definitions and wipes secrets', async () => {
+    const env = await isolatedEnv();
+    const cwd = await tempDir();
+    const configFile = join(home(env), 'config.toml');
+    await mkdir(home(env), { recursive: true });
+    await writeFile(configFile, '[mcp.servers]\ngithub.command = "npx"\n', 'utf8');
+    let out = '';
+    const sink = (f: (s: string) => void) =>
+      ({
+        write: (s: string) => {
+          f(s);
+          return true;
+        },
+      }) as unknown as NodeJS.WriteStream;
+    const io: CliIO = {
+      stdout: sink((s) => (out += s)),
+      stderr: sink((s) => (out += s)),
+      stdin: process.stdin,
+      cwd,
+      isTTY: false,
+      env,
+    };
+    const program = new Command().exitOverride();
+    register(program, io, () => undefined);
+    await program.parseAsync(['node', 'omnexx', 'disconnect', 'github']);
+    expect(out).toContain('Disconnected github');
+    const config = await readFile(configFile, 'utf8');
     expect(config).not.toContain('github');
     const secrets = await readFile(join(home(env), 'mcp-secrets.json'), 'utf8');
     expect(secrets).not.toContain('ghp_abc');

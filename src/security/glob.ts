@@ -26,3 +26,14 @@ export function matchesAny(path: string, patterns: readonly string[]): string | 
   const normalized = path.replace(/\\/g, '/');
   return patterns.find((p) => globToRegExp(p).test(normalized));
 }
+
+/**
+ * Dependency and build folders: not the project's code even when a repo commits them. Shared
+ * by the codemap (which files are project code) and the anti-cheat scan (markers in
+ * tool-written output say nothing about cheating: `npm install` writes node_modules, a test
+ * run writes coverage).
+ */
+export const VENDORED_PATH =
+  /(^|\/)(node_modules|bower_components|vendor|dist|build|\.venv|venv|__pycache__|target|\.next|coverage)\//;
+
+export const isVendored = (path: string): boolean => VENDORED_PATH.test(path);

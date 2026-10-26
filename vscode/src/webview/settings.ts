@@ -246,7 +246,10 @@ function approvalsHtml(): string {
 }
 
 function advancedHtml(): string {
-  return `<div id="engine-box" class="engine">${engineHtml()}</div>
+  return `<div class="advanced-modes"><div class="posture-title">Experimental modes</div>
+<p class="hint">Work mode and execution posture live here, out of the way: they only appear in the chat header when experimental mode is on (<code>--experimental</code>, or <code>experimental = true</code> in config.toml).</p>
+${posture.cardHtml()}${domain.cardHtml()}</div>
+<div id="engine-box" class="engine">${engineHtml()}</div>
   <div class="links">
     <button class="ghost" data-action-ext="editToml">Edit project settings (omnexx.toml)</button>
     <button class="ghost" data-action-ext="editUserConfig">Edit user settings (config.toml)</button>
@@ -254,12 +257,31 @@ function advancedHtml(): string {
   </div>`;
 }
 
+function shortcutsHtml(): string {
+  const rows: [string, string][] = [
+    ['Ctrl+Alt+O / Cmd+Alt+O', 'Open Chat (focus)'],
+    ['Ctrl+Alt+H / Cmd+Alt+H', 'Show History'],
+    ['Ctrl+Shift+Alt+P / Cmd+Shift+Alt+P', 'Pause Run'],
+    ['Ctrl+Shift+Alt+R / Cmd+Shift+Alt+R', 'Resume Run'],
+    ['Ctrl+Shift+Alt+S / Cmd+Shift+Alt+S', 'Stop Run'],
+    ['Ctrl+Shift+Alt+N / Cmd+Shift+Alt+N', 'New Chat'],
+    ['Ctrl+Shift+Alt+Z / Cmd+Shift+Alt+Z', 'Undo Last Message\u2019s Edits'],
+    ['Ctrl+Shift+Alt+M / Cmd+Shift+Alt+M', 'Pick Chat Model'],
+  ];
+  return `<table class="shortcuts"><thead><tr><th>Keybinding</th><th>Action</th></tr></thead><tbody>${rows
+    .map(
+      ([key, action]) =>
+        `<tr><td class="key">${escapeHtml(key)}</td><td>${escapeHtml(action)}</td></tr>`,
+    )
+    .join('')}</tbody></table>`;
+}
+
 function draw(): void {
   const page = q('settings', HTMLElement);
   page.innerHTML = `
 <div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
 ${layout.navHtml()}
-${sec('agent', `${posture.cardHtml()}${domain.cardHtml()}<div id="agent-box">${agentCard.html()}</div><div id="token-budget">${stats.tokenBudgetHtml()}</div><div id="live-stats">${stats.liveStatsHtml()}</div>`)}
+${sec('agent', `<div id="agent-box">${agentCard.html()}</div><div id="token-budget">${stats.tokenBudgetHtml()}</div><div id="live-stats">${stats.liveStatsHtml()}</div>`)}
 ${sec('model', modelFieldHtml())}
 ${sec('models', `<div id="roles-box">${roles.html()}</div>`)}
 ${sec('skills', `<div id="skills-box">${skills.html()}</div>`)}
@@ -268,7 +290,8 @@ ${sec('add', addFormHtml(), 'add')}
 ${sec('approvals', approvalsHtml())}
 ${sec('mcp', `<div id="mcp-box">${mcp.html()}</div>`)}
 ${sec('browser', `<div id="browser-box">${browserHtml()}</div>`)}
-${sec('advanced', advancedHtml())}`;
+${sec('advanced', advancedHtml())}
+${sec('shortcuts', shortcutsHtml())}`;
   posture.render();
   domain.render();
   stats.refresh();

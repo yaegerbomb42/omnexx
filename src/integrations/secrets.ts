@@ -1,5 +1,6 @@
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { chmod, readFile, rename } from 'node:fs/promises';
+import { join } from 'node:path';
+import { writeJsonAtomic } from '../core/atomic.js';
 
 /**
  * Secret values for MCP servers (tokens from an import, an API key asked for at install), kept
@@ -11,11 +12,26 @@ export type McpSecrets = Record<string, Record<string, string>>;
 export const secretsFile = (configHome: string): string => join(configHome, 'mcp-secrets.json');
 
 export async function readSecrets(configHome: string): Promise<McpSecrets> {
+  const file = secretsFile(configHome);
+  let text: string;
   try {
-    const parsed: unknown = JSON.parse(await readFile(secretsFile(configHome), 'utf8'));
+    text = await readFile(file, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw err;
+  }
+  try {
+    const parsed: unknown = JSON.parse(text);
     return parsed && typeof parsed === 'object' ? (parsed as McpSecrets) : {};
-  } catch {
-    return {};
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      try {
+        await rename(file, `${file}.corrupt-${Date.now()}`);
+      } catch {
+        // best-effort backup: still throw the original parse error
+      }
+    }
+    throw err;
   }
 }
 
@@ -30,8 +46,7 @@ export async function writeServerSecrets(
     ? { ...rest, [server]: { ...current, ...values } }
     : rest;
   const file = secretsFile(configHome);
-  await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify(all, null, 2)}\n`, { mode: 0o600 });
+  await writeJsonAtomic(file, all);
   await chmod(file, 0o600);
 }
 

@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { extname, join } from 'node:path';
+import { registerChild, unregisterChild } from '../core/process-registry.js';
 import { runShell } from '../core/exec.js';
 import { checkTs, TS_EXTENSIONS, type Diag } from './ts-check.js';
 import type { ToolContext } from './types.js';
@@ -156,6 +157,16 @@ class PythonAstDaemon {
         stdio: ['pipe', 'pipe', 'ignore'],
       });
       p.unref();
+      if (p.pid !== undefined)
+        // Not detached: it shares the supervisor's group, so register pgid = pid and the
+        // group kill falls through to a direct kill of the daemon itself.
+        registerChild({
+          pid: p.pid,
+          pgid: p.pid,
+          kind: 'daemon',
+          command: 'python3 (post-edit AST daemon)',
+          startedAt: Date.now(),
+        });
       p.stdout.on('data', (chunk: Buffer) => {
         this.buffer += chunk.toString('utf8');
         const nl = this.buffer.indexOf('\n');
@@ -175,6 +186,7 @@ class PythonAstDaemon {
       });
       const reset = () => {
         if (this.proc === p) this.proc = null;
+        if (p.pid !== undefined) unregisterChild(p.pid);
         const cb = this.pending;
         this.pending = null;
         if (cb) cb({ ok: true });

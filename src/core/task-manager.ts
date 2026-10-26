@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { open, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { registerChild, unregisterChild } from './process-registry.js';
 
 export interface BackgroundTask {
   id: string;
@@ -53,15 +54,26 @@ export class TaskManager {
       process: child,
     };
 
+    if (child.pid !== undefined)
+      registerChild({
+        pid: child.pid,
+        pgid: child.pid,
+        kind: 'task',
+        command,
+        startedAt: task.startedAt,
+      });
+
     child.on('exit', (code) => {
       task.status = code === 0 ? 'stopped' : 'failed';
       task.exitCode = code;
       task.process = undefined;
+      if (child.pid !== undefined) unregisterChild(child.pid);
     });
 
     child.on('error', () => {
       task.status = 'failed';
       task.process = undefined;
+      if (child.pid !== undefined) unregisterChild(child.pid);
     });
 
     this.tasks.set(id, task);
@@ -93,6 +105,7 @@ export class TaskManager {
     const pid = task.pid;
     const child = task.process;
     if (pid) {
+      unregisterChild(pid);
       try {
         process.kill(-pid, 'SIGTERM');
       } catch {

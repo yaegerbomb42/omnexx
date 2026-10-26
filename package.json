@@ -1,6 +1,6 @@
 {
   "name": "omnexx",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "Set a goal, walk away, come back to commits. One coding agent that runs for days, checks every step against your tests, and commits only what passes.",
   "license": "MIT",
   "author": "James Yaeger",
@@ -36,7 +36,11 @@
     "coverage": "vitest run --coverage",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build",
     "bench": "node bench/run.ts",
-    "bench:watch": "node bench/watch.ts"
+    "bench:watch": "node bench/watch.ts",
+    "test:affected": "vitest run --project unit --project integration --project chaos --changed origin/main --passWithNoTests",
+    "test:related": "vitest related --run --passWithNoTests",
+    "test:fast": "vitest run --project unit --changed origin/main --passWithNoTests",
+    "test:shard": "vitest run --project unit --project integration --project chaos"
   },
   "keywords": [
     "agent",

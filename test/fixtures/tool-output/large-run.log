@@ -1,0 +1,462 @@
+$ npm run build && vitest run
+
+[tsc] compiling src/module000/index.ts (13 symbols)
+[tsc] compiling src/module001/index.ts (20 symbols)
+[tsc] compiling src/module002/index.ts (27 symbols)
+[tsc] compiling src/module003/index.ts (34 symbols)
+[tsc] compiling src/module004/index.ts (41 symbols)
+[tsc] compiling src/module005/index.ts (48 symbols)
+[tsc] compiling src/module006/index.ts (55 symbols)
+[tsc] compiling src/module007/index.ts (62 symbols)
+[tsc] compiling src/module008/index.ts (69 symbols)
+[tsc] compiling src/module009/index.ts (76 symbols)
+[tsc] compiling src/module010/index.ts (83 symbols)
+[tsc] compiling src/module011/index.ts (90 symbols)
+[tsc] compiling src/module012/index.ts (97 symbols)
+[tsc] compiling src/module013/index.ts (104 symbols)
+[tsc] compiling src/module014/index.ts (111 symbols)
+[tsc] compiling src/module015/index.ts (118 symbols)
+[tsc] compiling src/module016/index.ts (125 symbols)
+[tsc] compiling src/module017/index.ts (132 symbols)
+[tsc] compiling src/module018/index.ts (139 symbols)
+[tsc] compiling src/module019/index.ts (146 symbols)
+[tsc] compiling src/module020/index.ts (153 symbols)
+[tsc] compiling src/module021/index.ts (160 symbols)
+[tsc] compiling src/module022/index.ts (167 symbols)
+[tsc] compiling src/module023/index.ts (174 symbols)
+[tsc] compiling src/module024/index.ts (181 symbols)
+[tsc] compiling src/module025/index.ts (188 symbols)
+[tsc] compiling src/module026/index.ts (195 symbols)
+[tsc] compiling src/module027/index.ts (202 symbols)
+[tsc] compiling src/module028/index.ts (209 symbols)
+[tsc] compiling src/module029/index.ts (216 symbols)
+[tsc] compiling src/module030/index.ts (223 symbols)
+[tsc] compiling src/module031/index.ts (230 symbols)
+[tsc] compiling src/module032/index.ts (237 symbols)
+[tsc] compiling src/module033/index.ts (244 symbols)
+[tsc] compiling src/module034/index.ts (251 symbols)
+[tsc] compiling src/module035/index.ts (258 symbols)
+[tsc] compiling src/module036/index.ts (265 symbols)
+[tsc] compiling src/module037/index.ts (272 symbols)
+[tsc] compiling src/module038/index.ts (279 symbols)
+[tsc] compiling src/module039/index.ts (286 symbols)
+[tsc] compiling src/module040/index.ts (293 symbols)
+[tsc] compiling src/module041/index.ts (300 symbols)
+[tsc] compiling src/module042/index.ts (307 symbols)
+[tsc] compiling src/module043/index.ts (314 symbols)
+[tsc] compiling src/module044/index.ts (321 symbols)
+[tsc] compiling src/module045/index.ts (328 symbols)
+[tsc] compiling src/module046/index.ts (335 symbols)
+[tsc] compiling src/module047/index.ts (342 symbols)
+[tsc] compiling src/module048/index.ts (349 symbols)
+[tsc] compiling src/module049/index.ts (356 symbols)
+[tsc] compiling src/module050/index.ts (363 symbols)
+[tsc] compiling src/module051/index.ts (370 symbols)
+[tsc] compiling src/module052/index.ts (377 symbols)
+[tsc] compiling src/module053/index.ts (384 symbols)
+[tsc] compiling src/module054/index.ts (391 symbols)
+[tsc] compiling src/module055/index.ts (398 symbols)
+[tsc] compiling src/module056/index.ts (405 symbols)
+[tsc] compiling src/module057/index.ts (412 symbols)
+[tsc] compiling src/module058/index.ts (419 symbols)
+[tsc] compiling src/module059/index.ts (426 symbols)
+[tsc] compiling src/module060/index.ts (433 symbols)
+[tsc] compiling src/module061/index.ts (440 symbols)
+[tsc] compiling src/module062/index.ts (447 symbols)
+[tsc] compiling src/module063/index.ts (454 symbols)
+[tsc] compiling src/module064/index.ts (461 symbols)
+[tsc] compiling src/module065/index.ts (468 symbols)
+[tsc] compiling src/module066/index.ts (475 symbols)
+[tsc] compiling src/module067/index.ts (482 symbols)
+[tsc] compiling src/module068/index.ts (489 symbols)
+[tsc] compiling src/module069/index.ts (496 symbols)
+[tsc] compiling src/module070/index.ts (503 symbols)
+[tsc] compiling src/module071/index.ts (510 symbols)
+[tsc] compiling src/module072/index.ts (517 symbols)
+[tsc] compiling src/module073/index.ts (524 symbols)
+[tsc] compiling src/module074/index.ts (531 symbols)
+[tsc] compiling src/module075/index.ts (538 symbols)
+[tsc] compiling src/module076/index.ts (545 symbols)
+[tsc] compiling src/module077/index.ts (552 symbols)
+[tsc] compiling src/module078/index.ts (559 symbols)
+[tsc] compiling src/module079/index.ts (566 symbols)
+[tsc] compiling src/module080/index.ts (573 symbols)
+[tsc] compiling src/module081/index.ts (580 symbols)
+[tsc] compiling src/module082/index.ts (587 symbols)
+[tsc] compiling src/module083/index.ts (594 symbols)
+[tsc] compiling src/module084/index.ts (601 symbols)
+[tsc] compiling src/module085/index.ts (608 symbols)
+[tsc] compiling src/module086/index.ts (615 symbols)
+[tsc] compiling src/module087/index.ts (622 symbols)
+[tsc] compiling src/module088/index.ts (629 symbols)
+[tsc] compiling src/module089/index.ts (636 symbols)
+[tsc] compiling src/module090/index.ts (643 symbols)
+[tsc] compiling src/module091/index.ts (650 symbols)
+[tsc] compiling src/module092/index.ts (657 symbols)
+[tsc] compiling src/module093/index.ts (664 symbols)
+[tsc] compiling src/module094/index.ts (671 symbols)
+[tsc] compiling src/module095/index.ts (678 symbols)
+[tsc] compiling src/module096/index.ts (685 symbols)
+[tsc] compiling src/module097/index.ts (692 symbols)
+[tsc] compiling src/module098/index.ts (699 symbols)
+[tsc] compiling src/module099/index.ts (706 symbols)
+[tsc] compiling src/module100/index.ts (713 symbols)
+[tsc] compiling src/module101/index.ts (720 symbols)
+[tsc] compiling src/module102/index.ts (727 symbols)
+[tsc] compiling src/module103/index.ts (734 symbols)
+[tsc] compiling src/module104/index.ts (741 symbols)
+[tsc] compiling src/module105/index.ts (748 symbols)
+[tsc] compiling src/module106/index.ts (755 symbols)
+[tsc] compiling src/module107/index.ts (762 symbols)
+[tsc] compiling src/module108/index.ts (769 symbols)
+[tsc] compiling src/module109/index.ts (776 symbols)
+[tsc] compiling src/module110/index.ts (783 symbols)
+[tsc] compiling src/module111/index.ts (790 symbols)
+[tsc] compiling src/module112/index.ts (797 symbols)
+[tsc] compiling src/module113/index.ts (804 symbols)
+[tsc] compiling src/module114/index.ts (811 symbols)
+[tsc] compiling src/module115/index.ts (818 symbols)
+[tsc] compiling src/module116/index.ts (825 symbols)
+[tsc] compiling src/module117/index.ts (832 symbols)
+[tsc] compiling src/module118/index.ts (839 symbols)
+[tsc] compiling src/module119/index.ts (846 symbols)
+[tsc] compiling src/module120/index.ts (853 symbols)
+[tsc] compiling src/module121/index.ts (860 symbols)
+[tsc] compiling src/module122/index.ts (867 symbols)
+[tsc] compiling src/module123/index.ts (874 symbols)
+[tsc] compiling src/module124/index.ts (881 symbols)
+[tsc] compiling src/module125/index.ts (888 symbols)
+[tsc] compiling src/module126/index.ts (895 symbols)
+[tsc] compiling src/module127/index.ts (902 symbols)
+[tsc] compiling src/module128/index.ts (909 symbols)
+[tsc] compiling src/module129/index.ts (916 symbols)
+[tsc] compiling src/module130/index.ts (923 symbols)
+[tsc] compiling src/module131/index.ts (930 symbols)
+[tsc] compiling src/module132/index.ts (937 symbols)
+[tsc] compiling src/module133/index.ts (944 symbols)
+[tsc] compiling src/module134/index.ts (951 symbols)
+[tsc] compiling src/module135/index.ts (958 symbols)
+[tsc] compiling src/module136/index.ts (965 symbols)
+[tsc] compiling src/module137/index.ts (972 symbols)
+[tsc] compiling src/module138/index.ts (979 symbols)
+[tsc] compiling src/module139/index.ts (986 symbols)
+bundling 5%bundling 40%bundling 100%
+ ✓ test/unit/feature000.test.ts (1 tests) 2ms
+ ✓ test/unit/feature001.test.ts (2 tests) 3ms
+ ✓ test/unit/feature002.test.ts (3 tests) 4ms
+ ✓ test/unit/feature003.test.ts (4 tests) 5ms
+ ✓ test/unit/feature004.test.ts (5 tests) 6ms
+ ✓ test/unit/feature005.test.ts (6 tests) 7ms
+ ✓ test/unit/feature006.test.ts (7 tests) 8ms
+ ✓ test/unit/feature007.test.ts (8 tests) 9ms
+ ✓ test/unit/feature008.test.ts (9 tests) 10ms
+ ✓ test/unit/feature009.test.ts (1 tests) 11ms
+ ✓ test/unit/feature010.test.ts (2 tests) 12ms
+ ✓ test/unit/feature011.test.ts (3 tests) 13ms
+ ✓ test/unit/feature012.test.ts (4 tests) 14ms
+ ✓ test/unit/feature013.test.ts (5 tests) 15ms
+ ✓ test/unit/feature014.test.ts (6 tests) 16ms
+ ✓ test/unit/feature015.test.ts (7 tests) 17ms
+ ✓ test/unit/feature016.test.ts (8 tests) 18ms
+ ✓ test/unit/feature017.test.ts (9 tests) 19ms
+ ✓ test/unit/feature018.test.ts (1 tests) 20ms
+ ✓ test/unit/feature019.test.ts (2 tests) 21ms
+ ✓ test/unit/feature020.test.ts (3 tests) 22ms
+ ✓ test/unit/feature021.test.ts (4 tests) 23ms
+ ✓ test/unit/feature022.test.ts (5 tests) 24ms
+ ✓ test/unit/feature023.test.ts (6 tests) 25ms
+ ✓ test/unit/feature024.test.ts (7 tests) 26ms
+ ✓ test/unit/feature025.test.ts (8 tests) 27ms
+ ✓ test/unit/feature026.test.ts (9 tests) 28ms
+ ✓ test/unit/feature027.test.ts (1 tests) 29ms
+ ✓ test/unit/feature028.test.ts (2 tests) 30ms
+ ✓ test/unit/feature029.test.ts (3 tests) 31ms
+ ✓ test/unit/feature030.test.ts (4 tests) 32ms
+ ✓ test/unit/feature031.test.ts (5 tests) 33ms
+ ✓ test/unit/feature032.test.ts (6 tests) 34ms
+ ✓ test/unit/feature033.test.ts (7 tests) 35ms
+ ✓ test/unit/feature034.test.ts (8 tests) 36ms
+ ✓ test/unit/feature035.test.ts (9 tests) 37ms
+ ✓ test/unit/feature036.test.ts (1 tests) 38ms
+ ✓ test/unit/feature037.test.ts (2 tests) 39ms
+ ✓ test/unit/feature038.test.ts (3 tests) 40ms
+ ✓ test/unit/feature039.test.ts (4 tests) 41ms
+ ✓ test/unit/feature040.test.ts (5 tests) 2ms
+ ✓ test/unit/feature041.test.ts (6 tests) 3ms
+ ✓ test/unit/feature042.test.ts (7 tests) 4ms
+ ✓ test/unit/feature043.test.ts (8 tests) 5ms
+ ✓ test/unit/feature044.test.ts (9 tests) 6ms
+ ✓ test/unit/feature045.test.ts (1 tests) 7ms
+ ✓ test/unit/feature046.test.ts (2 tests) 8ms
+ ✓ test/unit/feature047.test.ts (3 tests) 9ms
+ ✓ test/unit/feature048.test.ts (4 tests) 10ms
+ ✓ test/unit/feature049.test.ts (5 tests) 11ms
+ ✓ test/unit/feature050.test.ts (6 tests) 12ms
+ ✓ test/unit/feature051.test.ts (7 tests) 13ms
+ ✓ test/unit/feature052.test.ts (8 tests) 14ms
+ ✓ test/unit/feature053.test.ts (9 tests) 15ms
+ ✓ test/unit/feature054.test.ts (1 tests) 16ms
+ ✓ test/unit/feature055.test.ts (2 tests) 17ms
+ ✓ test/unit/feature056.test.ts (3 tests) 18ms
+ ✓ test/unit/feature057.test.ts (4 tests) 19ms
+ ✓ test/unit/feature058.test.ts (5 tests) 20ms
+ ✓ test/unit/feature059.test.ts (6 tests) 21ms
+ ✓ test/unit/feature060.test.ts (7 tests) 22ms
+ ✓ test/unit/feature061.test.ts (8 tests) 23ms
+ ✓ test/unit/feature062.test.ts (9 tests) 24ms
+ ✓ test/unit/feature063.test.ts (1 tests) 25ms
+ ✓ test/unit/feature064.test.ts (2 tests) 26ms
+ ✓ test/unit/feature065.test.ts (3 tests) 27ms
+ ✓ test/unit/feature066.test.ts (4 tests) 28ms
+ ✓ test/unit/feature067.test.ts (5 tests) 29ms
+ ✓ test/unit/feature068.test.ts (6 tests) 30ms
+ ✓ test/unit/feature069.test.ts (7 tests) 31ms
+ ✓ test/unit/feature070.test.ts (8 tests) 32ms
+ ✓ test/unit/feature071.test.ts (9 tests) 33ms
+ ✓ test/unit/feature072.test.ts (1 tests) 34ms
+ ✓ test/unit/feature073.test.ts (2 tests) 35ms
+ ✓ test/unit/feature074.test.ts (3 tests) 36ms
+ ✓ test/unit/feature075.test.ts (4 tests) 37ms
+ ✓ test/unit/feature076.test.ts (5 tests) 38ms
+ ✓ test/unit/feature077.test.ts (6 tests) 39ms
+ ✓ test/unit/feature078.test.ts (7 tests) 40ms
+ ✓ test/unit/feature079.test.ts (8 tests) 41ms
+ ✓ test/unit/feature080.test.ts (9 tests) 2ms
+ ✓ test/unit/feature081.test.ts (1 tests) 3ms
+ ✓ test/unit/feature082.test.ts (2 tests) 4ms
+ ✓ test/unit/feature083.test.ts (3 tests) 5ms
+ ✓ test/unit/feature084.test.ts (4 tests) 6ms
+ ✓ test/unit/feature085.test.ts (5 tests) 7ms
+ ✓ test/unit/feature086.test.ts (6 tests) 8ms
+ ✓ test/unit/feature087.test.ts (7 tests) 9ms
+ ✓ test/unit/feature088.test.ts (8 tests) 10ms
+ ✓ test/unit/feature089.test.ts (9 tests) 11ms
+ ✓ test/unit/feature090.test.ts (1 tests) 12ms
+ ✓ test/unit/feature091.test.ts (2 tests) 13ms
+ ✓ test/unit/feature092.test.ts (3 tests) 14ms
+ ✓ test/unit/feature093.test.ts (4 tests) 15ms
+ ✓ test/unit/feature094.test.ts (5 tests) 16ms
+ ✓ test/unit/feature095.test.ts (6 tests) 17ms
+ ✓ test/unit/feature096.test.ts (7 tests) 18ms
+ ✓ test/unit/feature097.test.ts (8 tests) 19ms
+ ✓ test/unit/feature098.test.ts (9 tests) 20ms
+ ✓ test/unit/feature099.test.ts (1 tests) 21ms
+ ✓ test/unit/feature100.test.ts (2 tests) 22ms
+ ✓ test/unit/feature101.test.ts (3 tests) 23ms
+ ✓ test/unit/feature102.test.ts (4 tests) 24ms
+ ✓ test/unit/feature103.test.ts (5 tests) 25ms
+ ✓ test/unit/feature104.test.ts (6 tests) 26ms
+ ✓ test/unit/feature105.test.ts (7 tests) 27ms
+ ✓ test/unit/feature106.test.ts (8 tests) 28ms
+ ✓ test/unit/feature107.test.ts (9 tests) 29ms
+ ✓ test/unit/feature108.test.ts (1 tests) 30ms
+ ✓ test/unit/feature109.test.ts (2 tests) 31ms
+ ✓ test/unit/feature110.test.ts (3 tests) 32ms
+ ✓ test/unit/feature111.test.ts (4 tests) 33ms
+ ✓ test/unit/feature112.test.ts (5 tests) 34ms
+ ✓ test/unit/feature113.test.ts (6 tests) 35ms
+ ✓ test/unit/feature114.test.ts (7 tests) 36ms
+ ✓ test/unit/feature115.test.ts (8 tests) 37ms
+ ✓ test/unit/feature116.test.ts (9 tests) 38ms
+ ✓ test/unit/feature117.test.ts (1 tests) 39ms
+ ✓ test/unit/feature118.test.ts (2 tests) 40ms
+ ✓ test/unit/feature119.test.ts (3 tests) 41ms
+ ✓ test/unit/feature120.test.ts (4 tests) 2ms
+ ✓ test/unit/feature121.test.ts (5 tests) 3ms
+ ✓ test/unit/feature122.test.ts (6 tests) 4ms
+ ✓ test/unit/feature123.test.ts (7 tests) 5ms
+ ✓ test/unit/feature124.test.ts (8 tests) 6ms
+ ✓ test/unit/feature125.test.ts (9 tests) 7ms
+ ✓ test/unit/feature126.test.ts (1 tests) 8ms
+ ✓ test/unit/feature127.test.ts (2 tests) 9ms
+ ✓ test/unit/feature128.test.ts (3 tests) 10ms
+ ✓ test/unit/feature129.test.ts (4 tests) 11ms
+ ✓ test/unit/feature130.test.ts (5 tests) 12ms
+ ✓ test/unit/feature131.test.ts (6 tests) 13ms
+ ✓ test/unit/feature132.test.ts (7 tests) 14ms
+ ✓ test/unit/feature133.test.ts (8 tests) 15ms
+ ✓ test/unit/feature134.test.ts (9 tests) 16ms
+ ✓ test/unit/feature135.test.ts (1 tests) 17ms
+ ✓ test/unit/feature136.test.ts (2 tests) 18ms
+ ✓ test/unit/feature137.test.ts (3 tests) 19ms
+ ✓ test/unit/feature138.test.ts (4 tests) 20ms
+ ✓ test/unit/feature139.test.ts (5 tests) 21ms
+ ✓ test/unit/feature140.test.ts (6 tests) 22ms
+ ✓ test/unit/feature141.test.ts (7 tests) 23ms
+ ✓ test/unit/feature142.test.ts (8 tests) 24ms
+ ✓ test/unit/feature143.test.ts (9 tests) 25ms
+ ✓ test/unit/feature144.test.ts (1 tests) 26ms
+ ✓ test/unit/feature145.test.ts (2 tests) 27ms
+ ✓ test/unit/feature146.test.ts (3 tests) 28ms
+ ✓ test/unit/feature147.test.ts (4 tests) 29ms
+ ✓ test/unit/feature148.test.ts (5 tests) 30ms
+ ✓ test/unit/feature149.test.ts (6 tests) 31ms
+ ✓ test/unit/feature150.test.ts (7 tests) 32ms
+ ✓ test/unit/feature151.test.ts (8 tests) 33ms
+ ✓ test/unit/feature152.test.ts (9 tests) 34ms
+ ✓ test/unit/feature153.test.ts (1 tests) 35ms
+ ✓ test/unit/feature154.test.ts (2 tests) 36ms
+ ✓ test/unit/feature155.test.ts (3 tests) 37ms
+ ✓ test/unit/feature156.test.ts (4 tests) 38ms
+ ✓ test/unit/feature157.test.ts (5 tests) 39ms
+ ✓ test/unit/feature158.test.ts (6 tests) 40ms
+ ✓ test/unit/feature159.test.ts (7 tests) 41ms
+ ✓ test/unit/feature160.test.ts (8 tests) 2ms
+ ✓ test/unit/feature161.test.ts (9 tests) 3ms
+ ✓ test/unit/feature162.test.ts (1 tests) 4ms
+ ✓ test/unit/feature163.test.ts (2 tests) 5ms
+ ✓ test/unit/feature164.test.ts (3 tests) 6ms
+ ✓ test/unit/feature165.test.ts (4 tests) 7ms
+ ✓ test/unit/feature166.test.ts (5 tests) 8ms
+ ✓ test/unit/feature167.test.ts (6 tests) 9ms
+ ✓ test/unit/feature168.test.ts (7 tests) 10ms
+ ✓ test/unit/feature169.test.ts (8 tests) 11ms
+ ✓ test/unit/feature170.test.ts (9 tests) 12ms
+ ✓ test/unit/feature171.test.ts (1 tests) 13ms
+ ✓ test/unit/feature172.test.ts (2 tests) 14ms
+ ✓ test/unit/feature173.test.ts (3 tests) 15ms
+ ✓ test/unit/feature174.test.ts (4 tests) 16ms
+ ✓ test/unit/feature175.test.ts (5 tests) 17ms
+ ✓ test/unit/feature176.test.ts (6 tests) 18ms
+ ✓ test/unit/feature177.test.ts (7 tests) 19ms
+ ✓ test/unit/feature178.test.ts (8 tests) 20ms
+ ✓ test/unit/feature179.test.ts (9 tests) 21ms
+
+ FAIL  src/checkout.test.ts > checkout > applies the discount code
+AssertionError: expected 115 to be 110
+ ❯ src/checkout.test.ts:42:31
+ ❯ Object.<anonymous> src/checkout.test.ts:12:5
+ ❯ node:internal/modules/cjs/loader:1105:14
+ ❯ /repo/node_modules/vitest/dist/run.js:1:1
+ ❯ /repo/node_modules/vitest/dist/run.js:2:1
+
+ FAIL  src/cart.test.ts > cart > totals line items
+Error: expected [ 1, 2 ] to deeply equal [ 1, 2, 3 ]
+ ❯ src/cart.test.ts:88:19
+ ❯ src/cart.test.ts:31:3
+ ❯ node_modules/@vitest/runner/dist/index.js:9:9
+ ✓ test/unit/extra000.test.ts (1 tests) 1ms
+ ✓ test/unit/extra001.test.ts (2 tests) 2ms
+ ✓ test/unit/extra002.test.ts (3 tests) 3ms
+ ✓ test/unit/extra003.test.ts (4 tests) 4ms
+ ✓ test/unit/extra004.test.ts (5 tests) 5ms
+ ✓ test/unit/extra005.test.ts (6 tests) 6ms
+ ✓ test/unit/extra006.test.ts (7 tests) 7ms
+ ✓ test/unit/extra007.test.ts (1 tests) 8ms
+ ✓ test/unit/extra008.test.ts (2 tests) 9ms
+ ✓ test/unit/extra009.test.ts (3 tests) 10ms
+ ✓ test/unit/extra010.test.ts (4 tests) 11ms
+ ✓ test/unit/extra011.test.ts (5 tests) 12ms
+ ✓ test/unit/extra012.test.ts (6 tests) 13ms
+ ✓ test/unit/extra013.test.ts (7 tests) 14ms
+ ✓ test/unit/extra014.test.ts (1 tests) 15ms
+ ✓ test/unit/extra015.test.ts (2 tests) 16ms
+ ✓ test/unit/extra016.test.ts (3 tests) 17ms
+ ✓ test/unit/extra017.test.ts (4 tests) 18ms
+ ✓ test/unit/extra018.test.ts (5 tests) 19ms
+ ✓ test/unit/extra019.test.ts (6 tests) 20ms
+ ✓ test/unit/extra020.test.ts (7 tests) 21ms
+ ✓ test/unit/extra021.test.ts (1 tests) 22ms
+ ✓ test/unit/extra022.test.ts (2 tests) 23ms
+ ✓ test/unit/extra023.test.ts (3 tests) 24ms
+ ✓ test/unit/extra024.test.ts (4 tests) 25ms
+ ✓ test/unit/extra025.test.ts (5 tests) 26ms
+ ✓ test/unit/extra026.test.ts (6 tests) 27ms
+ ✓ test/unit/extra027.test.ts (7 tests) 28ms
+ ✓ test/unit/extra028.test.ts (1 tests) 29ms
+ ✓ test/unit/extra029.test.ts (2 tests) 30ms
+ ✓ test/unit/extra030.test.ts (3 tests) 1ms
+ ✓ test/unit/extra031.test.ts (4 tests) 2ms
+ ✓ test/unit/extra032.test.ts (5 tests) 3ms
+ ✓ test/unit/extra033.test.ts (6 tests) 4ms
+ ✓ test/unit/extra034.test.ts (7 tests) 5ms
+ ✓ test/unit/extra035.test.ts (1 tests) 6ms
+ ✓ test/unit/extra036.test.ts (2 tests) 7ms
+ ✓ test/unit/extra037.test.ts (3 tests) 8ms
+ ✓ test/unit/extra038.test.ts (4 tests) 9ms
+ ✓ test/unit/extra039.test.ts (5 tests) 10ms
+ ✓ test/unit/extra040.test.ts (6 tests) 11ms
+ ✓ test/unit/extra041.test.ts (7 tests) 12ms
+ ✓ test/unit/extra042.test.ts (1 tests) 13ms
+ ✓ test/unit/extra043.test.ts (2 tests) 14ms
+ ✓ test/unit/extra044.test.ts (3 tests) 15ms
+ ✓ test/unit/extra045.test.ts (4 tests) 16ms
+ ✓ test/unit/extra046.test.ts (5 tests) 17ms
+ ✓ test/unit/extra047.test.ts (6 tests) 18ms
+ ✓ test/unit/extra048.test.ts (7 tests) 19ms
+ ✓ test/unit/extra049.test.ts (1 tests) 20ms
+ ✓ test/unit/extra050.test.ts (2 tests) 21ms
+ ✓ test/unit/extra051.test.ts (3 tests) 22ms
+ ✓ test/unit/extra052.test.ts (4 tests) 23ms
+ ✓ test/unit/extra053.test.ts (5 tests) 24ms
+ ✓ test/unit/extra054.test.ts (6 tests) 25ms
+ ✓ test/unit/extra055.test.ts (7 tests) 26ms
+ ✓ test/unit/extra056.test.ts (1 tests) 27ms
+ ✓ test/unit/extra057.test.ts (2 tests) 28ms
+ ✓ test/unit/extra058.test.ts (3 tests) 29ms
+ ✓ test/unit/extra059.test.ts (4 tests) 30ms
+ ✓ test/unit/extra060.test.ts (5 tests) 1ms
+ ✓ test/unit/extra061.test.ts (6 tests) 2ms
+ ✓ test/unit/extra062.test.ts (7 tests) 3ms
+ ✓ test/unit/extra063.test.ts (1 tests) 4ms
+ ✓ test/unit/extra064.test.ts (2 tests) 5ms
+ ✓ test/unit/extra065.test.ts (3 tests) 6ms
+ ✓ test/unit/extra066.test.ts (4 tests) 7ms
+ ✓ test/unit/extra067.test.ts (5 tests) 8ms
+ ✓ test/unit/extra068.test.ts (6 tests) 9ms
+ ✓ test/unit/extra069.test.ts (7 tests) 10ms
+ ✓ test/unit/extra070.test.ts (1 tests) 11ms
+ ✓ test/unit/extra071.test.ts (2 tests) 12ms
+ ✓ test/unit/extra072.test.ts (3 tests) 13ms
+ ✓ test/unit/extra073.test.ts (4 tests) 14ms
+ ✓ test/unit/extra074.test.ts (5 tests) 15ms
+ ✓ test/unit/extra075.test.ts (6 tests) 16ms
+ ✓ test/unit/extra076.test.ts (7 tests) 17ms
+ ✓ test/unit/extra077.test.ts (1 tests) 18ms
+ ✓ test/unit/extra078.test.ts (2 tests) 19ms
+ ✓ test/unit/extra079.test.ts (3 tests) 20ms
+ ✓ test/unit/extra080.test.ts (4 tests) 21ms
+ ✓ test/unit/extra081.test.ts (5 tests) 22ms
+ ✓ test/unit/extra082.test.ts (6 tests) 23ms
+ ✓ test/unit/extra083.test.ts (7 tests) 24ms
+ ✓ test/unit/extra084.test.ts (1 tests) 25ms
+ ✓ test/unit/extra085.test.ts (2 tests) 26ms
+ ✓ test/unit/extra086.test.ts (3 tests) 27ms
+ ✓ test/unit/extra087.test.ts (4 tests) 28ms
+ ✓ test/unit/extra088.test.ts (5 tests) 29ms
+ ✓ test/unit/extra089.test.ts (6 tests) 30ms
+ ✓ test/unit/extra090.test.ts (7 tests) 1ms
+ ✓ test/unit/extra091.test.ts (1 tests) 2ms
+ ✓ test/unit/extra092.test.ts (2 tests) 3ms
+ ✓ test/unit/extra093.test.ts (3 tests) 4ms
+ ✓ test/unit/extra094.test.ts (4 tests) 5ms
+ ✓ test/unit/extra095.test.ts (5 tests) 6ms
+ ✓ test/unit/extra096.test.ts (6 tests) 7ms
+ ✓ test/unit/extra097.test.ts (7 tests) 8ms
+ ✓ test/unit/extra098.test.ts (1 tests) 9ms
+ ✓ test/unit/extra099.test.ts (2 tests) 10ms
+ ✓ test/unit/extra100.test.ts (3 tests) 11ms
+ ✓ test/unit/extra101.test.ts (4 tests) 12ms
+ ✓ test/unit/extra102.test.ts (5 tests) 13ms
+ ✓ test/unit/extra103.test.ts (6 tests) 14ms
+ ✓ test/unit/extra104.test.ts (7 tests) 15ms
+ ✓ test/unit/extra105.test.ts (1 tests) 16ms
+ ✓ test/unit/extra106.test.ts (2 tests) 17ms
+ ✓ test/unit/extra107.test.ts (3 tests) 18ms
+ ✓ test/unit/extra108.test.ts (4 tests) 19ms
+ ✓ test/unit/extra109.test.ts (5 tests) 20ms
+ ✓ test/unit/extra110.test.ts (6 tests) 21ms
+ ✓ test/unit/extra111.test.ts (7 tests) 22ms
+ ✓ test/unit/extra112.test.ts (1 tests) 23ms
+ ✓ test/unit/extra113.test.ts (2 tests) 24ms
+ ✓ test/unit/extra114.test.ts (3 tests) 25ms
+ ✓ test/unit/extra115.test.ts (4 tests) 26ms
+ ✓ test/unit/extra116.test.ts (5 tests) 27ms
+ ✓ test/unit/extra117.test.ts (6 tests) 28ms
+ ✓ test/unit/extra118.test.ts (7 tests) 29ms
+ ✓ test/unit/extra119.test.ts (1 tests) 30ms
+
+[31m Test Files  2 failed | 40 passed (42)[39m
+[31m      Tests  398 passed | 2 failed (400)[39m
+   Start at  10:02:11
+   Duration  18.42s (transform 1.20s, setup 0.31s, collect 4.10s, tests 12.81s)

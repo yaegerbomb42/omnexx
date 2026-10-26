@@ -690,24 +690,6 @@
 }
 
 /* Frontier Cockpit Connectors & Glassmorphic Highlights */
-.hud-cache {
-  background: color-mix(in srgb, #36c5f0 14%, var(--card));
-  color: #36c5f0;
-  border: 1px solid color-mix(in srgb, #36c5f0 35%, transparent);
-  font-family: var(--mono);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 999px;
-  letter-spacing: 0.02em;
-  transition: all 0.2s ease;
-}
-
-.hud-cache:hover {
-  background: color-mix(in srgb, #36c5f0 22%, var(--card));
-  box-shadow: 0 0 10px color-mix(in srgb, #36c5f0 30%, transparent);
-}
-
 .auto-calibrate-btn {
   background: linear-gradient(
     135deg,

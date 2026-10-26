@@ -12,7 +12,7 @@ const SNIPPET_CHARS = 800;
 export const recallTool: Tool<typeof schema> = {
   name: 'recall',
   description:
-    "Search this run's full history: every earlier cycle's progress, evidence from rejected attempts on any task, lessons, and command and gate logs. Use it before redoing work or when an error looks familiar; your context only shows the latest few cycles.",
+    "Search this run's full history: every earlier cycle's progress, evidence from rejected attempts on any task, lessons, command and gate logs, and the raw transcript (logs/transcript.md) — the condensed memory note only keeps the newest work in detail, so use recall before redoing work or when an error looks familiar; your context only shows the latest few cycles.",
   schema,
   readOnly: true,
   concurrent: true,

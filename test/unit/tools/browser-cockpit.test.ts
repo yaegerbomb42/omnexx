@@ -446,7 +446,7 @@ describe('dev server actions', () => {
     expect(factory.starts).toEqual([{ command: 'npm run dev', port: 5173 }]);
 
     const status = await run({ action: 'server_status' });
-    expect(status.content).toContain('Dev server running: `npm run dev` on port 5173');
+    expect(status.content).toContain('Dev server running: `npm run dev` on http://localhost:5173');
     expect(status.content).toContain('Recent output:\nVITE ready');
 
     const stopped = await run({ action: 'stop_server' });
@@ -465,7 +465,7 @@ describe('dev server actions', () => {
     expect(factory.starts).toEqual([{ command: 'npm run dev', port: 3000 }]);
 
     const status = await run({ action: 'server_status' });
-    expect(status.content).toContain('`npm run dev` on port 3000');
+    expect(status.content).toContain('`npm run dev` on http://localhost:3000');
   });
 
   it('starts the configured server when a local URL is opened', async () => {

@@ -22,6 +22,7 @@ import { settleSpecWork, specGate } from './spec-gate.js';
 import { FAST_TASK, fastPathSpent, fastPlan, tryFastPath } from './fast-path.js';
 import { resolveWriting } from './writing.js';
 import { EXIT } from '../cli/exit-codes.js';
+import { defaultSessionPool } from './exec.js';
 import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
 import { LockError } from '../errors.js';
@@ -53,6 +54,10 @@ import {
 } from './cycle.js';
 import { startHeartbeat } from './heartbeat.js';
 import { acquireLock, defaultLockEnv, releaseLock, type LockEnv } from './lock.js';
+import { defaultSessionPool } from './exec.js';
+import type { OmnexxPaths } from './paths.js';
+import { bindRun, killRunChildren, reapStaleSupervisors, unbindRun } from './process-registry.js';
+import { TaskManager } from './task-manager.js';
 import { initCodemap, settleMilestones } from './milestones.js';
 import {
   childrenOf,
@@ -91,6 +96,13 @@ export interface SuperviseOptions {
   pausePollMs?: number;
   notifier?: Notifier;
   /**
+   * No progress for this long ends the run as needs-human ("supervisor idle for 15m").
+   * Default 15 minutes. A pause (or daily-cap pause) is not progress, so a paused run
+   * times out too; `omnexx resume` restarts it. Wall-clock, so a warped test clock cannot
+   * end a run early.
+   */
+  idleTimeoutMs?: number;
+  /**
    * Re-load the config at each cycle boundary (project omnexx.toml, env, flags) so a mode switch
    * or config edit applies mid-run without restarting. When omitted the run keeps the config it
    * started with.
@@ -115,6 +127,28 @@ export const EXIT_FOR: Record<RunStatus, number> = {
 };
 
 const MAX_MILESTONE_REPLANS = 2;
+
+/** Reason for a run ended by the idle watchdog (see SuperviseOptions.idleTimeoutMs). */
+export const IDLE_REASON =
+  'supervisor idle for 15m with no progress (paused or stalled); resume with `omnexx resume`';
+
+/**
+ * Nothing a run spawned may outlive it: kill the registered children (process groups), then
+ * the in-memory shells and background tasks. Never throws; safe to call twice.
+ */
+async function shutdownRunChildren(paths: OmnexxPaths, runId: string): Promise<void> {
+  await killRunChildren(paths, runId).catch(() => undefined);
+  try {
+    defaultSessionPool.disposeAll();
+  } catch {
+    // A session that will not die must not fail the run's shutdown.
+  }
+  try {
+    TaskManager.get().stopAll();
+  } catch {
+    // As above.
+  }
+}
 
 /** Fold this run's lessons into the repo's memory so the next run or chat starts with them. */
 async function rememberForRepo(run: Run, facts?: FactRecorder): Promise<void> {
@@ -487,6 +521,7 @@ class Supervisor {
     await this.notify('budget', { hint: r.state.statusReason });
     const pausedAt = r.clock.now();
     while (r.clock.now() < until) {
+      if (r.idleTimedOut) return { status: 'needs-human', reason: IDLE_REASON };
       const c = await r.control();
       if (c === 'stop' || c === 'stop-now')
         return { status: 'user-stop', reason: 'stopped during the daily-cap pause' };
@@ -527,9 +562,22 @@ class Supervisor {
     };
   }
 
+  /**
+   * Read through a method on purpose: the idle flag is set by the supervisor's watcher
+   * (another closure) while guardPre runs, so a direct read would be narrowed to false by
+   * the first check above and the pause loop would never see the timeout.
+   */
+  private idleEnded(): boolean {
+    return this.run.idleTimedOut;
+  }
+
   /** Cycle-boundary guards. Returns a terminal outcome, or undefined to keep going. */
   private async guardPre(): Promise<Outcome | undefined> {
     const r = this.run;
+    // Idle for 15m with no progress (a pause is not progress): end the run so the
+    // supervisor does not sit forever. needs-human, not user-stop: nobody asked to stop;
+    // a human decides whether to resume.
+    if (r.idleTimedOut) return { status: 'needs-human', reason: IDLE_REASON };
     let c = await r.control();
     if (c === 'pause') {
       r.state.status = 'paused';
@@ -537,6 +585,7 @@ class Supervisor {
       r.events.emit('control.paused', { at: 'cycle-boundary' });
       while (c === 'pause') {
         await r.clock.sleep(this.opts.pausePollMs ?? 1_000);
+        if (this.idleEnded()) return { status: 'needs-human', reason: IDLE_REASON };
         c = await r.control();
       }
       r.state.status = 'running';
@@ -1095,6 +1144,13 @@ export async function supervise(
 ): Promise<Outcome & { exitCode: number }> {
   const run = await Run.open(deps, runId);
   const bootId = opts.bootId ?? (await readBootId());
+  // A previous supervisor for this (or any) run may have died wedged or crashed: reap its
+  // orphans before taking the lock, so a stale holder cannot block this resume.
+  await reapStaleSupervisors(deps.paths, {
+    log: (line) => {
+      console.error(line);
+    },
+  }).catch(() => undefined);
   const lock = await acquireLock(run.store.dir, {
     ...defaultLockEnv(bootId, deps.clock.now()),
     ...opts.lockEnv,
@@ -1114,6 +1170,9 @@ export async function supervise(
       exitCode: EXIT.ok,
     };
   }
+  // From here on this process owns the run: children spawned (shells, servers, tasks,
+  // daemons) register under it, and run end kills them.
+  bindRun(deps.paths, runId);
   const ntfy = deps.config.notify.ntfy;
   const onResult = (ok: boolean, detail: string): void => {
     run.events.emit(ok ? 'notify.sent' : 'notify.failed', { detail });
@@ -1199,8 +1258,13 @@ export async function supervise(
   const stopHeartbeat = startHeartbeat(run, opts.heartbeatMs);
   // Stall watchdog: any event is activity; a working cycle that goes silent too long is hung.
   let lastActivity = run.clock.now();
+  // Idle watchdog: same activity, on the wall clock. A pause emits no events, so a paused run
+  // goes idle and ends after `idleTimeoutMs` instead of holding a supervisor forever.
+  let lastProgressWall = Date.now();
+  const idleTimeoutMs = opts.idleTimeoutMs ?? 15 * 60_000;
   const offActivity = run.events.onEvent(() => {
     lastActivity = run.clock.now();
+    lastProgressWall = Date.now();
   });
   const maxSilence = parseDuration(run.config.stuck.max_silence);
   const watcher = setInterval(() => {
@@ -1211,6 +1275,12 @@ export async function supervise(
     // Caps are checked between cycles; one long cycle must not carry the run past max_hours.
     else if (run.state.phase === 'act' && !run.paused && run.elapsedMs() >= run.deadlineMs)
       run.endCycleAtDeadline();
+    if (!run.idleTimedOut && Date.now() - lastProgressWall >= idleTimeoutMs) {
+      run.idleTimedOut = true;
+      run.events.emit('supervisor.idle_timeout', {
+        idleMs: Date.now() - lastProgressWall,
+      });
+    }
   }, opts.controlPollMs ?? 1_000);
   watcher.unref();
   const stopWatching = (): void => {
@@ -1240,6 +1310,9 @@ export async function supervise(
     }
     // No browser outlives its run (a cycle that threw may have skipped its own cleanup).
     await closeSession(runId).catch(() => undefined);
+    // Nothing else a run spawned outlives it either: shells (and servers backgrounded
+    // inside them), dev servers, background tasks and daemons.
+    await shutdownRunChildren(deps.paths, runId);
     await rememberForRepo(run, facts);
     if (outcome.status === 'user-stop') await prepareWorktree(run);
     run.state.status = outcome.status;
@@ -1282,7 +1355,14 @@ export async function supervise(
     await releaseLock(run.store.dir, pid);
     return { ...outcome, exitCode: EXIT_FOR[outcome.status] };
   } finally {
+    // Belt and braces for the error path above (which rethrows after its own cleanup):
+    // a run that ends any other way still leaves nothing behind.
+    await shutdownRunChildren(deps.paths, runId);
+    unbindRun();
     stopWatching();
+    // The persistent shells outlive the run otherwise: their bash child keeps the Node
+    // event loop alive, so a foreground `omnexx run` never returns after `run.finish`.
+    defaultSessionPool.disposeAll();
   }
 }
 

@@ -280,8 +280,8 @@ describe('model chains and the router', () => {
 
   it('routes by provider name and fails clearly for an unconfigured one', async () => {
     const seen: string[] = [];
-    const router = new ProviderRouter(
-      new Map([
+    const router = new ProviderRouter({
+      providers: new Map([
         [
           'a',
           {
@@ -298,7 +298,7 @@ describe('model chains and the router', () => {
           },
         ],
       ]),
-    );
+    });
     await router.complete({ ...req, route: 'a' });
     expect(seen).toEqual(['some/model']);
     expect(router.has('a')).toBe(true);
