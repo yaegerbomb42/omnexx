@@ -35,9 +35,35 @@ export function locateRange(
   if (end < start) return { ok: false, reason: `end (${end}) is before start (${start})` };
   if (end > lines.length) return { ok: false, reason: `the file has only ${lines.length} lines` };
   if (expected === undefined) return { ok: true, start, end, moved: false };
-  const want = expected.length === 2 ? `${expected}${expected}` : expected;
-  if (rangeHash(lines, start, end) === want) return { ok: true, start, end, moved: false };
+
   const span = end - start;
+
+  // A 2-char hash is a single-line tag. On a single-line range it denotes both
+  // boundaries (doubling); on a multi-line range it describes the start line
+  // only and must match that line's tag.
+  if (expected.length === 2) {
+    if (lineTag(lines[start - 1] ?? '') === expected) return { ok: true, start, end, moved: false };
+    // Single-line fuzzy recovery: the line shifted slightly within a nearby window.
+    if (span === 0) {
+      const nearbyRadius = 15;
+      const minS = Math.max(1, start - nearbyRadius);
+      const maxS = Math.min(lines.length, start + nearbyRadius);
+      const nearbyHits: number[] = [];
+      for (let s = minS; s <= maxS && nearbyHits.length < 2; s++) {
+        if (lineTag(lines[s - 1] ?? '') === expected) nearbyHits.push(s);
+      }
+      const [nearbyOnly] = nearbyHits;
+      if (nearbyHits.length === 1 && nearbyOnly !== undefined)
+        return { ok: true, start: nearbyOnly, end: nearbyOnly, moved: true };
+    }
+    return {
+      ok: false,
+      reason: `anchor mismatch: start line tag of ${start}-${end} is ${lineTag(lines[start - 1] ?? '')}, not ${expected}. Re-read the range with anchors: true and retry. No changes were written.`,
+    };
+  }
+
+  const want = expected;
+  if (rangeHash(lines, start, end) === want) return { ok: true, start, end, moved: false };
   const hits: number[] = [];
   for (let s = 1; s + span <= lines.length && hits.length < 2; s++) {
     if (rangeHash(lines, s, s + span) === want) hits.push(s);
