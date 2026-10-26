@@ -194,12 +194,18 @@ describe('omnexx chat-server (the VS Code chat panel protocol)', () => {
     expect(edited.filter((i) => i.group === 'chat').length).toBe(chatCount - 1);
 
     const before = t.provider.requests.length;
+    const statesBefore = t.states().length;
     t.send({ type: 'send', text: 'again' });
     const req = await t.until(() => t.provider.requests[before], 'next request');
     expect(req.system[0]?.text).toBe('EDITED SYSTEM');
     expect(req.tools.map((x) => x.name)).not.toContain('bash');
     expect(JSON.stringify(req.messages)).not.toContain('make a.js');
-    await t.until(() => (t.states().at(-1)?.busy === false ? true : undefined), 'idle again');
+    // Wait for the idle state that follows this turn, not the stale idle state from before
+    // 'again' was sent: resetting while busy is rejected, which used to flake this test.
+    await t.until(() => {
+      const since = t.states().slice(statesBefore);
+      return since.some((s) => s.busy) && since.at(-1)?.busy === false ? true : undefined;
+    }, 'idle again');
 
     t.send({ type: 'contextReset' });
     const reset = await t.until(() => {
