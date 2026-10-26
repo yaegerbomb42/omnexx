@@ -123,6 +123,7 @@ export function helperRunner(
         },
         {
           ...env.loop,
+          purpose: 'subagent',
           models: chain,
           // least-busy only picks the lead; per call the chain behaves like fallback.
           strategy:
@@ -196,9 +197,13 @@ export function subagentRunner(
         budget: run.config.budget,
         clock: run.clock,
         events: run.events,
+        taskId: () => run.state.taskId,
+        cycle: () => run.state.cycle,
+        taskBudget: run.taskBudget,
         spentUsd: () => run.state.spend.usd,
         spentTodayUsd: () => run.spentToday(),
-        onUsage: (u, usd, model, provider) => run.addSpend(u, usd, model, 'subagent', provider),
+        onUsage: (u, usd, model, provider, meta) =>
+          run.addSpend(u, usd, model, 'subagent', provider, meta),
         control: () => run.control(),
         signal: run.abort.signal,
       },

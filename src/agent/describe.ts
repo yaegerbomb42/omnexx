@@ -74,6 +74,7 @@ export async function describeFiles(
           estimatedInputTokens: Math.ceil(prompt.length / 3) + 500,
           maxOutputTokens: 2_000,
           role: 'cheap',
+          purpose: 'planning',
         },
       );
       if (!done) break;

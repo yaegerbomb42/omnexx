@@ -62,7 +62,7 @@ export class OmnexxRunner extends AgentRunner {
     return stdout.trim().length > 0;
   }
 
-  override async run(_task: TaskDef, workDir: string, goal: string): Promise<AgentRunOutput> {
+  override async run(task: TaskDef, workDir: string, goal: string): Promise<AgentRunOutput> {
     const home = this.opts.home ?? (await mkdtemp(join(tmpdir(), 'omnexx-bench-')));
     await mkdir(home, { recursive: true });
     const goalFile = join(home, `goal-${Date.now()}.md`);
@@ -88,6 +88,7 @@ export class OmnexxRunner extends AgentRunner {
       env: {
         ...process.env,
         OMNEXX_HOME: home,
+        OMNEXX_TASK_LABEL: task.id,
         OMNEXX_CONFIG_HOME: await benchConfigHome(home, {
           beyond: this.opts.beyond ?? false,
           model: this.opts.meter ? `bench:${this.opts.model ?? ''}` : this.opts.model,
@@ -229,6 +230,8 @@ export async function saveRunLog(home: string, dest: string): Promise<void> {
   const last = (await readdir(join(home, 'runs')).catch(() => [])).sort().at(-1);
   if (!last) return;
   await cp(join(home, 'runs', last), dest, { recursive: true });
+  // The attribution ledger lives above the runs (it is shared), so copy it too for the report.
+  await cp(join(home, 'usage', 'ledger.jsonl'), join(dest, 'usage.jsonl')).catch(() => undefined);
 }
 
 async function latestState(home: string): Promise<RunState | undefined> {

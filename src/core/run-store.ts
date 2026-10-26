@@ -196,6 +196,19 @@ export const stateSchema = z.object({
   workDomain: z.enum(WORK_MODES).default('swe'),
   /** Set when a pre-flight check refused a call for max_usd; cleared when a supervisor starts. */
   budgetExhausted: z.boolean().default(false),
+  /** The task a per-task cap parked: why, when, and what it had spent. */
+  taskCapHit: z
+    .object({
+      taskId: z.string(),
+      kind: z.enum(['task_max_tokens', 'task_max_usd']),
+      cycle: z.number().int().nonnegative(),
+      at: z.number(),
+      usd: z.number().default(0),
+      tokens: z.number().default(0),
+      detail: z.string().default(''),
+      checkpoint: z.string().optional(),
+    })
+    .optional(),
   /** Set when every model stayed unavailable past budget.max_provider_wait: why. */
   providersUnavailable: z.string().optional(),
   /** Recent spend with timestamps, for the rolling daily cap (pruned to the last 25 h). */
@@ -252,7 +265,7 @@ export class RunStore {
   }
 
   async init(): Promise<void> {
-    for (const d of ['', 'logs', 'rejected', 'salvage'])
+    for (const d of ['', 'logs', 'rejected', 'salvage', 'checkpoints'])
       await mkdir(join(this.dir, d), { recursive: true, mode: 0o700 });
   }
 
@@ -286,6 +299,16 @@ export class RunStore {
 
   async writePlan(plan: Plan): Promise<void> {
     await writeJsonAtomic(this.file('plan.json'), planSchema.parse(plan));
+  }
+
+  /**
+   * A parked task's state, written before the run stops so a person can see exactly where the
+   * budget ran out and resume from the worktree/plan without digging through the transcript.
+   */
+  async writeTaskCheckpoint(name: string, data: unknown): Promise<string> {
+    const file = this.file(`checkpoints/${name.replace(/[^\w.-]+/g, '-')}.json`);
+    await writeJsonAtomic(file, data);
+    return file;
   }
 
   async readGoal(): Promise<{ text: string; hash: string }> {

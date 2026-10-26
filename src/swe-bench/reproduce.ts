@@ -151,6 +151,7 @@ export async function generateReproTest(
           estimatedInputTokens: estimateTokens(prompt) + 800,
           maxOutputTokens: 8_000,
           role: 'repro_test',
+          purpose: 'verification',
           chain: config.reproduction_models,
         },
       );

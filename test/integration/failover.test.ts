@@ -223,7 +223,7 @@ describe('provider failover inside a cycle', () => {
       stop: 'max_usd',
       detail: expect.stringMatching(/every provider in the chain is over its own cap/) as string,
     });
-    expect(verdict.reasons).toEqual(['interrupted by a budget cap before any change']);
+    expect(verdict.reasons).toEqual(['interrupted by a budget cap before the task finished']);
     expect(t.run.state.budgetExhausted).toBe(true);
     expect(primary.requests).toHaveLength(0);
   });

@@ -19,5 +19,7 @@ export function resolvePaths(env: NodeJS.ProcessEnv = process.env): OmnexxPaths 
 export const runsDir = (p: OmnexxPaths): string => join(p.home, 'runs');
 export const runDir = (p: OmnexxPaths, runId: string): string => join(p.home, 'runs', runId);
 export const worktreesDir = (p: OmnexxPaths): string => join(p.home, 'worktrees');
+/** The append-only usage ledger shared by every run (see providers/usage-ledger.ts). */
+export const usageFile = (p: OmnexxPaths): string => join(p.home, 'usage', 'ledger.jsonl');
 export const userConfigFile = (p: OmnexxPaths): string => join(p.configHome, 'config.toml');
 export const credentialsDir = (p: OmnexxPaths): string => join(p.configHome, 'credentials');

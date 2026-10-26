@@ -447,11 +447,15 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       maxTokens: run.config.providers.anthropic.max_tokens,
       clock: run.clock,
       events: run.events,
+      purpose: 'planning',
+      taskId: () => undefined,
+      cycle: () => run.state.cycle,
+      taskBudget: run.taskBudget,
       spentUsd: () => run.state.spend.usd,
       spentTodayUsd: () => run.spentToday(),
-      onUsage: (u, usd, model, provider) => {
+      onUsage: (u, usd, model, provider, meta) => {
         planTokens += Math.max(0, totalInput(u) + u.output);
-        return run.addSpend(u, usd, model, 'planner', provider);
+        return run.addSpend(u, usd, model, 'planner', provider, meta);
       },
       control: () => run.control(),
       signal: run.abort.signal,

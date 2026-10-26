@@ -74,6 +74,12 @@ export const budgetSchema = z.strictObject({
   max_cycles: z.number().int().positive().default(300),
   max_turns_per_cycle: z.number().int().positive().default(40),
   max_tokens_per_cycle: z.number().int().positive().default(400_000),
+  /**
+   * Per-task caps on top of the run-level budget. A single runaway task is parked (checkpointed
+   * and stopped) when it reaches either cap, even if the run still has money left. Unset: off.
+   */
+  task_max_tokens: z.number().int().positive().optional(),
+  task_max_usd: z.number().positive().optional(),
   max_cmd_timeout: durationString.default('30m'),
   /**
    * How long a run waits when no model in the chain can take a call (every quota used up, keys

@@ -567,6 +567,19 @@ class Supervisor {
         reason: `max_usd reached (${r.state.spend.usd.toFixed(2)} of ${r.config.budget.max_usd}; the next call could exceed it)`,
       };
     }
+    if (r.state.taskCapHit) {
+      const hit = r.state.taskCapHit;
+      r.events.emit('budget.stop', {
+        kind: hit.kind,
+        task: hit.taskId,
+        detail: hit.detail,
+        checkpoint: hit.checkpoint,
+      });
+      return {
+        status: 'budget-stop',
+        reason: `task ${hit.taskId} parked at ${hit.kind} after ${String(hit.tokens)} tokens / $${hit.usd.toFixed(2)}${hit.checkpoint ? `; state saved to ${hit.checkpoint}` : ''}. Raise [budget] task_max_* or resume to continue.`,
+      };
+    }
     const paused = await this.dailyCapPause();
     if (paused) return paused;
     const limits = { spentUsd: r.state.spend.usd, elapsedMs: r.elapsedMs(), cycles: r.state.cycle };
@@ -1140,6 +1153,8 @@ export async function supervise(
   run.state.statusReason = undefined;
   run.state.budgetExhausted = false;
   run.state.providersUnavailable = undefined;
+  run.state.taskCapHit = undefined;
+  run.taskBudget.begin(run.state.taskId);
   await run.save();
 
   let sandbox: DockerSandbox | undefined;

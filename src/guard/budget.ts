@@ -6,6 +6,8 @@ export type BudgetStop =
   | 'max_usd_per_day'
   | 'max_turns_per_cycle'
   | 'max_tokens_per_cycle'
+  | 'task_max_usd'
+  | 'task_max_tokens'
   /** Every model was out of quota or unreachable for `budget.max_provider_wait`. */
   | 'providers_unavailable';
 

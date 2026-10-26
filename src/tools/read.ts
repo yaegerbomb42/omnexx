@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
+import { estimateTokens } from '../core/tokens.js';
 import { lineTag } from './anchors.js';
 import { openError } from './did-you-mean.js';
 import { extractSymbols, renderOutline } from './outline.js';
@@ -35,14 +36,17 @@ const schema = z.strictObject({
     .min(1)
     .max(MAX_READ_FILES)
     .optional()
-    .describe(`Several files or ranges in one call (up to ${MAX_READ_FILES})`),
-  anchors: z.boolean().optional().describe('Tag lines with a content hash, for replace_lines'),
+    .describe(`Several files or ranges (up to ${MAX_READ_FILES})`),
+  anchors: z.boolean().optional().describe('Hash lines for replace_lines'),
+  note: z.string().max(280).optional().describe('What you learned; unchanged re-reads return this'),
+  refresh: z.boolean().optional().describe('Force bytes even if unchanged'),
 });
 
 interface ReadTarget {
   path: string;
   start?: number | undefined;
   end?: number | undefined;
+  note?: string | undefined;
 }
 
 function clipLine(l: string): string {
@@ -56,6 +60,7 @@ async function readOne(
   anchors: boolean | undefined,
   ctx: ToolContext,
   maxChars: number,
+  refresh?: boolean,
 ): Promise<ToolOutput> {
   let text: string;
   try {
@@ -91,8 +96,36 @@ async function readOne(
   }
   const body = shown.join('\n');
   const more = last < lines.length ? `\n(lines ${last + 1}-${lines.length} not shown)` : '';
-  const repeat = ctx.reads && alreadyShown(ctx.reads, t.path, text, first, last, anchors);
-  return ok(repeat ?? `${body}${more}`);
+  const shownText = `${body}${more}`;
+  const step = ctx.turn ?? ctx.cycle;
+  // The guard measures itself against a no-guard run in bench: `OMNEXX_READ_GUARD=off`.
+  // It is not a user-facing switch; normal runs always keep the guard on.
+  const repeat =
+    ctx.reads && !refresh && process.env.OMNEXX_READ_GUARD !== 'off'
+      ? alreadyShown(ctx.reads, t.path, text, first, last, anchors, {
+          step,
+          cycle: ctx.cycle,
+          ...(t.note ? { note: t.note } : {}),
+        })
+      : undefined;
+  if (repeat) {
+    // What the model would have paid for these bytes had the guard not answered.
+    const fullTokens = estimateTokens(shownText);
+    const savedTokens =
+      repeat.mode === 'diff' ? Math.max(0, fullTokens - estimateTokens(repeat.text)) : fullTokens;
+    ctx.events.emit('read.dedup', {
+      path: t.path,
+      fromStep: repeat.fromStep,
+      turn: ctx.turn,
+      cycle: ctx.cycle,
+      savedTokens,
+      savedChars: Math.max(0, shownText.length - repeat.text.length),
+      range: `${String(first)}-${String(last)}`,
+      mode: repeat.mode,
+    });
+    return { content: repeat.text, ...(savedTokens ? { savedTokens } : {}) };
+  }
+  return ok(shownText);
 }
 
 /** Header of one file's section in a multi-file read. */
@@ -112,29 +145,33 @@ async function readMany(
   targets: readonly ReadTarget[],
   anchors: boolean | undefined,
   ctx: ToolContext,
+  refresh?: boolean,
 ): Promise<ToolOutput> {
   // In order, each with what's left of the budget: one read per file, so the already-shown
   // bookkeeping sees each range once.
   const sections: string[] = [];
   let left = MAX_READ_CHARS;
   let failed = 0;
+  let savedTokens = 0;
   for (const t of targets) {
     if (left < MIN_SECTION_CHARS) {
       sections.push(`${heading(t)}\n(not read: this call reached its size limit; read it next)`);
       continue;
     }
-    const out = await readOne(t, anchors, ctx, left);
+    const out = await readOne(t, anchors, ctx, left, refresh);
     if (out.isError) failed++;
+    savedTokens += out.savedTokens ?? 0;
     sections.push(`${heading(t)}\n${out.content}`);
     left -= out.content.length;
   }
   const content = sections.join('\n\n');
-  return failed === targets.length ? fail(content) : ok(content);
+  const result = failed === targets.length ? fail(content) : ok(content);
+  return savedTokens ? { ...result, savedTokens } : result;
 }
 
 export const readTool: Tool<typeof schema> = {
   name: 'read',
-  description: `Read files with line numbers, at most ${MAX_READ_LINES} lines each; a longer file needs a range (without one you get its outline).`,
+  description: `Read files with line numbers; a long file needs a range.`,
   schema,
   readOnly: true,
   concurrent: true,
@@ -156,25 +193,71 @@ export const readTool: Tool<typeof schema> = {
   async run(input, ctx) {
     if (input.files && input.path !== undefined)
       return fail('read takes either path (with start/end) or files: [...], not both');
-    if (input.files) return readMany(input.files, input.anchors, ctx);
+    if (input.files)
+      return readMany(
+        input.files.map((f) => ({ ...f, ...(input.note ? { note: input.note } : {}) })),
+        input.anchors,
+        ctx,
+        input.refresh,
+      );
     if (input.path === undefined) return fail('read needs path, or files: [{path, start, end}]');
     return readOne(
-      { path: input.path, start: input.start, end: input.end },
+      {
+        path: input.path,
+        start: input.start,
+        end: input.end,
+        ...(input.note ? { note: input.note } : {}),
+      },
       input.anchors,
       ctx,
       MAX_READ_CHARS,
+      input.refresh,
     );
   },
 };
 
-/** Line ranges of a file already shown this cycle, kept as `hash|a-b,c-d` in the reads cache. */
-function parseCoverage(value: string | undefined): { hash: string; ranges: [number, number][] } {
-  const [hash = '', list = ''] = (value ?? '').split('|');
-  const ranges = list
-    .split(',')
-    .filter(Boolean)
-    .map((r) => r.split('-').map(Number) as [number, number]);
-  return { hash, ranges };
+/** What an earlier read of a path saw, kept in the reads cache under `cov:<path>`. */
+interface SeenRead {
+  hash: string;
+  ranges: [number, number][];
+  /** The step (model turn) and cycle the file was first read at. */
+  step: number;
+  cycle?: number;
+  /** The agent's own note from an earlier read, if it gave one. */
+  note?: string;
+  /** First useful lines, so a repeat read still carries a hint when no note was written. */
+  preview?: string;
+  /** The bytes as read, so a later re-read after an edit can return a diff, not the file. */
+  text?: string;
+}
+
+function parseCoverage(value: string | undefined): SeenRead {
+  if (!value) return { hash: '', ranges: [], step: 0 };
+  try {
+    const parsed = JSON.parse(value) as Partial<SeenRead>;
+    return {
+      hash: typeof parsed.hash === 'string' ? parsed.hash : '',
+      ranges: Array.isArray(parsed.ranges)
+        ? parsed.ranges.filter(
+            (r): r is [number, number] =>
+              Array.isArray(r) && typeof r[0] === 'number' && typeof r[1] === 'number',
+          )
+        : [],
+      step: typeof parsed.step === 'number' ? parsed.step : 0,
+      ...(typeof parsed.cycle === 'number' ? { cycle: parsed.cycle } : {}),
+      ...(typeof parsed.note === 'string' ? { note: parsed.note } : {}),
+      ...(typeof parsed.preview === 'string' ? { preview: parsed.preview } : {}),
+      ...(typeof parsed.text === 'string' ? { text: parsed.text } : {}),
+    };
+  } catch {
+    // A cache from an older build (`hash|1-4,7-9`) still guards correctly; its step is unknown.
+    const [hash = '', list = ''] = value.split('|');
+    const ranges = list
+      .split(',')
+      .filter(Boolean)
+      .map((r) => r.split('-').map(Number) as [number, number]);
+    return { hash, ranges, step: 0 };
+  }
 }
 
 const covers = (ranges: readonly [number, number][], start: number, end: number): boolean => {
@@ -182,10 +265,28 @@ const covers = (ranges: readonly [number, number][], start: number, end: number)
   return true;
 };
 
+const clip = (s: string, n: number): string => {
+  const one = s.replace(/\s+/g, ' ').trim();
+  return one.length > n ? `${one.slice(0, n)}…` : one;
+};
+
+/** The first couple of non-empty lines, as a hint when the agent wrote no note. */
+function previewOf(text: string): string {
+  return clip(
+    text
+      .split('\n')
+      .filter((l) => l.trim())
+      .slice(0, 2)
+      .join(' / '),
+    180,
+  );
+}
+
 /**
- * A short note instead of the lines when the file is unchanged and every requested line was
- * already shown this cycle (any earlier range, not just the same one). Asking for exactly the
- * same range again right after returns the lines, in case the earlier result was trimmed.
+ * A short note instead of the lines when the file's bytes are unchanged and every requested line
+ * was already shown this cycle. If the bytes changed, return only the changed hunks (the agent
+ * still has the earlier bytes in this conversation). The note names the step, carries the agent's
+ * earlier note (or a preview), and says how to force the bytes (`refresh: true`) if needed.
  */
 function alreadyShown(
   reads: Map<string, string>,
@@ -194,21 +295,133 @@ function alreadyShown(
   start: number,
   end: number,
   anchors: boolean | undefined,
-): string | undefined {
+  meta: { step: number; cycle: number; note?: string },
+): { text: string; fromStep: number; mode: 'unchanged' | 'diff' } | undefined {
   const covKey = `cov:${path}${anchors ? ':a' : ''}`;
-  const lastKey = `last:${path}${anchors ? ':a' : ''}`;
   const hash = createHash('sha256').update(text).digest('hex');
   const seen = parseCoverage(reads.get(covKey));
   const range = `${String(start)}-${String(end)}`;
-  if (seen.hash === hash && covers(seen.ranges, start, end) && reads.get(lastKey) !== range) {
-    reads.set(lastKey, range);
-    return `${path} is unchanged and lines ${range} were already shown earlier this cycle; use that result above. (Ask for the same range again if it is no longer in your context.)`;
+  const store = (next: SeenRead): void => {
+    // Large generated files are not worth keeping twice; they simply lose the diff fast path.
+    reads.set(
+      covKey,
+      JSON.stringify({
+        ...next,
+        ...(next.text && next.text.length > MAX_READ_CHARS * 4 ? { text: undefined } : {}),
+      }),
+    );
+  };
+  if (seen.hash === hash && covers(seen.ranges, start, end)) {
+    const note = seen.note ?? meta.note;
+    const noteText = note
+      ? `your earlier note: "${clip(note, 240)}"`
+      : seen.preview
+        ? `earlier content began: ${seen.preview}`
+        : 'no note was recorded';
+    return {
+      mode: 'unchanged',
+      fromStep: seen.step || meta.step,
+      text: `${path} is unchanged since step ${String(seen.step || meta.step)}${seen.cycle ? ` (cycle ${String(seen.cycle)})` : ''}; lines ${range} were already shown. ${noteText}. Use that result above, or read with refresh: true for the bytes again.`,
+    };
+  }
+  if (seen.hash && seen.hash !== hash && seen.text && covers(seen.ranges, start, end)) {
+    const before = seen.text.split('\n').slice(start - 1, end);
+    const after = text.split('\n').slice(start - 1, end);
+    const diff = unifiedDiff(before, after, start);
+    if (diff) {
+      // The earlier bytes are in this cycle's context; only the delta is new information.
+      store({
+        hash,
+        ranges: seen.ranges,
+        step: seen.step || meta.step,
+        cycle: seen.cycle ?? meta.cycle,
+        ...((meta.note ?? seen.note) ? { note: meta.note ?? seen.note } : {}),
+        preview: seen.preview ?? previewOf(text),
+        text,
+      });
+      return {
+        mode: 'diff',
+        fromStep: seen.step || meta.step,
+        text: `${path} changed since step ${String(seen.step || meta.step)}${seen.cycle ? ` (cycle ${String(seen.cycle)})` : ''}; showing only changed lines (unchanged lines are in your earlier read).\n${diff}\n(read with refresh: true for the full file)`,
+      };
+    }
   }
   const ranges =
     seen.hash === hash
       ? [...seen.ranges, [start, end] as [number, number]]
       : [[start, end] as [number, number]];
-  reads.set(covKey, `${hash}|${ranges.map(([a, b]) => `${String(a)}-${String(b)}`).join(',')}`);
-  reads.delete(lastKey);
+  const next: SeenRead = {
+    hash,
+    ranges,
+    step: seen.hash === hash && seen.step ? seen.step : meta.step,
+    cycle: seen.hash === hash && seen.cycle ? seen.cycle : meta.cycle,
+    ...((meta.note ?? seen.note) ? { note: meta.note ?? seen.note } : {}),
+    preview: seen.hash === hash && seen.preview ? seen.preview : previewOf(text),
+    text,
+  };
+  store(next);
   return undefined;
+}
+
+/** Longest common subsequence of two line arrays, as edit operations for the readable diff. */
+function unifiedDiff(
+  oldLines: readonly string[],
+  newLines: readonly string[],
+  offset: number,
+): string {
+  const n = oldLines.length;
+  const m = newLines.length;
+  if (!n && !m) return '';
+  // n and m are at most MAX_READ_LINES; a flat table keeps this simple and bounded.
+  const w = m + 1;
+  const dp = new Uint16Array((n + 1) * (m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      dp[i * w + j] =
+        oldLines[i] === newLines[j]
+          ? (dp[(i + 1) * w + j + 1] ?? 0) + 1
+          : Math.max(dp[(i + 1) * w + j] ?? 0, dp[i * w + j + 1] ?? 0);
+  const ops: { kind: ' ' | '-' | '+'; line: string; oldLine: number; newLine: number }[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (oldLines[i] === newLines[j]) {
+      ops.push({ kind: ' ', line: oldLines[i] ?? '', oldLine: offset + i, newLine: offset + j });
+      i++;
+      j++;
+    } else if ((dp[(i + 1) * w + j] ?? 0) >= (dp[i * w + j + 1] ?? 0)) {
+      ops.push({ kind: '-', line: oldLines[i] ?? '', oldLine: offset + i, newLine: offset + j });
+      i++;
+    } else {
+      ops.push({ kind: '+', line: newLines[j] ?? '', oldLine: offset + i, newLine: offset + j });
+      j++;
+    }
+  }
+  while (i < n) {
+    ops.push({ kind: '-', line: oldLines[i] ?? '', oldLine: offset + i, newLine: offset + j });
+    i++;
+  }
+  while (j < m) {
+    ops.push({ kind: '+', line: newLines[j] ?? '', oldLine: offset + i, newLine: offset + j });
+    j++;
+  }
+  // Keep two lines of context around each change so the diff still reads like a hunk.
+  const keep = new Set<number>();
+  ops.forEach((op, idx) => {
+    if (op.kind === ' ') return;
+    for (let k = Math.max(0, idx - 2); k <= Math.min(ops.length - 1, idx + 2); k++) keep.add(k);
+  });
+  if (!keep.size) return '';
+  const out: string[] = [];
+  let last = -2;
+  for (let idx = 0; idx < ops.length; idx++) {
+    if (!keep.has(idx)) continue;
+    const op = ops[idx];
+    if (!op) continue;
+    if (idx !== last + 1)
+      out.push(`@@ old line ${String(op.oldLine)} / new line ${String(op.newLine)} @@`);
+    out.push(`${op.kind}${clipLine(op.line)}`);
+    last = idx;
+  }
+  return out.join('\n');
 }

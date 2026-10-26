@@ -278,6 +278,7 @@ async function askOnce(
       estimatedInputTokens: requestTokens(spec.system, spec.messages, tools),
       maxOutputTokens: maxTokens,
       role,
+      purpose: role === 'audit' ? 'verification' : 'reviewer',
       chain,
     },
   );
