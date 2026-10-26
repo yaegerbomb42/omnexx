@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { commitCheckpoint, tagCheckpoint } from '../../../src/git/checkpoint.js';
 import { git } from '../../../src/git/git.js';
@@ -131,6 +131,20 @@ describe('worktree + checkpoint + rollback', () => {
     expect(await workingTreeHash(repo, start)).not.toBe(hash);
   });
 
+  it('runs concurrent workingTreeDiff calls without fighting over the index', async () => {
+    const repo = await seeded();
+    const start = await headSha(repo);
+    await writeFile(join(repo, 'a.txt'), 'two\n');
+    await writeFile(join(repo, 'new.txt'), 'new\n');
+    // Simulate another process holding the lock of the shared index path (the
+    // pre-fix fixed 'omnexx-index' path): a per-call index must never see it.
+    const gitDir = resolve(repo, (await git(repo, ['rev-parse', '--git-dir'])).stdout.trim());
+    await writeFile(join(gitDir, 'omnexx-index.lock'), '');
+    const expected = await workingTreeDiff(repo, start);
+    const diffs = await Promise.all(Array.from({ length: 8 }, () => workingTreeDiff(repo, start)));
+    for (const diff of diffs) expect(diff).toEqual(expected);
+  });
+
   it('still stages coverage files the repo already tracks', async () => {
     const repo = await seeded();
     const { mkdir } = await import('node:fs/promises');
@@ -168,6 +182,30 @@ describe('worktree + checkpoint + rollback', () => {
       delete process.env.GIT_CONFIG_NOSYSTEM;
     }
   });
+  it('overrides only the missing identity value', async () => {
+    const repo = await seeded();
+    await git(repo, ['config', '--unset', 'user.name']);
+    await writeFile(join(repo, 'b.txt'), 'b\n');
+    const env = { HOME: await tempDir(), XDG_CONFIG_HOME: await tempDir() };
+    const prev = { HOME: process.env.HOME, XDG: process.env.XDG_CONFIG_HOME };
+    Object.assign(process.env, {
+      HOME: env.HOME,
+      XDG_CONFIG_HOME: env.XDG_CONFIG_HOME,
+      GIT_CONFIG_NOSYSTEM: '1',
+    });
+    try {
+      const sha = await commitCheckpoint(repo, 's', '', { run: 'r', task: 't', cycle: 1 });
+      expect((await git(repo, ['log', '-1', '--format=%an', sha])).stdout).toBe('omnexx');
+      expect((await git(repo, ['log', '-1', '--format=%ae', sha])).stdout).toBe(
+        'test@omnexx.invalid',
+      );
+    } finally {
+      process.env.HOME = prev.HOME;
+      if (prev.XDG === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = prev.XDG;
+      delete process.env.GIT_CONFIG_NOSYSTEM;
+    }
+  });
 
   it('createWorktree fails clearly when the branch exists', async () => {
     const repo = await seeded();
@@ -187,5 +225,14 @@ describe('sanitizePatch', () => {
     const out = sanitizePatch(patch, (s) => s.replace('SECRET', '[R]'));
     expect(out).not.toContain('KEY=abc');
     expect(out).toContain('+const t = "[R]";');
+  });
+  it('drops credential files whose paths contain spaces', async () => {
+    const { sanitizePatch } = await import('../../../src/git/rollback.js');
+    const patch =
+      'diff --git a/path/to/my file.pem b/path/to/my file.pem\n+-----BEGIN SECRET KEY-----\n' +
+      'diff --git a/src/keep.txt b/src/keep.txt\n+const v = 1;\n';
+    const out = sanitizePatch(patch, (s) => s);
+    expect(out).not.toContain('SECRET');
+    expect(out).toContain('+const v = 1;');
   });
 });

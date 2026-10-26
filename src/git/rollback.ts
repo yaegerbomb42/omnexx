@@ -7,7 +7,7 @@ import { workingTreeDiff } from './repo.js';
 export function sanitizePatch(patch: string, redact: (s: string) => string): string {
   const sections = patch.split(/^(?=diff --git )/m);
   const kept = sections.filter((s) => {
-    const m = /^diff --git a\/(\S+) b\/(\S+)/.exec(s);
+    const m = /^diff --git a\/(.+?) b\/(.+)/.exec(s);
     return !m || !(isSecretPath(m[1] ?? '') || isSecretPath(m[2] ?? ''));
   });
   return redact(kept.join(''));

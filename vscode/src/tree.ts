@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { listChats, listRuns, readPlan } from './cli.js';
 import {
   childrenOf,
+  countNewlyFinished,
   describeRun,
   HISTORY_GROUPS,
   historyGroup,
@@ -60,6 +61,8 @@ export class RunsProvider implements vscode.TreeDataProvider<Node> {
   /** Whether the History view is on screen; a run ending in plain sight needs no badge. */
   private watched = false;
   private lastActive = new Set<string>();
+  /** When the last listing was taken; null before the first one. */
+  private lastListingTime: number | null = null;
 
   refresh(): void {
     this.changed.fire(undefined);
@@ -133,8 +136,9 @@ export class RunsProvider implements vscode.TreeDataProvider<Node> {
     this.activeCount = active.length;
     const activeIds = new Set(active.map((run) => run.runId));
     if (!this.watched)
-      for (const id of this.lastActive) if (!activeIds.has(id)) this.unseenFinished++;
+      this.unseenFinished += countNewlyFinished(runs, this.lastActive, this.lastListingTime);
     this.lastActive = activeIds;
+    this.lastListingTime = Date.now();
     this.updated.fire();
     const dated = [
       ...chats.map((chat) => ({ at: chat.savedAt, node: { kind: 'chat' as const, chat } })),

@@ -1,12 +1,13 @@
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, readFile, rename } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import type {
   OAuthClientInformationMixed,
   OAuthClientMetadata,
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
+import { writeJsonAtomic } from '../core/atomic.js';
 
 /** Loopback port the browser is sent back to; fixed so a registered redirect URI stays valid. */
 export const OAUTH_CALLBACK_PORT = 33418;
@@ -23,11 +24,26 @@ type AuthFile = Record<string, ServerAuth>;
 export const oauthFile = (configHome: string): string => join(configHome, 'mcp-oauth.json');
 
 async function readAll(configHome: string): Promise<AuthFile> {
+  const file = oauthFile(configHome);
+  let text: string;
   try {
-    const parsed: unknown = JSON.parse(await readFile(oauthFile(configHome), 'utf8'));
+    text = await readFile(file, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw err;
+  }
+  try {
+    const parsed: unknown = JSON.parse(text);
     return parsed && typeof parsed === 'object' ? (parsed as AuthFile) : {};
-  } catch {
-    return {};
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      try {
+        await rename(file, `${file}.corrupt-${Date.now()}`);
+      } catch {
+        // best-effort backup: still throw the original parse error
+      }
+    }
+    throw err;
   }
 }
 
@@ -40,8 +56,7 @@ async function update(
   const next = change(cur);
   const all: AuthFile = next ? { ...rest, [server]: next } : rest;
   const file = oauthFile(configHome);
-  await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify(all, null, 2)}\n`, { mode: 0o600 });
+  await writeJsonAtomic(file, all);
   await chmod(file, 0o600);
 }
 

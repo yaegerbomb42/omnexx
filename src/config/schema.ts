@@ -181,6 +181,12 @@ export const endpointSchema = z.strictObject({
    * real model itself and sticks to it (warm prompt cache) until it runs out of quota.
    */
   sticky_random: z.boolean().default(false),
+  /** Circuit breaker: consecutive 5xx/outage failures before opening (default 5). */
+  breaker_failures: z.number().int().positive().default(5),
+  /** Circuit breaker: initial cooloff before half-open probe (default 10s). */
+  breaker_cooloff: durationString.default('10s'),
+  /** Circuit breaker: maximum cooloff (default 5m). */
+  breaker_max_cooloff: durationString.default('5m'),
   ...providerBudget,
 });
 export type EndpointConfig = z.infer<typeof endpointSchema>;

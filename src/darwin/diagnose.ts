@@ -14,7 +14,7 @@ export function diagnoseFailure(
   for (let i = traces.length - 1; i >= 0; i--) {
     const trace = traces[i];
     if (!trace) continue;
-    const failedCall = trace.calls.find((c) => c.isError);
+    const failedCall = trace.calls.filter((c) => c.isError).at(-1);
     if (failedCall) {
       return {
         turn: trace.turn,
@@ -39,7 +39,11 @@ export function diagnoseFailure(
   if (options?.lastError) {
     return {
       turn: traces.at(-1)?.turn ?? 0,
-      kind: /loop|tombstone|oscillation/i.test(options.lastError) ? 'doom_loop' : 'tool_error',
+      kind: /doom[\s_-]?loop|\b(stuck|repeat(ed|ing)?|oscillat\w*|tombstone)\b/i.test(
+        options.lastError,
+      )
+        ? 'doom_loop'
+        : 'tool_error',
       detail: options.lastError,
     };
   }

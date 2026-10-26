@@ -5,7 +5,13 @@ const gated = { lines: 85 };
 export default defineConfig({
   test: {
     projects: [
-      { extends: true, test: { name: 'unit', include: ['test/unit/**/*.test.{ts,tsx}'] } },
+      {
+        extends: true,
+        test: {
+          name: 'unit',
+          include: ['test/unit/**/*.test.{ts,tsx}', 'src/core/**/*.test.{ts,tsx}'],
+        },
+      },
       {
         extends: true,
         test: {

@@ -139,7 +139,7 @@ describe('the agent tool', () => {
     const ctx = await toolContext(await tempDir(), {
       subagent: (_d, _k, c) => {
         if (c) seen.push(c);
-        return Promise.resolve('reviewed: fine');
+        return Promise.resolve({ findings: 'reviewed: fine', files: [], confidence: 0.9 });
       },
     });
     const local = [
@@ -155,7 +155,7 @@ describe('the agent tool', () => {
     const tool = agentTool(local, {}, { env: {}, configHome: await tempDir() });
     expect(tool.description).toContain('- reviewer: Reviews');
     const r = await tool.run({ name: 'reviewer', message: 'review src/a.ts please' }, ctx);
-    expect(r.content).toBe('reviewed: fine');
+    expect(r.content).toBe('reviewed: fine\n\nConfidence: 90%');
     expect(seen).toEqual([{ name: 'reviewer', prompt: 'Be strict.', tools: ['Read'] }]);
     const unknown = await tool.run({ name: 'nobody', message: 'anyone there at all?' }, ctx);
     expect(unknown.content).toMatch(/the agents are: reviewer/);
