@@ -890,7 +890,7 @@ export function createBrowserTool(
         emit({ running: status.running, port: status.port });
         const output = status.output.trim();
         return ok(
-          `Dev server ${status.running ? 'running' : 'stopped'}: \`${status.command}\`${status.port !== undefined ? ` on port ${String(status.port)}` : ''}${status.exitCode !== undefined ? ` (exit ${String(status.exitCode)})` : ''}.${output ? `\n\nRecent output:\n${clip(output, 2_000)}` : ''}`,
+          `Dev server ${status.running ? 'running' : 'stopped'}: \`${status.command}\`${status.port !== undefined ? ` on http://localhost:${String(status.port)}` : ''}${status.exitCode !== undefined ? ` (exit ${String(status.exitCode)})` : ''}.${output ? `\n\nRecent output:\n${clip(output, 2_000)}` : ''}`,
         );
       }
 

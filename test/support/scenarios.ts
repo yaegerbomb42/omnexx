@@ -75,6 +75,43 @@ export const fileWorker: Script = (m) => {
   return say(`Wrote out/${m.taskId ?? ''}.txt.`);
 };
 
+/**
+ * Worker for the orphan-process regression test (OMNEXX_TEST_SCENARIO=server). The first task
+ * starts a server, then completes like fileWorker; every other task is fileWorker.
+ *
+ * server-a is a node http server backgrounded inside the persistent bash session (`&`), so
+ * it is a grandchild of the shell and outlives the turn. It listens on an ephemeral port and
+ * writes its pid/port to server-a.pid / server-a.port. It must be gone (pid dead, port free)
+ * once the run ends.
+ *
+ * (A DevServer child via browser start_server is covered by unit tests instead: this VM has
+ * no browser backend, so the browser tool does not load in scripted runs.)
+ */
+const serverScript = (name: string): string =>
+  `const http = require('node:http');\n` +
+  `const fs = require('node:fs');\n` +
+  `const port = Number(process.env.PORT || 0);\n` +
+  `const s = http.createServer((q, r) => { r.end('ok'); });\n` +
+  `s.listen(port, '127.0.0.1', () => {\n` +
+  `  fs.writeFileSync('${name}.port', String(s.address().port));\n` +
+  `  fs.writeFileSync('${name}.pid', String(process.pid));\n` +
+  `});\n` +
+  `setInterval(() => {}, 60_000);\n`;
+
+export const serverWorker: Script = (m) => {
+  if (m.taskId !== 'M1.T01') return fileWorker(m);
+  if (m.turn === 0)
+    // .cjs: the test repos seed {"type":"module"}, so a .js file could not use require.
+    return call('write_file', { path: 'server-a.cjs', content: serverScript('server-a') });
+  if (m.turn === 1) return call('bash', { command: 'node server-a.cjs > server-a.log 2>&1 &' });
+  if (m.turn === 2)
+    return call('write_file', {
+      path: 'out/M1.T01.txt',
+      content: 'M1.T01\n',
+    });
+  return say('Server started; wrote out/M1.T01.txt.');
+};
+
 export const fileTask = (id: string, extra: object = {}) => ({
   id,
   title: `Create out/${id}.txt`,

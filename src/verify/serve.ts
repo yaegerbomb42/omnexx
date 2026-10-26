@@ -1,24 +1,8 @@
 import { readFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { execa } from 'execa';
 import { killGroup } from '../core/exec.js';
-
-/** A free localhost port, picked by the OS. */
-export async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.unref();
-    srv.on('error', reject);
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address();
-      const port = typeof addr === 'object' && addr ? addr.port : 0;
-      srv.close(() => {
-        resolve(port);
-      });
-    });
-  });
-}
+import { registerChild, unregisterChild } from '../core/process-registry.js';
 
 /** Whether package.json in `cwd` declares `script`. */
 export async function hasNpmScript(cwd: string, script: string): Promise<boolean> {
@@ -50,6 +34,13 @@ export async function serveUntilReady(
     url: string;
     timeoutMs: number;
     fetch?: typeof fetch;
+    /** Run the server is registered under (for run-end cleanup and `omnexx ps`). */
+    runId?: string | undefined;
+    /**
+     * Release a held port reservation once the server is spawned: the reservation cannot stay
+     * listening while the server binds the port. Idempotent; also called from stop().
+     */
+    releasePort?: (() => Promise<void>) | undefined;
   },
 ): Promise<Served> {
   const child = execa(command, {
@@ -62,6 +53,26 @@ export async function serveUntilReady(
     reject: false,
     stdin: 'ignore',
   });
+  await opts.releasePort?.().catch(() => undefined);
+  let port: number | undefined;
+  try {
+    const parsed = Number(new URL(opts.url).port);
+    if (Number.isInteger(parsed) && parsed > 0) port = parsed;
+  } catch {
+    // A URL without a port: register without one.
+  }
+  if (child.pid !== undefined)
+    registerChild(
+      {
+        pid: child.pid,
+        pgid: child.pid,
+        kind: 'server',
+        command,
+        ...(port !== undefined ? { port } : {}),
+        startedAt: Date.now(),
+      },
+      opts.runId,
+    );
   let out = '';
   child.all.on('data', (d: Buffer) => {
     out = (out + d.toString()).slice(-20_000);
@@ -69,6 +80,7 @@ export async function serveUntilReady(
   const state = { exited: false };
   void child.then(() => {
     state.exited = true;
+    if (child.pid !== undefined) unregisterChild(child.pid, opts.runId);
   });
   const stop = async (): Promise<void> => {
     if (child.pid !== undefined && !state.exited) {
@@ -79,6 +91,8 @@ export async function serveUntilReady(
       await child.catch(() => undefined);
       clearTimeout(t);
     }
+    if (child.pid !== undefined) unregisterChild(child.pid, opts.runId);
+    await opts.releasePort?.().catch(() => undefined);
   };
   const fetchFn = opts.fetch ?? fetch;
   const deadline = Date.now() + opts.timeoutMs;

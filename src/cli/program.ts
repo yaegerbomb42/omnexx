@@ -9,6 +9,7 @@ import {
   requestControl,
   resumeAllCommand,
   resumeRun,
+  stopAllCommand,
   superviseForeground,
 } from './commands/control.js';
 import { binaryVersion, doctorRun, renderChecks, runDoctorChecks } from './commands/doctor.js';
@@ -23,7 +24,9 @@ import {
   runsCommand,
   statusCommand,
 } from './commands/inspect.js';
+import { psCommand } from './commands/ps.js';
 import { readGoal, runCommand, runPlanOnly, type FullRunFlags } from './commands/run.js';
+import { reapStaleSupervisors } from '../core/process-registry.js';
 import * as extraCommands from './commands/extra/index.js';
 import type { CommandRegistrar } from './commands/extra/types.js';
 import { serviceCommand } from './commands/service.js';
@@ -320,9 +323,27 @@ export function createProgram(
     .command('stop')
     .argument('[runId]')
     .option('--now', 'abort the current turn and roll back')
+    .option('--all', 'terminate every live supervisor and every registered child/server')
+    .option('--yes', 'with --all: remove stale worktrees (>24h) without asking')
     .description('stop at the next turn boundary (finishing the cycle), or immediately with --now')
-    .action(async (runId: string | undefined, opts: { now?: boolean }) => {
-      setExit(await requestControl(io, runId, opts.now ? 'stop-now' : 'stop'));
+    .action(
+      async (runId: string | undefined, opts: { now?: boolean; all?: boolean; yes?: boolean }) => {
+        if (opts.all && (runId || opts.now))
+          throw new UsageError('give a run id or --all, not both');
+        setExit(
+          opts.all
+            ? await stopAllCommand(io, { yes: opts.yes === true })
+            : await requestControl(io, runId, opts.now ? 'stop-now' : 'stop'),
+        );
+      },
+    );
+
+  program
+    .command('ps')
+    .option('--json', 'machine-readable output')
+    .description('running supervisors, dev servers and worktrees')
+    .action(async (opts: { json?: boolean }) => {
+      setExit(await psCommand(io, opts.json === true));
     });
 
   program
@@ -474,6 +495,16 @@ export function createProgram(
 /** Parse argv, run the command, and return the exit code. Never throws. */
 export async function runCli(argv: readonly string[], io: CliIO): Promise<number> {
   let code: number = EXIT.ok;
+  // Cheap, silent, best effort: a previous supervisor that stopped beating (or crashed)
+  // leaves its orphans behind; reap them before dispatching. Never blocks startup long.
+  await reapStaleSupervisors(resolvePaths(io.env), {
+    log: (line) => {
+      println(io.stderr, line);
+    },
+  }).catch(() => undefined);
+  const program = createProgram(io, (c) => {
+    code = c;
+  });
   const program = createProgram(
     io,
     (c) => {

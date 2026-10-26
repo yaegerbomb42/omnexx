@@ -11,7 +11,7 @@ import { appendFileSync } from 'node:fs';
 import type { Clock } from '../../src/core/clock.js';
 import { runCli } from '../../src/cli/program.js';
 import { processIO } from '../../src/cli/io.js';
-import { fileWorker, manyTasks, planner, scenario } from './scenarios.js';
+import { fileWorker, manyTasks, planner, scenario, serverWorker } from './scenarios.js';
 import { outage, ScriptedProvider, type Script } from './scripted-provider.js';
 
 let offset = 0;
@@ -26,7 +26,8 @@ const warp: Clock = {
 const tasks = Number(process.env.OMNEXX_TEST_TASKS ?? 6);
 const outageCycle = Number(process.env.OMNEXX_TEST_OUTAGE_CYCLE ?? -1);
 let outageStart: number | undefined;
-const base = scenario(planner(manyTasks(tasks, 5)), fileWorker);
+const worker = process.env.OMNEXX_TEST_SCENARIO === 'server' ? serverWorker : fileWorker;
+const base = scenario(planner(manyTasks(tasks, 5)), worker);
 const slow = Number(process.env.OMNEXX_TEST_TURN_MS ?? 0);
 
 const script: Script = (m) => {

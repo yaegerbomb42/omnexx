@@ -15,6 +15,7 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['test/unit/**/*.test.{ts,tsx}', 'src/core/**/*.test.{ts,tsx}'],
+          globalSetup: ['test/support/global-setup.ts'],
         },
       },
       {
@@ -37,7 +38,12 @@ export default defineConfig({
       },
       {
         extends: true,
-        test: { name: 'e2e', include: ['test/e2e/**/*.test.ts'], testTimeout: 600_000 },
+        test: {
+          name: 'e2e',
+          include: ['test/e2e/**/*.test.ts'],
+          testTimeout: 600_000,
+          globalSetup: ['test/support/global-setup.ts'],
+        },
       },
     ],
     coverage: {

@@ -123,6 +123,7 @@ function gateRunCtx(run: Run, label: string) {
     maxCmdTimeoutMs: run.maxCmdTimeoutMs,
     redact: (s: string) => run.redactor.text(s),
     signal: run.signal,
+    runId: run.state.runId,
   };
 }
 
