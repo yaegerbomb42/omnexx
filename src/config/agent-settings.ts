@@ -16,7 +16,7 @@ import {
 
 /**
  * The agent sliders, as the person set them in `/settings` or the VS Code "Agent" card, kept in
- * agent-settings.json next to roles.json. `levels` is undefined until they were saved once, so a
+ * agent-settings.json next to config.toml. `levels` is undefined until they were saved once, so a
  * fresh install behaves exactly as before. They reach a run as two config layers:
  *  - the levels themselves, as the [agent] table (below a project's omnexx.toml and flags), and
  *  - what they imply for [plan], [context], budget and the output cap (derivedAgentLayer), just

@@ -51,7 +51,14 @@ export const SECTIONS: readonly SectionMeta[] = TABLE.trim()
   });
 
 /** Sections that start folded until the person opens them. */
-export const FOLDED_BY_DEFAULT: readonly SectionId[] = ['add', 'browser', 'advanced'];
+export const FOLDED_BY_DEFAULT: readonly SectionId[] = [
+  'add',
+  'browser',
+  'advanced',
+  'skills',
+  'mcp',
+  'shortcuts',
+];
 
 export function icon(svg: string): string {
   return `<svg class="sec-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${svg}</svg>`;

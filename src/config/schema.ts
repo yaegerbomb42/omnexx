@@ -318,6 +318,19 @@ export const contextSchema = z.strictObject({
   /** Recent assistant turns kept verbatim through a compaction. */
   compact_keep_turns: z.number().int().positive().default(4),
   /**
+   * Rolling memory condensation (the default): every `memory_condense_every` turns the agent
+   * rewrites its working memory into a compact note — current goal, active work, decisions,
+   * facts with file hashes, open threads, failed attempts — and keeps only `memory_keep_turns`
+   * turns raw, so the prompt stays flat over a long run. The raw transcript stays in
+   * logs/transcript.md for `recall`. `full` keeps the old behaviour: raw history until the
+   * token threshold folds it.
+   */
+  memory: z.enum(['rolling', 'full']).default('rolling'),
+  /** Turns between memory condensations when memory is rolling (6–8). */
+  memory_condense_every: z.number().int().min(2).max(20).default(7),
+  /** Raw turns kept verbatim after the memory note when memory is rolling. */
+  memory_keep_turns: z.number().int().min(1).default(2),
+  /**
    * Serve rarely called read-only tools (remember, running_context, recall, outline, read_symbol)
    * through one `more_tools` tool, keeping their schemas out of the cached prefix. Off by default
    * until a bench shows the model still reaches for them when it should.
@@ -442,7 +455,42 @@ export const dockerSchema = z.strictObject({
     .default('2g'),
 });
 
+export const poolSchema = z.strictObject({
+  /**
+   * The one ranked provider:model list every role uses unless [roles] gives a role its own
+   * (the old models.json, merged into this file). Order is the failover order.
+   */
+  ranked: z.array(modelRef).max(64).default([]),
+  /** How the pool is used: fallback (#1 until its quota runs out), priority (#1 first each call), random. */
+  mode: z.enum(['fallback', 'priority', 'random', 'smart']).default('fallback'),
+});
+export type PoolConfig = z.infer<typeof poolSchema>;
+
+/** Per-role model lists and routing (the old roles.json, merged into this file). */
+export const rolesTableSchema = z.strictObject({
+  models: z.partialRecord(z.enum(ROLE_NAMES), z.array(modelRef).max(20)).default({}),
+  strategies: z.partialRecord(z.enum(ROLE_NAMES), z.enum(STRATEGIES)).default({}),
+  spread_helpers: z.boolean().default(true),
+});
+export type RolesTableConfig = z.infer<typeof rolesTableSchema>;
+
 export const configSchema = z.strictObject({
+  /**
+   * The user-facing settings live here, in this one file. The essentials — the ones the
+   * first-run flow asks about and the settings page shows — are:
+   *   provider, model, pool, budget.max_usd, sandbox, policy.auto_approve, experimental.
+   * Everything else keeps its default unless a run needs it.
+   */
+  experimental: z.boolean().default(false),
+  /** Default provider (the name of a [providers.endpoints] entry, or "anthropic"). */
+  provider: z
+    .string()
+    .regex(/^[a-z][a-z0-9_-]*$/, 'expected a lowercase provider name')
+    .optional(),
+  /** Default model for every role when the pool and [roles] say nothing (provider:model). */
+  model: modelRef.optional(),
+  pool: poolSchema.prefault({}),
+  roles: rolesTableSchema.prefault({}),
   setup: z.array(z.string()).default([]),
   sandbox: z.enum(['host', 'docker']).default('host'),
   docker: dockerSchema.prefault({}),

@@ -69,6 +69,8 @@ interface State {
     limit: number;
     parts?: { system: number; tools: number; conversation: number };
   } | null;
+  /** The rolling memory note (what the agent remembers); null before the first condensation. */
+  memoryNote?: string | null;
   usage: (Usage & { startedAt: number | null }) | null;
   helpers?: crew.Helper[];
   waiting?: { startedAt: number; estimateMs: number | null } | null;
@@ -150,7 +152,6 @@ function el<T extends HTMLElement>(id: string, type: new () => T): T {
 const conversation = el('log', HTMLElement);
 const input = el('input', HTMLTextAreaElement);
 const send = el('send', HTMLButtonElement);
-const pauseBtn = el('pause', HTMLButtonElement);
 const ask = el('ask', HTMLElement);
 const steps = el('steps', HTMLElement);
 const stepsBody = el('steps-body', HTMLElement);
@@ -477,21 +478,30 @@ function stepDetail(s: string, states: readonly string[], pct: number, recent: s
 
 function drawSteps(items: readonly TodoItem[]): void {
   steps.hidden = items.length === 0;
+  const stepEl = el('status-step', HTMLElement);
   if (!items.length) {
+    stepEl.textContent = state?.busy ? 'working…' : 'idle';
+    stepEl.title = '';
     lastStepsSignature = '';
     return;
   }
   const states = stepStates(items);
+  const done = items.filter((t) => t.status === 'done').length;
+  const current = states.indexOf('active');
+  const shown = current >= 0 ? current : Math.min(done, items.length - 1);
+  const currentText = items[shown]?.text ?? '';
+  stepEl.textContent =
+    done === items.length
+      ? `done ${String(done)}/${String(items.length)}`
+      : `step ${String(done + 1)}/${String(items.length)}`;
+  stepEl.title = done === items.length ? 'All steps done' : currentText;
   const pct = stepsPercent(items);
   const recentLogs = logLines.filter((l) => l.role === 'agent').slice(-ACTIVE_STEP_ACTIONS);
   const stepsSig = `${items.map((t) => `${t.status}:${t.text}`).join('|')}#${recentLogs.map((l) => l.text).join('|')}`;
   if (stepsSig === lastStepsSignature) return;
   lastStepsSignature = stepsSig;
 
-  const done = items.filter((t) => t.status === 'done').length;
   el('steps-count', HTMLElement).textContent = `${String(done)}/${String(items.length)}`;
-  const current = states.indexOf('active');
-  const shown = current >= 0 ? current : Math.min(done, items.length - 1);
   el('steps-now', HTMLElement).textContent =
     done === items.length ? 'All steps done' : `${stepLabel(shown)}: ${items[shown]?.text ?? ''}`;
   el('steps-bar', HTMLElement).style.width = `${String(pct)}%`;
@@ -517,6 +527,16 @@ function turnsTitle(u: Usage | null): string {
   return `Model calls this session; ${String(u?.toolCalls ?? 0)} tool calls${failed}`;
 }
 
+/** The collapsible memory note above the chat; text only, so the note can never inject HTML. */
+function drawMemoryNote(s: State): void {
+  const box = document.getElementById('memory-note');
+  const text = document.getElementById('memory-note-text');
+  if (!(box instanceof HTMLDetailsElement) || !(text instanceof HTMLElement)) return;
+  const note = s.memoryNote ?? null;
+  box.hidden = note === null;
+  if (note !== null && text.textContent !== note) text.textContent = note;
+}
+
 function drawStats(s: State): void {
   const u = s.usage;
   const tokens = u ? u.tokens.input + u.tokens.output : 0;
@@ -529,24 +549,25 @@ function drawStats(s: State): void {
       : 'No tokens used yet',
   );
   stat('stat-cost', formatUsd(u?.usd ?? 0), 'Spend this session');
-  const cachePill = document.getElementById('stat-cache-pill');
-  if (cachePill) {
-    const rate = u ? cacheHitPercent(u) : 0;
-    cachePill.textContent = `⚡ ${String(rate)}% cache`;
-    cachePill.title = u
-      ? `Prompt cache hit rate: ${String(rate)}% (${formatTokens(u.tokens.cacheRead)} cached tokens)`
-      : 'Prompt cache hit rate';
-  }
+  stat(
+    'stat-cache',
+    `${String(u ? cacheHitPercent(u) : 0)}%`,
+    u
+      ? `Prompt cache hit rate: ${String(cacheHitPercent(u))}% (${formatTokens(u.tokens.cacheRead)} cached tokens)`
+      : 'Prompt cache hit rate',
+  );
   drawUptime();
   const pct = contextPercent(s.context);
-  const fill = el('ctx-fill', HTMLElement);
-  fill.style.width = `${String(pct)}%`;
-  fill.classList.toggle('hot', pct > 85);
-  const ctxText = el('ctx-text', HTMLElement);
-  ctxText.textContent = s.context ? `${String(pct)}%` : '—';
-  ctxText.title = s.context
-    ? `${formatTokens(s.context.used)} / ${formatTokens(s.context.limit)} tokens of context`
-    : '';
+  const statusTokens = el('status-tokens', HTMLElement);
+  statusTokens.textContent = `${formatTokens(tokens)} tok`;
+  statusTokens.title = u
+    ? `${formatTokens(u.tokens.input)} in (${String(cacheHitPercent(u))}% from cache), ${formatTokens(u.tokens.output)} out`
+    : 'No tokens used yet';
+  const statusCtx = el('status-ctx', HTMLButtonElement);
+  statusCtx.textContent = s.context ? `ctx ${String(pct)}%` : 'ctx —';
+  statusCtx.title = s.context
+    ? `${formatTokens(s.context.used)} / ${formatTokens(s.context.limit)} tokens of context — click to inspect`
+    : 'Context inspector';
   const parts = s.context?.parts;
   const why = el('ctx-parts', HTMLElement);
   why.textContent = parts
@@ -591,11 +612,6 @@ function drawControls(s: State): void {
   approval.title = s.autoApprove
     ? 'omnexx goes ahead without asking (hard-blocked commands stay blocked). Click to ask first.'
     : 'omnexx asks before going outside the repo or running guarded commands. Click to auto-approve.';
-  pauseBtn.disabled = !s.busy;
-  pauseBtn.hidden = !s.busy;
-  pauseBtn.dataset.action = s.paused ? 'resume' : 'pause';
-  pauseBtn.title = s.paused ? 'Resume' : 'Pause after the current step';
-  pauseBtn.classList.toggle('on', s.paused);
   drawSend();
   input.placeholder = placeholderFor(s);
   ask.hidden = s.pending === null;
@@ -622,6 +638,7 @@ function scheduleApply(s: State): void {
     banner.hidden = true;
     drawControls(next);
     drawStats(next);
+    drawMemoryNote(next);
     stats.update(next);
     drawSteps(next.todos);
     inspector.onBusy(next.busy, post);
@@ -714,6 +731,8 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
     blocksRoot.replaceChildren();
     liveRoot.replaceChildren();
     drawConversation();
+    // A new chat has no memory note yet.
+    document.getElementById('memory-note')?.setAttribute('hidden', '');
     agentCard.request(post);
   } else if (m.type === 'error' || m.type === 'down') {
     const text = typeof m.message === 'string' ? m.message : 'Something went wrong';

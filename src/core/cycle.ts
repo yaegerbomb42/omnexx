@@ -3,6 +3,7 @@ import { withoutVendored } from '../agent/codemap.js';
 import { loadRoleCard } from '../agent/sections.js';
 import { parseDuration } from '../config/duration.js';
 import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import {
   cycleSummarySchema,
@@ -46,7 +47,7 @@ import { blocking, renderFindings, reviewChange } from '../verify/review.js';
 import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
 import { runGates, toBaseline } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
-import { readTextOr } from './atomic.js';
+import { readTextOr, writeFileAtomic } from './atomic.js';
 import { applyRemember, keepNewestNotes, renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
 import { getNode, type PlanNode } from './plan.js';
@@ -505,7 +506,12 @@ export async function stepAct(run: Run): Promise<void> {
       settings: {
         clearAt: run.config.context.clear_tool_results_at,
         keepToolResults: run.config.context.keep_tool_results,
-        compactAt: run.config.context.compact_at,
+        // Rolling memory bounds the prompt by construction, so the token-threshold fold stays
+        // off while it is on; prune/clear/budget in manageContext still run.
+        compactAt:
+          run.config.context.memory === 'rolling'
+            ? Number.MAX_SAFE_INTEGER
+            : run.config.context.compact_at,
         keepTurns: run.config.context.compact_keep_turns,
         ...(run.config.context.budget_tokens ? { budget: run.config.context.budget_tokens } : {}),
       },
@@ -515,6 +521,20 @@ export async function stepAct(run: Run): Promise<void> {
         return ensureFacts(s ?? factSummary(head), head, edited);
       },
     },
+    ...(run.config.context.memory === 'rolling'
+      ? {
+          rolling: {
+            every: run.config.context.memory_condense_every,
+            keepTurns: run.config.context.memory_keep_turns,
+            goal: `${task.id}: ${task.title}`,
+            readFile: (p: string) => readFile(join(run.worktree, p), 'utf8').catch(() => undefined),
+            onNote: (note: string) => {
+              // The current note on disk, next to progress.md, for `recall` and inspection.
+              void writeFileAtomic(run.store.file('memory.md'), note).catch(() => undefined);
+            },
+          },
+        }
+      : {}),
   });
   const loop = usesThinkLoop(run, task);
   const result = loop

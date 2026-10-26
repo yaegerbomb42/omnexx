@@ -109,7 +109,12 @@ describe('/compact (the panel Compact button)', () => {
 describe('chat runs out of room', () => {
   it('summarizes and keeps going instead of stopping at max_tokens_per_cycle', async () => {
     const repo = await makeRepo();
-    await writeFile(join(repo, 'omnexx.toml'), '[budget]\nmax_tokens_per_cycle = 40000\n');
+    // The summarize-and-continue backstop this test exercises relies on the prompt
+    // growing until the token cap trips; rolling memory caps it by design.
+    await writeFile(
+      join(repo, 'omnexx.toml'),
+      '[budget]\nmax_tokens_per_cycle = 40000\n[context]\nmemory = "full"\n',
+    );
     const provider = new ScriptedProvider(({ request, turn }) => {
       if (request.system.some((b) => b.text.startsWith('You compress a coding conversation')))
         return say('Read README.md several times; nothing changed yet.');

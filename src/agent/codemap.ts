@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { astForFile, type AstCache } from '../core/ast-cache.js';
 import { estimateTokens } from '../core/tokens.js';
 import { git } from '../git/git.js';
-import { matchesAny } from '../security/glob.js';
+import { isVendored, matchesAny } from '../security/glob.js';
 import { isSecretPath } from '../security/paths.js';
 import { extractSymbols } from '../tools/outline.js';
 import { TEST_FILE_PATTERNS } from '../verify/anticheat.js';
@@ -140,10 +140,7 @@ async function walkFiles(root: string): Promise<string[]> {
 }
 
 /** Dependency and build folders: not the project's code even when a repo commits them. */
-const VENDORED =
-  /(^|\/)(node_modules|bower_components|vendor|dist|build|\.venv|venv|__pycache__|target|\.next|coverage)\//;
-
-export const isVendored = (path: string): boolean => VENDORED.test(path);
+export { isVendored } from '../security/glob.js';
 
 /** A unified diff without the sections for vendored files (a committed node_modules churns on every test run). */
 export function withoutVendored(patch: string): string {
@@ -159,7 +156,7 @@ export function withoutVendored(patch: string): string {
 export async function trackedFiles(root: string): Promise<string[]> {
   const out = await git(root, ['ls-files', '-z'], { allowFailure: true });
   const files = out.exitCode === 0 ? out.stdout.split('\0').filter(Boolean) : await walkFiles(root);
-  return files.filter((f) => !VENDORED.test(f)).sort(byCodeUnits);
+  return files.filter((f) => !isVendored(f)).sort(byCodeUnits);
 }
 
 /** Plain code-unit order (stable across locales, unlike localeCompare). */

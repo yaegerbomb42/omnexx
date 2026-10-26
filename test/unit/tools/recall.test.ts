@@ -36,6 +36,25 @@ describe('recall', () => {
     expect(r.content).not.toContain('Cycle 3');
     expect((await recallTool.run({ query: 'zebra' }, ctx)).content).toMatch(/nothing/);
   });
+
+  it('finds details in the raw transcript a condensed note trimmed away', async () => {
+    const ctx = await toolContext(await tempDir());
+    await mkdir(ctx.store.logsDir, { recursive: true });
+    // What a memory condensation appends before folding the turns away. The filler line
+    // pushes the two sections into separate recall chunks, so only the matching one returns.
+    await writeFile(
+      join(ctx.store.logsDir, 'transcript.md'),
+      '## Turns 1–5 (condensed at turn 7)\n\nassistant: moved on to the login page\n' +
+        `${'filler '.repeat(300)}\n` +
+        '## Turns 6–12 (condensed at turn 14)\n\nassistant: retry the flaky deploy\n' +
+        'tool result: the retry loop used exponential backoff with base 250ms and gave up after 4 tries\n',
+    );
+    const r = await recallTool.run({ query: 'exponential backoff base' }, ctx);
+    expect(r.content).toContain('logs/transcript.md');
+    expect(r.content).toContain('base 250ms');
+    expect(r.content).toContain('gave up after 4 tries');
+    expect(r.content).not.toContain('login page');
+  });
 });
 
 describe('ensureFacts', () => {

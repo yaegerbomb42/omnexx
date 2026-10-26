@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { SECTION_IDS, SECTION_MODES, type SectionId, type SectionMode } from '../agent/sections.js';
 import type { OmnexxPaths } from '../core/paths.js';
 
-/** Section modes set in the editor's Context explorer, kept next to roles.json. */
+/** Section modes set in the editor's Context explorer, kept next to config.toml. */
 export const sectionsFile = (p: OmnexxPaths): string => join(p.configHome, 'context-sections.json');
 
 export async function readSectionModes(

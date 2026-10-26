@@ -18,7 +18,7 @@ import { pickRun, supervisorAlive } from './control.js';
 import { brand } from '../brand.js';
 import { emptyTelemetry, fold, tokensPerCommit } from '../../telemetry/aggregate.js';
 import { EventTail } from '../../telemetry/feed.js';
-import { humanize, type Verbosity } from '../../telemetry/humanize.js';
+import { FeedLines, type Verbosity } from '../../telemetry/humanize.js';
 
 export async function statusData(store: RunStore, now: number) {
   const state = await store.readState();
@@ -227,19 +227,29 @@ export async function logsCommand(
   const tail = new EventTail(store.eventsPath);
   const b = brand(io);
   const verbosity = opts.verbosity ?? 'normal';
+  const lines = new FeedLines({ brand: b, verbosity });
   const flush = async (): Promise<void> => {
     for (const e of await tail.read()) {
-      const line = opts.events ? JSON.stringify(e) : humanize(e, { brand: b, verbosity });
-      if (line) println(io.stdout, line);
+      const out = opts.events ? [JSON.stringify(e)] : lines.push(e);
+      for (const line of out) println(io.stdout, line);
     }
   };
+  const flushBurst = (): void => {
+    for (const line of lines.flush()) println(io.stdout, line);
+  };
   await flush();
-  if (!opts.follow) return EXIT.ok;
+  if (!opts.follow) {
+    flushBurst();
+    return EXIT.ok;
+  }
   for (;;) {
     await new Promise((r) => setTimeout(r, 1_000));
     await flush();
     const s = await store.readState().catch(() => undefined);
-    if (s?.phase === 'done' && !(await supervisorAlive(store))) return EXIT.ok;
+    if (s?.phase === 'done' && !(await supervisorAlive(store))) {
+      flushBurst();
+      return EXIT.ok;
+    }
   }
 }
 
