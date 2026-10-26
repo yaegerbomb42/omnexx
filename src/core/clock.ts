@@ -8,18 +8,24 @@ export const realClock: Clock = {
   now: () => Date.now(),
   sleep: (ms, signal) =>
     new Promise((resolve, reject) => {
+      const reasonOf = (): Error => {
+        const r = signal?.reason as unknown;
+        return r instanceof Error ? r : new Error(String(r));
+      };
+      const onAbort = (): void => {
+        clearTimeout(timer);
+        reject(reasonOf());
+      };
+      if (signal) {
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
       if (signal?.aborted) {
-        reject(signal.reason as Error);
+        reject(reasonOf());
         return;
       }
-      const t = setTimeout(() => {
+      const timer = setTimeout(() => {
         signal?.removeEventListener('abort', onAbort);
         resolve();
       }, ms);
-      const onAbort = (): void => {
-        clearTimeout(t);
-        reject(signal?.reason as Error);
-      };
-      signal?.addEventListener('abort', onAbort, { once: true });
     }),
 };

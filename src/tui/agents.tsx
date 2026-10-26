@@ -4,7 +4,9 @@ import { planCounts } from '../core/plan.js';
 import type { OmnexxPaths } from '../core/paths.js';
 import { listRunIds, RunStore } from '../core/run-store.js';
 import { fmtMs } from '../telemetry/humanize.js';
-import { CYAN, GRAY, GREEN, RED } from './colors.js';
+import { BAD, INFO, MUTED, OK } from './colors.js';
+import { BORDER, SPACE } from './tokens.js';
+import { progressBar } from './activity.js';
 
 export interface AgentRow {
   runId: string;
@@ -62,36 +64,37 @@ export async function loadAgents(paths: OmnexxPaths, now: number): Promise<Agent
   return rows.sort((a, b) => Number(b.alive) - Number(a.alive));
 }
 
-const bar = (done: number, total: number, width = 8): string => {
-  const n = total ? Math.round((done / total) * width) : 0;
-  return '▰'.repeat(n) + '▱'.repeat(width - n);
-};
-
 export function AgentsView({ state, width }: { state: AgentsState; width: number }) {
   const live = state.rows.filter((r) => r.alive).length;
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={GREEN} paddingX={1} width={width}>
+    <Box
+      flexDirection="column"
+      borderStyle={BORDER.card}
+      borderColor={OK}
+      paddingX={SPACE.sm}
+      width={width}
+    >
       <Text>
-        <Text color={GREEN} bold>
+        <Text color={OK} bold>
           agents
         </Text>
         <Text
-          color={GRAY}
+          color={MUTED}
         >{`  ${live} running · ${state.rows.length} total · ↑↓ · enter attach · p pause/resume · s stop · esc`}</Text>
       </Text>
       {state.rows.length === 0 && (
-        <Text color={GRAY}>no runs yet: /run &lt;goal&gt; starts one</Text>
+        <Text color={MUTED}>no runs yet: /run &lt;goal&gt; starts one</Text>
       )}
       {state.rows.map((r, i) => (
         <Text key={r.runId} inverse={i === state.cursor} wrap="truncate-end">
-          <Text color={r.alive ? GREEN : r.status === 'error' ? RED : GRAY}>
+          <Text color={r.alive ? OK : r.status === 'error' ? BAD : MUTED}>
             {r.alive ? '● ' : '○ '}
           </Text>
-          <Text color={CYAN}>{r.repo.padEnd(14).slice(0, 14)}</Text>
+          <Text color={INFO}>{r.repo.padEnd(14).slice(0, 14)}</Text>
           <Text>{` ${r.alive ? r.phase.padEnd(9) : r.status.padEnd(9)} `}</Text>
-          <Text color={GREEN}>{bar(r.done, r.tasks)}</Text>
+          <Text color={OK}>{progressBar(r.done, r.tasks, 8)}</Text>
           <Text
-            color={GRAY}
+            color={MUTED}
           >{` ${r.done}/${r.tasks} ${r.task ?? ''} $${r.usd.toFixed(2)}${r.alive && r.beatAge !== undefined ? ` · ${fmtMs(r.beatAge)} ago` : ''}  ${r.goal.slice(0, 60)}`}</Text>
         </Text>
       ))}

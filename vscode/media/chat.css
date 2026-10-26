@@ -5,14 +5,46 @@
  * accordions elevate observability.
  */
 :root {
-  --gap: 8px;
+  /* One scale, no orphan tokens (§3.1): every spacing, radius, size and duration
+     lives here, and repeated across surfaces means the same token. */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 24px;
+  --space-8: 32px;
+  --gap: var(--space-4);
   /* One horizontal gutter for the whole panel: header, sections, log, composer. */
-  --pad-x: 12px;
+  --pad-x: var(--space-5);
   --fs-xs: calc(var(--vscode-font-size, 13px) * 0.85);
   --fs-sm: calc(var(--vscode-font-size, 13px) * 0.92);
   --fs-md: var(--vscode-font-size, 13px);
   --fs-lg: calc(var(--vscode-font-size, 13px) * 1.08);
-  --radius: 6px;
+
+  /* Motion tokens (§3.5): durations and the one easing, gated by reduced-motion. */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 300ms;
+  --dur-fade: 600ms;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Z scale (§P2.14): popovers, nav, overlays. */
+  --z-sticky: 5;
+  --z-float: 10;
+  --z-pop: 20;
+  --z-suggest: 25;
+  --z-overlay: 40;
+
+  /* Radii (§3.2): xs → chips, sm → small surfaces, md → buttons/inputs,
+     lg → cards/modals, full → pills. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-full: 999px;
+
   --fg: var(--vscode-foreground);
   --muted: var(--vscode-descriptionForeground);
   --surface: var(--vscode-sideBar-background);
@@ -21,7 +53,6 @@
   --line: color-mix(in srgb, var(--vscode-foreground) 16%, transparent);
 
   /* Semantic Palette */
-  --accent: var(--vscode-textLink-foreground, #36c5f0);
   --violet: var(--vscode-charts-purple, #a78bfa);
   --teal: var(--vscode-terminal-ansiCyan, #2dd4bf);
   --emerald: var(--vscode-testing-iconPassed, #3fb950);
@@ -31,7 +62,8 @@
   --ok: var(--emerald);
   --warn: var(--amber);
   --bad: var(--vscode-errorForeground, #f14c4c);
-  /* One accent, taken from the theme; gradients are reserved for the posture pill. */
+  /* One accent, taken from the theme (resolved in the theme classes below);
+     gradients are reserved for the posture pill. */
   --brand: var(--accent);
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
 
@@ -52,8 +84,6 @@
 
   /* Bento glass tokens: the shared surface language of the posture pill, the swarm
      cockpit cards, the telemetry strip and the settings Live Stats card. */
-  --radius-md: 10px;
-  --radius-lg: 14px;
   --bento-bg: linear-gradient(
     165deg,
     color-mix(in srgb, var(--fg) 7%, transparent),
@@ -73,16 +103,19 @@
   --role-violet: var(--violet);
   --role-green: var(--emerald);
   --role-blue: var(--accent);
+  --role-pink: var(--pink);
 }
 
 body.vscode-light {
-  --accent: var(--vscode-textLink-foreground, #0b7fb3);
-  --violet: #6d28d9;
-  --teal: #0d9488;
-  --emerald: #15803d;
-  --rose: #b91c1c;
-  --amber: #b45309;
-  --pink: #be185d;
+  /* Light theme overrides come from VS Code theme variables, never hardcoded theme
+     colors: the user's light theme decides the exact value. */
+  --accent: var(--vscode-textLink-foreground);
+  --violet: var(--vscode-charts-purple);
+  --teal: var(--vscode-terminal-ansiCyan);
+  --emerald: var(--vscode-testing-iconPassed);
+  --rose: var(--vscode-testing-iconFailed);
+  --amber: var(--vscode-editorWarning-foreground);
+  --pink: color-mix(in srgb, var(--rose) 55%, var(--violet));
   --ok: var(--emerald);
   --warn: var(--amber);
   --glass-bg: color-mix(in srgb, var(--surface) 85%, transparent);
@@ -133,6 +166,9 @@ body {
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
   line-height: 1.4;
+  /* Accent resolves per theme class (§P0.4): link color normally, focusBorder in
+     high-contrast so interactive affordances never blend into the theme. */
+  --accent: var(--vscode-textLink-foreground, #36c5f0);
 }
 
 button {
@@ -163,7 +199,7 @@ svg {
   display: flex;
   align-items: center;
   padding: 6px var(--pad-x);
-  gap: 6px;
+  gap: var(--space-3);
   border-bottom: 1px solid var(--line);
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
@@ -179,8 +215,8 @@ svg {
 .chip {
   border: 1px solid var(--line);
   background: var(--card);
-  border-radius: 999px;
-  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  padding: 1px var(--space-4);
   font-size: var(--fs-sm);
   white-space: nowrap;
   overflow: hidden;
@@ -220,7 +256,7 @@ svg {
   border: 0;
   background: none;
   padding: 3px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--muted);
 }
 
@@ -230,7 +266,7 @@ svg {
 }
 
 .icon.small {
-  padding: 2px;
+  padding: var(--space-1);
   margin-left: auto;
 }
 
@@ -269,7 +305,7 @@ svg {
   width: 0;
   border-radius: 3px;
   background: var(--brand);
-  transition: width 0.3s ease;
+  transition: width var(--dur-slow) var(--ease);
 }
 
 .fill.hot {
@@ -284,8 +320,8 @@ svg {
   flex: none;
   border: 0;
   background: none;
-  padding: 2px 4px;
-  border-radius: 6px;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-md);
   color: var(--muted);
   font-family: var(--mono);
   font-size: var(--fs-xs);
@@ -315,17 +351,17 @@ svg {
   display: block;
   height: 100%;
   background: var(--accent);
-  transition: width 0.3s ease;
+  transition: width var(--dur-slow) var(--ease);
 }
 
 .pop {
   position: absolute;
   top: calc(100% + 2px);
   right: 8px;
-  z-index: 20;
+  z-index: var(--z-pop);
   min-width: 190px;
   padding: 6px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   border: 1px solid var(--vscode-editorWidget-border, var(--glass-border));
   background: var(--vscode-editorWidget-background, var(--glass-bg));
   backdrop-filter: var(--glass-blur);
@@ -340,14 +376,14 @@ svg {
 .pop.usage .row {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-5);
   padding: 3px 4px;
 }
 
 .pop.usage .ctx-parts {
   padding: 4px 4px 0;
   border-top: 1px solid var(--line);
-  margin-top: 4px;
+  margin-top: var(--space-2);
   color: var(--muted);
   font-size: var(--fs-xs);
   font-family: var(--mono);
@@ -356,7 +392,7 @@ svg {
 .pop.menu button {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
   width: 100%;
   border: 0;
   background: none;
@@ -387,7 +423,7 @@ svg {
   display: flex;
   gap: 3px;
   padding: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   border: 1px solid var(--bento-border);
   background: color-mix(in srgb, var(--surface) 74%, transparent);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
@@ -401,7 +437,7 @@ svg {
   gap: 5px;
   min-width: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   padding: 4px 6px;
   background: transparent;
   color: var(--muted);
@@ -409,9 +445,9 @@ svg {
   font-weight: 600;
   white-space: nowrap;
   transition:
-    color 0.15s ease,
-    background 0.2s ease,
-    box-shadow 0.2s ease;
+    color var(--dur-fast) var(--ease),
+    background var(--dur-base) var(--ease),
+    box-shadow var(--dur-base) var(--ease);
 }
 
 .posture-pill button:hover {
@@ -475,8 +511,8 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 .domain-head {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin: 0 2px 6px;
+  gap: var(--space-4);
+  margin: 0 2px var(--space-3);
 }
 
 .domain-label {
@@ -504,8 +540,8 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 16px;
-  margin: 0 0 8px;
-  padding: 8px 12px;
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4) var(--space-5);
   border: 1px solid var(--bento-border);
   border-radius: var(--radius-lg);
   background: var(--bento-bg);
@@ -531,7 +567,8 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   font-variant-numeric: tabular-nums;
 }
 
-/* Swarm crew: the head agent chip and one bento card per helper. */
+/* Swarm crew: the head agent chip and one bento card per helper. The list is a
+   scrollable region — max-height with overflow-y: auto, and nothing overriding it. */
 .section.crew {
   flex: none;
   max-height: 44%;
@@ -541,15 +578,14 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   border-radius: var(--radius-lg);
   background: var(--glass-card);
   box-shadow: var(--bento-shadow);
-  overflow: hidden;
 }
 
 .section.crew > summary,
 .section.browser > summary {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
+  gap: var(--space-3);
+  padding: 7px var(--space-5);
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -580,10 +616,10 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 .head-agent {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px 3px 4px;
+  gap: var(--space-3);
+  padding: 3px 10px 3px var(--space-2);
   border: 1px solid var(--bento-border);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--bento-bg);
   font-weight: 600;
   font-size: var(--fs-sm);
@@ -603,7 +639,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 
 .helper {
   position: relative;
-  margin-top: 8px;
+  margin-top: var(--space-4);
   --role: var(--role-blue);
 }
 
@@ -643,7 +679,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
     0 0 18px -6px color-mix(in srgb, var(--role) 45%, transparent);
   padding: 9px 12px;
   display: grid;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 .helper.stopped .h-card {
@@ -708,7 +744,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 .h-status {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.07em;
@@ -776,7 +812,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 2px 6px;
-  padding: 7px var(--pad-x) 6px;
+  padding: 7px var(--pad-x) var(--space-3);
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -815,7 +851,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   border-right: 1.5px solid var(--muted);
   border-bottom: 1.5px solid var(--muted);
   transform: rotate(-45deg) translateY(-2px);
-  transition: transform 0.15s;
+  transition: transform var(--dur-fast) var(--ease);
 }
 
 .section[open] > summary .chev,
@@ -826,7 +862,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 .timeline {
   list-style: none;
   margin: 0;
-  padding: 0 8px 6px 28px;
+  padding: 0 var(--space-4) var(--space-3) 28px;
   position: relative;
 }
 
@@ -874,8 +910,8 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 }
 
 .step .card {
-  padding: 2px 6px;
-  border-radius: var(--radius);
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-md);
 }
 
 .step.active .card {
@@ -936,7 +972,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 .progress {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   margin-top: 3px;
   font-family: var(--mono);
   font-size: var(--fs-xs);
@@ -945,7 +981,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 
 .doing {
   list-style: none;
-  margin: 2px 0 0;
+  margin: var(--space-2) 0 0;
   padding: 0;
   font-size: var(--fs-xs);
 }
@@ -955,7 +991,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 }
 
 .doing li::before {
-  content: '›  ';
+  content: '▸  ';
   color: var(--muted);
 }
 
@@ -982,7 +1018,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   flex: 1;
   min-height: 120px;
   overflow-y: auto;
-  padding: 12px var(--pad-x) 16px;
+  padding: var(--space-5) var(--pad-x) var(--space-6);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1015,7 +1051,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   background: var(--card);
   border: 1px solid var(--line);
   box-shadow: var(--glass-highlight);
-  padding: 8px 12px;
+  padding: var(--space-4) var(--space-5);
 }
 
 .msg.user .who {
@@ -1025,12 +1061,12 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   font-size: var(--fs-xs);
   color: var(--muted);
   font-weight: 600;
-  margin-bottom: 2px;
+  margin-bottom: var(--space-1);
 }
 
 .msg.user .who .icon {
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--dur-fast);
 }
 
 .msg.user:hover .who .icon,
@@ -1042,33 +1078,33 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   white-space: pre-wrap;
 }
 
-.msg.reply {
+.msg.assistant {
   position: relative;
   line-height: 1.55;
   padding: 0 2px;
 }
 
-.msg.reply > :first-child {
+.msg.assistant > :first-child {
   margin-top: 0;
 }
 
-.msg.reply p,
-.msg.reply ul,
-.msg.reply ol,
-.msg.reply pre,
-.msg.reply blockquote {
-  margin: 4px 0;
+.msg.assistant p,
+.msg.assistant ul,
+.msg.assistant ol,
+.msg.assistant pre,
+.msg.assistant blockquote {
+  margin: var(--space-2) 0;
 }
 
-.msg.reply ul,
-.msg.reply ol {
+.msg.assistant ul,
+.msg.assistant ol {
   padding-left: 20px;
 }
 
-.msg.reply h3,
-.msg.reply h4,
-.msg.reply h5,
-.msg.reply h6 {
+.msg.assistant h3,
+.msg.assistant h4,
+.msg.assistant h5,
+.msg.assistant h6 {
   margin: 10px 0 2px;
 }
 
@@ -1094,15 +1130,15 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   top: -4px;
   right: 0;
   display: flex;
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--dur-fast);
 }
 
-.msg.reply:hover .msg-actions,
+.msg.assistant:hover .msg-actions,
 .msg-actions:focus-within {
   opacity: 1;
 }
@@ -1114,8 +1150,8 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   white-space: pre-wrap;
   border-left: 2px solid var(--bad);
   background: color-mix(in srgb, var(--bad) 8%, transparent);
-  border-radius: 0 var(--radius) var(--radius) 0;
-  padding: 4px 8px;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: var(--space-2) var(--space-4);
 }
 
 .msg.note {
@@ -1131,7 +1167,7 @@ pre {
   position: relative;
   background: var(--bento-bg);
   border: 1px solid var(--bento-border);
-  padding: 0 8px 6px;
+  padding: 0 var(--space-4) var(--space-3);
   border-radius: var(--radius-lg);
   box-shadow: var(--bento-shadow);
   overflow-x: auto;
@@ -1145,8 +1181,8 @@ pre[data-streaming='true'] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 0 -8px 4px;
-  padding: 2px 4px 2px 8px;
+  margin: 0 calc(-1 * var(--space-4)) var(--space-2);
+  padding: 2px var(--space-2) 2px var(--space-4);
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--fg) 4%, transparent);
   font-family: var(--vscode-font-family);
@@ -1176,8 +1212,8 @@ pre[data-streaming='true'] {
 
 .diff-line {
   display: block;
-  padding: 0 4px;
-  margin: 0 -4px;
+  padding: 0 var(--space-2);
+  margin: 0 calc(-1 * var(--space-2));
   border-radius: 2px;
 }
 
@@ -1208,8 +1244,8 @@ code {
 
 :not(pre) > code {
   background: var(--vscode-textCodeBlock-background, var(--card-strong));
-  padding: 0 4px;
-  border-radius: 4px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
 }
 
 code.path,
@@ -1238,7 +1274,7 @@ blockquote {
   font-size: var(--fs-xs);
   line-height: 1.4;
   color: var(--muted);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   border: 1px solid color-mix(in srgb, var(--violet) 26%, var(--glass-border));
   border-left: 2.5px solid var(--violet);
   background: linear-gradient(
@@ -1264,7 +1300,7 @@ details.msg.think > summary {
   list-style: none;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   user-select: none;
   white-space: nowrap;
   overflow: hidden;
@@ -1293,7 +1329,7 @@ details.msg.think > summary::-webkit-details-marker {
   font-size: 10px;
   font-weight: 500;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--violet) 16%, transparent);
   color: var(--violet);
 }
@@ -1313,8 +1349,8 @@ details.msg.think[open] .think-summary-text {
 }
 
 .think-body {
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
   border-top: 1px solid color-mix(in srgb, var(--violet) 20%, var(--line));
   font-family: var(--vscode-font-family);
   font-style: normal;
@@ -1339,7 +1375,7 @@ details.msg.think[open] > summary::after {
 .tools-cluster {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 .tools-fold > summary.tools-summary {
@@ -1347,8 +1383,8 @@ details.msg.think[open] > summary::after {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 6px;
+  gap: var(--space-3);
+  padding: 2px var(--space-3);
   font-size: var(--fs-xs);
   color: var(--muted);
   user-select: none;
@@ -1360,8 +1396,8 @@ details.msg.think[open] > summary::after {
 
 .tools-count-pill {
   font-family: var(--mono);
-  padding: 0 6px;
-  border-radius: 999px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
   background: var(--card-strong);
   border: 1px solid var(--line);
   color: var(--fg);
@@ -1387,15 +1423,15 @@ details.msg.think[open] > summary::after {
 .tool {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 6px;
+  gap: var(--space-3);
+  padding: 2px var(--space-3);
   border-radius: 5px;
   background: color-mix(in srgb, var(--fg) 3%, transparent);
   border: 1px solid transparent;
   min-width: 0;
   transition:
-    background 0.15s,
-    border-color 0.15s;
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
 
 .tool:hover {
@@ -1421,7 +1457,7 @@ details.msg.think[open] > summary::after {
   font-weight: 700;
   letter-spacing: 0.05em;
   padding: 0 5px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--fg) 10%, transparent);
   color: var(--fg);
 }
@@ -1482,7 +1518,7 @@ details.msg.think[open] > summary::after {
 
 .tool-cmd {
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, #000 22%, var(--card-strong));
   border: 1px solid var(--line);
   color: var(--fg);
@@ -1497,8 +1533,8 @@ details.msg.think[open] > summary::after {
   font-family: var(--mono);
   font-size: 10px;
   font-weight: 600;
-  padding: 0 4px;
-  border-radius: 4px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
 }
 
 .diff-stat.add {
@@ -1515,7 +1551,7 @@ details.msg.think[open] > summary::after {
   font-size: 9.5px;
   font-weight: 700;
   padding: 0 5px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .test-pill.pass {
@@ -1541,9 +1577,9 @@ details.msg.think[open] > summary::after {
 .working.cockpit-hud {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
   padding: 5px 8px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   background: var(--glass-card);
   backdrop-filter: var(--glass-blur);
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--glass-border));
@@ -1556,11 +1592,11 @@ details.msg.think[open] > summary::after {
 .active-tool-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   flex: 1;
   min-width: 0;
-  padding: 2px 8px;
-  border-radius: 999px;
+  padding: 2px var(--space-4);
+  border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
   color: var(--fg);
@@ -1633,8 +1669,8 @@ details.msg.think[open] > summary::after {
   letter-spacing: 0.08em;
   color: var(--warn);
   border: 1px solid var(--warn);
-  border-radius: 999px;
-  padding: 0 6px;
+  border-radius: var(--radius-full);
+  padding: 0 var(--space-3);
 }
 
 /* Welcome, Banner, Ask & Composer */
@@ -1653,7 +1689,7 @@ details.msg.think[open] > summary::after {
 .welcome h2 {
   color: var(--fg);
   font-size: var(--fs-lg);
-  margin: 0 0 4px;
+  margin: 0 0 var(--space-2);
 }
 
 .welcome p {
@@ -1662,7 +1698,7 @@ details.msg.think[open] > summary::after {
 
 .suggestions {
   display: grid;
-  gap: 6px;
+  gap: var(--space-3);
 }
 
 .suggestions button {
@@ -1673,8 +1709,8 @@ details.msg.think[open] > summary::after {
   color: var(--accent);
   text-align: left;
   transition:
-    border-color 0.15s,
-    background 0.15s;
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
 }
 
 .suggestions button:hover {
@@ -1685,7 +1721,7 @@ details.msg.think[open] > summary::after {
 .banner,
 .ask {
   margin: 0 var(--pad-x) 8px;
-  padding: 8px 12px;
+  padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-md);
   font-size: var(--fs-sm);
   flex: none;
@@ -1721,20 +1757,20 @@ details.msg.think[open] > summary::after {
 }
 
 .ask p {
-  margin: 4px 0;
+  margin: var(--space-2) 0;
 }
 
 .ask-buttons {
   display: flex;
   align-items: center;
   gap: var(--gap);
-  margin-top: 6px;
+  margin-top: var(--space-3);
 }
 
 .ask .primary {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 3px 12px;
   border: 0;
   font-weight: 600;
@@ -1747,7 +1783,7 @@ details.msg.think[open] > summary::after {
 .ask .secondary {
   background: var(--vscode-button-secondaryBackground, transparent);
   color: var(--vscode-button-secondaryForeground, var(--fg));
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 3px 12px;
   border: 1px solid transparent;
 }
@@ -1764,8 +1800,8 @@ details.msg.think[open] > summary::after {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px var(--pad-x) 12px;
+  gap: var(--space-4);
+  padding: 10px var(--pad-x) var(--space-5);
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   border-top: 1px solid var(--line);
@@ -1780,8 +1816,8 @@ details.msg.think[open] > summary::after {
   border-radius: var(--radius-lg);
   box-shadow: 0 2px 10px rgb(0 0 0 / 16%);
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
 }
 
 .input-wrap:focus-within {
@@ -1828,8 +1864,8 @@ textarea::placeholder {
   background: var(--vscode-button-background, var(--accent));
   color: var(--vscode-button-foreground, #fff);
   transition:
-    background 0.15s ease,
-    opacity 0.15s ease;
+    background var(--dur-fast) var(--ease),
+    opacity var(--dur-fast) var(--ease);
 }
 
 .send:hover:not(:disabled) {
@@ -1865,7 +1901,7 @@ textarea::placeholder {
 .composer .row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
 }
 
 .composer .grow {
@@ -1876,8 +1912,8 @@ textarea::placeholder {
 .composer .meter {
   border: 1px solid var(--line);
   background: var(--card);
-  border-radius: 999px;
-  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  padding: 2px var(--space-4);
   color: var(--muted);
 }
 
@@ -1900,17 +1936,17 @@ textarea::placeholder {
 
 .modes {
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--space-1);
+  padding: var(--space-1);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--card);
 }
 
 .modes button {
   border: 0;
   background: none;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   padding: 2px 9px;
   color: var(--muted);
   font-size: var(--fs-sm);
@@ -1931,7 +1967,7 @@ textarea::placeholder {
   position: absolute;
   right: 14px;
   bottom: 122px;
-  z-index: 10;
+  z-index: var(--z-float);
   display: grid;
   place-items: center;
   width: 26px;
@@ -1951,11 +1987,11 @@ textarea::placeholder {
   left: var(--pad-x);
   right: var(--pad-x);
   bottom: calc(100% - 4px);
-  z-index: 25;
+  z-index: var(--z-suggest);
   max-height: 240px;
   overflow-y: auto;
-  padding: 2px;
-  border-radius: var(--radius);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
   border: 1px solid var(--vscode-editorSuggestWidget-border, var(--glass-border));
   background: var(--vscode-editorSuggestWidget-background, var(--glass-bg));
   backdrop-filter: var(--glass-blur);
@@ -1965,8 +2001,8 @@ textarea::placeholder {
 .sg-item {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  padding: 3px 6px;
+  gap: var(--space-4);
+  padding: 3px var(--space-3);
   border-radius: 3px;
   cursor: pointer;
   color: var(--vscode-editorSuggestWidget-foreground, var(--fg));
@@ -2010,10 +2046,10 @@ textarea::placeholder {
 .section.browser {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  margin: 8px 12px;
+  margin: var(--space-4) var(--space-5);
   background: var(--surface);
   overflow: hidden;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all var(--dur-base) var(--ease);
 }
 
 .section.browser.big {
@@ -2037,7 +2073,7 @@ textarea::placeholder {
 .bbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
   padding: 6px 10px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--line);
@@ -2046,7 +2082,7 @@ textarea::placeholder {
 
 .b-nav-btns {
   display: flex;
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 .b-ctrl-btn {
@@ -2055,15 +2091,15 @@ textarea::placeholder {
   border-radius: var(--radius-sm);
   color: var(--fg);
   cursor: pointer;
-  padding: 2px 6px;
+  padding: 2px var(--space-3);
   font-size: 13px;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
 
 .b-ctrl-btn:hover {
@@ -2074,7 +2110,7 @@ textarea::placeholder {
 .b-address-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   flex: 1;
   min-width: 0;
   padding: 3px 8px;
@@ -2102,7 +2138,7 @@ textarea::placeholder {
   font-size: 11px;
   color: var(--accent);
   background: var(--accent-subtle);
-  padding: 2px 6px;
+  padding: 2px var(--space-3);
   border-radius: var(--radius-sm);
   white-space: nowrap;
 }
@@ -2119,14 +2155,14 @@ textarea::placeholder {
 .b-tabs {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-1);
   flex-shrink: 0;
 }
 
 .b-tab {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   padding: 3px 8px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -2136,9 +2172,9 @@ textarea::placeholder {
   font-size: 10px;
   cursor: pointer;
   transition:
-    background 0.15s ease,
-    color 0.15s ease,
-    border-color 0.15s ease;
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
 
 .b-tab:hover {
@@ -2154,7 +2190,7 @@ textarea::placeholder {
 
 .b-count {
   min-width: 14px;
-  padding: 0 4px;
+  padding: 0 var(--space-2);
   border-radius: 7px;
   background: var(--line);
   color: var(--muted);
@@ -2183,7 +2219,7 @@ textarea::placeholder {
 
 .b-list {
   margin: 0;
-  padding: 8px 10px;
+  padding: var(--space-4) 10px;
   max-height: 280px;
   overflow: auto;
   list-style: none;
@@ -2195,7 +2231,7 @@ textarea::placeholder {
 .b-issue {
   display: grid;
   grid-template-columns: auto auto 1fr;
-  gap: 6px;
+  gap: var(--space-3);
   align-items: baseline;
   padding: 4px 6px;
   border-bottom: 1px solid var(--line);
@@ -2250,7 +2286,7 @@ textarea::placeholder {
 }
 
 .b-visual {
-  padding: 10px 12px;
+  padding: 10px var(--space-5);
   border-bottom: 1px solid var(--line);
 }
 
@@ -2271,15 +2307,15 @@ textarea::placeholder {
 .b-visual-facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 4px;
+  gap: var(--space-5);
+  margin-top: var(--space-2);
   color: var(--muted);
   font-size: 10px;
 }
 
 .b-visual-files code {
   display: block;
-  margin-top: 4px;
+  margin-top: var(--space-2);
   color: var(--muted);
   font-size: 9px;
   overflow: hidden;
@@ -2299,7 +2335,7 @@ textarea::placeholder {
   max-width: 100%;
   height: auto;
   cursor: zoom-in;
-  transition: max-width 0.2s ease;
+  transition: max-width var(--dur-base) var(--ease);
 }
 
 .section.browser.big #b-img {
@@ -2315,7 +2351,7 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-4);
   color: var(--fg);
   font-size: var(--fs-sm);
   font-weight: 500;

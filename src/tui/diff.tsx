@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
-import { CYAN, GRAY, GREEN, RED } from './colors.js';
+import { BAD, INFO, MUTED, OK } from './colors.js';
+import { BORDER, SPACE } from './tokens.js';
 
 export interface DiffFile {
   path: string;
@@ -48,28 +49,33 @@ export function DiffView({ view, width }: { view: DiffViewState; width: number }
     { added: 0, removed: 0 },
   );
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={GRAY} paddingX={1} width={width}>
+    <Box
+      flexDirection="column"
+      borderStyle={BORDER.card}
+      borderColor={MUTED}
+      paddingX={SPACE.sm}
+      width={width}
+    >
       <Text>
-        <Text color={GREEN} bold>
+        <Text color={OK} bold>
           {view.title}
         </Text>
-        <Text color={GRAY}>
+        <Text color={MUTED}>
           {` · ${view.files.length} file${view.files.length === 1 ? '' : 's'} `}
         </Text>
-        <Text color={GREEN}>{`+${total.added}`}</Text>{' '}
-        <Text color={RED}>{`-${total.removed}`}</Text>
-        <Text color={GRAY}>{'  ↑↓ move · enter expand · esc close'}</Text>
+        <Text color={OK}>{`+${total.added}`}</Text> <Text color={BAD}>{`-${total.removed}`}</Text>
+        <Text color={MUTED}>{'  ↑↓ move · enter expand · esc close'}</Text>
       </Text>
-      {view.files.length === 0 && <Text color={GRAY}>no changes</Text>}
+      {view.files.length === 0 && <Text color={MUTED}>no changes</Text>}
       {view.files.map((f, i) => {
         const open = view.open.has(i);
         const shown = f.lines.slice(0, MAX_LINES_PER_FILE);
         return (
           <Box key={f.path} flexDirection="column">
             <Text inverse={i === view.cursor}>
-              <Text color={GRAY}>{open ? '▾ ' : '▸ '}</Text>
-              {f.path} <Text color={GREEN}>{`+${f.added}`}</Text>{' '}
-              <Text color={RED}>{`-${f.removed}`}</Text>
+              <Text color={MUTED}>{open ? '▾ ' : '▸ '}</Text>
+              {f.path} <Text color={OK}>{`+${f.added}`}</Text>{' '}
+              <Text color={BAD}>{`-${f.removed}`}</Text>
             </Text>
             {open &&
               shown.map((l, j) => (
@@ -78,19 +84,19 @@ export function DiffView({ view, width }: { view: DiffViewState; width: number }
                   wrap="truncate-end"
                   color={
                     l.startsWith('+')
-                      ? GREEN
+                      ? OK
                       : l.startsWith('-')
-                        ? RED
+                        ? BAD
                         : l.startsWith('@@')
-                          ? CYAN
-                          : GRAY
+                          ? INFO
+                          : MUTED
                   }
                 >
                   {`  ${l}`}
                 </Text>
               ))}
             {open && f.lines.length > shown.length && (
-              <Text color={GRAY}>{`  … ${f.lines.length - shown.length} more lines`}</Text>
+              <Text color={MUTED}>{`  … ${f.lines.length - shown.length} more lines`}</Text>
             )}
           </Box>
         );

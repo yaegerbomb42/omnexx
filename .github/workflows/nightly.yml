@@ -9,6 +9,10 @@ permissions:
   contents: read
 
 jobs:
+  full:
+    # The same sharded full suite that runs on every push to main.
+    uses: ./.github/workflows/ci.yml
+
   chaos:
     name: chaos x200 (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

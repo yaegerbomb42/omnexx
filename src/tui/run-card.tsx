@@ -1,7 +1,8 @@
 import { Box, Text } from 'ink';
 import { fmtMs } from '../telemetry/humanize.js';
 import type { Telemetry } from '../telemetry/aggregate.js';
-import { CYAN, GRAY, GREEN, RED } from './colors.js';
+import { BAD, INFO, MUTED, OK } from './colors.js';
+import { BORDER, SPACE } from './tokens.js';
 
 export interface RunCardInfo {
   runId: string;
@@ -40,7 +41,7 @@ export function runCardRows(i: RunCardInfo): string[] {
   ];
 }
 
-const ROW_COLOR = [GREEN, CYAN, GRAY, GRAY];
+const ROW_COLOR = [OK, INFO, MUTED, MUTED];
 
 /** Live card for the attached run: health, progress, model and outcomes at a glance. */
 export function RunCard({ info, width }: { info: RunCardInfo; width: number }) {
@@ -49,19 +50,19 @@ export function RunCard({ info, width }: { info: RunCardInfo; width: number }) {
   return (
     <Box
       flexDirection="column"
-      borderStyle="round"
-      borderColor={sick ? RED : GREEN}
-      paddingX={1}
+      borderStyle={BORDER.panel}
+      borderColor={sick ? BAD : OK}
+      paddingX={SPACE.sm}
       width={width}
     >
       <Text>
-        <Text color={sick ? RED : GREEN} bold>
+        <Text color={sick ? BAD : OK} bold>
           {info.alive ? '◉ ' : '○ '}
           {info.runId}
         </Text>
       </Text>
       {rows.map((r, k) => (
-        <Text key={k} wrap="truncate-end" color={ROW_COLOR[k] ?? GRAY}>
+        <Text key={k} wrap="truncate-end" color={ROW_COLOR[k] ?? MUTED}>
           {r}
         </Text>
       ))}

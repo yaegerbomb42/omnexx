@@ -9,7 +9,7 @@ export function startHeartbeat(run: Run, intervalMs = HEARTBEAT_MS): () => void 
     const paused = run.paused || run.state.status === 'paused';
     void run.store
       .writeHeartbeat({
-        ts: Date.now(),
+        ts: run.clock.now(),
         pid: process.pid,
         phase: paused ? 'paused' : run.state.phase,
         status: paused ? 'paused' : run.state.status,

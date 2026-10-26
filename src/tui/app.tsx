@@ -5,7 +5,9 @@ import { cacheHitRate } from '../telemetry/aggregate.js';
 import { fmtMs, fmtTokens } from '../telemetry/humanize.js';
 import type { Entry, Session } from './session.js';
 
-import { CYAN, GRAY, GREEN, MUTED, RED, VIOLET } from './colors.js';
+import { BAD, INFO, MUTED, OK, VIOLET } from './colors.js';
+import { BORDER, SPACE } from './tokens.js';
+import { ActivityIndicator, progressBar } from './activity.js';
 import { DiffView } from './diff.js';
 import { RunCard } from './run-card.js';
 import { AgentsView } from './agents.js';
@@ -26,9 +28,7 @@ import {
   type Mood,
 } from './mascot.js';
 
-export { CYAN, GRAY, GREEN, RED };
-
-const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+export { progressBar } from './activity.js';
 
 /** Re-render whenever the session changes. */
 function useSession(session: Session): void {
@@ -51,7 +51,7 @@ function EntryLine({ e }: { e: Entry }) {
     case 'user':
       return (
         <Box marginTop={1}>
-          <Text backgroundColor={GREEN} color="black" bold>
+          <Text backgroundColor={OK} color="black" bold>
             {' you '}
           </Text>
           <Text bold color="whiteBright">{` ${e.text}`}</Text>
@@ -60,7 +60,7 @@ function EntryLine({ e }: { e: Entry }) {
     case 'act':
       return (
         <Text>
-          <Text color={CYAN} bold>
+          <Text color={INFO} bold>
             {'▸ '}
           </Text>
           <Text color="white">{e.text}</Text>
@@ -81,7 +81,8 @@ function EntryLine({ e }: { e: Entry }) {
     case 'system':
       return <Text color={MUTED}>{e.text}</Text>;
     case 'err':
-      return <Text color={RED}>{e.text.trimStart().startsWith('✗') ? e.text : `✗ ${e.text}`}</Text>;
+      // Error lines always start with the badge, whether or not the source already prefixed it.
+      return <Text color={BAD}>{`✗ ${e.text.trimStart().replace(/^✗\s*/, '')}`}</Text>;
     case 'out':
       return e.md ? <MarkdownLine text={e.text} md={e.md} /> : <Text>{e.text}</Text>;
     default:
@@ -95,27 +96,27 @@ export function Header({ version, cwd, width }: { version: string; cwd: string; 
       {width >= 60 ? (
         <Box flexDirection="column" marginBottom={1}>
           {WORDMARK.map((l) => (
-            <Text key={l} color={GREEN}>
+            <Text key={l} color={OK}>
               {l}
             </Text>
           ))}
         </Box>
       ) : (
-        <Text color={GREEN} bold>
+        <Text color={OK} bold>
           omnexx
         </Text>
       )}
       <Text>
-        <Text color={CYAN}>$ omnexx</Text>
-        <Text color={GRAY}>{` v${version} · ${cwd}`}</Text>
+        <Text color={INFO}>$ omnexx</Text>
+        <Text color={MUTED}>{` v${version} · ${cwd}`}</Text>
       </Text>
       <Text>{`> ${TAGLINE}`}</Text>
-      <Text color={GRAY}>
+      <Text color={MUTED}>
         {
           '> type what you want: it works on it right here, showing every step. /run <goal> starts a long unattended run.'
         }
       </Text>
-      <Text color={GRAY}>
+      <Text color={MUTED}>
         {
           '> /help · shift+tab chat/run mode · esc stop · ctrl+p plan · ctrl+c leave (runs keep going)'
         }
@@ -135,18 +136,18 @@ export function WhyCard() {
   return (
     <Box
       flexDirection="column"
-      borderStyle="single"
-      borderColor={GRAY}
-      paddingX={1}
+      borderStyle={BORDER.card}
+      borderColor={MUTED}
+      paddingX={SPACE.sm}
       marginBottom={1}
     >
-      <Text color={GREEN} bold>
+      <Text color={OK} bold>
         why omnexx over claude code?
       </Text>
       {rows.map(([them, us]) => (
         <Text key={us}>
-          <Text color={GRAY}>{them.padEnd(30)}</Text>
-          <Text color={GREEN}>{'→ '}</Text>
+          <Text color={MUTED}>{them.padEnd(30)}</Text>
+          <Text color={OK}>{'→ '}</Text>
           <Text>{us}</Text>
         </Text>
       ))}
@@ -154,40 +155,34 @@ export function WhyCard() {
   );
 }
 
-/** `▰▰▰▱▱` for done of total, `width` cells. */
-export function progressBar(done: number, total: number, width = 10): string {
-  const n = total ? Math.round((done / total) * width) : 0;
-  return '▰'.repeat(n) + '▱'.repeat(width - n);
-}
-
 function StatusBar({ session, width }: { session: Session; width: number }) {
   const t = session.telemetry;
   const info = session.info;
   const left = session.runId ? (
     <Text wrap="truncate-end">
-      <Text color={session.runAlive ? GREEN : GRAY}>{session.runAlive ? '● ' : '○ '}</Text>
-      <Text color={CYAN}>{session.runId}</Text>
-      {info && <Text color={GRAY}>{` · ${info.phase}`}</Text>}
+      <Text color={session.runAlive ? OK : MUTED}>{session.runAlive ? '● ' : '○ '}</Text>
+      <Text color={INFO}>{session.runId}</Text>
+      {info && <Text color={MUTED}>{` · ${info.phase}`}</Text>}
       {info && info.tasks > 0 && (
         <Text>
           {' '}
-          <Text color={GREEN}>{progressBar(info.done, info.tasks)}</Text>
-          <Text color={GRAY}>{` ${info.done}/${info.tasks}`}</Text>
+          <Text color={OK}>{progressBar(info.done, info.tasks)}</Text>
+          <Text color={MUTED}>{` ${info.done}/${info.tasks}`}</Text>
         </Text>
       )}
-      <Text color={GRAY}>
+      <Text color={MUTED}>
         {` · ${t.startedAt && t.lastAt ? fmtMs(t.lastAt - t.startedAt) : '0s'}${t.task ? ` · ${t.task}` : ''}${session.estimate ? ` · ${session.estimate}` : ''}`}
       </Text>
     </Text>
   ) : (
-    <Text color={GRAY}>{session.estimate ?? 'no run attached'}</Text>
+    <Text color={MUTED}>{session.estimate ?? 'no run attached'}</Text>
   );
   const agent = session.agentSettings.summary;
   const right = agent ? `${agent} · ${statusRight(session)}` : statusRight(session);
   return (
     <Box width={width} justifyContent="space-between">
       {left}
-      <Text color={GRAY} wrap="truncate-start">
+      <Text color={MUTED} wrap="truncate-start">
         {right}
       </Text>
     </Box>
@@ -235,14 +230,20 @@ const TITLE_WIDTH = 9;
 export function TodoPanel({ items }: { items: readonly TodoItem[] }) {
   const done = items.filter((i) => i.status === 'done').length;
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={GRAY} paddingX={1} flexGrow={1}>
-      <Text color={GREEN}>{`todo ${done}/${items.length}`}</Text>
+    <Box
+      flexDirection="column"
+      borderStyle={BORDER.card}
+      borderColor={MUTED}
+      paddingX={SPACE.sm}
+      flexGrow={1}
+    >
+      <Text color={OK}>{`todo ${done}/${items.length}`}</Text>
       {items.map((it, i) => (
         <Text
           key={i}
           wrap="truncate-end"
-          {...(it.status === 'done' ? { color: GRAY, strikethrough: true } : {})}
-          {...(it.status === 'in_progress' ? { color: CYAN, bold: true } : {})}
+          {...(it.status === 'done' ? { color: MUTED, strikethrough: true } : {})}
+          {...(it.status === 'in_progress' ? { color: INFO, bold: true } : {})}
         >
           {`${it.status === 'done' ? '☑' : it.status === 'in_progress' ? '▶' : '☐'} ${it.text}`}
         </Text>
@@ -254,8 +255,8 @@ export function TodoPanel({ items }: { items: readonly TodoItem[] }) {
 function PlanBox({ plan, rows }: { plan: string; rows: number }) {
   const lines = plan.split('\n').slice(0, Math.max(3, rows));
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={GRAY} paddingX={1}>
-      <Text color={GREEN}>plan</Text>
+    <Box flexDirection="column" borderStyle={BORDER.card} borderColor={MUTED} paddingX={SPACE.sm}>
+      <Text color={OK}>plan</Text>
       {lines.map((l, i) => (
         <Text key={i} wrap="truncate-end">
           {l}
@@ -282,7 +283,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
   const [hist, setHist] = useState<number | undefined>(undefined);
   const [showPlan, setShowPlan] = useState(false);
   const [tick, setTick] = useState(0);
-  const frame = tick % SPINNER.length;
+  const frame = tick;
   // The tick a commit or rejection was last seen, so the mascot reacts for a moment.
   const seen = useRef<{ commits: number; rejects: number; at: number; mood: Mood }>({
     commits: 0,
@@ -529,9 +530,9 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
               <Text wrap="wrap">{session.live.split('\n').slice(-6).join('\n')}</Text>
             )}
             {session.busy && (
-              <Text color={CYAN}>
-                {SPINNER[frame]} {session.busy}
-                <Text color={GRAY}>
+              <Text color={INFO}>
+                <ActivityIndicator frame={frame} /> {session.busy}
+                <Text color={MUTED}>
                   {session.mode === 'run' ? '' : '  (esc to stop, type to steer)'}
                 </Text>
               </Text>
@@ -545,17 +546,17 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
           )}
         </Box>
         {session.pending && (
-          <Text color={CYAN} bold>
+          <Text color={INFO} bold>
             {`? ${session.pending.question} [y/N]`}
           </Text>
         )}
         {showMascot && (
           <Box width={width} alignItems="center">
             <Box flexDirection="column" width={TITLE_WIDTH}>
-              <Text color={GREEN} bold>
+              <Text color={OK} bold>
                 omnexx
               </Text>
-              <Text color={GRAY}>{session.mode === 'run' ? 'long run' : session.mode}</Text>
+              <Text color={MUTED}>{session.mode === 'run' ? 'long run' : session.mode}</Text>
             </Box>
             <Mascot mood={mood} tick={tick} say={say} look={look} />
             <SpeechBubble
@@ -566,23 +567,23 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
         )}
         {!showMascot && (
           <Text>
-            <Text color={GREEN} bold>
+            <Text color={OK} bold>
               omnexx
             </Text>
-            <Text color={GRAY}>{` · ${session.mode === 'run' ? 'long run' : session.mode}`}</Text>
+            <Text color={MUTED}>{` · ${session.mode === 'run' ? 'long run' : session.mode}`}</Text>
           </Text>
         )}
         <Box width={width}>
-          <Box borderStyle="single" borderColor={GREEN} paddingX={1} flexGrow={1}>
-            <Text color={GREEN}>{'› '}</Text>
+          <Box borderStyle={BORDER.card} borderColor={OK} paddingX={SPACE.sm} flexGrow={1}>
+            <Text color={OK}>{'› '}</Text>
             {input ? (
               <Text>
                 {input}
-                <Text color={GREEN}>█</Text>
+                <Text color={OK}>█</Text>
               </Text>
             ) : (
-              <Text color={GRAY}>
-                <Text color={GREEN}>█</Text> {placeholder}
+              <Text color={MUTED}>
+                <Text color={OK}>█</Text> {placeholder}
               </Text>
             )}
           </Box>
@@ -590,7 +591,7 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
         {files.length > 0 && (
           <Box flexDirection="column" paddingX={2}>
             {files.slice(0, 6).map((f) => (
-              <Text key={f} color={CYAN}>{`@${f}`}</Text>
+              <Text key={f} color={INFO}>{`@${f}`}</Text>
             ))}
           </Box>
         )}
@@ -598,8 +599,8 @@ export function App({ session, version, cwd, showWhy, pollMs = 300 }: AppProps) 
           <Box flexDirection="column" paddingX={2}>
             {suggestions.slice(0, 6).map((c) => (
               <Text key={c.name}>
-                <Text color={CYAN}>{`/${c.name}`.padEnd(10)}</Text>
-                <Text color={GRAY}>{c.help}</Text>
+                <Text color={INFO}>{`/${c.name}`.padEnd(10)}</Text>
+                <Text color={MUTED}>{c.help}</Text>
               </Text>
             ))}
           </Box>

@@ -47,8 +47,9 @@ SonarCloud findings from the #20 integration merge are still open.
   `OMNEXX_EXECUTION_DOMAIN`, TOML, or the VS Code panel's new Work Mode selector (user
   config, env > project > user precedence, hot-switch at cycle boundaries with an
   `execution.domain_change` event; `workDomain` recorded in run state). 30 new tests;
-  full unit suite 5,875 pass with only the 5 pre-existing bench failures; lint, typecheck
-  and format clean on all touched files.
+  full unit suite 1,560 pass (counted via `npx vitest list test/unit | wc -l`; unit
+  suite only — integration/chaos/e2e are separate) with only the 5 pre-existing bench
+  failures; lint, typecheck and format clean on all touched files.
 - **2026-10-22 (single agent), branch `feat/speculative-cache`:** speculative cache recovered
   from the `omnexx-perf` checkout and landed: persistent AST cache (`src/core/ast-cache.ts`)
   wired into the codemap (`buildCodemapCached`, cache-aware `updateCodemap`), provider prefix
@@ -57,7 +58,8 @@ SonarCloud findings from the #20 integration merge are still open.
   checks (`src/core/speculative-check.ts`), and the speculative-cache benchmark under
   `test/unit/bench` (0 re-reads on an unchanged tree, 99.5% cacheable prefix, 94.8% of prompt
   tokens read from cache). 40 new tests, all passing; typecheck/lint/format clean on the new
-  files; unit suite at 1514 pass with only the 5 pre-existing bench failures.
+  files; unit suite at 1,514 pass with only the 5 pre-existing bench failures (same
+  `npx vitest list test/unit | wc -l` count method as above).
 - **2026-10-22 (single agent), branch `feat/multi-agent-swarm-core`:** merged
   `origin/main` to resolve PR conflicts; fixed the `docs/TODO.md` session-log conflict and
   verified merge commit `048d4ec`.
