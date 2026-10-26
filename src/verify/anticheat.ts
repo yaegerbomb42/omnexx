@@ -1,7 +1,7 @@
 import type { Baseline } from '../core/run-store.js';
 import type { WorkMode } from '../config/work-mode.js';
 import type { FileChange } from '../git/repo.js';
-import { matchesAny } from '../security/glob.js';
+import { isVendored, matchesAny } from '../security/glob.js';
 import type { GateResult } from './gates.js';
 
 function stripStringContent(line: string): string {
@@ -89,10 +89,17 @@ export function antiCheat(input: AntiCheatInput): Violation[] {
   const isTest = (p: string): boolean => matchesAny(p, TEST_FILE_PATTERNS) !== undefined;
   // In the general domain only the protected-path rule (below) applies.
   const swe = input.domain !== 'general';
+  // Markers in dependency/build output say nothing about cheating: `npm install` writes
+  // node_modules, a test run writes coverage. The test-weakening rules below police the
+  // project's own files, so they never see vendored paths; the protected-path rule keeps
+  // the full list (those patterns are the person's explicit config).
+  const own = input.changes.filter(
+    (c) => !isVendored(c.path) && (c.oldPath === undefined || !isVendored(c.oldPath)),
+  );
 
   if (swe && !allow.has('delete-tests')) {
-    const ported = portedTests(input.changes, isTest);
-    for (const c of input.changes) {
+    const ported = portedTests(own, isTest);
+    for (const c of own) {
       if (c.status === 'D' && isTest(c.path) && !ported.has(c.path))
         out.push({ rule: 'deleted-test', detail: c.path });
       if (c.status === 'R' && c.oldPath && isTest(c.oldPath) && !isTest(c.path)) {
@@ -115,7 +122,12 @@ export function antiCheat(input: AntiCheatInput): Violation[] {
         file = line.replace(/^\+\+\+ (b\/)?/, '');
         continue;
       }
-      if (!line.startsWith('+') || matchesAny(file, GENERATED_OUTPUT) !== undefined) continue;
+      if (
+        !line.startsWith('+') ||
+        isVendored(file) ||
+        matchesAny(file, GENERATED_OUTPUT) !== undefined
+      )
+        continue;
       const lineWithoutStrings = stripStringContent(line);
       for (const [re, label] of MARKERS) {
         if (re.test(lineWithoutStrings)) {
@@ -130,7 +142,7 @@ export function antiCheat(input: AntiCheatInput): Violation[] {
   }
 
   if (swe && !allow.has('snapshots')) {
-    for (const c of input.changes) {
+    for (const c of own) {
       if (c.status !== 'A' && (c.path.endsWith('.snap') || c.path.includes('__snapshots__/'))) {
         out.push({ rule: 'snapshot-rewrite', detail: c.path });
       }

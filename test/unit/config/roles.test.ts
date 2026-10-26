@@ -1,16 +1,11 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { parse as parseToml } from 'smol-toml';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../../src/config/load.js';
 import { writeRanking } from '../../../src/config/ranking.js';
-import {
-  parseRoles,
-  readRoles,
-  rolesFile,
-  rolesLayer,
-  writeRoles,
-} from '../../../src/config/roles.js';
-import { resolvePaths } from '../../../src/core/paths.js';
+import { parseRoles, readRoles, rolesLayer, writeRoles } from '../../../src/config/roles.js';
+import { resolvePaths, userConfigFile } from '../../../src/core/paths.js';
 import { isolatedEnv, tempDir } from '../../support/tmp.js';
 
 describe('model roles', () => {
@@ -70,8 +65,11 @@ describe('model roles', () => {
       strategies: { worker: 'priority' },
       spreadHelpers: true,
     });
-    const raw = JSON.parse(await readFile(rolesFile(paths), 'utf8')) as { version: number };
-    expect(raw.version).toBe(2);
+    // Roles now live in the unified config's [roles] table, not roles.json.
+    const raw = parseToml(await readFile(userConfigFile(paths), 'utf8')) as {
+      roles: { strategies: { worker: string } };
+    };
+    expect(raw.roles.strategies.worker).toBe('priority');
     expect((await readRoles(paths)).strategies.worker).toBe('priority');
   });
 

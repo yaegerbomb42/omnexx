@@ -22,6 +22,7 @@ import { settleSpecWork, specGate } from './spec-gate.js';
 import { FAST_TASK, fastPathSpent, fastPlan, tryFastPath } from './fast-path.js';
 import { resolveWriting } from './writing.js';
 import { EXIT } from '../cli/exit-codes.js';
+import { defaultSessionPool } from './exec.js';
 import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
 import { LockError } from '../errors.js';
@@ -1268,6 +1269,9 @@ export async function supervise(
     return { ...outcome, exitCode: EXIT_FOR[outcome.status] };
   } finally {
     stopWatching();
+    // The persistent shells outlive the run otherwise: their bash child keeps the Node
+    // event loop alive, so a foreground `omnexx run` never returns after `run.finish`.
+    defaultSessionPool.disposeAll();
   }
 }
 

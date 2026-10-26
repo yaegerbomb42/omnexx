@@ -43,6 +43,13 @@ import {
   type CompactionSettings,
   type Summarize,
 } from './compaction.js';
+import {
+  appendTranscriptFile,
+  condenseRolling,
+  shouldCondense,
+  DEFAULT_CONDENSE_EVERY,
+  DEFAULT_KEEP_TURNS,
+} from './rolling-memory.js';
 import { turnRequest } from './context.js';
 import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
 import { todoItemsOf, todoNudge, todoTool, type TodoItem } from '../tools/todo.js';
@@ -212,6 +219,25 @@ export interface LoopDeps {
   onResponse?: (r: { model: string; inputTokens: number; ms: number }) => void;
   /** In-cycle context control; off when unset. */
   compaction?: { settings: CompactionSettings; summarize?: Summarize };
+  /**
+   * Rolling memory condensation (`memory: rolling`, the default): every few turns the working
+   * memory is rewritten into a compact note and only the last turns stay raw, so the prompt
+   * stays flat. Off when unset (`memory: full` keeps the token-threshold fold only).
+   */
+  rolling?: {
+    /** Turns between condensations (default 7). */
+    every?: number;
+    /** Raw turns kept after the note (default 2). */
+    keepTurns?: number;
+    /** The current goal, for the note's first section. */
+    goal?: string;
+    /** Read a repo file's current content, for file hashes; no hashes when unset. */
+    readFile?: (path: string) => Promise<string | undefined>;
+    /** Where the folded transcript goes; default: logs/transcript.md (redacted). */
+    persistTranscript?: (text: string) => Promise<void>;
+    /** The rewritten note, each time it changes (the UI shows it). */
+    onNote?: (note: string, turn: number) => void;
+  };
   /** In-cycle stuck detection; off when unset. */
   watch?: InCycleWatch;
   /**
@@ -403,6 +429,7 @@ export async function runAgentLoop(
   let finalText = '';
   let todos: readonly TodoItem[] = [];
   let todoNudged = false;
+  let lastCondenseTurn = 0;
   const byName = new Map(deps.tools.map((t) => [t.name, t]));
   const end = (e: LoopEnd): LoopResult => ({ end: e, turns, finalText, usage, usd, messages });
   // The stable prefix never changes within a cycle; size it once for the per-turn breakdown.
@@ -433,6 +460,36 @@ export async function runAgentLoop(
     }
     if (signal === 'stop' || signal === 'stop-now') return end(signal);
     if (deps.signal?.aborted) return end('stop-now');
+
+    if (deps.rolling && turns > 0) {
+      // Rolling memory: every few turns rewrite working memory into the compact note and keep
+      // only the last turns raw. The folded transcript is already on disk (logs/transcript.md).
+      const rolling = deps.rolling;
+      if (shouldCondense(turns, lastCondenseTurn, rolling.every ?? DEFAULT_CONDENSE_EVERY)) {
+        const condensed = await condenseRolling(messages, ctx.anchor ?? ctx.first, {
+          turn: turns,
+          goal: rolling.goal ?? '',
+          keepTurns: rolling.keepTurns ?? DEFAULT_KEEP_TURNS,
+          ...(rolling.readFile ? { readFile: rolling.readFile } : {}),
+          persistTranscript:
+            rolling.persistTranscript ??
+            ((text) =>
+              appendTranscriptFile(deps.toolCtx.store.logsDir, deps.toolCtx.redactor.text(text))),
+        }).catch(() => undefined);
+        if (condensed) {
+          messages = condensed.messages;
+          lastCondenseTurn = turns;
+          // Earlier read results are gone from the context now; let `read` return them again.
+          deps.toolCtx.reads?.clear();
+          rolling.onNote?.(condensed.note, turns);
+          deps.events.emit('context.condensed', {
+            turn: turns,
+            turnsSummarized: condensed.turnsSummarized,
+            noteChars: condensed.note.length,
+          });
+        }
+      }
+    }
 
     if (deps.compaction && turns > 0) {
       const settings = missAwareSettings(deps.compaction.settings, cacheMisses, turns - 1);

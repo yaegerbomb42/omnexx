@@ -37,3 +37,41 @@ describe('anticheat: skip markers inside string literals', () => {
     expect(v).toEqual([]);
   });
 });
+
+describe('anticheat: markers in vendored output are not cheating', () => {
+  it('ignores eslint-disable in node_modules (npm install writes it, not the agent)', () => {
+    const v = antiCheat({
+      ...base,
+      changes: [],
+      patch: patch('node_modules/@types/node/assert.d.ts', '/* eslint-disable */'),
+    });
+    expect(v).toEqual([]);
+  });
+
+  it('ignores skip markers in a vendored test file', () => {
+    const v = antiCheat({
+      ...base,
+      changes: [],
+      patch: patch('node_modules/pkg/test/x.test.js', "describe.skip('x', () => {"),
+    });
+    expect(v).toEqual([]);
+  });
+
+  it('ignores a deleted test under node_modules', () => {
+    const v = antiCheat({
+      ...base,
+      changes: [{ path: 'node_modules/pkg/test/x.test.js', status: 'D', added: 0, removed: 1 }],
+      patch: '',
+    });
+    expect(v).toEqual([]);
+  });
+
+  it('still flags eslint-disable in the project itself', () => {
+    const v = antiCheat({
+      ...base,
+      changes: [],
+      patch: patch('src/utils.ts', '/* eslint-disable no-console */'),
+    });
+    expect(v.map((x) => x.rule)).toEqual(['skip-marker']);
+  });
+});

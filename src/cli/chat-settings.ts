@@ -117,6 +117,8 @@ export interface AddProvider {
   /** A catalog name, or a new name for a custom URL. */
   provider?: string | undefined;
   key?: string | undefined;
+  /** Env var holding the API key; only the name is saved, never the value. */
+  keyEnv?: string | undefined;
   /** For a custom or local OpenAI-compatible server. */
   url?: string | undefined;
   /** Templated base URL values, extra headers, a forced flavor: see provider-setup.ts. */
