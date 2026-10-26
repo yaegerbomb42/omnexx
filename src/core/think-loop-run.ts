@@ -29,7 +29,7 @@ import {
 export function usesThinkLoop(run: Run, task: PlanNode): boolean {
   const mode = run.config.plan.loop;
   if (mode === 'off' || run.state.writing) return false;
-  if (task.id === FAST_TASK && run.state.fastPath === 'tried') return true;
+  if (task.id === FAST_TASK && run.state.fastPath === 'tried' && task.size !== 'S') return true;
   return mode === 'all';
 }
 
