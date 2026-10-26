@@ -26,6 +26,8 @@ export class ChatProcess implements vscode.Disposable {
   private generation = 0;
   private disposed = false;
   private killTimer: NodeJS.Timeout | undefined;
+  /** True when we intentionally stopped the process (via stop/dispose/restart). */
+  private stopping = false;
 
   constructor(private readonly cwd: string | undefined) {}
 
@@ -112,13 +114,22 @@ export class ChatProcess implements vscode.Disposable {
       this.clearKillTimer();
       if (this.child !== child) return;
       this.child = undefined;
+      const wasStopping = this.stopping;
+      this.stopping = false;
+      const exitCode = child.exitCode;
+      const signalCode = child.signalCode;
+      const isCleanStop = wasStopping && exitCode === 0 && signalCode === null;
+      if (isCleanStop) {
+        return;
+      }
       this.crashes.push(Date.now());
-      const why = this.stderr.trim().split('\n').at(-1) ?? '';
-      const exit = child.exitCode === null ? '' : ` (exit ${String(child.exitCode)})`;
-      const reason = why ? `: ${why}` : '';
+      const tail = this.stderr.trim().slice(-STDERR_TAIL_CHARS);
+      const exit = exitCode === null ? '' : ` (exit ${String(exitCode)})`;
+      const signal = signalCode === null ? '' : ` (signal ${signalCode})`;
+      const suffix = tail ? `\n${tail}` : '';
       this.emitter.fire({
-        type: 'down',
-        message: `omnexx stopped${exit}${reason}. It restarts with your next message.`,
+        type: 'error',
+        message: `chat server crashed${exit}${signal}:${suffix}`,
       });
     });
   }
@@ -158,6 +169,7 @@ export class ChatProcess implements vscode.Disposable {
   }
 
   private stop(): void {
+    this.stopping = true;
     this.generation += 1;
     this.clearKillTimer();
     const child = this.child;
