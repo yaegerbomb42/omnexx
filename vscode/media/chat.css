@@ -1758,6 +1758,28 @@ details.msg.think[open] > summary::after {
   font-size: var(--fs-xs);
 }
 
+/* Panel header: small icon row at the very top, above crew/browser/log. */
+.panel-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px var(--pad-x) 2px;
+  flex: none;
+}
+
+.panel-header .icon.ctl {
+  opacity: 0.7;
+}
+
+.panel-header .icon.ctl:not(:disabled):hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.panel-header .icon.ctl:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
 /* Composer: the input is one elevated card — borderless textarea inside, a filled
    round send button, and the focus ring on the card, not the textarea. */
 .composer {

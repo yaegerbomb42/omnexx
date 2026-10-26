@@ -454,6 +454,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     <button data-suggest="Find likely bugs in the code I changed recently and fix them.">Review recent changes</button>
   </div>
 </section>
+<header class="panel-header" aria-label="Panel controls">
+  <button id="undo" class="icon ctl" data-action="undo" title="Undo last message's edits" aria-label="Undo last message's edits" disabled>
+    <svg viewBox="0 0 16 16"><path d="M8 3a5 5 0 0 0-5 5c0 1.8 1 3.4 2.5 4.1V15l4-3.5 4 3.5v-2.9A5 5 0 0 0 13 8a5 5 0 0 0-5-5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+</header>
 <details id="crew" class="section crew" open hidden>
   <summary><span class="chev" aria-hidden="true"></span><span class="h">Crew</span><span class="sub-h">helpers report to omnexx</span><span id="crew-count" class="count"></span></summary>
   <div id="crew-telemetry" class="telemetry" hidden></div>
