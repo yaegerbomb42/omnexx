@@ -56,9 +56,29 @@ export class QuotaLedger {
     return r.exhausted[ref] !== undefined || r.limited[ref] !== undefined;
   }
 
+  /** Whether `ref` is only briefly rate-limited (not out of quota). */
+  isLimited(ref: string): boolean {
+    return this.read().limited[ref] !== undefined;
+  }
+
+  /** When `ref`'s rate-limit expires, if it is still limited. */
+  limitedUntil(ref: string): number | undefined {
+    return this.read().limited[ref];
+  }
+
   /** Out-of-quota refs and when they ran out. */
   all(): Record<string, number> {
     return this.read().exhausted;
+  }
+
+  /** All refs sorted by when they become available (most available first). */
+  sortedByAvailability(): { ref: string; availableAt: number }[] {
+    const r = this.read();
+    const all: { ref: string; availableAt: number }[] = [
+      ...Object.entries(r.exhausted).map(([ref, at]) => ({ ref, availableAt: at })),
+      ...Object.entries(r.limited).map(([ref, until]) => ({ ref, availableAt: until })),
+    ];
+    return all.sort((a, b) => a.availableAt - b.availableAt);
   }
 
   /** Mark `ref` out of quota, or rate-limited for `forMs` when given. */
