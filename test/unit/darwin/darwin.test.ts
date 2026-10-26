@@ -100,6 +100,64 @@ describe('darwinx meta-harness', () => {
     }
   });
 
+  it('prefers newer lastError signal over an ancient tool error', () => {
+    const symptom = diagnoseFailure(
+      [
+        {
+          turn: 1,
+          calls: [{ tool: 'bash', isError: true, error: 'ancient tool error' }],
+          fresh: 10,
+          cached: 0,
+          ms: 50,
+          gates: 'ok',
+        },
+        {
+          turn: 2,
+          calls: [{ tool: 'read', isError: false, error: '' }],
+          fresh: 20,
+          cached: 10,
+          ms: 40,
+          gates: 'ok',
+        },
+      ],
+      { lastError: 'doom loop: repeated same read' },
+    );
+    expect(symptom).toEqual({
+      turn: 2,
+      kind: 'doom_loop',
+      detail: 'doom loop: repeated same read',
+    });
+  });
+
+  it('prefers newer gateFailed signal over an ancient tool error', () => {
+    const symptom = diagnoseFailure(
+      [
+        {
+          turn: 1,
+          calls: [{ tool: 'bash', isError: true, error: 'ancient tool error' }],
+          fresh: 10,
+          cached: 0,
+          ms: 50,
+          gates: 'ok',
+        },
+        {
+          turn: 2,
+          calls: [{ tool: 'read', isError: false, error: '' }],
+          fresh: 20,
+          cached: 10,
+          ms: 40,
+          gates: 'fail',
+        },
+      ],
+      { gateFailed: true, lastError: 'Unit tests failed: 2 broken' },
+    );
+    expect(symptom).toMatchObject({
+      turn: 2,
+      kind: 'gate_failure',
+      detail: 'Unit tests failed: 2 broken',
+    });
+  });
+
   it('ratchets accepted mutation when gates pass', async () => {
     const commits: string[] = [];
     const sandbox: SandboxRunner = {
