@@ -9,17 +9,23 @@ import {
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseDuration } from '../config/duration.js';
-import type { OmnexxConfig } from '../config/schema.js';
+import type { OmnexxConfig, PriceConfig } from '../config/schema.js';
 import { ProviderError, StateError } from '../errors.js';
 import { createJudge } from '../judge/factory.js';
 import type { FailOpenJudge } from '../judge/fail-open.js';
 import { LlmJudge } from '../judge/llm.js';
 import { preflight, spentInWindow } from '../guard/budget.js';
-import { costUsd, resolveChain, type ResolvedModel } from '../providers/pricing.js';
+import { costUsd, resolveChain, resolveModel, type ResolvedModel } from '../providers/pricing.js';
 import { shouldFailover } from '../providers/router.js';
 import { QuotaLedger } from '../providers/quota-ledger.js';
 import { isQuotaError } from '../providers/sticky.js';
 import type { CompletionRequest, CompletionResponse, Provider, Usage } from '../providers/types.js';
+import {
+  purposeForRole,
+  UsageLedger,
+  withCallAttribution,
+  withUsageLedger,
+} from '../usage/ledger.js';
 import { scrubEnv } from '../security/env-scrub.js';
 import type { PolicyContext } from '../security/command-policy.js';
 import { Redactor } from '../security/redact.js';
@@ -58,6 +64,10 @@ export class Run {
   readonly redactor: Redactor;
   readonly judge: FailOpenJudge;
   readonly router: ModelRouter;
+  /** The provider every run call goes through: the injected one, wrapped to record the ledger. */
+  readonly provider: Provider;
+  /** Append-only per-call usage and waste records for this run. */
+  readonly ledger: UsageLedger;
   readonly childEnv: Record<string, string>;
   readonly tmpDir: string;
   /** First model of each role's chain (single-shot helpers use these). */
@@ -148,6 +158,12 @@ export class Run {
     this.redactor = Redactor.fromEnv(deps.env, deps.secrets ?? []);
     this.events = new EventLog(store.eventsPath, state.runId, this.redactor, deps.clock);
     this.events.cycle = state.cycle;
+    this.ledger = new UsageLedger(store.file('usage-ledger.jsonl'), state.runId);
+    this.provider = withUsageLedger(deps.provider, {
+      ledger: this.ledger,
+      priceFor: (provider, model) => this.priceFor(provider, model),
+      now: () => deps.clock.now(),
+    });
     this.tmpDir = join('/tmp', `omnexx-${state.runId}`);
     this.childEnv = scrubEnv(deps.env, {
       passthrough: deps.config.policy.env_passthrough,
@@ -316,6 +332,21 @@ export class Run {
     return this.quota.isOut(ref);
   }
 
+  /** A model's price by provider and concrete id; unknown models record $0 rather than fail a run. */
+  private priceFor(provider: string, model: string): PriceConfig | undefined {
+    try {
+      return resolveModel(`${provider}:${model}`, this.config).price;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Spend for one task (default: the current one), including calls made before a resume. */
+  taskUsage(taskId?: string): { usd: number; tokens: number } {
+    const t = this.ledger.taskTotals(taskId ?? this.state.taskId ?? 'untasked');
+    return { usd: t.usd, tokens: t.budgetTokens };
+  }
+
   /** A fallback list stays off a rate-limited model for `ms`, in every session. */
   markRateLimited(ref: string, ms: number): void {
     this.quota.mark(ref, ms);
@@ -375,17 +406,29 @@ export class Run {
         spentUsd: this.state.spend.usd,
         spentTodayUsd: this.spentToday(),
         cycle: { turns: 0, tokens: 0 },
+        task: this.taskUsage(),
         estimatedInputTokens: opts.estimatedInputTokens,
         maxOutputTokens: opts.maxOutputTokens,
         price: model.price,
       });
       if (!pf.ok) return undefined;
+      const taskId = this.state.taskId ?? 'untasked';
       try {
-        const res = await this.deps.provider.complete({
-          ...req,
-          model: model.id,
-          route: model.provider,
-        });
+        const res = await withCallAttribution(
+          {
+            purpose: purposeForRole(opts.role),
+            taskId,
+            cycle: this.state.cycle,
+            step: 0,
+            label: opts.role,
+          },
+          () =>
+            this.provider.complete({
+              ...req,
+              model: model.id,
+              route: model.provider,
+            }),
+        );
         await this.addSpend(
           res.usage,
           costUsd(res.usage, model.price),

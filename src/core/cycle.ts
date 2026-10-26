@@ -255,6 +255,7 @@ export function contextBreakdown(ctx: {
 export function toolContext(run: Run, edited: Set<string>): ToolContext {
   let n = 0;
   const { judge } = run;
+  const taskId = run.state.taskId ?? 'untasked';
   const ctx: ToolContext = {
     jail: new PathJail(run.worktree),
     exec: run.exec,
@@ -264,6 +265,7 @@ export function toolContext(run: Run, edited: Set<string>): ToolContext {
     redactor: run.redactor,
     policy: run.policy(),
     cycle: run.state.cycle,
+    taskId,
     // Read live: the time left in the run shrinks while the cycle works, and one long command
     // must never carry the run far past --hours (a stress script once added 20 minutes).
     get maxCmdTimeoutMs(): number {
@@ -274,7 +276,18 @@ export function toolContext(run: Run, edited: Set<string>): ToolContext {
     signal: run.signal,
     nextCommandId: () => `cmd-${run.state.cycle}-${++n}`,
     edited,
-    reads: new Map(),
+    ...(run.config.context.read_guard ? { reads: new Map<string, string>() } : {}),
+    onWaste: (w) =>
+      run.ledger.recordWaste({
+        taskId,
+        cycle: run.state.cycle,
+        step: ctx.step ?? 0,
+        waste: w.kind,
+        tokens: w.tokens,
+        detail: w.detail,
+        ...(w.path ? { path: w.path } : {}),
+        ...(w.sinceStep !== undefined ? { sinceStep: w.sinceStep } : {}),
+      }),
     // Advisory, log-only, never awaited by the tool, skipped while the breaker is open.
     ...(judge.enabled('tool_safety') && judge.breakerState !== 'open'
       ? {
@@ -459,7 +472,7 @@ export async function stepAct(run: Run): Promise<void> {
     memory: memory.stats(),
   });
   const deps = (models: readonly ResolvedModel[]): LoopDeps => ({
-    provider: run.deps.provider,
+    provider: run.provider,
     models,
     providerBlocked: (p) => run.providerBlocked(p),
     modelExhausted: (r) => run.modelExhausted(r),
@@ -485,6 +498,18 @@ export async function stepAct(run: Run): Promise<void> {
     spentUsd: () => run.state.spend.usd,
     spentTodayUsd: () => run.spentToday(),
     onUsage: (u, usd, model, provider) => run.addSpend(u, usd, model, 'worker', provider),
+    purpose: 'main',
+    taskId: task.id,
+    taskSpend: () => run.taskUsage(task.id),
+    onTaskBudgetWarn: (warning) => {
+      run.events.emit('budget.task_warn', {
+        task: task.id,
+        kind: warning.kind,
+        used: warning.used,
+        cap: warning.cap,
+        detail: warning.detail,
+      });
+    },
     control: () => run.control(),
     onPauseChange: (p) => {
       run.paused = p;
@@ -527,6 +552,13 @@ export async function stepAct(run: Run): Promise<void> {
   // The browser (and the page it holds) lives for one cycle; the next starts fresh.
   await closeSession(run.state.runId).catch(() => undefined);
   if (result.end === 'max_usd') run.state.budgetExhausted = true;
+  if (result.end === 'max_task_usd' || result.end === 'max_task_tokens') {
+    run.state.taskBudgetStop = {
+      taskId: task.id,
+      kind: result.end,
+      detail: `task ${task.id} reached its ${result.end === 'max_task_usd' ? 'USD' : 'token'} cap`,
+    };
+  }
   if (result.end === 'providers_unavailable')
     run.state.providersUnavailable = result.detail ?? 'no model could take a call';
   if (result.end === 'max_usd_per_day') run.state.dailyCapHit = true;

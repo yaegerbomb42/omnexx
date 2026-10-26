@@ -74,6 +74,13 @@ export const budgetSchema = z.strictObject({
   max_cycles: z.number().int().positive().default(300),
   max_turns_per_cycle: z.number().int().positive().default(40),
   max_tokens_per_cycle: z.number().int().positive().default(400_000),
+  /**
+   * Per-task caps, checked before every call from that task's ledger totals. Unset: no task cap.
+   * At warn_at they warn; at 100% the cycle ends, the partial work is verified, and the task is
+   * parked with a checkpoint so the run moves on instead of burning the whole run on one task.
+   */
+  max_task_usd: z.number().positive().optional(),
+  max_task_tokens: z.number().int().positive().optional(),
   max_cmd_timeout: durationString.default('30m'),
   /**
    * How long a run waits when no model in the chain can take a call (every quota used up, keys
@@ -300,6 +307,11 @@ export const stuckSchema = z.strictObject({
 export const contextSchema = z.strictObject({
   /** How each context section reaches the model: pinned, optional (on request) or hidden. */
   sections: sectionsSchema,
+  /**
+   * Answer a repeat read of an unchanged file with "unchanged since step N" and the earlier
+   * note instead of the same bytes. Off for A/B benches that measure the guard itself.
+   */
+  read_guard: z.boolean().default(true),
   progress_tail: z.number().int().nonnegative().default(5),
   notes_max_tokens: z.number().int().positive().default(1_500),
   repo_map_max_tokens: z.number().int().positive().default(3_000),

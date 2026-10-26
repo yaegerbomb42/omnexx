@@ -50,6 +50,8 @@ The container runs as your uid/gid with `--cap-drop ALL`, `no-new-privileges`, a
 | `max_cycles`           | `300`    |                                                                                                                                                                                                                                             |
 | `max_turns_per_cycle`  | `40`     |                                                                                                                                                                                                                                             |
 | `max_tokens_per_cycle` | `400000` | Input + output of every call in a cycle, before cache discounts.                                                                                                                                                                            |
+| `max_task_usd`         | unset    | Per-task dollar cap from the usage ledger. At `warn_at` it warns; before a call would cross it the cycle ends, the work is verified, and the task is parked with a checkpoint. Unset: no task cap.                                          |
+| `max_task_tokens`      | unset    | Per-task cache-weighted token cap, same behavior as `max_task_usd`.                                                                                                                                                                         |
 | `max_cmd_timeout`      | `"30m"`  | Upper bound for every gate, check and `bash` call.                                                                                                                                                                                          |
 | `warn_at`              | `0.8`    | ntfy `budget` warning at this fraction of the tightest of USD / hours / cycles.                                                                                                                                                             |
 | `wrapup_reserve`       | `0.08`   | In the last 8%: no new task, verify `lastGreen`, report, stop. `0` disables.                                                                                                                                                                |
@@ -260,6 +262,7 @@ In the general domain, gates keep their usual meaning with one addition: `kind =
 | Key                     | Default                                                                                                 |
 | ----------------------- | ------------------------------------------------------------------------------------------------------- |
 | `progress_tail`         | `5` progress entries in each cycle's context                                                            |
+| `read_guard`            | `true`: a repeat read of an unchanged file returns "unchanged since step N" plus the earlier note       |
 | `notes_max_tokens`      | `1500` (lessons file cap)                                                                               |
 | `repo_map_max_tokens`   | `3000` (codebase map cap)                                                                               |
 | `clear_tool_results_at` | `60000` estimated context tokens: elide old tool results over 1,000 chars                               |

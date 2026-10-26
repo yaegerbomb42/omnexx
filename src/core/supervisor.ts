@@ -34,6 +34,7 @@ import {
   windowRollsAt,
 } from '../guard/budget.js';
 import { climb, escalateModel, LADDER, park } from '../guard/ladder.js';
+import { tagCheckpoint } from '../git/checkpoint.js';
 import { isInCycleSignal, taskStuckSignals, type StuckFinding } from '../guard/stuck.js';
 import { decideNextMove } from '../judge/next-move.js';
 import type { AgentStateSummary } from '../judge/state-summary.js';
@@ -296,9 +297,43 @@ class Supervisor {
     await this.finishCycle();
   }
 
+  /**
+   * A task stopped at its own cap: its partial work has just been verified and committed or
+   * rolled back. Tag a checkpoint (a stub: the task, kind and detail in the tag's event) and
+   * park the task, so the run moves on instead of spending every remaining dollar on it.
+   */
+  private async parkBudgetStoppedTask(): Promise<void> {
+    const r = this.run;
+    const stop = r.state.taskBudgetStop;
+    if (!stop) return;
+    const plan = r.requirePlan();
+    const task = plan.nodes.find((n) => n.id === stop.taskId);
+    let tag: string | undefined;
+    if (r.state.lastGreen) {
+      tag = `omnexx-budget-${r.state.runId}-${stop.taskId}-${r.state.cycle}`;
+      await tagCheckpoint(r.worktree, tag, r.state.lastGreen).catch(() => {
+        tag = undefined;
+      });
+    }
+    if (task && task.status !== 'done') {
+      task.status = 'parked';
+      task.parkedReason = `task budget: ${stop.detail}${tag ? ` (checkpoint ${tag})` : ''}`;
+    }
+    r.events.emit('budget.task_park', {
+      task: stop.taskId,
+      kind: stop.kind,
+      detail: stop.detail,
+      ...(tag ? { checkpoint: tag, sha: r.state.lastGreen } : {}),
+    });
+    r.state.taskBudgetStop = undefined;
+    await r.save();
+    await r.savePlan();
+  }
+
   /** GUARD after RECORD: stuck signals → ladder; the judge's advisory next move; then SELECT. */
   private async guardPost(): Promise<void> {
     const r = this.run;
+    await this.parkBudgetStoppedTask();
     const p = r.state.pending;
     const plan = r.requirePlan();
     if (p) {
@@ -1056,9 +1091,11 @@ class Supervisor {
         if (err.end === 'stop' || err.end === 'stop-now')
           return { status: 'user-stop', reason: 'stopped during planning' };
         // Retries used up on this model: plan with the next one before asking anyone.
-        if (err.end !== 'max_usd' && this.fallBackPlanner(err.end)) continue;
-        return err.end === 'max_usd'
-          ? { status: 'budget-stop', reason: 'max_usd reached while planning' }
+        const planningCap =
+          err.end === 'max_usd' || err.end === 'max_task_usd' || err.end === 'max_task_tokens';
+        if (!planningCap && this.fallBackPlanner(err.end)) continue;
+        return planningCap
+          ? { status: 'budget-stop', reason: `${err.end} reached while planning` }
           : {
               status: 'needs-human',
               reason:

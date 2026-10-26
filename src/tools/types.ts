@@ -6,6 +6,7 @@ import type { RunningContext } from '../core/running-context.js';
 import type { PolicyContext } from '../security/command-policy.js';
 import { OutsideRootError, type PathJail } from '../security/paths.js';
 import type { Redactor } from '../security/redact.js';
+import type { WasteKind } from '../usage/ledger.js';
 
 /** An agent card a helper plays: its instructions and the tools it asked for. */
 export interface HelperCard {
@@ -24,6 +25,10 @@ export interface ToolContext {
   redactor: Redactor;
   policy: PolicyContext;
   cycle: number;
+  /** The plan task this context belongs to ("plan" while planning). */
+  taskId?: string;
+  /** Turn number inside the current loop (1-based), set by the loop before tools run. */
+  step?: number;
   maxCmdTimeoutMs: number;
   notesMaxTokens: number;
   today: string;
@@ -45,6 +50,14 @@ export interface ToolContext {
    * whenever old tool results are elided or compacted, since the earlier copy is then gone.
    */
   reads?: Map<string, string>;
+  /** Records tokens the harness saved or wasted (a repeat read answered with a pointer). */
+  onWaste?: (w: {
+    kind: WasteKind;
+    tokens: number;
+    detail: string;
+    path?: string;
+    sinceStep?: number;
+  }) => void;
   /**
    * Interactive chat only: ask the person at the keyboard to allow something the harness would
    * otherwise refuse (a path outside the repo, a command the policy denies). Unattended runs never

@@ -98,6 +98,14 @@ export const stateSchema = z.object({
   phase: z.enum(PHASES),
   status: z.enum(RUN_STATUS),
   statusReason: z.string().optional(),
+  /** A task hit its own cap: park it after this cycle's work has been verified. */
+  taskBudgetStop: z
+    .object({
+      taskId: z.string(),
+      kind: z.enum(['max_task_usd', 'max_task_tokens']),
+      detail: z.string(),
+    })
+    .optional(),
   cycle: z.number().int().nonnegative(),
   taskId: z.string().optional(),
   startedAt: z.number(),

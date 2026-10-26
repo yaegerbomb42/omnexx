@@ -16,13 +16,14 @@ import {
   type TokenRatios,
 } from '../core/token-calibration.js';
 import { applyTokenRatio, estimateTokens } from '../core/tokens.js';
-import { preflight, type BudgetStop } from '../guard/budget.js';
+import { preflight, type BudgetStop, type BudgetWarning } from '../guard/budget.js';
 import { costUsd, type ResolvedModel } from '../providers/pricing.js';
 import { ProvidersUnavailable, StopRequested, withRetry } from '../providers/retry.js';
 import { narrateTool } from '../telemetry/narrate.js';
 import { shouldFailover } from '../providers/router.js';
 import { isQuotaError } from '../providers/sticky.js';
 import { ProviderError } from '../errors.js';
+import { withCallAttribution, type CallPurpose } from '../usage/ledger.js';
 import {
   budgetTokens,
   totalInput,
@@ -193,6 +194,14 @@ export interface LoopDeps {
   spentTodayUsd?: () => number;
   /** Persist spend after every call so a crash never forgets money already spent. */
   onUsage: (usage: Usage, usd: number, model: string, provider: string) => Promise<void>;
+  /** The ledger purpose for this loop's calls (main worker, subagent, planner). */
+  purpose?: CallPurpose;
+  /** The plan task this loop works on, for per-task usage and caps. */
+  taskId?: string;
+  /** The task's ledger totals so far; preflight checks them against the per-task caps. */
+  taskSpend?: () => { usd: number; tokens: number };
+  /** Called once per kind when a per-task cap reaches warn_at. */
+  onTaskBudgetWarn?: (warning: BudgetWarning) => void;
   control: () => Promise<ControlSignal>;
   /** How often to re-check control.json while paused. */
   pausePollMs?: number;
@@ -419,6 +428,28 @@ export async function runAgentLoop(
   let previousPromptTokens = 0;
   let bookkeepingHinted = false;
   let changedSomething = false;
+  const warnedTask = new Set<string>();
+  /** Every provider call goes through here, so no call can escape the usage ledger. */
+  const callProvider = <T>(
+    purpose: CallPurpose | undefined,
+    label: string | undefined,
+    fn: () => Promise<T>,
+  ): Promise<T> =>
+    withCallAttribution(
+      {
+        purpose: purpose ?? deps.purpose ?? 'main',
+        taskId: deps.taskId ?? 'untasked',
+        cycle: deps.toolCtx.cycle,
+        step: turns + 1,
+        ...(label ? { label } : {}),
+      },
+      fn,
+    );
+  const warnTask = (warning: BudgetWarning | undefined): void => {
+    if (!warning || warnedTask.has(warning.kind)) return;
+    warnedTask.add(warning.kind);
+    deps.onTaskBudgetWarn?.(warning);
+  };
   for (;;) {
     let signal = await deps.control();
     if (signal === 'pause') {
@@ -441,9 +472,19 @@ export async function runAgentLoop(
         ctx.anchor ?? ctx.first,
         ctx.pinned ? { ...settings, pinned: ctx.pinned } : settings,
         deps.compaction.summarize,
-        ({ kind, ...rest }) => {
+        (event) => {
+          const { kind, ...rest } = event;
           // Earlier read results are gone from the context now; let `read` return them again.
           if (kind === 'cleared' || kind === 'compacted') deps.toolCtx.reads?.clear();
+          if (kind === 'compacted') {
+            const { tokensBefore: before, tokensAfter: after } = event;
+            if (after >= before)
+              deps.toolCtx.onWaste?.({
+                kind: 'compaction_no_shrink',
+                tokens: after,
+                detail: `compaction before turn ${String(turns)} did not shrink (${String(before)} → ${String(after)} tokens)`,
+              });
+          }
           deps.events.emit(`context.${kind}`, { turn: turns, ...rest });
         },
       );
@@ -465,8 +506,8 @@ export async function runAgentLoop(
           // outage fails both, and one that just ended lets this attempt through.
           if (serverFailures >= POISON_PROBE_AFTER && lastServerFailure) {
             const m = lastServerFailure;
-            const up = await deps.provider
-              .complete({
+            const up = await callProvider('verification', 'poison_probe', () =>
+              deps.provider.complete({
                 model: m.id,
                 route: m.provider,
                 system: [{ text: 'Reply with: ok' }],
@@ -474,11 +515,11 @@ export async function runAgentLoop(
                 messages: [{ role: 'user', content: [{ type: 'text', text: 'ok' }] }],
                 maxTokens: 16,
                 messageBreakpoints: [],
-              })
-              .then(
-                () => true,
-                () => false,
-              );
+              }),
+            ).then(
+              () => true,
+              () => false,
+            );
             if (up) {
               // The provider is up: send the real request once more, cooling or not.
               try {
@@ -488,7 +529,9 @@ export async function runAgentLoop(
                   ...(deps.signal ? { signal: deps.signal } : {}),
                 };
                 const quote = pricedPrompt(tokenRatios, m, req);
-                const r = await deps.provider.complete(req);
+                const r = await callProvider(deps.purpose, 'poison_probe_retry', () =>
+                  deps.provider.complete(req),
+                );
                 chosen = m;
                 learned = { model: quote.key, raw: quote.raw };
                 return r;
@@ -557,22 +600,26 @@ export async function runAgentLoop(
               spentUsd: deps.spentUsd(),
               ...(deps.spentTodayUsd ? { spentTodayUsd: deps.spentTodayUsd() } : {}),
               cycle: { turns, tokens: cycleTokens },
+              ...(deps.taskSpend ? { task: deps.taskSpend() } : {}),
               estimatedInputTokens: estimate,
               maxOutputTokens: deps.maxTokens,
               price: m.price,
             });
             if (!pf.ok) throw new BudgetStopSignal(pf.stop, pf.detail);
+            warnTask(pf.warn);
             triedAny = true;
             const ref = `${m.provider}:${m.id}`;
             const sentAt = deps.clock.now();
             deps.onRequest?.({ model: ref, inputTokens: estimate });
             try {
-              const r = await deps.provider.complete({
-                ...req,
-                route: m.provider,
-                ...(deps.onDelta ? { onDelta: deps.onDelta } : {}),
-                ...(deps.signal ? { signal: deps.signal } : {}),
-              });
+              const r = await callProvider(deps.purpose, undefined, () =>
+                deps.provider.complete({
+                  ...req,
+                  route: m.provider,
+                  ...(deps.onDelta ? { onDelta: deps.onDelta } : {}),
+                  ...(deps.signal ? { signal: deps.signal } : {}),
+                }),
+              );
               chosen = m;
               learned = { model: quote.key, raw: quote.raw };
               deps.onResponse?.({
@@ -705,6 +752,7 @@ export async function runAgentLoop(
     const model = chosen ?? deps.models[0];
     if (!model) throw new ProviderError('empty model chain', { retryable: false });
     turns++;
+    deps.toolCtx.step = turns;
     const cost = costUsd(res.usage, model.price);
     usd += cost;
     for (const k of Object.keys(usage) as (keyof Usage)[]) usage[k] += res.usage[k];

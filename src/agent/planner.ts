@@ -389,6 +389,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     redactor: run.redactor,
     policy: run.policy(),
     cycle: run.state.cycle,
+    taskId: 'plan',
     maxCmdTimeoutMs: run.maxCmdTimeoutMs,
     notesMaxTokens: run.config.context.notes_max_tokens,
     today: new Date(run.clock.now()).toISOString().slice(0, 10),
@@ -418,7 +419,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       tools: tools.map(toolSpec),
     },
     {
-      provider: run.deps.provider,
+      provider: run.provider,
       models: plannerCandidates(
         run,
         (
@@ -453,6 +454,8 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
         planTokens += Math.max(0, totalInput(u) + u.output);
         return run.addSpend(u, usd, model, 'planner', provider);
       },
+      purpose: 'planner',
+      taskId: 'plan',
       control: () => run.control(),
       signal: run.abort.signal,
       calibrationFile: tokenCalibrationFile(run.deps.paths),

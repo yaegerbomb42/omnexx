@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
+import { estimateTokens } from '../core/tokens.js';
 import { lineTag } from './anchors.js';
 import { openError } from './did-you-mean.js';
 import { extractSymbols, renderOutline } from './outline.js';
@@ -37,12 +38,14 @@ const schema = z.strictObject({
     .optional()
     .describe(`Several files or ranges in one call (up to ${MAX_READ_FILES})`),
   anchors: z.boolean().optional().describe('Tag lines with a content hash, for replace_lines'),
+  note: z.string().optional().describe('Why you need it; reused if a later read is skipped'),
 });
 
 interface ReadTarget {
   path: string;
   start?: number | undefined;
   end?: number | undefined;
+  note?: string | undefined;
 }
 
 function clipLine(l: string): string {
@@ -91,8 +94,15 @@ async function readOne(
   }
   const body = shown.join('\n');
   const more = last < lines.length ? `\n(lines ${last + 1}-${lines.length} not shown)` : '';
-  const repeat = ctx.reads && alreadyShown(ctx.reads, t.path, text, first, last, anchors);
-  return ok(repeat ?? `${body}${more}`);
+  const full = `${body}${more}`;
+  const repeat =
+    ctx.reads &&
+    alreadyShown(ctx.reads, t.path, text, first, last, anchors, {
+      ctx,
+      body: full,
+      ...(t.note ? { note: t.note } : {}),
+    });
+  return ok(repeat ?? full);
 }
 
 /** Header of one file's section in a multi-file read. */
@@ -112,6 +122,7 @@ async function readMany(
   targets: readonly ReadTarget[],
   anchors: boolean | undefined,
   ctx: ToolContext,
+  note?: string,
 ): Promise<ToolOutput> {
   // In order, each with what's left of the budget: one read per file, so the already-shown
   // bookkeeping sees each range once.
@@ -123,7 +134,12 @@ async function readMany(
       sections.push(`${heading(t)}\n(not read: this call reached its size limit; read it next)`);
       continue;
     }
-    const out = await readOne(t, anchors, ctx, left);
+    const out = await readOne(
+      note !== undefined && t.note === undefined ? { ...t, note } : t,
+      anchors,
+      ctx,
+      left,
+    );
     if (out.isError) failed++;
     sections.push(`${heading(t)}\n${out.content}`);
     left -= out.content.length;
@@ -156,10 +172,15 @@ export const readTool: Tool<typeof schema> = {
   async run(input, ctx) {
     if (input.files && input.path !== undefined)
       return fail('read takes either path (with start/end) or files: [...], not both');
-    if (input.files) return readMany(input.files, input.anchors, ctx);
+    if (input.files) return readMany(input.files, input.anchors, ctx, input.note);
     if (input.path === undefined) return fail('read needs path, or files: [{path, start, end}]');
     return readOne(
-      { path: input.path, start: input.start, end: input.end },
+      {
+        path: input.path,
+        start: input.start,
+        end: input.end,
+        ...(input.note ? { note: input.note } : {}),
+      },
       input.anchors,
       ctx,
       MAX_READ_CHARS,
@@ -177,6 +198,29 @@ function parseCoverage(value: string | undefined): { hash: string; ranges: [numb
   return { hash, ranges };
 }
 
+/** How a file was first shown this cycle: the step, and the agent's note about it. */
+interface ReadMeta {
+  step?: number;
+  note?: string;
+}
+
+function parseMeta(value: string | undefined): ReadMeta {
+  if (!value) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+const MAX_NOTE = 300;
+
+/** Notes are model-written; keep a stale or runaway one from inflating the pointer. */
+function shortNote(note: string | undefined): string | undefined {
+  return note && note.length > MAX_NOTE ? `${note.slice(0, MAX_NOTE)}…` : note;
+}
+
 const covers = (ranges: readonly [number, number][], start: number, end: number): boolean => {
   for (let n = start; n <= end; n++) if (!ranges.some(([a, b]) => n >= a && n <= b)) return false;
   return true;
@@ -186,6 +230,10 @@ const covers = (ranges: readonly [number, number][], start: number, end: number)
  * A short note instead of the lines when the file is unchanged and every requested line was
  * already shown this cycle (any earlier range, not just the same one). Asking for exactly the
  * same range again right after returns the lines, in case the earlier result was trimmed.
+ *
+ * With a step in the context (the worker loop always sets one) the pointer says "unchanged since
+ * step N" and repeats the note the agent attached to the first read. The tokens the pointer
+ * avoided are recorded as waste saved, so `omnexx usage` can price the guard.
  */
 function alreadyShown(
   reads: Map<string, string>,
@@ -194,15 +242,32 @@ function alreadyShown(
   start: number,
   end: number,
   anchors: boolean | undefined,
+  opts: { ctx: ToolContext; body: string; note?: string },
 ): string | undefined {
-  const covKey = `cov:${path}${anchors ? ':a' : ''}`;
-  const lastKey = `last:${path}${anchors ? ':a' : ''}`;
+  const suffix = anchors ? ':a' : '';
+  const covKey = `cov:${path}${suffix}`;
+  const lastKey = `last:${path}${suffix}`;
+  const metaKey = `meta:${path}${suffix}`;
   const hash = createHash('sha256').update(text).digest('hex');
   const seen = parseCoverage(reads.get(covKey));
   const range = `${String(start)}-${String(end)}`;
   if (seen.hash === hash && covers(seen.ranges, start, end) && reads.get(lastKey) !== range) {
     reads.set(lastKey, range);
-    return `${path} is unchanged and lines ${range} were already shown earlier this cycle; use that result above. (Ask for the same range again if it is no longer in your context.)`;
+    const meta = parseMeta(reads.get(metaKey));
+    const step = meta.step;
+    const note = shortNote(opts.note ?? meta.note);
+    const pointer =
+      step !== undefined
+        ? `${path} is unchanged since step ${String(step)}; lines ${range} were already shown earlier this cycle.${note ? ` Earlier note: ${note}` : ''} (Ask for the same range again if it is no longer in your context.)`
+        : `${path} is unchanged and lines ${range} were already shown earlier this cycle; use that result above.${note ? ` Earlier note: ${note}` : ''} (Ask for the same range again if it is no longer in your context.)`;
+    opts.ctx.onWaste?.({
+      kind: 'repeat_read',
+      tokens: Math.max(0, estimateTokens(opts.body) - estimateTokens(pointer)),
+      detail: `repeat read of ${path} (lines ${range}) answered with a pointer`,
+      path,
+      ...(step !== undefined ? { sinceStep: step } : {}),
+    });
+    return pointer;
   }
   const ranges =
     seen.hash === hash
@@ -210,5 +275,27 @@ function alreadyShown(
       : [[start, end] as [number, number]];
   reads.set(covKey, `${hash}|${ranges.map(([a, b]) => `${String(a)}-${String(b)}`).join(',')}`);
   reads.delete(lastKey);
+  const prior = seen.hash === hash ? parseMeta(reads.get(metaKey)) : {};
+  const note = shortNote(opts.note ?? prior.note ?? firstLine(opts.body));
+  reads.set(
+    metaKey,
+    JSON.stringify({
+      ...(prior.step !== undefined
+        ? { step: prior.step }
+        : opts.ctx.step !== undefined
+          ? { step: opts.ctx.step }
+          : {}),
+      ...(note ? { note } : {}),
+    }),
+  );
   return undefined;
+}
+
+/** A short stand-in for the agent's note when it did not write one. */
+function firstLine(body: string): string | undefined {
+  const line = body
+    .split('\n')
+    .map((l) => l.replace(/^\s*\d+\s+/, '').trim())
+    .find((l) => l.length > 0);
+  return line ? line.slice(0, 160) : undefined;
 }

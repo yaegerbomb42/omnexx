@@ -91,7 +91,7 @@ export function helperRunner(
     const ctx: ToolContext = {
       ...parent,
       edited: new Set(),
-      reads: new Map(),
+      ...(parent.reads === undefined ? {} : { reads: new Map<string, string>() }),
       nextCommandId: () => `${parent.nextCommandId()}-t${id}`,
     };
     // No grandchildren: a helper's task tool reports it isn't available.
@@ -123,6 +123,7 @@ export function helperRunner(
         },
         {
           ...env.loop,
+          purpose: 'subagent',
           models: chain,
           // least-busy only picks the lead; per call the chain behaves like fallback.
           strategy:
@@ -181,7 +182,7 @@ export function subagentRunner(
       maxTokens: Math.min(run.config.providers.anthropic.max_tokens, 4_096),
       limits: { tokens: cfg.subagent_max_tokens, turns: cfg.subagent_max_turns },
       loop: {
-        provider: run.deps.provider,
+        provider: run.provider,
         providerBlocked: (p) => run.providerBlocked(p),
         modelExhausted: (r) => run.modelExhausted(r),
         markExhausted: (r) => {
@@ -199,6 +200,18 @@ export function subagentRunner(
         spentUsd: () => run.state.spend.usd,
         spentTodayUsd: () => run.spentToday(),
         onUsage: (u, usd, model, provider) => run.addSpend(u, usd, model, 'subagent', provider),
+        purpose: 'subagent',
+        taskId: parent.taskId ?? run.state.taskId ?? 'untasked',
+        taskSpend: () => run.taskUsage(parent.taskId ?? run.state.taskId ?? 'untasked'),
+        onTaskBudgetWarn: (warning) => {
+          run.events.emit('budget.task_warn', {
+            task: parent.taskId ?? run.state.taskId ?? 'untasked',
+            kind: warning.kind,
+            used: warning.used,
+            cap: warning.cap,
+            detail: warning.detail,
+          });
+        },
         control: () => run.control(),
         signal: run.abort.signal,
       },

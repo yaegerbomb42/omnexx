@@ -22,6 +22,7 @@ import {
   statusCommand,
 } from './commands/inspect.js';
 import { readGoal, runCommand, runPlanOnly, type FullRunFlags } from './commands/run.js';
+import { usageCommand } from './commands/usage.js';
 import * as extraCommands from './commands/extra/index.js';
 import type { CommandRegistrar } from './commands/extra/types.js';
 import { serviceCommand } from './commands/service.js';
@@ -277,6 +278,16 @@ export function createProgram(io: CliIO, setExit: (code: number) => void): Comma
     .description('list runs')
     .action(async (opts: { json?: boolean }) => {
       setExit(await runsCommand(io, opts.json === true));
+    });
+
+  program
+    .command('usage')
+    .argument('[task]', 'plan task id, e.g. M1.T01; omit for the whole run')
+    .option('--run <id>', 'run id (default: the newest run)')
+    .option('--json', 'machine-readable output')
+    .description('where the tokens and dollars went, including repeated reads and retries')
+    .action(async (task: string | undefined, opts: { run?: string; json?: boolean }) => {
+      setExit(await usageCommand(io, task, opts));
     });
 
   program

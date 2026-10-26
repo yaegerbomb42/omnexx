@@ -117,6 +117,47 @@ describe('preflight', () => {
   });
 });
 
+describe('per-task caps', () => {
+  const budget = defaultConfig({
+    budget: { max_task_usd: 1, max_task_tokens: 100_000, warn_at: 0.8 },
+  }).budget;
+  const base = {
+    spentUsd: 0,
+    cycle: { turns: 0, tokens: 0 },
+    estimatedInputTokens: 10_000,
+    maxOutputTokens: 1_000,
+    price,
+  };
+
+  it('stops before a task crosses its dollar or token cap', () => {
+    expect(preflight(budget, { ...base, task: { usd: 0.1, tokens: 1_000 } })).toMatchObject({
+      ok: true,
+    });
+    expect(preflight(budget, { ...base, task: { usd: 0.99, tokens: 1_000 } })).toMatchObject({
+      ok: false,
+      stop: 'max_task_usd',
+    });
+    expect(preflight(budget, { ...base, task: { usd: 0.1, tokens: 95_000 } })).toMatchObject({
+      ok: false,
+      stop: 'max_task_tokens',
+    });
+  });
+
+  it('warns at warn_at of the task cap, once per call site', () => {
+    const r = preflight(budget, { ...base, task: { usd: 0.82, tokens: 1_000 } });
+    expect(r).toMatchObject({ ok: true, warn: { kind: 'max_task_usd', cap: 1 } });
+    const t = preflight(budget, { ...base, task: { usd: 0.1, tokens: 71_000 } });
+    expect(t).toMatchObject({ ok: true, warn: { kind: 'max_task_tokens', cap: 100_000 } });
+  });
+
+  it('leaves task caps off when they are unset', () => {
+    const open = defaultConfig({ budget: {} }).budget;
+    expect(preflight(open, { ...base, task: { usd: 1_000, tokens: 1_000_000 } })).toMatchObject({
+      ok: true,
+    });
+  });
+});
+
 describe('run limits, warn and wrap-up', () => {
   const budget = defaultConfig({ budget: { max_usd: 50, max_hours: 24, max_cycles: 300 } }).budget;
   it('hits each cap', () => {

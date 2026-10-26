@@ -6,6 +6,8 @@ export type BudgetStop =
   | 'max_usd_per_day'
   | 'max_turns_per_cycle'
   | 'max_tokens_per_cycle'
+  | 'max_task_usd'
+  | 'max_task_tokens'
   /** Every model was out of quota or unreachable for `budget.max_provider_wait`. */
   | 'providers_unavailable';
 
@@ -15,18 +17,35 @@ export interface CycleUsage {
   tokens: number;
 }
 
+/** What one task has spent so far, from the usage ledger. */
+export interface TaskUsage {
+  usd: number;
+  /** Cache-weighted tokens: what counts against the per-task token cap. */
+  tokens: number;
+}
+
+export interface BudgetWarning {
+  kind: 'max_task_usd' | 'max_task_tokens';
+  used: number;
+  cap: number;
+  detail: string;
+}
+
 export interface PreflightInput {
   /** Spend in the rolling 24 h window, for the daily cap. */
   spentTodayUsd?: number;
   spentUsd: number;
   cycle: CycleUsage;
+  /** The task's ledger totals, before this call. */
+  task?: TaskUsage;
   estimatedInputTokens: number;
   maxOutputTokens: number;
   price: PriceConfig;
 }
 
 export type PreflightResult =
-  { ok: true; worstCaseUsd: number } | { ok: false; stop: BudgetStop; detail: string };
+  | { ok: true; worstCaseUsd: number; warn?: BudgetWarning }
+  | { ok: false; stop: BudgetStop; detail: string };
 
 /**
  * Before every model call (plan §3.11): would the worst case for this one call cross a cap?
@@ -57,6 +76,47 @@ export function preflight(budget: OmnexxConfig['budget'], i: PreflightInput): Pr
       detail: `next call could bring the cycle to ${tokens} tokens`,
     };
   }
+  // Per-task caps come before the run-level ones: a single task burning the whole run is the
+  // failure this governor exists to stop, and the detail should name that task's cap.
+  let warn: BudgetWarning | undefined;
+  if (i.task && budget.max_task_usd !== undefined) {
+    const cap = budget.max_task_usd;
+    const projected = i.task.usd + worst;
+    if (projected > cap) {
+      return {
+        ok: false,
+        stop: 'max_task_usd',
+        detail: `task spent $${i.task.usd.toFixed(4)}; next call could reach $${projected.toFixed(4)} of its $${cap} cap`,
+      };
+    }
+    if (projected >= cap * budget.warn_at) {
+      warn = {
+        kind: 'max_task_usd',
+        used: projected,
+        cap,
+        detail: `task at ${Math.round((projected / cap) * 100)}% of its $${cap} cap`,
+      };
+    }
+  }
+  if (i.task && budget.max_task_tokens !== undefined) {
+    const cap = budget.max_task_tokens;
+    const projected = i.task.tokens + estimatedInputTokens + maxOutputTokens;
+    if (projected > cap) {
+      return {
+        ok: false,
+        stop: 'max_task_tokens',
+        detail: `task used ${i.task.tokens} tokens; next call could reach ${projected} of its ${cap} cap`,
+      };
+    }
+    if (!warn && projected >= cap * budget.warn_at) {
+      warn = {
+        kind: 'max_task_tokens',
+        used: projected,
+        cap,
+        detail: `task at ${Math.round((projected / cap) * 100)}% of its ${cap}-token cap`,
+      };
+    }
+  }
   if (i.spentUsd + worst > budget.max_usd) {
     return {
       ok: false,
@@ -71,7 +131,7 @@ export function preflight(budget: OmnexxConfig['budget'], i: PreflightInput): Pr
       detail: `${i.spentTodayUsd.toFixed(4)} spent in the last 24 h; next call could cost up to ${worst.toFixed(4)} (daily cap ${budget.max_usd_per_day})`,
     };
   }
-  return { ok: true, worstCaseUsd: worst };
+  return { ok: true, worstCaseUsd: worst, ...(warn ? { warn } : {}) };
 }
 
 export interface SpendEntry {
