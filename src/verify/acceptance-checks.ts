@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { shellQuote } from './shell-quote.js';
 
 export interface PreflightCheck {
   id: string;
@@ -37,13 +38,13 @@ export function inferCheckCommand(criterion: string): string | undefined {
   if (noOther?.[1] && noOther[2]) {
     const excluded = noOther[1].trim();
     const word = noOther[2].trim();
-    return `! grep -rn "${word}" --exclude="${excluded}" src/ test/`;
+    return `! grep -rn ${shellQuote(word)} --exclude=${shellQuote(excluded)} src/ test/`;
   }
   // Pattern: No file mentions `WORD`
   const noneMentions = /no file mentions `?([^`]+)`?/i.exec(c);
   if (noneMentions?.[1]) {
     const word = noneMentions[1].trim();
-    return `! grep -rn "${word}" src/ test/`;
+    return `! grep -rn ${shellQuote(word)} src/ test/`;
   }
   return undefined;
 }
