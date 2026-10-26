@@ -38,6 +38,27 @@ export class PlannerIncomplete extends StateError {
 /** The planner's model answered in plain text and never called a tool. */
 export const NO_TOOL_CALLS = 'no_tool_calls';
 
+/** Task size/effort estimates the planner's brief maps to a concise human string. */
+export type TaskEffortLevel = 'trivial' | 'small' | 'medium' | 'large' | 'huge';
+
+const TASK_EFFORT_BRIEF: Record<TaskEffortLevel, string> = {
+  trivial: '~5 min',
+  small: '~30 min',
+  medium: '~1 hr',
+  large: '~2 hr',
+  huge: '~1 day',
+};
+
+/**
+ * A concise brief for a task's effort estimate, e.g. '~5 min' or '~2 hr'.
+ * Falls back to 'medium' for unknown input so every level maps to a string.
+ */
+export function taskEffortBrief(level: string | undefined): string {
+  return level !== undefined && level in TASK_EFFORT_BRIEF
+    ? TASK_EFFORT_BRIEF[level as TaskEffortLevel]
+    : TASK_EFFORT_BRIEF.medium;
+}
+
 const usedNoTools = (messages: readonly Message[]): boolean =>
   !messages.some(
     (m) =>
