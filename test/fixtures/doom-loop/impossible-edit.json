@@ -1,0 +1,15 @@
+{
+  "description": "Equ agent tries an impossible edit (adding a method to a file that is not a source file) and it keeps failing identically. The ledger must force a strategy change on the third repeat.",
+  "action": {
+    "tool": "edit",
+    "args": "src/README.md (insert method stub at line 12)",
+    "result": "Error: not a source file; no symbol table to update"
+  },
+  "attempts": 30,
+  "expected": {
+    "tripAtRepeat": 3,
+    "baselineTokens": 45000,
+    "breakerTokens": 4500,
+    "dropRatio": 0.9
+  }
+}
