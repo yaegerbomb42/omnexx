@@ -254,6 +254,25 @@ function advancedHtml(): string {
   </div>`;
 }
 
+function shortcutsHtml(): string {
+  const rows: [string, string][] = [
+    ['Ctrl+Alt+O / Cmd+Alt+O', 'Open Chat (focus)'],
+    ['Ctrl+Alt+H / Cmd+Alt+H', 'Show History'],
+    ['Ctrl+Shift+Alt+P / Cmd+Shift+Alt+P', 'Pause Run'],
+    ['Ctrl+Shift+Alt+R / Cmd+Shift+Alt+R', 'Resume Run'],
+    ['Ctrl+Shift+Alt+S / Cmd+Shift+Alt+S', 'Stop Run'],
+    ['Ctrl+Shift+Alt+N / Cmd+Shift+Alt+N', 'New Chat'],
+    ['Ctrl+Shift+Alt+Z / Cmd+Shift+Alt+Z', 'Undo Last Message\u2019s Edits'],
+    ['Ctrl+Shift+Alt+M / Cmd+Shift+Alt+M', 'Pick Chat Model'],
+  ];
+  return `<table class="shortcuts"><thead><tr><th>Keybinding</th><th>Action</th></tr></thead><tbody>${rows
+    .map(
+      ([key, action]) =>
+        `<tr><td class="key">${escapeHtml(key)}</td><td>${escapeHtml(action)}</td></tr>`,
+    )
+    .join('')}</tbody></table>`;
+}
+
 function draw(): void {
   const page = q('settings', HTMLElement);
   page.innerHTML = `
@@ -268,7 +287,8 @@ ${sec('add', addFormHtml(), 'add')}
 ${sec('approvals', approvalsHtml())}
 ${sec('mcp', `<div id="mcp-box">${mcp.html()}</div>`)}
 ${sec('browser', `<div id="browser-box">${browserHtml()}</div>`)}
-${sec('advanced', advancedHtml())}`;
+${sec('advanced', advancedHtml())}
+${sec('shortcuts', shortcutsHtml())}`;
   posture.render();
   domain.render();
   stats.refresh();
