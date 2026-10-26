@@ -2,7 +2,7 @@
 
 | Lane   | Trigger                         | Runs                                                                                                                 | Target               |
 | ------ | ------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `fast` | push to `experimental/**`       | typecheck + `vitest --changed origin/main` (unit + integration)                                                      | < 2 min              |
+| `fast` | push to `experimental/**`       | typecheck + `vitest --changed origin/main` (unit only; integration runs on the PR)                                   | < 2 min              |
 | `pr`   | every pull request              | format, lint, typecheck, **affected** tests (`--changed origin/<base>`, all projects incl. chaos), build, pack smoke | ~3–4 min             |
 | `full` | push to `main`, nightly, manual | whole suite sharded 4 ways × {ubuntu, macos} × {node 22, 24}; static + package smoke per platform; one coverage job  | wall ≈ slowest shard |
 
