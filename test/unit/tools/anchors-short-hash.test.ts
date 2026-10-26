@@ -54,7 +54,7 @@ describe('anchors short hash (2-char) behavior', () => {
     // Use line 11's tag for a range starting at line 10
     const wrongTag = lineTag(lines[10] ?? ''); // line 11
     const result = locateRange(lines, 10, 20, wrongTag);
-    assertFail(result, 'start line');
+    assertFail(result, 'start line tag of');
     expect(result.reason).not.toContain(`${wrongTag}${wrongTag}`);
   });
 

@@ -25,6 +25,11 @@ export type Located =
 /**
  * Where lines start..end with anchor `expected` are now. They match where they were, or, if the
  * file shifted, at the one place the same pair of tags sits the same distance apart.
+ *
+ * Contract for a 2-char `expected` (one line's tag): on a single-line range it must match that
+ * line (or the one line within ±15 carrying it); on a multi-line range it pins only the START
+ * line — interior and end lines are not verified. Callers that need the whole range checked
+ * must pass the full range hash.
  */
 export function locateRange(
   lines: readonly string[],
