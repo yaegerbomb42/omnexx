@@ -53,6 +53,12 @@ vi.mock('vscode', () => {
     static file(fsPath: string): MockUri {
       return new MockUri(fsPath);
     }
+    static joinPath(base: MockUri, ...parts: string[]): MockUri {
+      return new MockUri(`${base.fsPath}/${parts.join('/')}`);
+    }
+    toString(): string {
+      return this.fsPath;
+    }
   }
   class MockIcon {
     readonly value: string;
@@ -131,5 +137,41 @@ describe('modelsWaiter: a pending resolver per request', () => {
     await firstTookTooLong;
     server.fire(reply(MODELS));
     await expect(second).resolves.toEqual({ items: MODELS, unreachable: [] });
+  });
+});
+
+describe('chat footer: one status line, one Stop button', () => {
+  it('renders model · tokens · step and no pause button or scattered chips', () => {
+    const provider = new ChatViewProvider({ fsPath: '/ext' } as never);
+    let html = '';
+    let options: unknown;
+    const webview = {
+      set options(v: unknown) {
+        options = v;
+      },
+      get options(): unknown {
+        return options;
+      },
+      set html(v: string) {
+        html = v;
+      },
+      asWebviewUri: (u: { fsPath: string }) => ({ toString: () => `https://file/${u.fsPath}` }),
+      onDidReceiveMessage: () => ({ dispose: () => undefined }),
+    };
+    const view = {
+      webview,
+      onDidDispose: () => ({ dispose: () => undefined }),
+    };
+    (provider as unknown as { resolveWebviewView: (v: unknown) => void }).resolveWebviewView(view);
+    expect(html).toContain('id="statusline"');
+    expect(html).toContain('id="model"');
+    expect(html).toContain('id="status-tokens"');
+    expect(html).toContain('id="status-step"');
+    expect(html).toContain('id="status-ctx"');
+    expect(html).toContain('id="stat-cache"');
+    expect(html).not.toContain('id="pause"');
+    expect(html).not.toContain('stat-cache-pill');
+    expect(html).not.toContain('ctx-fill');
+    expect(html).not.toContain('ctx-text');
   });
 });

@@ -3,6 +3,7 @@ import { SLIDERS } from '../../vscode/src/webview/agentCardModel.js';
 import { cardHtml, registryCards, toCards } from '../../vscode/src/webview/mcpCards.js';
 import { mcpBlurb, mcpIcon } from '../../vscode/src/webview/mcpIcons.js';
 import {
+  FOLDED_BY_DEFAULT,
   SECTIONS,
   emptyHtml,
   isSectionId,
@@ -12,6 +13,14 @@ import {
 } from '../../vscode/src/webview/settingsLayout.js';
 
 describe('settings layout', () => {
+  it('shows only the essentials open: agent, model, models, providers, approvals', () => {
+    for (const id of ['agent', 'model', 'models', 'providers', 'approvals']) {
+      expect(FOLDED_BY_DEFAULT).not.toContain(id);
+    }
+    for (const id of ['add', 'browser', 'advanced', 'skills', 'mcp', 'shortcuts']) {
+      expect(FOLDED_BY_DEFAULT).toContain(id);
+    }
+  });
   it('has a chip in the nav for every section, each with a subtitle', () => {
     const nav = navHtml();
     for (const s of SECTIONS) {

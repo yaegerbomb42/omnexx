@@ -44,6 +44,37 @@ describe('runDisposableShell timeout / abort', () => {
   });
 });
 
+describe('SessionPool.disposeAll', () => {
+  afterEach(() => {
+    defaultSessionPool.disposeAll();
+  });
+
+  it('kills the persistent shells so the process can exit', async () => {
+    const s = defaultSessionPool.getOrCreate(tmpdir(), 'dispose-me', env);
+    const r = await s.exec('echo "PID=$$"', { cwd: tmpdir(), env, timeoutMs: 5_000 });
+    const pid = Number(/PID=(\d+)/.exec(r.output)?.[1]);
+    expect(pid).toBeGreaterThan(0);
+    expect(() => process.kill(pid, 0)).not.toThrow();
+    defaultSessionPool.disposeAll();
+    // SIGKILL lands at once; the reap takes a tick.
+    for (let i = 0; i < 20; i++) {
+      try {
+        process.kill(pid, 0);
+      } catch (err) {
+        expect((err as NodeJS.ErrnoException).code).toBe('ESRCH');
+        break;
+      }
+      if (i === 19) throw new Error(`shell ${pid} survived disposeAll`);
+      await new Promise((res) => setTimeout(res, 50));
+    }
+    // The pool still works after disposal: the next command respawns the shell.
+    const again = await defaultSessionPool
+      .getOrCreate(tmpdir(), 'dispose-me', env)
+      .exec('echo back', { cwd: tmpdir(), env, timeoutMs: 5_000 });
+    expect(again.output).toContain('back');
+  });
+});
+
 describe('ShellSession interrupt vs next command', () => {
   afterEach(() => {
     defaultSessionPool.disposeAll();

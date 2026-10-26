@@ -1,11 +1,15 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { parse as parseToml } from 'smol-toml';
 import type { OmnexxPaths } from '../core/paths.js';
+import { userConfigFile } from '../core/paths.js';
+import { upsertTomlTable } from './toml-file.js';
 import { MAIN_STRATEGIES, migrateStrategy, type MainStrategy, type Strategy } from './routing.js';
 
 /**
- * The person's ranked provider:model list, the one list every role uses unless roles.json gives
- * a role its own, kept apart from config.toml so /models and the editor can rewrite it.
+ * The person's ranked provider:model list, the one list every role uses unless [roles] gives
+ * a role its own. It lives in the unified user config as the [pool] table; the old models.json
+ * is still read (and migrated on startup) so an existing setup keeps working.
  */
 export const rankingFile = (p: OmnexxPaths): string => join(p.configHome, 'models.json');
 
@@ -46,11 +50,30 @@ async function readFileJson(p: OmnexxPaths): Promise<{ ranked?: unknown; mode?: 
   }
 }
 
-export async function readPoolMode(p: OmnexxPaths): Promise<PoolMode> {
-  return parsePoolMode((await readFileJson(p)).mode);
+/** The [pool] table of the unified config, when the legacy models.json is absent. */
+async function readPoolTable(p: OmnexxPaths): Promise<{ ranked?: unknown; mode?: unknown }> {
+  try {
+    const data = parseToml(await readFile(userConfigFile(p), 'utf8')) as {
+      pool?: { ranked?: unknown; mode?: unknown };
+    };
+    return data.pool ?? {};
+  } catch {
+    return {};
+  }
 }
 
-/** Serialize read-modify-write of models.json so concurrent writers don't clobber each other. */
+/** Legacy models.json wins when present; otherwise the unified config's [pool] table. */
+async function readPoolJson(p: OmnexxPaths): Promise<{ ranked?: unknown; mode?: unknown }> {
+  const legacy = await readFileJson(p);
+  if (legacy.ranked !== undefined || legacy.mode !== undefined) return legacy;
+  return readPoolTable(p);
+}
+
+export async function readPoolMode(p: OmnexxPaths): Promise<PoolMode> {
+  return parsePoolMode((await readPoolJson(p)).mode);
+}
+
+/** Serialize read-modify-write of the [pool] table so concurrent writers don't clobber each other. */
 let writeQueue: Promise<unknown> = Promise.resolve();
 
 function enqueueWrite<T>(work: () => Promise<T>): Promise<T> {
@@ -66,16 +89,17 @@ export function writePoolMode(p: OmnexxPaths, mode: PoolMode): Promise<void> {
   return enqueueWrite(async () => save(p, await readRanking(p), mode));
 }
 
-function cleanRanked(value: unknown): string[] {
+export function cleanRanked(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const refs = value.filter((r): r is string => typeof r === 'string' && REF.test(r));
   return [...new Set(refs)].slice(0, MAX_RANKED);
 }
 
 async function save(p: OmnexxPaths, ranked: readonly string[], mode: PoolMode): Promise<void> {
-  const file = rankingFile(p);
-  await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify({ ranked: cleanRanked(ranked), mode }, null, 2)}\n`);
+  await upsertTomlTable(userConfigFile(p), 'pool', {
+    ranked: cleanRanked(ranked),
+    mode,
+  });
 }
 
 /** Save the list and its mode together (the editor sends both). */
@@ -88,7 +112,7 @@ export function writePool(
 }
 
 export async function readRanking(p: OmnexxPaths): Promise<string[]> {
-  return cleanRanked((await readFileJson(p)).ranked);
+  return cleanRanked((await readPoolJson(p)).ranked);
 }
 
 export function writeRanking(p: OmnexxPaths, ranked: readonly string[]): Promise<void> {
@@ -98,7 +122,7 @@ export function writeRanking(p: OmnexxPaths, ranked: readonly string[]): Promise
 /**
  * The ranking as config: the whole list, in rank order, for chat and every run role (planner,
  * worker, cheap; helpers too, through the worker chain), each routed by the pool's mode.
- * Per-role lists in roles.json override it.
+ * Per-role lists in [roles] override it.
  */
 export function rankingLayer(
   ranked: readonly string[],

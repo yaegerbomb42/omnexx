@@ -32,6 +32,11 @@ export interface SetupRequest {
   provider?: string | undefined;
   url?: string | undefined;
   key?: string | undefined;
+  /**
+   * Env var holding the API key. Only the name is saved (`api_key_env`); the value is never
+   * written to disk. A pasted `key` wins over `keyEnv` when both are given.
+   */
+  keyEnv?: string | undefined;
   /** Values for a templated base URL, e.g. { resource: 'my-azure' }. */
   fields?: Readonly<Record<string, string>> | undefined;
   headers?: Readonly<Record<string, string>> | undefined;
@@ -93,13 +98,21 @@ function resolveTarget(req: SetupRequest): Target {
   return { name, entry, baseUrl, auth: auth === 'bearer' ? undefined : auth };
 }
 
+/** The key to probe with: a pasted key, else the env var `keyEnv` names. */
+function requestKey(io: CliIO, req: SetupRequest): string | undefined {
+  const pasted = req.key?.trim();
+  if (pasted) return pasted;
+  const fromEnv = req.keyEnv ? io.env[req.keyEnv]?.trim() : undefined;
+  return fromEnv === '' ? undefined : fromEnv;
+}
+
 /** List a catalog provider's models directly: its flavor is known, so no probing. */
 async function checkCatalog(io: CliIO, t: Target, req: SetupRequest): Promise<ProbeResult> {
   const entry = t.entry;
   if (!entry || entry.flavor === 'anthropic' || entry.flavor === 'gemini')
     return probeEndpoint({ ...probeBase(io, t, req), flavor: entry?.flavor });
   const listUrl = modelsUrlFor(entry, t.baseUrl);
-  const headers = authHeaders(req.key, t.auth, req.headers);
+  const headers = authHeaders(requestKey(io, req), t.auth, req.headers);
   const models = listUrl
     ? await discoverModels(
         { baseUrl: t.baseUrl, headers, modelsUrl: listUrl },
@@ -120,7 +133,7 @@ async function checkCatalog(io: CliIO, t: Target, req: SetupRequest): Promise<Pr
 }
 
 function probeBase(io: CliIO, t: Target, req: SetupRequest): ProbeInput {
-  const key = req.key?.trim();
+  const key = requestKey(io, req);
   return {
     baseUrl: t.baseUrl,
     apiKey: key === '' ? undefined : key,
@@ -152,21 +165,34 @@ export async function setupProvider(io: CliIO, req: SetupRequest): Promise<Setup
   const file = userConfigFile(paths);
   const { config } = await loadConfig({ cwd: io.cwd, env: io.env });
   if (config.providers.endpoints[t.name]) await removeEndpointBlock(file, t.name);
+  const stored = req.key?.trim();
   await appendEndpointBlock(file, t.name, {
     baseUrl: probe.ok ? probe.baseUrl : t.baseUrl,
-    keyEnv: undefined,
+    // A pasted key is stored 0600 below and wins; otherwise save the env var name.
+    keyEnv: stored ? undefined : req.keyEnv,
     free: local && !req.key,
     kind: kindForFlavor(flavor ?? 'openai-chat'),
     ...(t.auth ? { auth: t.auth } : {}),
     ...(req.headers ? { headers: { ...req.headers } } : {}),
   });
-  const key = req.key?.trim();
-  if (key) await storeKey(paths, t.name, key);
-  return { name: t.name, probe, message: describeSetup(t.name, probe, Boolean(key)) };
+  if (stored) await storeKey(paths, t.name, stored);
+  return {
+    name: t.name,
+    probe,
+    message: describeSetup(t.name, probe, Boolean(stored), req.keyEnv),
+  };
 }
 
-export function describeSetup(name: string, probe: ProbeResult, keyStored: boolean): string {
-  const lines = [`added ${name}${keyStored ? ' (key saved, 0600)' : ''}`, probe.detail];
+export function describeSetup(
+  name: string,
+  probe: ProbeResult,
+  keyStored: boolean,
+  keyEnv?: string,
+): string {
+  const lines = [
+    `added ${name}${keyStored ? ' (key saved, 0600)' : keyEnv ? ` (key from $${keyEnv})` : ''}`,
+    probe.detail,
+  ];
   const first = probe.models[0];
   if (probe.models.length)
     lines.push(

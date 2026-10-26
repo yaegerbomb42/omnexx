@@ -1,14 +1,22 @@
 import { readAgentSettings, withAgentLayers } from './agent-settings.js';
 import { applyExecutionMode, isExecutionMode } from './execution.js';
 import { readSectionModes, sectionsLayer } from './sections-file.js';
-import { readFile } from 'node:fs/promises';
+import { readFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
-import { rankingLayer, readPoolMode, readRanking } from './ranking.js';
-import { readRoles, rolesLayer } from './roles.js';
+import {
+  cleanRanked,
+  parsePoolMode,
+  rankingFile,
+  rankingLayer,
+  readPoolMode,
+  readRanking,
+} from './ranking.js';
+import { parseRoles, readRoles, rolesFile, rolesLayer } from './roles.js';
+import { upsertTomlTable } from './toml-file.js';
 import { parse as parseToml, TomlError } from 'smol-toml';
 import type { z } from 'zod';
 import { ConfigError } from '../errors.js';
-import { resolvePaths, userConfigFile } from '../core/paths.js';
+import { resolvePaths, userConfigFile, type OmnexxPaths } from '../core/paths.js';
 import { configSchema, type ConfigInput, type OmnexxConfig } from './schema.js';
 
 type Plain = Record<string, unknown>;
@@ -50,6 +58,7 @@ const ENV_MAP: readonly (readonly [string, readonly string[], EnvKind])[] = [
   ['OMNEXX_GIT_PUSH', ['git', 'push'], 'string'],
   ['OMNEXX_EXECUTION_MODE', ['execution', 'mode'], 'string'],
   ['OMNEXX_EXECUTION_DOMAIN', ['execution', 'domain'], 'string'],
+  ['OMNEXX_EXPERIMENTAL', ['experimental'], 'boolean'],
   ['OMNEXX_JUDGE_KIND', ['judge', 'kind'], 'string'],
   ['OMNEXX_JUDGE_MODE', ['judge', 'mode'], 'string'],
   ['OMNEXX_JUDGE_NIMBLE_URL', ['judge', 'nimble', 'url'], 'string'],
@@ -168,6 +177,50 @@ export function formatConfigIssue(issue: z.core.$ZodIssue, layers: readonly Laye
   );
 }
 
+/**
+ * Fold the legacy roles.json / models.json into the unified config.toml ([roles] / [pool])
+ * and rename the old files to *.migrated. A key already in config.toml wins and the old
+ * file is still renamed (the new file is the source of truth). Key rotation is untouched:
+ * migration only appends [roles] / [pool] tables and never rewrites [providers.endpoints].
+ * Never throws: a missing or unreadable legacy file is simply left alone.
+ */
+async function migrateLegacyFiles(paths: OmnexxPaths, userData: Plain | undefined): Promise<void> {
+  const configFile = userConfigFile(paths);
+  try {
+    const parsed = parseRoles(JSON.parse(await readFile(rolesFile(paths), 'utf8')));
+    const hasAny =
+      Object.keys(parsed.models).length > 0 ||
+      Object.keys(parsed.strategies).length > 0 ||
+      !parsed.spreadHelpers;
+    if (hasAny && userData?.roles === undefined) {
+      await upsertTomlTable(configFile, 'roles', {
+        spread_helpers: parsed.spreadHelpers,
+        models: parsed.models,
+        strategies: parsed.strategies,
+      });
+    }
+    await rename(rolesFile(paths), `${rolesFile(paths)}.migrated`).catch(() => undefined);
+  } catch {
+    // No legacy roles file, or one that cannot be read: nothing to migrate.
+  }
+  try {
+    const parsed = JSON.parse(await readFile(rankingFile(paths), 'utf8')) as {
+      ranked?: unknown;
+      mode?: unknown;
+    };
+    const ranked = cleanRanked(parsed.ranked);
+    if (ranked.length && userData?.pool === undefined) {
+      await upsertTomlTable(configFile, 'pool', {
+        ranked,
+        mode: parsePoolMode(parsed.mode),
+      });
+    }
+    await rename(rankingFile(paths), `${rankingFile(paths)}.migrated`).catch(() => undefined);
+  } catch {
+    // No legacy ranking file, or one that cannot be read: nothing to migrate.
+  }
+}
+
 export async function loadConfig(opts: LoadConfigOptions): Promise<LoadedConfig> {
   const env = opts.env ?? process.env;
   const paths = resolvePaths(env);
@@ -184,15 +237,35 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<LoadedConfig>
   const sections = sectionsLayer(await readSectionModes(paths));
   if (sections)
     layers.push({ source: 'your context sections (context-sections.json)', data: sections });
+  const user = await readTomlLayer(userConfigFile(paths));
+  // One-time move: roles.json / models.json fold into the unified config.toml ([roles] /
+  // [pool]) and the old files are renamed to *.migrated. Keys already in config.toml win;
+  // an unreadable legacy file never blocks startup. The readers still understand the old
+  // files, so restoring one re-migrates it on the next start.
+  await migrateLegacyFiles(paths, user?.data);
   // Roles chosen in the editor: above the /models pool, below a project's omnexx.toml and flags.
   const roles = rolesLayer(await readRoles(paths));
-  if (roles) layers.push({ source: 'your model roles (roles.json)', data: roles });
+  if (roles) layers.push({ source: 'your model roles', data: roles });
   // /models ranking: above your config.toml, below a project's omnexx.toml and flags.
   const poolMode = await readPoolMode(paths);
   const ranked = rankingLayer(await readRanking(paths), poolMode);
-  if (ranked) layers.push({ source: 'your /models ranking (models.json)', data: ranked });
-  const user = await readTomlLayer(userConfigFile(paths));
-  if (user) layers.push(user);
+  if (ranked) layers.push({ source: 'your /models ranking', data: ranked });
+  // The `model` key is the default for every role: it fills the roles the [models] table
+  // and the pool leave unset, so first run only has to ask for one model.
+  let userLayer = user;
+  const defaultModel = typeof user?.data.model === 'string' ? user.data.model : undefined;
+  if (user && defaultModel) {
+    const fill: Plain = {
+      models: {
+        chat: [defaultModel],
+        planner: [defaultModel],
+        worker: [defaultModel],
+        cheap: [defaultModel],
+      },
+    };
+    userLayer = { ...user, data: deepMerge(fill, user.data) };
+  }
+  if (userLayer) layers.push(userLayer);
   const mergeLayers = (ls: readonly Layer[]): Plain =>
     [...ls].reverse().reduce<Plain>((acc, l) => deepMerge(acc, l.data), {});
   // The agent sliders (/settings): the levels, and what they imply for plan/context/budget.

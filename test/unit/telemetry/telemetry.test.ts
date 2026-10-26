@@ -13,6 +13,7 @@ import {
 } from '../../../src/telemetry/aggregate.js';
 import { EventTail, LiveFeed, statusLine } from '../../../src/telemetry/feed.js';
 import {
+  FeedLines,
   fmtMs,
   fmtTokens,
   humanize,
@@ -151,6 +152,63 @@ describe('humanize', () => {
     expect(h(ev('something.new', { a: 1 }), 'normal')).toBeUndefined();
     expect(h(ev('something.new', { a: 1 }), 'debug')).toBe('12:04:31 · something…');
     expect(h(ev('phase', { phase: 'act' }), 'debug')).toBe('12:04:31 · phase    {"phase":"act"}');
+  });
+
+  it('keeps the default feed quiet: router, cache and idle chatter need --verbose', () => {
+    const route = ev('route.decision', { action: 'edit-small', model: 'groq:llama' });
+    expect(h(route, 'normal')).toBeUndefined();
+    expect(h(route, 'verbose')).toMatch(/route\s+edit-small → groq:llama/);
+    const miss = ev('cache.miss', { turn: 2, got: 100, expected: 1000 });
+    expect(h(miss, 'normal')).toBeUndefined();
+    expect(h(miss, 'verbose')).toMatch(/cache\s+turn 2/);
+    const idle = ev('autonomous.idle', { round: 3, idle: 2 });
+    expect(h(idle, 'normal')).toBeUndefined();
+    expect(h(idle, 'verbose')).toMatch(/auto\s+round 3 found nothing/);
+    // Milestones still show at the default level.
+    expect(h(ev('commit', { sha: 'abc' }), 'normal')).toBeDefined();
+    expect(h(ev('task.done', { task: 'T1' }), 'normal')).toBeDefined();
+  });
+
+  it('collapses consecutive tool calls into one line at the default verbosity', () => {
+    const lines = new FeedLines({ brand: plain, verbosity: 'normal', utc: true });
+    const calls = [
+      ev('tool.call', { tool: 'read', input: '{"path":"src/a.ts"}' }),
+      ev('tool.call', { tool: 'multi_edit', input: '{"path":"x.ts","edits":[{},{}]}' }),
+      ev('tool.call', { tool: 'bash', input: '{"command":"npm test"}' }),
+    ];
+    expect(calls.flatMap((e) => lines.push(e))).toEqual([]);
+    const out = lines.push(ev('commit', { sha: 'abcdef1', task: 'T' }));
+    expect(out).toHaveLength(2);
+    expect(out[0]).toBe(
+      '12:04:31 ▸ tools    read src/a.ts · edit x.ts (2 edits) · bash npm test (3 calls)',
+    );
+    expect(out[1]).toMatch(/✓ commit\s+abcdef1 {2}T/);
+  });
+
+  it('prints a lone tool call as its own line, and every call at --verbose', () => {
+    const lines = new FeedLines({ brand: plain, verbosity: 'normal', utc: true });
+    const call = ev('tool.call', { tool: 'read', input: '{"path":"src/a.ts"}' });
+    expect(lines.push(call)).toEqual([]);
+    expect(lines.flush()).toEqual(['12:04:31 ▸ read     src/a.ts']);
+    expect(lines.flush()).toEqual([]);
+
+    const verbose = new FeedLines({ brand: plain, verbosity: 'verbose', utc: true });
+    expect(verbose.push(call)).toEqual(['12:04:31 ▸ read     src/a.ts']);
+    expect(verbose.flush()).toEqual([]);
+  });
+
+  it('drops tool calls at --quiet and flags a failed call in the burst', () => {
+    const quiet = new FeedLines({ brand: plain, verbosity: 'quiet', utc: true });
+    const call = ev('tool.call', { tool: 'read', input: '{"path":"src/a.ts"}' });
+    expect(quiet.push(call)).toEqual([]);
+    expect(quiet.flush()).toEqual([]);
+
+    const lines = new FeedLines({ brand: plain, verbosity: 'normal', utc: true });
+    lines.push(call);
+    lines.push(ev('tool.call', { tool: 'bash', input: '{"command":"npm test"}', isError: true }));
+    expect(lines.flush()[0]).toMatch(
+      /^12:04:31 ✗ tools\s+read src\/a\.ts · bash npm test {2}✗ \(2 calls\)$/,
+    );
   });
 
   it('survives truncated or odd inputs', () => {

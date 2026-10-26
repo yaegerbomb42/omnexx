@@ -196,7 +196,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
   /** The effective [execution] mode for the posture pill, and which config layer set it. */
   private async postExecutionMode(): Promise<void> {
-    this.post({ type: 'executionMode', ...(await this.executionMode()) });
+    this.post({
+      type: 'executionMode',
+      ...(await this.executionMode()),
+      experimental: await this.isExperimental(),
+    });
   }
 
   /**
@@ -236,9 +240,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     await this.postExecutionMode();
   }
 
+  /**
+   * Whether experimental mode is on: the OMNEXX_EXPERIMENTAL env var, or `experimental = true`
+   * at the top level of the user config. The mode pickers (chat header, settings) only show
+   * when it is on; the one default mode needs no switch.
+   */
+  private async isExperimental(): Promise<boolean> {
+    const env = process.env.OMNEXX_EXPERIMENTAL;
+    if (env === '1' || env?.toLowerCase() === 'true' || env?.toLowerCase() === 'yes') return true;
+    try {
+      return tomlTopLevelFlag(await readFile(userConfigPath(), 'utf8'), 'experimental');
+    } catch {
+      return false;
+    }
+  }
+
   /** The effective [execution] domain for the work-domain selector, and its config layer. */
   private async postWorkDomain(): Promise<void> {
-    this.post({ type: 'workDomain', ...(await this.workDomain()) });
+    this.post({
+      type: 'workDomain',
+      ...(await this.workDomain()),
+      experimental: await this.isExperimental(),
+    });
   }
 
   /**
@@ -441,7 +464,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   <summary><span class="chev" aria-hidden="true"></span><span id="steps-now" class="now"></span><span id="steps-count" class="count"></span><span class="track"><span id="steps-bar" class="fill"></span></span></summary>
   <ol id="steps-body" class="timeline"></ol>
 </details>
-<section id="posture" class="posture" aria-label="Execution posture">
+<section id="posture" class="posture" aria-label="Execution posture" hidden>
   <div data-posture-slot></div>
   <div data-domain-slot></div>
 </section>
@@ -497,6 +520,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   </div>
 </details>
 <section id="agent-start" class="agent-start" hidden aria-label="Agent settings"></section>
+<details id="memory-note" class="memory-note" hidden>
+  <summary>What I remember <span class="memory-note-hint">condensed every few turns</span></summary>
+  <pre id="memory-note-text"></pre>
+</details>
 <main id="log" class="conversation" aria-live="polite"></main>
 <button id="jump" class="jump" hidden title="Jump to latest" aria-label="Jump to latest"><svg viewBox="0 0 16 16"><path d="M8 3v9M4 8.5 8 12.5 12 8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
 <section id="settings" class="settings" hidden aria-label="Settings"></section>
@@ -513,6 +540,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 </section>
 <footer class="composer">
   <div id="suggest" class="suggest" hidden role="listbox" aria-label="Suggestions"></div>
+  <div id="statusline" class="statusline" role="status" aria-label="Session status">
+    <button id="model" class="status-model" data-action="pickModel" title="Chat model: click to switch or add a provider">Pick a model</button>
+    <span class="sep" aria-hidden="true">·</span>
+    <span id="status-tokens" class="status-item" title="Tokens used this session">0 tok</span>
+    <span class="sep" aria-hidden="true">·</span>
+    <span id="status-step" class="status-item">idle</span>
+    <span class="grow"></span>
+    <button id="status-ctx" class="status-item as-button" data-action="inspect" title="Context in use; click to see, edit or delete what the model gets">ctx —</button>
+  </div>
   <div class="input-wrap">
     <textarea id="input" rows="1" aria-label="Message omnexx"></textarea>
     <button id="send" class="send" title="Send (Enter)" aria-label="Send"><svg class="stop-ico" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg><svg class="send-ico" viewBox="0 0 16 16"><path d="M2 8l11-5-3.5 11-2.2-4.3z M7.3 9.7 13 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button>
@@ -523,18 +559,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       <button data-mode="plan" aria-pressed="false" title="Investigate and propose a plan; no edits">Plan</button>
       <button data-mode="run" aria-pressed="false" title="Autonomous: start a long run in the background">Run</button>
     </div>
-    <button id="model" class="chip model" data-action="pickModel" title="Chat model: click to switch or add a provider">Pick a model</button>
     <span class="grow"></span>
-    <span id="stat-cache-pill" class="chip hud-cache" title="Prompt cache hit percentage">⚡ 0% cache</span>
     <button id="approval" class="chip danger" data-action="approval" hidden title="omnexx goes ahead without asking; click to ask first again">Auto-approve</button>
-    <button class="meter" data-action="inspect" title="Context in use; click to see, edit or delete what the model gets"><span class="track"><span class="fill" id="ctx-fill"></span></span><span id="ctx-text">—</span></button>
     <button class="chip cost" data-action="usage" aria-haspopup="true" title="Session usage"><span id="stat-cost">$0.00</span></button>
-    <button id="pause" class="icon ctl" data-action="pause" title="Pause after the current step" aria-label="Pause or resume" disabled hidden><svg viewBox="0 0 16 16"><path d="M5.5 3.5v9M10.5 3.5v9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
   </div>
   <div id="usage-pop" class="pop usage" hidden role="dialog" aria-label="Session usage">
     <div class="row"><span class="k">Uptime</span><span class="v" id="stat-uptime">00:00:00</span></div>
     <div class="row"><span class="k">Turns</span><span class="v" id="stat-turns">0</span></div>
     <div class="row"><span class="k">Tokens</span><span class="v" id="stat-tokens">0</span></div>
+    <div class="row"><span class="k">Cache</span><span class="v" id="stat-cache">0%</span></div>
     <div id="ctx-parts" class="ctx-parts"></div>
   </div>
 </footer>
@@ -584,6 +617,21 @@ function tomlExecutionValue(
 /** The `mode` key of one TOML file's [execution] table. */
 function tomlExecutionMode(text: string): string | undefined {
   return tomlExecutionValue(text, 'mode', EXECUTION_MODES);
+}
+
+/**
+ * A top-level `key = true|false` in a TOML file (narrow line scan, no TOML dep): the scan
+ * stops at the first table header, past which keys belong to that table.
+ */
+function tomlTopLevelFlag(text: string, key: string): boolean {
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith('[')) return false;
+    if (line.startsWith('#') || line === '') continue;
+    const kv = new RegExp(`^${key}\\s*=\\s*(true|false)\\b`).exec(line);
+    if (kv) return kv[1] === 'true';
+  }
+  return false;
 }
 
 /** The `domain` key of one TOML file's [execution] table. */

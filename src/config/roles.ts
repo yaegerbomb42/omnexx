@@ -1,13 +1,18 @@
 import { migrateStrategy, type Strategy } from './routing.js';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { parse as parseToml } from 'smol-toml';
 import type { OmnexxPaths } from '../core/paths.js';
+import { userConfigFile } from '../core/paths.js';
+import { upsertTomlTable } from './toml-file.js';
 
 /**
  * "Advanced: different models per role". Most people keep one ranked list for everything (the
- * /models pool, models.json); a role given its own list here uses it instead, routed by its own
- * mode (see routing.ts). Kept next to the pool as `roles.json`. A role left empty falls back to
- * the pool and config.toml. `helpers` powers subagents, which are off by default.
+ * /models pool, [pool] in the unified config); a role given its own list here uses it instead,
+ * routed by its own mode (see routing.ts). It lives in the unified user config as the [roles]
+ * table; the old roles.json is still read (and migrated on startup) so an existing setup
+ * keeps working. A role left empty falls back to the pool and config.toml. `helpers` powers
+ * subagents, which are off by default.
  */
 export const ROLE_NAMES = ['chat', 'planner', 'worker', 'cheap', 'helpers'] as const;
 export type Role = (typeof ROLE_NAMES)[number];
@@ -38,7 +43,7 @@ function cleanList(value: unknown): string[] {
 const record = (v: unknown): Record<string, unknown> =>
   typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {};
 
-/** Read roles.json content, migrating old files (no version: "priority" meant fallback). */
+/** Read legacy roles.json content, migrating old files (no version: "priority" meant fallback). */
 export function parseRoles(raw: unknown): Roles {
   const obj = record(raw);
   const legacy = obj.version !== ROLES_VERSION;
@@ -55,20 +60,44 @@ export function parseRoles(raw: unknown): Roles {
   return { models, strategies, spreadHelpers: obj.spreadHelpers !== false };
 }
 
+/** The [roles] table of the unified config, when the legacy roles.json is absent. */
+async function readRolesTable(p: OmnexxPaths): Promise<unknown> {
+  try {
+    const data = parseToml(await readFile(userConfigFile(p), 'utf8')) as { roles?: unknown };
+    if (data.roles === undefined) return undefined;
+    const table = record(data.roles);
+    return {
+      // The unified file is always the current format: stamp the version so the
+      // legacy "priority"-means-fallback migration does not rewrite it.
+      version: ROLES_VERSION,
+      models: table.models ?? {},
+      strategies: table.strategies ?? {},
+      spreadHelpers: table.spread_helpers ?? true,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export async function readRoles(p: OmnexxPaths): Promise<Roles> {
   try {
-    return parseRoles(JSON.parse(await readFile(rolesFile(p), 'utf8')));
+    const raw: unknown = JSON.parse(await readFile(rolesFile(p), 'utf8'));
+    if (raw !== null && typeof raw === 'object') return parseRoles(raw);
   } catch {
-    return EMPTY;
+    // No legacy file (or unreadable): fall through to the unified config.
   }
+  const table = await readRolesTable(p);
+  return table === undefined ? EMPTY : parseRoles(table);
 }
 
 /** Save roles as the editor sends them (already in the current format). */
 export async function writeRoles(p: OmnexxPaths, roles: Roles): Promise<Roles> {
   const clean = parseRoles({ ...roles, version: ROLES_VERSION });
-  const file = rolesFile(p);
-  await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify({ version: ROLES_VERSION, ...clean }, null, 2)}\n`);
+  await upsertTomlTable(userConfigFile(p), 'roles', {
+    spread_helpers: clean.spreadHelpers,
+    models: clean.models,
+    strategies: clean.strategies,
+  });
   return clean;
 }
 

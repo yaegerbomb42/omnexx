@@ -246,7 +246,10 @@ function approvalsHtml(): string {
 }
 
 function advancedHtml(): string {
-  return `<div id="engine-box" class="engine">${engineHtml()}</div>
+  return `<div class="advanced-modes"><div class="posture-title">Experimental modes</div>
+<p class="hint">Work mode and execution posture live here, out of the way: they only appear in the chat header when experimental mode is on (<code>--experimental</code>, or <code>experimental = true</code> in config.toml).</p>
+${posture.cardHtml()}${domain.cardHtml()}</div>
+<div id="engine-box" class="engine">${engineHtml()}</div>
   <div class="links">
     <button class="ghost" data-action-ext="editToml">Edit project settings (omnexx.toml)</button>
     <button class="ghost" data-action-ext="editUserConfig">Edit user settings (config.toml)</button>
@@ -278,7 +281,7 @@ function draw(): void {
   page.innerHTML = `
 <div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
 ${layout.navHtml()}
-${sec('agent', `${posture.cardHtml()}${domain.cardHtml()}<div id="agent-box">${agentCard.html()}</div><div id="token-budget">${stats.tokenBudgetHtml()}</div><div id="live-stats">${stats.liveStatsHtml()}</div>`)}
+${sec('agent', `<div id="agent-box">${agentCard.html()}</div><div id="token-budget">${stats.tokenBudgetHtml()}</div><div id="live-stats">${stats.liveStatsHtml()}</div>`)}
 ${sec('model', modelFieldHtml())}
 ${sec('models', `<div id="roles-box">${roles.html()}</div>`)}
 ${sec('skills', `<div id="skills-box">${skills.html()}</div>`)}

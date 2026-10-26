@@ -60,10 +60,14 @@ function chunks(text: string, size = 1_500): string[] {
 }
 
 const MAX_LOG_CHARS = 200_000;
+/** The raw transcript is the whole run: give it room so old details stay recallable. */
+const MAX_TRANSCRIPT_CHARS = 1_000_000;
 
 /**
  * Everything the run has written down: every progress entry (the context only carries the
- * tail), each task's evidence, lessons, and command and gate logs, chunked.
+ * tail), each task's evidence, lessons, and command and gate logs — plus the raw transcript
+ * (`logs/transcript.md`, appended at every memory condensation), so details a condensed note
+ * trimmed can still be pulled back.
  */
 export async function runHistory(store: RunStore): Promise<RecallDoc[]> {
   const docs: RecallDoc[] = [];
@@ -77,7 +81,8 @@ export async function runHistory(store: RunStore): Promise<RecallDoc[]> {
   if (notes.trim()) docs.push({ source: 'notes.md', text: notes });
   const logs = await readdir(store.logsDir).catch(() => [] as string[]);
   for (const f of logs.sort()) {
-    const text = (await readTextOr(join(store.logsDir, f), '')).slice(-MAX_LOG_CHARS);
+    const cap = f.startsWith('transcript') ? MAX_TRANSCRIPT_CHARS : MAX_LOG_CHARS;
+    const text = (await readTextOr(join(store.logsDir, f), '')).slice(-cap);
     for (const [i, c] of chunks(text).entries())
       docs.push({ source: `logs/${f}${i ? ` #${i + 1}` : ''}`, text: c });
   }

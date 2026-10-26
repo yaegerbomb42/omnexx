@@ -204,7 +204,7 @@ const f8: Formatter = (e) => {
 
 const routeDecisionLine: Formatter = (e) => {
   return [
-    'normal',
+    'verbose',
     'info',
     'route',
     `${str(e.action)} → ${str(e.model)}${e.by ? `  ${str(e.by)}` : ''}${e.probability !== undefined ? ` p=${num(e.probability).toFixed(2)}` : ''}${e.ms !== undefined ? `  ${fmtMs(num(e.ms))}` : ''}`,
@@ -457,7 +457,7 @@ const beyondStartLine: Formatter = (e) => [
 ];
 
 const autonomousIdleLine: Formatter = (e) => [
-  'normal',
+  'verbose',
   'info',
   'auto',
   `round ${num(e.round)} found nothing (${num(e.idle)} in a row)`,
@@ -508,7 +508,7 @@ const FORMATTERS: Partial<Record<string, Formatter>> = {
   'stuck.signal': stuckSignalLine,
   'stuck.in_cycle': stuckSignalLine,
   'cache.miss': (e) => [
-    'normal',
+    'verbose',
     'warn',
     'cache',
     `turn ${num(e.turn)} read ${num(e.got)} cached tokens, under 80% of the previous prompt (${num(e.expected)})`,
@@ -619,4 +619,56 @@ export function verbosityFrom(f: {
   if (f.debug) return 'debug';
   if (f.verbose) return 'verbose';
   return f.quiet ? 'quiet' : 'normal';
+}
+
+/** Tool calls listed in one collapsed burst line before "+N more". */
+const BURST_SHOWN = 5;
+
+/**
+ * Stateful feed printer: at the default verbosity consecutive tool calls collapse into
+ * one summary line (`▸ tools  read a.ts · edit b.ts (2 calls)`); `--verbose`/`--debug`
+ * still print every call on its own line, and `--quiet` drops them. A burst flushes
+ * before the next non-tool line, so ordering never changes.
+ */
+export class FeedLines {
+  private burst: { line: string; verb: string; detail: string; error: boolean; ts: number }[] = [];
+
+  constructor(private readonly opts: HumanizeOptions) {}
+
+  get verbosity(): Verbosity {
+    return this.opts.verbosity;
+  }
+
+  /** Lines to print for this event (usually 0 or 1; a flush can return 2). */
+  push(e: OmnexxEvent): string[] {
+    if (e.type === 'tool.call' && RANK[this.opts.verbosity] <= RANK.normal) {
+      const line = humanize(e, this.opts);
+      if (!line) return []; // quiet drops tool calls entirely
+      const [, glyph, verb, detail] = toolLine(e);
+      this.burst.push({ line, verb, detail, error: glyph === 'bad', ts: e.ts });
+      return [];
+    }
+    const out = this.flush();
+    const line = humanize(e, this.opts);
+    if (line) out.push(line);
+    return out;
+  }
+
+  /** The pending burst as its summary line, or [] when there is none. */
+  flush(): string[] {
+    if (!this.burst.length) return [];
+    const items = this.burst.splice(0);
+    if (items.length === 1) return [items[0]?.line ?? ''];
+    const b = this.opts.brand;
+    const shown = items
+      .slice(0, BURST_SHOWN)
+      .map((i) => (i.detail ? `${i.verb} ${i.detail}` : i.verb));
+    const rest = items.length > BURST_SHOWN ? ` · +${items.length - BURST_SHOWN} more` : '';
+    const time =
+      this.opts.clock === false ? '' : `${b.dim(clockOf(items[0]?.ts ?? 0, this.opts.utc))} `;
+    const mark = items.some((i) => i.error) ? b.red('✗') : b.cyan('▸');
+    return [
+      `${time}${mark} ${'tools'.padEnd(8)} ${shown.join(' · ')}${rest} (${items.length} calls)`.trimEnd(),
+    ];
+  }
 }

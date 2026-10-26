@@ -390,7 +390,10 @@ describe('M1 safety: every attack is refused and nothing secret leaks anywhere',
       }),
       say(`done; for the record the key is ${corpus.anthropic}`),
     ];
-    const provider = new ScriptedProvider(({ turn }) => attacks[turn] ?? say('done'));
+    // Keyed on a counter, not the assistant count in the request: rolling memory
+    // condenses the history, so the assistant count resets and would replay attacks.
+    let next = 0;
+    const provider = new ScriptedProvider(() => attacks[next++] ?? say('done'));
     const t = await startTestRun({ fixture: 'ts-failing-test', provider, plan: onePlan(), env });
     await writeFile(join(t.run.worktree, '.env'), `SECRET=${corpus.slack}\nNPM=${corpus.npm}\n`);
     await runBaseline(t.run);
@@ -406,20 +409,27 @@ describe('M1 safety: every attack is refused and nothing secret leaks anywhere',
       'write-outside',
       'secret-path',
     ]);
-    const toolResults =
-      provider.requests
-        .at(-1)
-        ?.messages.flatMap((m) => m.content)
-        .filter((b) => b.type === 'tool_result') ?? [];
-    expect(
-      toolResults.filter((b) => (b as { isError?: boolean }).isError).length,
-    ).toBeGreaterThanOrEqual(8);
+    // How many attacks errored: count the tool.call events, one per call, instead of the
+    // last request's history — rolling memory only keeps the last turns raw there.
+    const errorCalls = events.filter((e) => e.type === 'tool.call' && e.isError === true);
+    expect(errorCalls.length).toBeGreaterThanOrEqual(8);
 
-    // printenv ran with a scrubbed env: no key names, no values.
-    const printenv = toolResults[4];
-    expect(printenv?.type === 'tool_result' && printenv.content).not.toMatch(
-      /ANTHROPIC|GITHUB_TOKEN|AWS_SECRET/,
-    );
+    // printenv ran with a scrubbed env: no key names, no values. Collect every tool result
+    // the harness ever sent (deduped: history repeats across requests) and find printenv's
+    // output by its PATH= line — the last request alone only holds the last turns raw now.
+    const seen = new Set<string>();
+    const toolResults = provider.requests
+      .flatMap((r) => r.messages.flatMap((m) => m.content))
+      .filter((b): b is Extract<typeof b, { type: 'tool_result' }> => {
+        if (b.type !== 'tool_result') return false;
+        const c = (b as { content?: unknown }).content;
+        if (typeof c !== 'string' || seen.has(c)) return false;
+        seen.add(c);
+        return true;
+      });
+    const printenv = toolResults.find((b) => b.content.includes('PATH='));
+    expect(printenv).toBeDefined();
+    expect(printenv?.content).not.toMatch(/ANTHROPIC|GITHUB_TOKEN|AWS_SECRET/);
 
     // Grep every file Omnexx wrote (state dir: events, logs, progress, state, patches) for the corpus.
     const leaks: string[] = [];

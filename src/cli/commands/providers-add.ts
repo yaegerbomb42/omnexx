@@ -13,6 +13,8 @@ import { isFlavor, parseHeaders, setupProvider, type SetupRequest } from '../pro
 export interface SmartAddOptions {
   baseUrl?: string | undefined;
   key?: string | undefined;
+  /** Env var holding the API key; only the name is saved, never the value. */
+  keyEnv?: string | undefined;
   /** `name=value` pairs for a templated base URL. */
   field?: readonly string[] | undefined;
   /** `Name: value` header lines. */
@@ -81,6 +83,7 @@ export async function providersAddSmart(
     provider: name,
     ...(o.baseUrl ? { url: o.baseUrl } : {}),
     ...(o.key ? { key: o.key } : {}),
+    ...(o.keyEnv ? { keyEnv: o.keyEnv } : {}),
     ...(o.field?.length ? { fields: parseFields(o.field) } : {}),
     ...(headers ? { headers } : {}),
     ...(o.flavor ? { flavor: o.flavor } : {}),

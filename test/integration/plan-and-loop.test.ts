@@ -224,6 +224,9 @@ describe('agent loop limits and control inside a cycle', () => {
       provider: new ScriptedProvider(fixThenTalk),
       plan,
       config: {
+        // The preflight stop here relies on the prompt growing turn over turn, which
+        // rolling memory caps by design; test the budget mechanism under memory: full.
+        context: { memory: 'full' },
         budget: { max_usd: 0.1 },
         providers: { anthropic: { max_tokens: 1_000 } },
         stuck: { no_edit_turns: 1_000 },
