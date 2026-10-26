@@ -16,3 +16,13 @@ export const VIOLET = '#a78bfa';
 
 /** The mascot's iris/cheek hue — a fixed brand accent, not a themable role. */
 export const PINK = '#f472b6';
+
+/**
+ * Legacy hue names, kept as aliases of the semantic roles so code written against the old
+ * palette (and in-flight branches) still builds. Prefer the role names in new code.
+ */
+export const GREEN = OK;
+export const CYAN = ACCENT;
+export const GRAY = MUTED;
+export const RED = BAD;
+export const AMBER = WARN;
