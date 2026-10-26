@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { AMBER, CYAN, GRAY, GREEN, PINK, RED } from './colors.js';
+import { BAD, INFO, MUTED, OK, PINK, WARN } from './colors.js';
 
 export type Mood =
   'hello' | 'idle' | 'sleepy' | 'listening' | 'thinking' | 'working' | 'happy' | 'sad' | 'startled';
@@ -141,27 +141,27 @@ export function mascotFrame(
 }
 
 const MOOD_COLOR: Record<Mood, string> = {
-  hello: GREEN,
-  idle: GREEN,
-  sleepy: GRAY,
-  listening: CYAN,
-  thinking: CYAN,
-  working: GREEN,
-  happy: GREEN,
-  sad: RED,
-  startled: CYAN,
+  hello: OK,
+  idle: OK,
+  sleepy: MUTED,
+  listening: INFO,
+  thinking: INFO,
+  working: OK,
+  happy: OK,
+  sad: BAD,
+  startled: INFO,
 };
 
 const IRIS_COLOR: Record<Mood, string> = {
   hello: PINK,
-  idle: CYAN,
-  sleepy: GRAY,
-  listening: CYAN,
-  thinking: AMBER,
-  working: CYAN,
+  idle: INFO,
+  sleepy: MUTED,
+  listening: INFO,
+  thinking: WARN,
+  working: INFO,
   happy: PINK,
-  sad: RED,
-  startled: AMBER,
+  sad: BAD,
+  startled: WARN,
 };
 
 export function Mascot({
@@ -205,13 +205,13 @@ export function SpeechBubble({ text, width }: { text: string; width: number }) {
   const t = text.length > width - 6 ? `${text.slice(0, width - 7)}…` : text;
   return (
     <Box flexDirection="column">
-      <Text color={GRAY}>{`  ╭${'─'.repeat(t.length + 2)}╮`}</Text>
+      <Text color={MUTED}>{`  ╭${'─'.repeat(t.length + 2)}╮`}</Text>
       <Text>
-        <Text color={GRAY}>{'─┤ '}</Text>
+        <Text color={MUTED}>{'─┤ '}</Text>
         <Text>{t}</Text>
-        <Text color={GRAY}>{' │'}</Text>
+        <Text color={MUTED}>{' │'}</Text>
       </Text>
-      <Text color={GRAY}>{`  ╰${'─'.repeat(t.length + 2)}╯`}</Text>
+      <Text color={MUTED}>{`  ╰${'─'.repeat(t.length + 2)}╯`}</Text>
     </Box>
   );
 }

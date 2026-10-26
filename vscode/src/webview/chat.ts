@@ -329,7 +329,7 @@ function messageHtml(b: Block, isActiveTail: boolean): string {
         )
       : '';
     const replyPart = split.reply
-      ? `<div class="msg reply">${withCopy(renderMarkdown(split.reply))}<div class="msg-actions"><button class="icon small" data-copy-block="${id}" title="Copy reply" aria-label="Copy reply">${ICON_COPY}</button></div></div>`
+      ? `<div class="msg assistant">${withCopy(renderMarkdown(split.reply))}<div class="msg-actions"><button class="icon small" data-copy-block="${id}" title="Copy reply" aria-label="Copy reply">${ICON_COPY}</button></div></div>`
       : '';
     return `${thinkPart}${replyPart}`;
   }
@@ -433,7 +433,7 @@ function drawConversation(): void {
     }
     if (split.reply) {
       liveParts.push(
-        `<div class="msg reply streaming">${withCopy(renderMarkdown(split.reply))}<span class="stream-cursor" aria-hidden="true"></span></div>`,
+        `<div class="msg assistant streaming">${withCopy(renderMarkdown(split.reply))}<span class="stream-cursor" aria-hidden="true"></span></div>`,
       );
     }
   }
@@ -579,8 +579,9 @@ function drawControls(s: State): void {
   modelBtn.textContent = s.model
     ? `${s.model}${s.routing ? ` · ${s.routing}` : ''}`
     : 'Pick a model';
-  modelBtn.title = s.routing
-    ? `Serving now: ${s.model ?? '?'}. Your ranked list is used as: ${s.routing}`
+  const spent = s.usage ? formatUsd(s.usage.usd) : null;
+  modelBtn.title = s.model
+    ? `Model: ${s.model}${s.routing ? ` · using your ranked list as ${s.routing}` : ''}${spent ? ` · session spend ${spent}` : ''}. Click to switch or add a provider.`
     : 'Pick a model';
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode]'))
     b.setAttribute('aria-pressed', String(b.dataset.mode === s.mode));
