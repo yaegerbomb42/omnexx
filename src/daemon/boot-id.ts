@@ -8,7 +8,8 @@ import { execa } from 'execa';
 export async function readBootId(): Promise<string> {
   if (process.platform === 'linux') {
     try {
-      return (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim();
+      const bootId = (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim();
+      if (bootId) return bootId;
     } catch {
       // fall through
     }

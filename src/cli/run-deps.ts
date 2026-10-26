@@ -13,6 +13,8 @@ import { withToolRepair } from '../providers/repair.js';
 import { withKeyRotation } from '../providers/key-rotation.js';
 import { makeEndpointProvider } from '../providers/make.js';
 import { ProviderRouter } from '../providers/router.js';
+import { ProviderCircuitBreaker } from '../providers/circuit-breaker.js';
+import { QuotaLedger } from '../providers/quota-ledger.js';
 import { withTurnEffort } from '../providers/turn-effort.js';
 import type { Provider } from '../providers/types.js';
 import type { CliIO } from './io.js';
@@ -130,8 +132,23 @@ export async function resolveRunDeps(
     );
   }
   // Effort per turn ([agent] turn_effort) rides on every call this run makes.
+  const circuits = new Map<string, ProviderCircuitBreaker>();
+  for (const [name, ep] of Object.entries(config.providers.endpoints)) {
+    if (!used.has(name)) continue;
+    circuits.set(
+      name,
+      new ProviderCircuitBreaker({
+        failureThreshold: ep.breaker_failures,
+        baseCooloffMs: parseDuration(ep.breaker_cooloff),
+        maxCooloffMs: parseDuration(ep.breaker_max_cooloff),
+      }),
+    );
+  }
+  const quota = new QuotaLedger(join(paths.configHome, 'quota.json'), () => clock.now());
   const provider: Provider = withTurnEffort(
-    io.makeProvider ? io.makeProvider(secrets[0] ?? '') : new ProviderRouter(providers),
+    io.makeProvider
+      ? io.makeProvider(secrets[0] ?? '')
+      : new ProviderRouter({ providers, circuits, quota }),
     config.agent.turn_effort,
   );
   const clock = io.clock ?? realClock;
