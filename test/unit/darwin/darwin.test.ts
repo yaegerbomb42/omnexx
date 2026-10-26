@@ -100,61 +100,39 @@ describe('darwinx meta-harness', () => {
     }
   });
 
-  it('prefers newer lastError signal over an ancient tool error', () => {
-    const symptom = diagnoseFailure(
-      [
-        {
-          turn: 1,
-          calls: [{ tool: 'bash', isError: true, error: 'ancient tool error' }],
-          fresh: 10,
-          cached: 0,
-          ms: 50,
-          gates: 'ok',
-        },
-        {
-          turn: 2,
-          calls: [{ tool: 'read', isError: false, error: '' }],
-          fresh: 20,
-          cached: 10,
-          ms: 40,
-          gates: 'ok',
-        },
-      ],
-      { lastError: 'doom loop: repeated same read' },
-    );
-    expect(symptom).toEqual({
+  // An old failing tool call followed by a clean turn; `gates` is the final turn's gate result.
+  const staleToolErrorTraces = (gates: 'ok' | 'fail') => [
+    {
+      turn: 1,
+      calls: [{ tool: 'bash', isError: true, error: 'ancient tool error' }],
+      fresh: 10,
+      cached: 0,
+      ms: 50,
+      gates: 'ok' as const,
+    },
+    {
       turn: 2,
-      kind: 'doom_loop',
-      detail: 'doom loop: repeated same read',
-    });
-  });
+      calls: [{ tool: 'read', isError: false, error: '' }],
+      fresh: 20,
+      cached: 10,
+      ms: 40,
+      gates,
+    },
+  ];
 
-  it('prefers newer gateFailed signal over an ancient tool error', () => {
-    const symptom = diagnoseFailure(
-      [
-        {
-          turn: 1,
-          calls: [{ tool: 'bash', isError: true, error: 'ancient tool error' }],
-          fresh: 10,
-          cached: 0,
-          ms: 50,
-          gates: 'ok',
-        },
-        {
-          turn: 2,
-          calls: [{ tool: 'read', isError: false, error: '' }],
-          fresh: 20,
-          cached: 10,
-          ms: 40,
-          gates: 'fail',
-        },
-      ],
+  it.each([
+    ['lastError', 'ok', { lastError: 'doom loop: repeated same read' }, 'doom_loop'],
+    [
+      'gateFailed',
+      'fail',
       { gateFailed: true, lastError: 'Unit tests failed: 2 broken' },
-    );
-    expect(symptom).toMatchObject({
+      'gate_failure',
+    ],
+  ] as const)('prefers newer %s signal over an ancient tool error', (_n, gates, options, kind) => {
+    expect(diagnoseFailure(staleToolErrorTraces(gates), options)).toEqual({
       turn: 2,
-      kind: 'gate_failure',
-      detail: 'Unit tests failed: 2 broken',
+      kind,
+      detail: options.lastError,
     });
   });
 
