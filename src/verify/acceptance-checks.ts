@@ -1,3 +1,4 @@
+import { execa } from 'execa';
 import { z } from 'zod';
 import { shellQuote } from './shell-quote.js';
 
@@ -146,4 +147,103 @@ export function buildPreflightChecks(task: {
       ...(command ? { command } : {}),
     };
   });
+}
+
+/** An executable acceptance contract derived from a task at plan time, before any work begins. */
+export interface AcceptanceContract {
+  taskId: string;
+  /** One executable shell command per acceptance criterion, deduplicated, in order. */
+  commands: string[];
+  /** Epoch ms when the contract was derived. */
+  createdAt: number;
+}
+
+/**
+ * Derive the executable acceptance contract for a task: turn every requirement into a shell
+ * command (via {@link inferCheckCommand} and {@link inferGoalChecks}) so the agent can loop
+ * implement -> verify -> repair against real output, never ending a marathon task unverified.
+ */
+export function deriveAcceptanceContract(task: {
+  id: string;
+  title?: string;
+  requirements?: readonly string[];
+}): AcceptanceContract {
+  const reqs =
+    task.requirements && task.requirements.length > 0
+      ? task.requirements
+      : task.title
+        ? [task.title]
+        : [];
+  const commands = Array.from(
+    new Set([
+      ...reqs.flatMap((r) => {
+        const derived = inferCheckCommand(r);
+        if (derived) return [derived];
+        // No natural-language pattern matched: treat the criterion itself as an
+        // executable shell command (e.g. a fixture that runs a script).
+        const raw = r.trim();
+        return raw ? [raw] : [];
+      }),
+      ...reqs.flatMap((r) => inferGoalChecks(r)),
+    ]),
+  );
+  return { taskId: task.id, commands, createdAt: Date.now() };
+}
+
+/** Result of running one contract command on the last attempt. */
+export interface ContractCheckRun {
+  command: string;
+  exitCode: number;
+  timedOut: boolean;
+}
+
+/** Verdict of a self-verification loop: pass only when every contract command passes. */
+export interface VerificationVerdict {
+  pass: boolean;
+  attempts: number;
+  runs: ContractCheckRun[];
+}
+
+export interface VerificationLoopOptions {
+  cwd: string;
+  contract: AcceptanceContract;
+  /** Re-verify budget; the outer agent implements/repairs between attempts. Default 1. */
+  maxAttempts?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * Run the executable acceptance contract, stopping at the first failing command on each attempt.
+ * Returns pass=false with the failing run when the contract fails, so a task is never marked
+ * complete while its contract is red (completion-with-failing-contract rate = 0).
+ */
+export async function runVerificationLoop(
+  opts: VerificationLoopOptions,
+): Promise<VerificationVerdict> {
+  const maxAttempts = opts.maxAttempts ?? 1;
+  const timeoutMs = opts.timeoutMs ?? 30_000;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const runs: ContractCheckRun[] = [];
+    let pass = true;
+    for (const command of opts.contract.commands) {
+      const r = await execa(command, {
+        cwd: opts.cwd,
+        shell: true,
+        reject: false,
+        timeout: timeoutMs,
+        stdin: 'ignore',
+        ...(opts.signal ? { signal: opts.signal } : {}),
+      });
+      const run: ContractCheckRun = { command, exitCode: r.exitCode ?? -1, timedOut: r.timedOut };
+      runs.push(run);
+      if (run.exitCode !== 0 || run.timedOut) {
+        pass = false;
+        break;
+      }
+    }
+    if (pass) return { pass: true, attempts: attempt, runs };
+    if (attempt === maxAttempts) return { pass: false, attempts: attempt, runs };
+  }
+  return { pass: false, attempts: maxAttempts, runs: [] };
 }
