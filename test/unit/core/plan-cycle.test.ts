@@ -1,97 +1,54 @@
 import { describe, expect, it } from 'vitest';
 import { applyPlanUpdate, type PlanUpdate } from '../../../src/core/plan.js';
 
-const acyclic: PlanUpdate = {
+interface Task {
+  id: string;
+  title: string;
+  dependsOn?: string[];
+}
+
+/** One-milestone plan built from `[id, dependsOn]` pairs. */
+const tasksPlan = (...tasks: [string, string[]?][]): PlanUpdate => ({
   milestones: [
     {
       id: 'M1',
-      title: 'Core',
-      tasks: [
-        { id: 'M1.T01', title: 'Add schema' },
-        { id: 'M1.T02', title: 'Add loader', dependsOn: ['M1.T01'] },
-      ],
+      title: 'Milestone one',
+      tasks: tasks.map(([id, dependsOn]): Task => ({
+        id,
+        title: `Task ${id}`,
+        ...(dependsOn ? { dependsOn } : {}),
+      })),
     },
   ],
-};
+});
+
+const apply = (update: PlanUpdate) => applyPlanUpdate(undefined, update, 'goal');
+const CYCLE = /depends on .* in a cycle/;
 
 describe('applyPlanUpdate cycle detection (plan-cycle.test.ts)', () => {
-  it('rejects a direct two-node dependsOn cycle', () => {
-    expect(() =>
-      applyPlanUpdate(
-        undefined,
-        {
-          milestones: [
-            {
-              id: 'M1',
-              title: 'Cycle test',
-              tasks: [
-                { id: 'M1.T01', title: 'Task A', dependsOn: ['M1.T02'] },
-                { id: 'M1.T02', title: 'Task B', dependsOn: ['M1.T01'] },
-              ],
-            },
-          ],
-        },
-        'goal',
-      ),
-    ).toThrow(/depends on .* in a cycle/);
-  });
-
-  it('rejects a three-node cycle', () => {
-    expect(() =>
-      applyPlanUpdate(
-        undefined,
-        {
-          milestones: [
-            {
-              id: 'M1',
-              title: 'Three-cycle',
-              tasks: [
-                { id: 'M1.T01', title: 'Task A', dependsOn: ['M1.T02'] },
-                { id: 'M1.T02', title: 'Task B', dependsOn: ['M1.T03'] },
-                { id: 'M1.T03', title: 'Task C', dependsOn: ['M1.T01'] },
-              ],
-            },
-          ],
-        },
-        'goal',
-      ),
-    ).toThrow(/depends on .* in a cycle/);
-  });
-
-  it('rejects a milestone-level cycle', () => {
-    expect(() =>
-      applyPlanUpdate(
-        undefined,
-        {
-          milestones: [
-            { id: 'M1', title: 'First', dependsOn: ['M2'] },
-            { id: 'M2', title: 'Second', dependsOn: ['M1'] },
-          ],
-        },
-        'goal',
-      ),
-    ).toThrow(/depends on .* in a cycle/);
+  it.each([
+    ['a direct two-node', tasksPlan(['M1.T01', ['M1.T02']], ['M1.T02', ['M1.T01']])],
+    [
+      'a three-node',
+      tasksPlan(['M1.T01', ['M1.T02']], ['M1.T02', ['M1.T03']], ['M1.T03', ['M1.T01']]),
+    ],
+    [
+      'a milestone-level',
+      {
+        milestones: [
+          { id: 'M1', title: 'First', dependsOn: ['M2'] },
+          { id: 'M2', title: 'Second', dependsOn: ['M1'] },
+        ],
+      } satisfies PlanUpdate,
+    ],
+  ])('rejects %s dependsOn cycle', (_name, update) => {
+    expect(() => apply(update)).toThrow(CYCLE);
   });
 
   it('reports the ids of the cycle it found', () => {
     let message = '';
     try {
-      applyPlanUpdate(
-        undefined,
-        {
-          milestones: [
-            {
-              id: 'M1',
-              title: 'Cycle test',
-              tasks: [
-                { id: 'M1.T01', title: 'Task A', dependsOn: ['M1.T02'] },
-                { id: 'M1.T02', title: 'Task B', dependsOn: ['M1.T01'] },
-              ],
-            },
-          ],
-        },
-        'goal',
-      );
+      apply(tasksPlan(['M1.T01', ['M1.T02']], ['M1.T02', ['M1.T01']]));
     } catch (err) {
       message = (err as Error).message;
     }
@@ -100,49 +57,23 @@ describe('applyPlanUpdate cycle detection (plan-cycle.test.ts)', () => {
     expect(message).toMatch(/in a cycle$/);
   });
 
-  it('accepts the original acyclic plan', () => {
-    const plan = applyPlanUpdate(undefined, acyclic, 'goal');
+  it('accepts a simple chain', () => {
+    const plan = apply(tasksPlan(['M1.T01'], ['M1.T02', ['M1.T01']]));
     expect(plan.nodes.map((n) => n.id)).toEqual(['M1', 'M1.T01', 'M1.T02']);
   });
 
   it('accepts a plan with no dependsOn', () => {
-    const plan = applyPlanUpdate(
-      undefined,
-      {
-        milestones: [
-          {
-            id: 'M1',
-            title: 'Simple',
-            tasks: [
-              { id: 'M1.T01', title: 'Task A' },
-              { id: 'M1.T02', title: 'Task B' },
-            ],
-          },
-        ],
-      },
-      'goal',
-    );
-    expect(plan.nodes).toHaveLength(3);
+    expect(apply(tasksPlan(['M1.T01'], ['M1.T02'])).nodes).toHaveLength(3);
   });
 
   it('accepts a diamond dependency (acyclic)', () => {
-    const plan = applyPlanUpdate(
-      undefined,
-      {
-        milestones: [
-          {
-            id: 'M1',
-            title: 'Diamond',
-            tasks: [
-              { id: 'M1.T01', title: 'root' },
-              { id: 'M1.T02', title: 'left', dependsOn: ['M1.T01'] },
-              { id: 'M1.T03', title: 'right', dependsOn: ['M1.T01'] },
-              { id: 'M1.T04', title: 'merged', dependsOn: ['M1.T02', 'M1.T03'] },
-            ],
-          },
-        ],
-      },
-      'goal',
+    const plan = apply(
+      tasksPlan(
+        ['M1.T01'],
+        ['M1.T02', ['M1.T01']],
+        ['M1.T03', ['M1.T01']],
+        ['M1.T04', ['M1.T02', 'M1.T03']],
+      ),
     );
     expect(plan.nodes).toHaveLength(5);
   });

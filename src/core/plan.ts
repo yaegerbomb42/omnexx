@@ -287,7 +287,7 @@ export function applyPlanUpdate(prev: Plan | undefined, update: PlanUpdate, goal
   }
   const cycle = findDependsCycle(nodes);
   if (cycle) {
-    // `cycle` repeats its head at the end, so slice(1) is the chain it depends on back to itself.
+    // `cycle` is the dependency chain starting at its head; the last id depends back on the head.
     const [head, ...chain] = cycle;
     throw new StateError(`${head} depends on ${chain.join(' -> ')} in a cycle`);
   }
@@ -295,7 +295,7 @@ export function applyPlanUpdate(prev: Plan | undefined, update: PlanUpdate, goal
 }
 
 /**
- * DFS over the dependsOn edges. Returns the ids of one cycle (first id repeated at the end),
+ * DFS over the dependsOn edges. Returns the ids of one cycle in dependency order,
  * or null if the graph is acyclic. O(nodes + edges); self-deps never reach here.
  */
 function findDependsCycle(nodes: PlanNode[]): string[] | null {
