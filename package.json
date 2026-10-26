@@ -36,7 +36,9 @@
     "coverage": "vitest run --coverage",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build",
     "bench": "node bench/run.ts",
-    "bench:watch": "node bench/watch.ts"
+    "bench:watch": "node bench/watch.ts",
+    "test:affected": "vitest run --project unit --project integration --project chaos --changed origin/main --passWithNoTests",
+    "test:related": "vitest related --run --passWithNoTests"
   },
   "keywords": [
     "agent",
