@@ -32,6 +32,7 @@ export function tableHeader(path: readonly string[]): string {
 }
 
 const HEADER = /^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$/;
+const KEY_VALUE = /^\s*([A-Za-z0-9_.-]+)\s*=/;
 
 /** The normalized dotted path of a header line, or undefined when the line isn't one. */
 function headerPath(line: string): string | undefined {
@@ -52,23 +53,46 @@ function headerPath(line: string): string | undefined {
   return parts.join('\u0000');
 }
 
+/** Extract full key path for a line given the current header path. */
+function lineKeyPath(line: string, currentHeader: string): string | undefined {
+  const m = KEY_VALUE.exec(line);
+  if (!m?.[1]) return undefined;
+  const keyParts = m[1].split('.');
+  const prefix = currentHeader ? `${currentHeader}\u0000` : '';
+  return `${prefix}${keyParts.join('\u0000')}`;
+}
+
 /** Remove a table and its sub-tables (`[a.b]`, `[a.b.c]`); comments and other tables stay. */
 export function removeTable(
   raw: string,
   path: readonly string[],
 ): { text: string; removed: boolean } {
   const target = path.join('\u0000');
+  const targetPrefix = `${target}\u0000`;
   const lines = raw.split('\n');
   const out: string[] = [];
-  let skipping = false;
+  let currentHeader = '';
+  let skippingHeader = false;
   let removed = false;
+
   for (const line of lines) {
     const h = headerPath(line);
-    if (h !== undefined) skipping = h === target || h.startsWith(`${target}\u0000`);
-    if (skipping) {
+    if (h !== undefined) {
+      currentHeader = h;
+      skippingHeader = h === target || h.startsWith(targetPrefix);
+    }
+
+    if (skippingHeader) {
       removed = true;
       continue;
     }
+
+    const kp = lineKeyPath(line, currentHeader);
+    if (kp !== undefined && (kp === target || kp.startsWith(targetPrefix))) {
+      removed = true;
+      continue;
+    }
+
     out.push(line);
   }
   const text = out.join('\n').replace(/\n{3,}/g, '\n\n');

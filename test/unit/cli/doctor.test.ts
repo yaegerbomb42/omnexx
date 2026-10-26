@@ -130,6 +130,18 @@ describe('doctor checks', () => {
     expect(byName['judge endpoint']?.status).toBe('warn');
     expect(byName['judge reachability']?.status).toBe('skip');
   });
+
+  it('reports a warn for a judge URL without a scheme or an empty URL', async () => {
+    const d = deps(await isolatedEnv());
+    d.config.judge.kind = 'nimble';
+    for (const url of ['localhost:11434', '']) {
+      d.config.judge.nimble.url = url;
+      const byName = Object.fromEntries((await runDoctorChecks(d)).map((c) => [c.name, c]));
+      expect(byName['judge endpoint']?.status).toBe('warn');
+      expect(byName['judge endpoint']?.detail).toMatch(/not a valid/);
+      expect(byName['judge reachability']?.status).toBe('skip');
+    }
+  });
 });
 
 describe('doctor: provider endpoints', () => {

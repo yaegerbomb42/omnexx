@@ -1,6 +1,7 @@
 import { readLock, pidAlive } from '../core/lock.js';
 import type { OmnexxPaths } from '../core/paths.js';
 import { listRunIds, RunStore, type RunStatus } from '../core/run-store.js';
+import { readBootId } from './boot-id.js';
 import { spawnAttached } from './detach.js';
 
 /** Statuses a boot-time resume picks up on its own. Stops that need a human stay stopped. */
@@ -18,7 +19,16 @@ export async function resumableRuns(paths: OmnexxPaths): Promise<string[]> {
     }
     if (!AUTO_RESUME.includes(status)) continue;
     const lock = await readLock(store.dir);
-    if (lock && pidAlive(lock.pid)) continue;
+    if (lock) {
+      // A lock from a previous boot is stale even if its pid looks alive: that pid may have
+      // been reused by an unrelated process since the reboot.
+      const bootId = await readBootId();
+      if (bootId !== lock.bootId) {
+        out.push(id);
+        continue;
+      }
+      if (pidAlive(lock.pid)) continue;
+    }
     out.push(id);
   }
   return out;

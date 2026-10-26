@@ -7,6 +7,9 @@ import type { ContentBlock, Message } from '../providers/types.js';
  * valid for every provider. Pure: returns new messages.
  *
  * Rules:
+ * - stale read (evicted): a `read` of a file a newer read in this history supersedes. The whole
+ *   body goes, leaving a one-line pointer to the newest version; the head of the original is kept
+ *   so the cached prompt prefix still hits up to that block;
  * - stale read: a `read` of a file that was edited or rewritten afterwards (its lines moved on);
  * - failed edit: an edit that failed on a file a later edit of the same file changed;
  * - covered search: a `search`/`list` result whose files were all read afterwards;
@@ -23,8 +26,15 @@ const MIN_NARRATION_CHARS = 160;
 /** A search counts as covered when the lines naming no later-read file are under this share. */
 const UNCOVERED_SHARE = 0.2;
 const NARRATION_KEEP_CHARS = 80;
+/**
+ * Head of an evicted read kept verbatim. Prompt caches key on a prefix of the conversation, so an
+ * unchanged head means every block before this one still hits the cache; only the evicted body is
+ * re-sent. 80 chars is enough to name the file and its first lines.
+ */
+const EVICTED_HEAD_CHARS = 80;
 
 const EDIT_TOOLS = new Set(['str_replace', 'multi_edit', 'write_file', 'replace_lines']);
+const READ_TOOLS = new Set(['read']);
 const SEARCH_TOOLS = new Set(['search', 'list']);
 
 interface Result {
@@ -41,9 +51,15 @@ export interface PruneOutcome {
   chars: number;
   /** How many of each rule fired, for events and tests. */
   byRule: Readonly<Record<PruneRule, number>>;
+  /**
+   * Characters actually removed from the history by stale-read eviction (body length minus the
+   * pointer that replaced it). This is the number the token benchmark measures.
+   */
+  evictedChars: number;
 }
 
-export type PruneRule = 'stale_read' | 'failed_edit' | 'covered_search' | 'narration';
+export type PruneRule =
+  'stale_read_evict' | 'stale_read' | 'failed_edit' | 'covered_search' | 'narration';
 
 const isStub = (s: string): boolean =>
   s.startsWith(PRUNED_PREFIX) || OTHER_STUBS.some((p) => s.startsWith(p));
@@ -121,6 +137,54 @@ function ruleFor(
   return undefined;
 }
 
+/**
+ * Position in `all` of the newest live read of each path. "Live" means it still carries the file's
+ * body, so an evicted or cleared read can never be the version a pointer sends the model to.
+ */
+function newestReadOf(all: readonly Result[]): Map<string, number> {
+  const newest = new Map<string, number>();
+  all.forEach((r, k) => {
+    if (READ_TOOLS.has(r.name) && r.path && !r.isError && !isStub(r.content)) newest.set(r.path, k);
+  });
+  return newest;
+}
+
+/** The one-line pointer that replaces an evicted read's body, head kept for the prompt cache. */
+function evictedStub(r: Result): string {
+  const head = r.content.slice(0, EVICTED_HEAD_CHARS).replace(/\s+$/, '');
+  return `${head}\n…${PRUNED_PREFIX} stale_read_evict] ${String(
+    r.path,
+  )} has a newer version in this history; that read is current.`;
+}
+
+/** What to do with one result: replace it with `stub`, counting `saved` characters removed. */
+interface Hit {
+  rule: PruneRule;
+  stub: string;
+  saved: number;
+}
+
+function hitFor(
+  r: Result,
+  k: number,
+  newest: ReadonlyMap<string, number>,
+  later: readonly Result[],
+): Hit | undefined {
+  if (r.content.length < MIN_PRUNE_CHARS || isStub(r.content)) return undefined;
+  // Eviction beats the plain stale-read stub: when a newer version of the file is already in the
+  // history the old body is pure duplication, and the pointer says where the current one is.
+  const at = r.path === undefined ? undefined : newest.get(r.path);
+  if (READ_TOOLS.has(r.name) && !r.isError && at !== undefined && at !== k) {
+    const stub = evictedStub(r);
+    const saved = r.content.length - stub.length;
+    if (saved > 0) return { rule: 'stale_read_evict', stub, saved };
+  }
+  const why = ruleFor(r, later);
+  if (!why) return undefined;
+  const stub = `${PRUNED_PREFIX} ${why.why}]`;
+  return { rule: why.rule, stub, saved: r.content.length - stub.length };
+}
+
 /** Indices of assistant messages older than the last `keepTurns` that also call tools. */
 function oldNarrators(messages: readonly Message[], keepTurns: number): Set<number> {
   const assistants = messages.flatMap((m, i) => (m.role === 'assistant' ? [i] : []));
@@ -141,20 +205,24 @@ function narrationStub(text: string): string {
 
 export function pruneRules(messages: readonly Message[], keepTurns: number): PruneOutcome {
   const all = results(messages);
+  const newest = newestReadOf(all);
   const stubs = new Map<string, string>();
   const byRule: Record<PruneRule, number> = {
+    stale_read_evict: 0,
     stale_read: 0,
     failed_edit: 0,
     covered_search: 0,
     narration: 0,
   };
   let chars = 0;
+  let evictedChars = 0;
   all.forEach((r, k) => {
-    const hit = ruleFor(r, all.slice(k + 1));
+    const hit = hitFor(r, k, newest, all.slice(k + 1));
     if (!hit) return;
-    stubs.set(String(r.at), `${PRUNED_PREFIX} ${hit.why}]`);
+    stubs.set(String(r.at), hit.stub);
     byRule[hit.rule]++;
     chars += r.content.length;
+    if (hit.rule === 'stale_read_evict') evictedChars += hit.saved;
   });
   const narrators = oldNarrators(messages, keepTurns);
   const out = messages.map((m, i) => {
@@ -178,5 +246,5 @@ export function pruneRules(messages: readonly Message[], keepTurns: number): Pru
     return { ...m, content };
   });
   const pruned = Object.values(byRule).reduce((a, b) => a + b, 0);
-  return { messages: pruned ? out : [...messages], pruned, chars, byRule };
+  return { messages: pruned ? out : [...messages], pruned, chars, byRule, evictedChars };
 }

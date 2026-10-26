@@ -44,8 +44,10 @@ export async function loadRepoMcpJson(repoRoot: string): Promise<Record<string, 
       };
     }
     return result;
-  } catch {
-    // Non-existent or invalid .mcp.json is ignored
+  } catch (err) {
+    // A missing .mcp.json is fine; anything else means the file is malformed.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    console.warn(`WARNING: .mcp.json is malformed and was ignored: ${(err as Error).message}`);
     return {};
   }
 }

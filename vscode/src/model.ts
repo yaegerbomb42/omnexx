@@ -16,6 +16,8 @@ export interface RunRow {
   worktree: string;
   branch: string;
   startedAt: number;
+  /** When the run reached a terminal state, if the CLI knows it. */
+  finishedAt?: number | undefined;
   usd: number;
   commits: number;
   supervisorAlive: boolean;
@@ -68,6 +70,11 @@ function optStr(r: Record<string, unknown>, k: string): string | undefined {
   return typeof v === 'string' ? v : undefined;
 }
 
+function optNum(r: Record<string, unknown>, k: string): number | undefined {
+  const v = r[k];
+  return typeof v === 'number' ? v : undefined;
+}
+
 function parseJson(text: string, what: string): unknown {
   try {
     return JSON.parse(text);
@@ -96,6 +103,7 @@ export function parseRuns(text: string): RunRow[] {
       worktree: str(x, 'worktree'),
       branch: str(x, 'branch'),
       startedAt: num(x, 'startedAt'),
+      finishedAt: optNum(x, 'finishedAt'),
       usd: num(x, 'usd'),
       commits: num(x, 'commits'),
       supervisorAlive: x.supervisorAlive === true,
@@ -217,6 +225,27 @@ export function runsForFolders(
 
 export function isActive(run: RunRow): boolean {
   return run.supervisorAlive && LIVE.has(run.status);
+}
+
+/**
+ * How many runs ended since the previous listing, told apart from runs that were simply pruned:
+ * a terminal run counts once if it was active in the previous listing, or if it started and
+ * finished entirely within one refresh window (never seen active, but finished after the last
+ * listing was taken). Runs missing from the new listing never count.
+ */
+export function countNewlyFinished(
+  runs: readonly RunRow[],
+  prevActive: ReadonlySet<string>,
+  prevListedAt: number | null,
+): number {
+  let n = 0;
+  for (const run of runs) {
+    if (isActive(run)) continue;
+    if (prevActive.has(run.runId)) n++;
+    else if (prevListedAt !== null && run.finishedAt !== undefined && run.finishedAt > prevListedAt)
+      n++;
+  }
+  return n;
 }
 
 /** One line under the run's name in the sidebar. */

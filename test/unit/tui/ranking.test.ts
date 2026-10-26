@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../../src/config/load.js';
-import { readRanking, writeRanking } from '../../../src/config/ranking.js';
+import {
+  readPoolMode,
+  readRanking,
+  writePoolMode,
+  writeRanking,
+} from '../../../src/config/ranking.js';
 import { resolvePaths } from '../../../src/core/paths.js';
 import { isolatedEnv, tempDir } from '../../support/tmp.js';
 
@@ -22,6 +27,17 @@ describe('/models ranking', () => {
       flags: { models: { worker: 'anthropic:haiku' } },
     });
     expect(flagged.config.models.worker).toBe('anthropic:haiku');
+  });
+
+  it('concurrent writes do not lose updates', async () => {
+    const env = await isolatedEnv();
+    const paths = resolvePaths(env);
+    await Promise.all([
+      writeRanking(paths, ['pool:a', 'pool:b']),
+      writePoolMode(paths, 'priority'),
+    ]);
+    expect(await readRanking(paths)).toEqual(['pool:a', 'pool:b']);
+    expect(await readPoolMode(paths)).toBe('priority');
   });
 
   it('no ranking file: nothing changes', async () => {

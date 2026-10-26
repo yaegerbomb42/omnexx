@@ -12,6 +12,7 @@ import * as posture from './posture.js';
 import * as domain from './domain.js';
 import * as stats from './stats.js';
 import { badge } from './modelPicker.js';
+import { emptyStateHtml } from './emptyState.js';
 import { escapeHtml } from './render.js';
 import * as providerForm from './providerForm.js';
 import * as layout from './settingsLayout.js';
@@ -152,12 +153,7 @@ function modelFieldHtml(): string {
 }
 
 function connectedHtml(): string {
-  if (!connected.length)
-    return layout.emptyHtml(
-      'No providers yet',
-      'Connect one account or local server and you can start chatting.',
-      '<button class="primary" data-sec-jump="add">Add a provider</button>',
-    );
+  if (!connected.length) return emptyStateHtml();
   return `<ul class="providers">${connected
     .map((p) => {
       const key = p.local
