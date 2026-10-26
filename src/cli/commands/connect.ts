@@ -154,9 +154,11 @@ async function disconnect(io: CliIO, id: string): Promise<boolean> {
   const paths = resolvePaths(io.env);
   const file = userConfigFile(paths);
   const { text, removed } = removeTable(await readConfigText(file), ['mcp', 'servers', id]);
-  if (removed) await writeFile(file, text, 'utf8');
-  await writeServerSecrets(paths.configHome, id, {});
-  await forgetLogin(paths.configHome, id);
+  if (removed) {
+    await writeFile(file, text, 'utf8');
+    await writeServerSecrets(paths.configHome, id, {});
+    await forgetLogin(paths.configHome, id);
+  }
   return removed;
 }
 
