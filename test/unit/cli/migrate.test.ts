@@ -233,6 +233,9 @@ describe('planMigration', () => {
     const f = await setupFixture({ projectConfig: true });
     await writeClaudeUser(f.home);
     await writeProjectCursor(f.cwd);
+    // A project-level setting so there is something non-duplicate to send to omnexx.toml.
+    await mkdir(join(f.cwd, '.claude'), { recursive: true });
+    await writeFile(join(f.cwd, '.claude', 'settings.json'), JSON.stringify({ model: 'sonnet' }));
     const detections = await detectAgentConfigs(f.io);
     const plan = await planMigration(detections, f.io);
 

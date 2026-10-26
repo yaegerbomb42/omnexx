@@ -152,8 +152,14 @@ const CLAUDE_HOOK_EVENTS: Record<string, MappedHook['on']> = {
 
 function hookCommands(v: unknown): number {
   if (!Array.isArray(v)) return 0;
-  return v.filter((e): e is Record<string, unknown> => isRecord(e) && typeof e.command === 'string')
-    .length;
+  let n = 0;
+  for (const e of v) {
+    if (!isRecord(e)) continue;
+    if (typeof e.command === 'string') n++;
+    // Claude Code nests commands as { matchers, hooks: [{ command }] }.
+    else if (Array.isArray(e.hooks)) n += hookCommands(e.hooks);
+  }
+  return n;
 }
 
 /** Claude Code hooks → omnexx `[[hooks]]` entries, best effort. */
