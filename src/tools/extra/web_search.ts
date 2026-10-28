@@ -5,6 +5,7 @@ import type { OmnexxConfig } from '../../config/schema.js';
 import type { SearchBackend, WebConfig } from '../../config/sections/web.js';
 import { parseDuration } from '../../config/duration.js';
 import { fetchWithRetry } from './web_http.js';
+import { privateTarget } from './private-address.js';
 
 const DEFAULT_SEARCH_TIMEOUT_MS = 15_000;
 /** Queries remembered per run; the oldest go first. */
@@ -262,6 +263,12 @@ export const webSearchTool: Tool<typeof schema> = {
           const searxUrl = activeWebConfig?.search_url ?? process.env.SEARXNG_URL;
           if (!searxUrl)
             return fail('Missing SearXNG instance URL (set SEARXNG_URL or [web] search_url)');
+          try {
+            const why = await privateTarget(new URL(searxUrl).hostname);
+            if (why) return fail(`SearXNG URL refused: ${why}`);
+          } catch {
+            return fail('Invalid SearXNG URL');
+          }
           items = await searchSearxng(input.query, count, searxUrl);
           break;
         }

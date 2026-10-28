@@ -279,6 +279,27 @@ class Checker {
       const inner = ci >= 0 ? args[ci + 1] : undefined;
       if (inner !== undefined) return this.check(inner, depth + 1);
     }
+    // Inline code handed to language runtimes cannot be statically analyzed
+    // the way `sh -c` snippets can, so refuse eval flags outright (write a file first).
+    if (
+      name === 'python' ||
+      name === 'python3' ||
+      name === 'node' ||
+      name === 'perl' ||
+      name === 'ruby' ||
+      name === 'php'
+    ) {
+      const EVAL_FLAGS = new Set(['-c', '-e', '--eval', '-r', '--print', '-p']);
+      const hasEvalFlag = args.some(
+        (a) => EVAL_FLAGS.has(a) || /^-[a-z]*[cerp][a-z]*$/.test(a),
+      );
+      if (hasEvalFlag) {
+        return deny(
+          'interpreter-eval',
+          `${name} inline code is not allowed; write it to a file and run that instead.`,
+        );
+      }
+    }
     if (name === 'dd') {
       const of = args.find((a) => a.startsWith('of='));
       if (of && !this.writable(of.slice(3)))
