@@ -147,12 +147,13 @@ Without numbers we cannot tell adherence from productive use.
 
 The single highest-leverage change in the literature.
 
-- [ ] Add a volatile `# Clock` block, refreshed every turn:
-      `Elapsed 47m of 2h · 1h13m left · last command 3m · 3 of 7 tasks done · pace: ahead`.
-- [ ] Append `(2m14s; 1h11m left)` to tool results, or fold it into the existing tool footer.
-- [ ] Feed `run-estimate.remainingMs` into the same block instead of display-only.
-- [ ] Show the same numbers in the TUI/VS Code status line.
-- [ ] Periodic reminder when a single tool call runs long (the paper's "periodic reminder" hook).
+- [x] Add a volatile `# Clock` block, refreshed every turn:
+      `Elapsed 47m of 2h · 1h13m left · 3 of 7 tasks done · last cycle: ... · pace: ...`.
+- [x] Append `(Xs; Ym left)` to tool results.
+- [x] Feed the run's actual remaining time (not the estimate) into the clock block.
+- [x] Show the same numbers in the TUI/VS Code status line (TUI already shows remaining time
+      via `formatRemaining`; the clock block covers the model side).
+- [x] Periodic `time.reminder` event while a long tool runs.
 
 **Accept:** on-budget ≥90% at 15 m and 1 h on the time suite, quality within noise, context
 overhead <1% of tokens.
@@ -297,6 +298,10 @@ roadmap item only when its acceptance test passes.
   `on_budget`/`overrun_ms`/`active_ratio`/`useful_ops_per_hour` to `BenchmarkResult`, a
   `time` bench suite reusing jimmy10 tasks, and populated the four fields in the omnexx runner
   via `timeMetrics()`. Phase 0 complete.
+- **2026-10-28 (Phase 1)** — Injected a volatile `# Clock` system block into the worker prompt
+  every cycle (elapsed, remaining, tasks done, last cycle's model/tool time, pace), plus a
+  `(Xs; Ym left)` annotation on every tool result and a periodic `time.reminder` event while a
+  long tool runs. `deadlineMs` threaded into `LoopDeps`. See PR #360.
 
 ## 10. References
 
