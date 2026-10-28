@@ -138,10 +138,11 @@ export async function buildToolList(
   const allTools = await workerTools(config, where);
 
   // Lazy mode: filter to loaded groups + always-loaded
-  if (config.tools?.discovery === 'lazy' && loadedState) {
+  if (config.tools.discovery === 'lazy' && loadedState) {
     const filtered = allTools.filter((tool) => {
       if (loadedState.toolToGroup.has(tool.name)) {
-        return loadedState.loadedGroups.has(loadedState.toolToGroup.get(tool.name)!);
+        const group = loadedState.toolToGroup.get(tool.name);
+        return group ? loadedState.loadedGroups.has(group) : false;
       }
       // Tools not in any group (e.g., MCP tools) are loaded by default
       return true;
@@ -161,9 +162,9 @@ export async function buildToolList(
 export function buildToolIndexForPrompt(loadedState: LoadedToolsState): string {
   const lines: string[] = [];
   for (const group of loadedState.loadedGroups) {
-    const tools = loadedState.toolToGroup
-      ? [...loadedState.toolToGroup.entries()].filter(([, g]) => g === group).map(([t]) => t)
-      : [];
+    const tools = [...loadedState.toolToGroup.entries()]
+      .filter(([, g]) => g === group)
+      .map(([t]) => t);
     if (tools.length) {
       lines.push(`- ${group}: ${tools.join(', ')}`);
     }

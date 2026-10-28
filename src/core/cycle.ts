@@ -39,7 +39,7 @@ import {
   sameFailureQuestion,
   toolSafetyQuestion,
 } from '../judge/uses.js';
-import { exposedTools, toolSpec, workerTools, buildToolList } from '../tools/registry.js';
+import { toolSpec, workerTools, buildToolList } from '../tools/registry.js';
 import { cycleRoute } from '../router/classify.js';
 import { readIntent } from '../agent/intent.js';
 import type { ToolContext } from '../tools/types.js';
@@ -437,9 +437,9 @@ export async function stepAct(run: Run): Promise<void> {
   const shownNotes = task.id === FAST_TASK ? keepNewestNotes(notes, FAST_NOTES_TOKENS) : notes;
 
   // Build tool index for lazy mode
-  const toolIndex = run.config.tools?.discovery === 'lazy' && run.loadedToolsState
-    ? buildToolIndexForPrompt(run.loadedToolsState)
-    : undefined;
+  const isLazyMode = run.config.tools.discovery === 'lazy';
+  const toolIndex =
+    isLazyMode && run.loadedToolsState ? buildToolIndexForPrompt(run.loadedToolsState) : undefined;
 
   const ctx = buildCycleContext({
     systemPrompt: getWorkerPrompt(workModeOf(run.config)),
@@ -463,14 +463,31 @@ export async function stepAct(run: Run): Promise<void> {
       shownNotes.map((n) => n.text),
     ),
     tools: tools.map(toolSpec),
-    toolIndex,
+    ...(toolIndex ? { toolIndex } : {}),
   });
+
+  // Telemetry: tool discovery mode and token savings
+  const allTools = await workerTools(run.config, { repoRoot: run.worktree, env: run.deps.env });
+  const fullToolSpecs = allTools.map(toolSpec);
+  const fullToolsTokens = estimateTokens(JSON.stringify(fullToolSpecs));
+  const lazyToolsTokens = estimateTokens(JSON.stringify(tools.map(toolSpec)));
+  const toolIndexTokens = toolIndex ? estimateTokens(toolIndex) : 0;
+  const omittedTokens = isLazyMode ? fullToolsTokens - lazyToolsTokens - toolIndexTokens : 0;
+
   run.events.emit('cycle.context', {
     task: task.id,
     prefixBytes: ctx.system.reduce((n, b) => n + b.text.length, 0),
     stateBytes: JSON.stringify(ctx.first).length,
     tokens: contextBreakdown(ctx),
     memory: memory.stats(),
+    toolDiscovery: {
+      mode: run.config.tools.discovery,
+      loadedGroups: run.loadedToolsState ? [...run.loadedToolsState.loadedGroups] : [],
+      fullToolsTokens,
+      lazyToolsTokens,
+      toolIndexTokens,
+      omittedTokens: Math.max(0, omittedTokens),
+    },
   });
   const deps = (models: readonly ResolvedModel[]): LoopDeps => ({
     provider: run.deps.provider,

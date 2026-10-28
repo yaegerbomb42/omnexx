@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { ok, type Tool, type ToolContext } from './types.js';
-import { TOOL_GROUPS, toolsInGroup, groupOf, ALWAYS_LOADED_TOOLS } from './groups.js';
-import { exposedTools, toolSpec, type ExposureOptions } from './registry.js';
+import { ok, type Tool } from './types.js';
+import { TOOL_GROUPS, toolsInGroup, ALWAYS_LOADED_TOOLS } from './groups.js';
+import { exposedTools, type ExposureOptions } from './registry.js';
 import { workerTools } from './registry.js';
 import type { OmnexxConfig } from '../config/schema.js';
 
@@ -17,7 +17,7 @@ export interface LoadedToolsState {
   /** LRU order of loaded groups (most recent last) */
   lruOrder: string[];
   /** Maximum groups to keep loaded (optional cap) */
-  maxLoadedGroups?: number;
+  maxLoadedGroups: number | undefined;
 }
 
 /**
@@ -44,7 +44,7 @@ export function initLoadedToolsState(config: OmnexxConfig): LoadedToolsState {
     loadedGroups,
     toolToGroup,
     lruOrder: [...loadedGroups],
-    maxLoadedGroups: config.tools?.max_loaded_groups,
+    maxLoadedGroups: config.tools.max_loaded_groups,
   };
 }
 
@@ -60,7 +60,10 @@ export function isToolLoaded(state: LoadedToolsState, toolName: string): boolean
 /**
  * Load a tool group (and its tools) into the session.
  */
-export function loadToolGroup(state: LoadedToolsState, group: string): { loaded: string[]; unknown: string[] } {
+export function loadToolGroup(
+  state: LoadedToolsState,
+  group: string,
+): { loaded: string[]; unknown: string[] } {
   const tools = toolsInGroup(group);
   const unknown = tools.filter((t) => !state.toolToGroup.has(t)); // Shouldn't happen with built-in groups
   if (!state.loadedGroups.has(group)) {
@@ -69,7 +72,8 @@ export function loadToolGroup(state: LoadedToolsState, group: string): { loaded:
     // Enforce LRU cap if set
     if (state.maxLoadedGroups && state.lruOrder.length > state.maxLoadedGroups) {
       const toRemove = state.lruOrder.shift();
-      if (toRemove && !['fs', 'shell'].includes(toRemove)) { // Never unload core groups
+      if (toRemove && !['fs', 'shell'].includes(toRemove)) {
+        // Never unload core groups
         state.loadedGroups.delete(toRemove);
       }
     }
@@ -80,7 +84,10 @@ export function loadToolGroup(state: LoadedToolsState, group: string): { loaded:
 /**
  * Load multiple tool groups.
  */
-export function loadToolGroups(state: LoadedToolsState, groups: string[]): { loaded: string[]; unknown: string[] } {
+export function loadToolGroups(
+  state: LoadedToolsState,
+  groups: string[],
+): { loaded: string[]; unknown: string[] } {
   const allLoaded: string[] = [];
   const allUnknown: string[] = [];
   for (const group of groups) {
@@ -94,7 +101,10 @@ export function loadToolGroups(state: LoadedToolsState, groups: string[]): { loa
 /**
  * Load tools by name (loads their groups).
  */
-export function loadToolsByName(state: LoadedToolsState, toolNames: string[]): { loaded: string[]; unknown: string[] } {
+export function loadToolsByName(
+  state: LoadedToolsState,
+  toolNames: string[],
+): { loaded: string[]; unknown: string[] } {
   const groups = new Set<string>();
   const unknown: string[] = [];
   for (const tool of toolNames) {
@@ -151,21 +161,28 @@ export async function buildFullToolList(
  */
 export function createRequestToolsTool(state: LoadedToolsState): Tool {
   const schema = z.strictObject({
-    groups: z.array(z.string()).optional().describe('Tool groups to load (e.g., "memory", "web", "browser")'),
-    tools: z.array(z.string()).optional().describe('Specific tool names to load (loads their groups)'),
+    groups: z
+      .array(z.string())
+      .optional()
+      .describe('Tool groups to load (e.g., "memory", "web", "browser")'),
+    tools: z
+      .array(z.string())
+      .optional()
+      .describe('Specific tool names to load (loads their groups)'),
   });
 
   return {
     name: 'request_tools',
-    description: 'Load full definitions for tool groups or specific tools. In lazy mode, only core tools are loaded by default. Call this to access specialized tools like memory, web, browser, etc.',
+    description:
+      'Load full definitions for tool groups or specific tools. In lazy mode, only core tools are loaded by default. Call this to access specialized tools like memory, web, browser, etc.',
     schema,
     readOnly: true,
-    async run({ groups, tools }, _ctx) {
+    run({ groups, tools }: { groups?: string[]; tools?: string[] }) {
       const loadedTools: string[] = [];
       const unknownGroups: string[] = [];
       const unknownTools: string[] = [];
 
-      if (groups && groups.length) {
+      if (groups?.length) {
         for (const group of groups) {
           if (!TOOL_GROUPS[group]) {
             unknownGroups.push(group);
@@ -177,7 +194,7 @@ export function createRequestToolsTool(state: LoadedToolsState): Tool {
         }
       }
 
-      if (tools && tools.length) {
+      if (tools?.length) {
         const { loaded, unknown } = loadToolsByName(state, tools);
         loadedTools.push(...loaded);
         unknownTools.push(...unknown);

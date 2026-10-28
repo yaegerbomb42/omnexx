@@ -181,7 +181,7 @@ export class Run {
       () => deps.clock.now(),
     );
     // Initialize lazy tool discovery state
-    if (deps.config.tools?.discovery === 'lazy') {
+    if (deps.config.tools.discovery === 'lazy') {
       this.loadedToolsState = initLoadedToolsState(deps.config);
     }
     this.events = new EventLog(store.eventsPath, state.runId, this.redactor, deps.clock);

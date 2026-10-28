@@ -6,7 +6,16 @@ import type { Tool } from './types.js';
  */
 export const TOOL_GROUPS: Record<string, string[]> = {
   /** File system: read & edit files */
-  fs: ['read', 'outline', 'read_symbol', 'search', 'str_replace', 'multi_edit', 'replace_lines', 'write_file'],
+  fs: [
+    'read',
+    'outline',
+    'read_symbol',
+    'search',
+    'str_replace',
+    'multi_edit',
+    'replace_lines',
+    'write_file',
+  ],
   /** Shell commands */
   shell: ['bash', 'read_log'],
   /** Git operations */
@@ -65,7 +74,9 @@ export function groupIndexLine(group: string, allTools: readonly Tool[]): string
   const groupTools = allTools.filter((t) => toolNames.includes(t.name));
   if (!groupTools.length) return '';
   const descriptions = groupTools.map((t) => t.name).join(', ');
-  const shortDesc = groupTools[0].description.split('.')[0] + '.';
+  // groupTools is non-empty here (checked above)
+  const first = groupTools[0] as Tool;
+  const shortDesc = (first.description.split('.')[0] ?? '') + '.';
   return `- ${group}: ${shortDesc} — ${descriptions}`;
 }
 

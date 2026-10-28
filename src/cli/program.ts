@@ -228,6 +228,10 @@ export function createProgram(
     )
     .option('--sandbox <mode>', 'host | docker')
     .option('--model-worker <alias>', 'worker model alias, e.g. sonnet')
+    .option(
+      '--tool-discovery <mode>',
+      'full (all tools every request) | lazy (compact index, load on demand)',
+    )
     .option('--push <mode>', 'none | branch')
     .option('--from <ref>', 'branch the run from this ref (default HEAD)')
     .option('--i-know-there-are-no-checks', 'no longer needed: runs without tests are reviewed')

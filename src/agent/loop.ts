@@ -192,7 +192,7 @@ export interface LoopDeps {
   tools: readonly Tool[];
   toolCtx: ToolContext;
   /** Lazy tool discovery state (persists across context compaction). */
-  loadedToolsState?: LoadedToolsState;
+  loadedToolsState?: LoadedToolsState | null;
   budget: OmnexxConfig['budget'];
   maxTokens: number;
   clock: Clock;
