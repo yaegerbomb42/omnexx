@@ -1,5 +1,8 @@
 import pc from 'picocolors';
-import { resolvePaths, usageFile } from '../../core/paths.js';
+import { readdir, stat } from 'node:fs/promises';
+import { join } from 'node:path';
+import { resolvePaths, runDir, runsDir, usageFile } from '../../core/paths.js';
+import { readEvents } from '../../core/events.js';
 import { UsageError } from '../../errors.js';
 import { readUsageLedger, summarizeUsage, type UsageReport } from '../../providers/usage-ledger.js';
 import { EXIT } from '../exit-codes.js';
@@ -64,7 +67,49 @@ function stepsSection(io: CliIO, report: UsageReport): void {
     );
 }
 
-function render(io: CliIO, report: UsageReport): void {
+async function latestRunDir(p: ReturnType<typeof resolvePaths>): Promise<string | undefined> {
+  const base = runsDir(p);
+  let entries: string[];
+  try {
+    entries = await readdir(base);
+  } catch {
+    return undefined;
+  }
+  let best: { name: string; mtime: number } | undefined;
+  for (const name of entries) {
+    try {
+      const s = await stat(join(base, name));
+      if (!s.isDirectory()) continue;
+      if (!best || s.mtimeMs > best.mtime) best = { name, mtime: s.mtimeMs };
+    } catch {
+      // skip
+    }
+  }
+  return best ? join(base, best.name) : undefined;
+}
+
+async function timeSection(io: CliIO, p: ReturnType<typeof resolvePaths>, runId: string | undefined): Promise<void> {
+  const dir = runId ? runDir(p, runId) : await latestRunDir(p);
+  if (!dir) return;
+  const events = await readEvents(join(dir, 'events.jsonl'));
+  const reports = events.filter((e) => e.type === 'time.report');
+  if (!reports.length) return;
+  const last = reports[reports.length - 1]!;
+  const d = (last.data ?? {}) as Record<string, unknown>;
+  println(io.stdout, '');
+  println(io.stdout, pc.bold('Time'));
+  println(
+    io.stdout,
+    `  elapsed ${String(d.elapsed_s ?? '?')}s · remaining ${String(d.remaining_s ?? '?')}s · overrun ${String(d.overrun_s ?? 0)}s`,
+  );
+  println(
+    io.stdout,
+    `  model ${String(d.model_s ?? '?')}s · tools ${String(d.tool_s ?? '?')}s · useful ops ${String(d.useful_ops ?? '?')}`,
+  );
+  println(io.stdout, pc.dim(`  ${String(reports.length)} time.report events in ${dir}`));
+}
+
+async function render(io: CliIO, report: UsageReport, p: ReturnType<typeof resolvePaths>, runId: string | undefined): Promise<void> {
   const title = report.labels.length ? report.labels.join(', ') : report.query || 'all tasks';
   println(io.stdout, pc.bold(`Usage: ${title}`));
   const when =
@@ -90,6 +135,7 @@ function render(io: CliIO, report: UsageReport): void {
   }
   stepsSection(io, report);
   wasteSection(io, report);
+  await timeSection(io, p, runId);
   println(io.stdout, '');
   println(
     io.stdout,
@@ -110,8 +156,9 @@ export const register: CommandRegistrar = (program, io, setExit) => {
     .option('--json', 'machine-readable output')
     .option('--list', 'list tasks in the ledger')
     .description('where every token went, by purpose, task and step, plus wasted spend')
-    .action((task: string | undefined, opts: { json?: boolean; list?: boolean }) => {
-      const file = usageFile(resolvePaths(io.env));
+    .action(async (task: string | undefined, opts: { json?: boolean; list?: boolean }) => {
+      const p = resolvePaths(io.env);
+      const file = usageFile(p);
       const records = readUsageLedger(file);
       if (!records.length) {
         println(io.stdout, `No usage recorded yet (${file}).`);
@@ -135,7 +182,7 @@ export const register: CommandRegistrar = (program, io, setExit) => {
         );
       }
       if (opts.json) println(io.stdout, JSON.stringify(report, null, 2));
-      else render(io, report);
+      else await render(io, report, p, task);
       setExit(EXIT.ok);
     });
 };
