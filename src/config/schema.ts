@@ -72,6 +72,8 @@ export const budgetSchema = z.strictObject({
   max_usd_per_day: z.number().positive().default(50),
   max_hours: z.number().positive().default(24),
   max_cycles: z.number().int().positive().default(300),
+  /** Cycles per hour the run is allowed to sustain; max_cycles scales up to at least this rate times max_hours, so a long run is not cut short by the cycle cap. */
+  cycles_per_hour: z.number().positive().default(12),
   max_turns_per_cycle: z.number().int().positive().default(40),
   max_tokens_per_cycle: z.number().int().positive().default(400_000),
   /**

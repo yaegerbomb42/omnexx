@@ -631,6 +631,14 @@ class Supervisor {
     const paused = await this.dailyCapPause();
     if (paused) return paused;
     const limits = { spentUsd: r.state.spend.usd, elapsedMs: r.elapsedMs(), cycles: r.state.cycle };
+    const effectiveMaxCycles = Math.max(
+      r.config.budget.max_cycles,
+      Math.ceil(r.config.budget.max_hours * r.config.budget.cycles_per_hour),
+    );
+    if (r.state.cycle >= effectiveMaxCycles) {
+      r.events.emit('budget.stop', { kind: 'max_cycles', detail: `${r.state.cycle} of ${effectiveMaxCycles}` });
+      return { status: 'budget-stop', reason: `max_cycles reached (${r.state.cycle} of ${effectiveMaxCycles})` };
+    }
     const hit = runLimitHit(r.config.budget, limits);
     if (hit) {
       r.events.emit('budget.stop', { kind: hit.kind, detail: hit.detail });
