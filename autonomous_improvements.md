@@ -136,9 +136,8 @@ Without numbers we cannot tell adherence from productive use.
       reads, same-error retries, compactions that did not shrink, resent context — see
       `docs/usage.md`). Reads `time.report` events from the run's events file (latest run, or
       the run id passed as the task argument).
-- [ ] Extend the bench with `on_budget`, `overrun`, `active_ratio` and `useful_ops_per_hour`.
-      (Types added to `BenchmarkResult`; the omnexx runner still has to populate them from the
-      run's events — follow-up.)
+- [x] Extend the bench with `on_budget`, `overrun`, `active_ratio` and `useful_ops_per_hour`.
+      Populated by the omnexx runner from `time.report` events via `timeMetrics()`.
 - [x] New suite `bench/suites/time/` with the same task at 15 m, 1 h and 4 h budgets.
 
 **Accept:** a real 8 h run produces a readable time report; the bench prints on-budget %.
@@ -295,9 +294,9 @@ roadmap item only when its acceptance test passes.
   and at exit, with elapsed/remaining/task-active/model/tool/overrun/useful-ops fields;
   accumulators live on `Run` and are fed from `onResponse` and the `tool.call` event. Added a
   Time section to `omnexx usage` reading `time.report` events from the run's events file. Added
-  `on_budget`/`overrun_ms`/`active_ratio`/`useful_ops_per_hour` to `BenchmarkResult` and a
-  `time` bench suite reusing jimmy10 tasks. The omnexx runner still has to populate the four
-  bench fields — left as a follow-up.
+  `on_budget`/`overrun_ms`/`active_ratio`/`useful_ops_per_hour` to `BenchmarkResult`, a
+  `time` bench suite reusing jimmy10 tasks, and populated the four fields in the omnexx runner
+  via `timeMetrics()`. Phase 0 complete.
 
 ## 10. References
 
