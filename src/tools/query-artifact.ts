@@ -30,11 +30,10 @@ export const queryArtifactTool: Tool<typeof inputSchema> = {
       : resolve(ctx.jail.root, input.path);
     const fullPath = await realpath(resolvedPath).catch(() => resolvedPath);
     const sysTmp = await realpath(tmpdir()).catch(() => tmpdir());
-    if (
-      !fullPath.startsWith(root) &&
-      !fullPath.startsWith(sysTmp) &&
-      !fullPath.startsWith('/tmp')
-    ) {
+    const insideRoot = fullPath === root || fullPath.startsWith(root + '/');
+    const insideSysTmp = fullPath === sysTmp || fullPath.startsWith(sysTmp + '/');
+    const insideTmp = fullPath === '/tmp' || fullPath.startsWith('/tmp/');
+    if (!insideRoot && !insideSysTmp && !insideTmp) {
       return {
         content: 'Access denied: path must be inside workspace or /tmp',
         isError: true,
