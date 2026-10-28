@@ -56,7 +56,7 @@ export async function resumeAll(
       spawnAttached(entry, ['supervise', id], new RunStore(paths, id).file('supervisor.log'), env),
     ),
   );
-  const failed = codes.filter((c) => c === 1 || c >= 128).length;
+  const failed = codes.filter((c) => c !== 0).length;
   log(`supervisors exited: ${codes.join(', ')}`);
   return failed ? 1 : 0;
 }
