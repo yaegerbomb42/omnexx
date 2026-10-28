@@ -48,6 +48,7 @@ import { blocking, renderFindings, reviewChange } from '../verify/review.js';
 import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
 import { runGates, toBaseline } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
+import { DoomLoopRatchet } from './doom-loop-ratchet.js';
 import { readTextOr, writeFileAtomic } from './atomic.js';
 import { applyRemember, keepNewestNotes, renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
@@ -510,6 +511,11 @@ export async function stepAct(run: Run): Promise<void> {
       },
       () => editOps,
     ),
+    doomLoopRatchet: new DoomLoopRatchet({
+      worktree: run.worktree,
+      cleanSha: run.state.lastGreen,
+      events: run.events,
+    }),
     compaction: {
       settings: {
         clearAt: run.config.context.clear_tool_results_at,
