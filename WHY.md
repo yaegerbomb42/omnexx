@@ -32,11 +32,23 @@
 ## 5. Session History & Log
 
 - **2026-10-28 (Session Init)**: Cloned `yaegerbomb42/omnexx` repository into `/Users/yaeger/Desktop/omnexx`. Initialized `WHY.md` institutional knowledge base. Working tree is clean on `origin/main`.
-- **2026-10-28 (Release v0.21.1 / Extension 0.17.1)**:
-  - Prepared release for VS Code Marketplace overhaul: bumped root `package.json` to `0.21.1` and `vscode/package.json` to `0.17.1`.
+- **2026-10-28 (Release v0.21.1 / Extension 0.17.1 Published)**:
+  - Prepared and executed release for VS Code Marketplace overhaul: bumped root `package.json` to `0.21.1` and `vscode/package.json` to `0.17.1`.
   - Replaced low-quality cropped snippet screenshot with high-fidelity visual assets ([`panel.png`](file:///Users/yaeger/Desktop/omnexx/vscode/media/panel.png), [`model-picker.png`](file:///Users/yaeger/Desktop/omnexx/vscode/media/model-picker.png), and [`demo.gif`](file:///Users/yaeger/Desktop/omnexx/vscode/media/demo.gif)).
   - Streamlined [vscode/README.md](file:///Users/yaeger/Desktop/omnexx/vscode/README.md) with 3-step quickstart and mode comparison matrix.
   - Updated marketplace descriptor in [vscode/package.json](file:///Users/yaeger/Desktop/omnexx/vscode/package.json).
   - Resolved duplicate assignment in `src/cli/program.ts` and duplicate import in `src/core/supervisor.ts`.
   - Updated [CHANGELOG.md](file:///Users/yaeger/Desktop/omnexx/CHANGELOG.md).
-  - All unit tests, typechecks, ESLint, and Prettier checks passing.
+  - Committed (`f0fd4b5`), tagged `v0.21.1`, and pushed to `main` and tags.
+  - Release workflow triggered on GitHub Actions (Run ID `40731025980`).
+- **2026-10-28 (VS Code Extension Modes & Settings Integration Completed)**:
+  - Integrated execution postures (Efficient, Normal, Extreme) directly with the 5 settings sliders beneath them in the VS Code Agent settings card:
+    - **Effort per task** (`taskEffort`: 3 in Efficient, 5 in Normal, 9 in Extreme)
+    - **Memory / Context** (`contextLevel`: 4 in Efficient [40k], 6 in Normal [96k], 9 in Extreme [500k])
+    - **Effort per turn** (`turnEffort`: 3 in Efficient [low reasoning], 5 in Normal [balanced], 9 in Extreme [high reasoning])
+    - **Time on task** (`time`: '30m' in Efficient, '2h' in Normal, '8h' in Extreme)
+    - **Max reply length** (`maxTokens`: 4k in Efficient, 16k in Normal, 32k in Extreme)
+  - Added mode preset selector buttons above the sliders in `vscode/src/webview/agentCard.ts` and styled via `vscode/media/settings.css`.
+  - Added instant DOM slider feedback, live progress `--p` styles, and meaning labels update on mode click.
+  - Wired two-way synchronization between header posture clicks and agent settings.
+  - Unit tests added in `test/unit/vscode-agent-card.test.ts` (14/14 suites passing, 90/90 tests passing). Typecheck and ESLint clean.

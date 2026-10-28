@@ -18,6 +18,82 @@ export interface AgentMeta {
 
 export type SliderId = 'taskEffort' | 'turnEffort' | 'contextLevel' | 'time' | 'maxTokens';
 
+export type ExecutionMode = 'efficient' | 'normal' | 'extreme';
+
+export interface ModeButtonMeta {
+  id: ExecutionMode;
+  icon: string;
+  name: string;
+  caption: string;
+}
+
+export const EXECUTION_MODE_BUTTONS: readonly ModeButtonMeta[] = [
+  {
+    id: 'efficient',
+    icon: '⚡',
+    name: 'Efficient',
+    caption: 'Fast & token-efficient: lower effort, focused memory, quick iterations',
+  },
+  {
+    id: 'normal',
+    icon: '⚖️',
+    name: 'Normal',
+    caption: 'The balanced default: standard planning, 96k context, 2h budget',
+  },
+  {
+    id: 'extreme',
+    icon: '🔥',
+    name: 'Extreme',
+    caption: 'Maximum autonomy: deep planning, 500k context, full thinking depth',
+  },
+];
+
+export const isExecutionMode = (v: unknown): v is ExecutionMode =>
+  v === 'efficient' || v === 'normal' || v === 'extreme';
+
+export const MODE_PRESETS: Readonly<Record<ExecutionMode, AgentLevels>> = {
+  efficient: {
+    taskEffort: 3,
+    turnEffort: 3,
+    contextLevel: 4,
+    time: '30m',
+    maxTokens: 4_096,
+  },
+  normal: {
+    taskEffort: 5,
+    turnEffort: 5,
+    contextLevel: 6,
+    time: '2h',
+    maxTokens: 16_000,
+  },
+  extreme: {
+    taskEffort: 9,
+    turnEffort: 9,
+    contextLevel: 9,
+    time: '8h',
+    maxTokens: 32_000,
+  },
+};
+
+export function applyModePreset(mode: ExecutionMode): AgentLevels {
+  return { ...MODE_PRESETS[mode] };
+}
+
+export function detectMode(l: AgentLevels): ExecutionMode | null {
+  for (const [mode, preset] of Object.entries(MODE_PRESETS) as [ExecutionMode, AgentLevels][]) {
+    if (
+      l.taskEffort === preset.taskEffort &&
+      l.turnEffort === preset.turnEffort &&
+      l.contextLevel === preset.contextLevel &&
+      l.time === preset.time &&
+      l.maxTokens === preset.maxTokens
+    ) {
+      return mode;
+    }
+  }
+  return null;
+}
+
 const LEVEL_STEPS = 10;
 
 const k = (n: number): string =>
