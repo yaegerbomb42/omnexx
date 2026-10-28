@@ -32,6 +32,7 @@
 ## 5. Session History & Log
 
 - **2026-10-28 (Session Init)**: Cloned `yaegerbomb42/omnexx` repository into `/Users/yaeger/Desktop/omnexx`. Initialized `WHY.md` institutional knowledge base. Working tree is clean on `origin/main`.
+<<<<<<< HEAD
 - **2026-10-28 (Release v0.21.1 / Extension 0.17.1)**:
   - Prepared release for VS Code Marketplace overhaul: bumped root `package.json` to `0.21.1` and `vscode/package.json` to `0.17.1`.
   - Replaced low-quality cropped snippet screenshot with high-fidelity visual assets ([`panel.png`](file:///Users/yaeger/Desktop/omnexx/vscode/media/panel.png), [`model-picker.png`](file:///Users/yaeger/Desktop/omnexx/vscode/media/model-picker.png), and [`demo.gif`](file:///Users/yaeger/Desktop/omnexx/vscode/media/demo.gif)).
@@ -40,6 +41,8 @@
   - Resolved duplicate assignment in `src/cli/program.ts` and duplicate import in `src/core/supervisor.ts`.
   - Updated [CHANGELOG.md](file:///Users/yaeger/Desktop/omnexx/CHANGELOG.md).
   - All unit tests, typechecks, ESLint, and Prettier checks passing.
+=======
+>>>>>>> origin/feat/subagent-research-sandbox
 - **2026-10-28 (Task 1: Prompt Cache Pinning & Dynamic State Quarantine)**:
   - Enforced `pinPrefix(req.system)` in Anthropic wire payload generation (`src/providers/anthropic.ts`).
   - Placed ephemeral dynamic session state (`ctx.volatilePrompt`) at the user prompt suffix.
@@ -49,7 +52,13 @@
   - Added support for top-level `const fn = () =>` / `const fn = function` arrow/anonymous function declarations.
   - Formatted outline output as `kind name (lines X-Y)`. PR #360.
 - **2026-10-28 (Task 3: Tool Output Compactor & Error-Trace Reducer)**:
+- **2026-10-28 (Task 3: Tool Output Compactor & Error-Trace Reducer)**:
   - Enhanced `src/tools/output-compress.ts` to fold high-volume package manager noise (npm deprecation warnings, audit notices, funding prompts) and build tickers (vite module transformation lines) into clean single-line summaries while guaranteeing that error lines and failure traces are never suppressed.
   - Stripped git tutorial advice (`use "git add..."`) from command output to free up LLM context space.
   - Collapsed excessive blank lines.
   - Added unit test suite in `test/unit/tools/output-compress.test.ts` verifying >50-80% line reduction on noisy failing test runs with 100% assertion and project stack frame retention. PR #367.
+- **2026-10-28 (Task 4: Isolated Subagent Research Sandbox)**:
+  - Hardened read-only subagent tool constraints and context boundary: subagents can consume large context (up to 50k tokens) exploring code and reading web/docs, but hand back only a tightly bounded, synthesized executive summary (capped at 1,500 chars / ~350 tokens) with key file:line anchors (at most 8 deduplicated paths) to the orchestrator.
+  - Added strict tool denial (`safeSubagentTools`) stripping modifying and execution tools (`bash`, `write_file`, `str_replace`, `apply_patch`, `patch`, `task`, `todo`).
+  - Consolidated `formatSubagentResult` into a single canonical implementation in `src/agent/subagent.ts` used across `task` and `agent` tools.
+  - Added unit test suite in `test/unit/agent/subagent-isolation.test.ts` verifying tool denial, result truncation, file deduplication, out-of-band artifact emission, and `taskTool` execution. PR #368.

@@ -6,22 +6,28 @@ import { readOnlyTools, toolSpec } from '../tools/registry.js';
 import type { HelperCard, SubagentKind, Tool, ToolContext } from '../tools/types.js';
 import { runAgentLoop, type LoopDeps } from './loop.js';
 
-/** Token budget for the structured result handed back to the parent (acceptance: <=1.5k). */
-const RESULT_MAX_TOKENS = 1_500;
+/** Token budget for the structured result handed back to the parent (acceptance: <=500 tokens). */
+export const RESULT_MAX_CHARS = 1_500;
 
 const BRIEF: Record<SubagentKind, string> = {
-  explore: 'Find the relevant code and explain how it works, with file paths and line numbers.',
+  explore:
+    'Find the relevant code and explain how it works succinctly, with exact file paths and line spans.',
   research:
-    'Find authoritative information (docs, the web, the codebase) and cite where it came from.',
-  review: 'Critique the change or design: correctness, risk, missing cases. Be specific and brief.',
+    'Find authoritative information (docs, web, codebase), verify facts, and cite precise sources.',
+  review:
+    'Critique the change or design: correctness, security risk, missing edge cases. Be specific and dense.',
 };
 
-const SYSTEM = `You are a read-only helper for a coding agent. You cannot edit files.
-Use the tools to answer the question, then reply with a summary under 600 words: findings first,
-then file paths and the evidence behind them. Say plainly what you could not determine.`;
+const SYSTEM = `You are a read-only helper for a coding agent. You cannot edit files or run commands.
+Thoroughly explore the codebase and documentation using your read-only tools to gather evidence.
+Once finished, synthesize your findings into a dense, compact executive summary (under 250 words):
+1. Key Answer/Finding: direct, actionable takeaway.
+2. Exact Locations: file paths with line numbers (e.g. src/auth.ts:42).
+3. Confidence: 0-100% based on evidence found.
+Keep the final reply extremely concise so the orchestrator's primary context window remains lean.`;
 
-/** Tools a helper may never have: they write, or would let it start more helpers. */
-const DENIED = new Set([
+/** Tools a helper may never have: they write, run commands, or would let it start more helpers. */
+export const DENIED = new Set([
   'task',
   // A helper's checklist would replace the parent's on screen.
   'todo',
@@ -30,6 +36,14 @@ const DENIED = new Set([
   'write_plan',
   'write_intent',
   'integrations_search',
+  // Mutating and command execution tools (sandboxed to read-only tools)
+  'bash',
+  'write_file',
+  'str_replace',
+  'apply_patch',
+  'patch',
+  'write',
+  'edit',
 ]);
 
 /** Claude Code's tool names, as agent cards list them, to omnexx's read-only tools. */
@@ -55,6 +69,14 @@ export function cardTools(tools: readonly Tool[], card: HelperCard | undefined):
   return tools.filter((t) => wanted.has(t.name));
 }
 
+/** Resolves and strictly sanitizes tools for a subagent, stripping denied and mutating tools. */
+export function safeSubagentTools(
+  tools: readonly Tool[],
+  card: HelperCard | undefined,
+): readonly Tool[] {
+  return cardTools(tools, card).filter((t) => !DENIED.has(t.name));
+}
+
 /**
  * What a helper needs from whoever starts it: a long run or a chat session. The loop pieces are
  * the parent's, so spend, pausing and stopping all count against the parent.
@@ -76,12 +98,21 @@ export interface HelperEnv {
  * pays for the summary — never the full transcript (which is stored as an artifact event).
  */
 export interface SubagentResult {
-  /** The key findings, truncated to stay within {@link RESULT_MAX_TOKENS}. */
+  /** The key findings, truncated to stay within {@link RESULT_MAX_CHARS}. */
   findings: string;
-  /** File paths the findings rely on (at most 20). */
+  /** File paths the findings rely on (at most 8). */
   files: readonly string[];
   /** Confidence in the findings, 0..1. */
   confidence: number;
+}
+
+export function formatSubagentResult(result: SubagentResult): string {
+  const parts = [
+    result.findings.trim(),
+    result.files.length ? `Key Files:\n${result.files.map((f) => `- ${f}`).join('\n')}` : '',
+    `Confidence: ${String(Math.round(result.confidence * 100))}%`,
+  ].filter(Boolean);
+  return parts.join('\n\n');
 }
 
 /**
@@ -98,10 +129,7 @@ export function helperRunner(
   const busy = new Map<string, number>();
   return async (description, kind, card) => {
     const id = ++n;
-    const tools = cardTools(
-      (await env.tools()).filter((t) => !DENIED.has(t.name)),
-      card,
-    );
+    const tools = safeSubagentTools(await env.tools(), card);
     const ctx: ToolContext = {
       ...parent,
       edited: new Set(),
@@ -178,19 +206,24 @@ export function helperRunner(
     // Build the bounded structured result.
     const answer = result.finalText.trim();
     const findings =
-      answer.length > RESULT_MAX_TOKENS * 3
-        ? `${answer.slice(0, RESULT_MAX_TOKENS * 3 - 1)}…`
+      answer.length > RESULT_MAX_CHARS
+        ? `${answer.slice(0, RESULT_MAX_CHARS - 1)}…`
         : answer;
+    const seenFiles = new Set<string>();
     const files: string[] = [];
     const filePattern =
-      /(?:^|\s)([a-zA-Z0-9_\-./]+?\.(?:ts|js|tsx|jsx|py|rs|go|java|cpp|c|h|hpp|json|yaml|yml|md|txt))(?::(\d+))?/g;
+      /(?:^|[\s(`"'])((?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+\.(?:ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|cpp|c|h|hpp|json|yaml|yml|toml|md|txt))(?::(\d+))?/g;
     let m: RegExpExecArray | null;
     while ((m = filePattern.exec(answer)) !== null) {
       const path = m[1];
       const line = m[2];
       if (path && !path.startsWith('http') && path.length > 2) {
-        files.push(line ? `${path}:${line}` : path);
-        if (files.length >= 20) break;
+        const ref = line ? `${path}:${line}` : path;
+        if (!seenFiles.has(ref)) {
+          seenFiles.add(ref);
+          files.push(ref);
+          if (files.length >= 8) break;
+        }
       }
     }
     let confidence = 0.7;
