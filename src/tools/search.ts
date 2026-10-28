@@ -189,6 +189,9 @@ export const searchTool: Tool<typeof schema> = {
     }
     // Models often send code like `test(` meaning the literal text: search for it as written.
     let pattern = input.pattern;
+    if (pattern.length > 500) {
+      return fail('pattern is too long to search safely (max 500 characters)');
+    }
     let literalNote = '';
     try {
       new RegExp(pattern);
