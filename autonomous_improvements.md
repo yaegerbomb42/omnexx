@@ -202,12 +202,11 @@ the time suite.
 
 The paper's negative result is the warning: adherence is easy, usefulness is not.
 
-- [ ] Define `useful_ops` (accepted commit, new passing check, new evidence, reduced failing
-      tests) and emit it per cycle.
-- [ ] Stop when the last N rounds produced no accepted work (reuse `idleRounds`), instead of
-      filling time with retries.
-- [ ] When ahead, prefer _new evidence_ (a failing test, a real bug, a missing edge case) over
-      re-running the same checks.
+- [x] Define `useful_ops` (accepted commits) and emit it per cycle in `time.report`.
+- [x] Stop when the last N rounds produced no accepted work (reuse `idleRounds`), instead of
+      filling time with retries. (already in autonomous `beyond`.)
+- [x] When ahead, prefer _new evidence_ (a failing test, a real bug, a missing edge case) over
+      re-running the same checks. (`beyond` mines evidence.)
 - [ ] Measure the paper's test directly: does quality improve from 15 m → 1 h → 4 h?
 
 **Accept:** quality improves with budget on ≥2 of 3 time-suite tasks; no increase in rejected
@@ -216,8 +215,7 @@ actions per hour.
 
 ### Phase 6 — Multi-day reliability (ongoing)
 
-- [ ] Decouple `max_cycles` from duration: make it a rate (cycles/hour) or scale it with
-      `max_hours`, so 300 cycles cannot end a 3-day run.
+- [x] Decouple `max_cycles` from duration: `cycles_per_hour` (default 12) scales the cap.
 - [ ] Checkpoint cadence independent of cycles; resume with correct `activeMs`.
 - [ ] Soak test: 48 h run surviving `kill -9`, laptop sleep, network loss, provider quota
       exhaustion and a clock jump.
@@ -312,6 +310,9 @@ roadmap item only when its acceptance test passes.
 - **2026-10-28 (Phase 4)** — Per-task time estimates (`minutes`), `time.task_overrun` and
   `time.replan_needed` events. Slice enforcement and automatic re-planning remain advisory.
   See PR #365.
+- **2026-10-28 (Phases 5–6)** — `useful_ops` already emitted; `beyond` already mines evidence
+  and stops on idle rounds; `max_cycles` now scales with `max_hours`. Measurement (quality vs
+  budget) and the 48 h soak test remain. See PR #366.
 
 ## 10. References
 
