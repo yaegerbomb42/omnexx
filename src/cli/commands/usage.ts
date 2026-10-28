@@ -88,7 +88,11 @@ async function latestRunDir(p: ReturnType<typeof resolvePaths>): Promise<string 
   return best ? join(base, best.name) : undefined;
 }
 
-async function timeSection(io: CliIO, p: ReturnType<typeof resolvePaths>, runId: string | undefined): Promise<void> {
+async function timeSection(
+  io: CliIO,
+  p: ReturnType<typeof resolvePaths>,
+  runId: string | undefined,
+): Promise<void> {
   const dir = runId ? runDir(p, runId) : await latestRunDir(p);
   if (!dir) return;
   const events = await readEvents(join(dir, 'events.jsonl'));
@@ -109,7 +113,12 @@ async function timeSection(io: CliIO, p: ReturnType<typeof resolvePaths>, runId:
   println(io.stdout, pc.dim(`  ${String(reports.length)} time.report events in ${dir}`));
 }
 
-async function render(io: CliIO, report: UsageReport, p: ReturnType<typeof resolvePaths>, runId: string | undefined): Promise<void> {
+async function render(
+  io: CliIO,
+  report: UsageReport,
+  p: ReturnType<typeof resolvePaths>,
+  runId: string | undefined,
+): Promise<void> {
   const title = report.labels.length ? report.labels.join(', ') : report.query || 'all tasks';
   println(io.stdout, pc.bold(`Usage: ${title}`));
   const when =

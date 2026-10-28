@@ -120,7 +120,9 @@ export function efficiency(
 export function timeMetrics(
   events: readonly RunEvent[],
   wallMs: number,
-): { on_budget: boolean; overrun_ms: number; active_ratio: number; useful_ops_per_hour: number } | undefined {
+):
+  | { on_budget: boolean; overrun_ms: number; active_ratio: number; useful_ops_per_hour: number }
+  | undefined {
   const reports = events.filter((e) => e.type === 'time.report');
   if (!reports.length) return undefined;
   const last = reports[reports.length - 1]!;
