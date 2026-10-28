@@ -177,7 +177,8 @@ export function createRequestToolsTool(state: LoadedToolsState): Tool {
       'Load full definitions for tool groups or specific tools. In lazy mode, only core tools are loaded by default. Call this to access specialized tools like memory, web, browser, etc.',
     schema,
     readOnly: true,
-    run({ groups, tools }: { groups?: string[]; tools?: string[] }) {
+    run(input, _ctx) {
+      const { groups, tools } = schema.parse(input) as { groups?: string[]; tools?: string[] };
       const loadedTools: string[] = [];
       const unknownGroups: string[] = [];
       const unknownTools: string[] = [];
@@ -206,7 +207,7 @@ export function createRequestToolsTool(state: LoadedToolsState): Tool {
       if (unknownTools.length) message += `. Unknown tools: ${unknownTools.join(', ')}`;
       message += `. Currently loaded groups: ${[...state.loadedGroups].join(', ')}`;
 
-      return ok(message);
+      return Promise.resolve(ok(message));
     },
   };
 }

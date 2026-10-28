@@ -37,15 +37,15 @@ omnexx run "your goal" --tool-discovery lazy
 
 Tools are organized into groups:
 
-| Group | Tools | Description |
-|-------|-------|-------------|
-| `fs` | read, write_file, str_replace, multi_edit, replace_lines, outline, read_symbol, search | File system operations |
-| `shell` | bash, read_log | Shell commands |
-| `search` | search | Search tools |
-| `web` | web_fetch, web_search | Web browsing |
-| `browser` | browser | Browser automation |
-| `memory` | remember, recall, context, running_context, query_artifact, repl_projection | Notes & memory |
-| `task` | task, todo | Sub-agents & task management |
+| Group     | Tools                                                                                  | Description                  |
+| --------- | -------------------------------------------------------------------------------------- | ---------------------------- |
+| `fs`      | read, write_file, str_replace, multi_edit, replace_lines, outline, read_symbol, search | File system operations       |
+| `shell`   | bash, read_log                                                                         | Shell commands               |
+| `search`  | search                                                                                 | Search tools                 |
+| `web`     | web_fetch, web_search                                                                  | Web browsing                 |
+| `browser` | browser                                                                                | Browser automation           |
+| `memory`  | remember, recall, context, running_context, query_artifact, repl_projection            | Notes & memory               |
+| `task`    | task, todo                                                                             | Sub-agents & task management |
 
 ### Always-Loaded Tools
 
@@ -84,6 +84,7 @@ The agent calls this tool to load full definitions for specific groups or tools:
 ```
 
 Response example:
+
 ```
 Loaded 8 tool(s): remember, recall, context, running_context, query_artifact, repl_projection, web_fetch, web_search. Currently loaded groups: fs, shell, memory, web
 ```
@@ -104,11 +105,11 @@ If `max_loaded_groups` is set, the least recently used groups are unloaded when 
 
 Typical savings (approximate):
 
-| Mode | Tool Schema Tokens |
-|------|-------------------|
-| Full | ~8,000–12,000 tokens |
-| Lazy (index only) | ~500–800 tokens |
-| Lazy (with 3 groups loaded) | ~2,000–3,000 tokens |
+| Mode                        | Tool Schema Tokens   |
+| --------------------------- | -------------------- |
+| Full                        | ~8,000–12,000 tokens |
+| Lazy (index only)           | ~500–800 tokens      |
+| Lazy (with 3 groups loaded) | ~2,000–3,000 tokens  |
 
 The exact savings depend on your tool set and how many groups the agent loads.
 

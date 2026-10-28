@@ -1,10 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { TOOL_GROUPS, ALWAYS_LOADED_TOOLS, toolsInGroup, groupOf, buildToolIndex, groupIndexLine } from '../../../src/tools/groups.js';
-import { initLoadedToolsState, loadToolGroup, loadToolsByName, autoLoadToolGroup, createRequestToolsTool, LoadedToolsState } from '../../../src/tools/request-tools.js';
+import {
+  TOOL_GROUPS,
+  ALWAYS_LOADED_TOOLS,
+  toolsInGroup,
+  groupOf,
+  buildToolIndex,
+  groupIndexLine,
+} from '../../../src/tools/groups.js';
+import {
+  initLoadedToolsState,
+  loadToolGroup,
+  loadToolsByName,
+  autoLoadToolGroup,
+  createRequestToolsTool,
+} from '../../../src/tools/request-tools.js';
 import { buildToolList } from '../../../src/tools/registry.js';
 import { buildCycleContext } from '../../../src/agent/context.js';
 import { estimateTokens } from '../../../src/core/tokens.js';
 import type { OmnexxConfig } from '../../../src/config/schema.js';
+import type { Tool } from '../../../src/tools/types.js';
+import type { ToolContext } from '../../../src/tools/types.js';
 
 // Mock config for testing
 function createMockConfig(overrides: Partial<OmnexxConfig> = {}): OmnexxConfig {
@@ -15,7 +30,11 @@ function createMockConfig(overrides: Partial<OmnexxConfig> = {}): OmnexxConfig {
     context: { subagents: false, lazy_tools: false, sections: {}, progress_tail: 10 },
     policy: { auto_approve: false },
     execution: { mode: 'auto', domain: 'swe' },
-    models: { planner: 'anthropic:claude-sonnet', worker: 'anthropic:claude-sonnet', cheap: 'anthropic:claude-haiku' },
+    models: {
+      planner: 'anthropic:claude-sonnet',
+      worker: 'anthropic:claude-sonnet',
+      cheap: 'anthropic:claude-haiku',
+    },
     git: { push: 'none' },
     sandbox: 'host',
     tools: { discovery: 'full' },
@@ -85,8 +104,8 @@ describe('Lazy Tool Discovery', () => {
       const mockTools = [
         { name: 'read', description: 'Read a file. Returns content.' },
         { name: 'write_file', description: 'Write a file. Creates or overwrites.' },
-      ] as any;
-      const line = groupIndexLine('fs', mockTools);
+      ] as const;
+      const line = groupIndexLine('fs', mockTools as unknown as readonly Tool[]);
       expect(line).toContain('fs:');
       expect(line).toContain('read');
       expect(line).toContain('write_file');
@@ -97,8 +116,8 @@ describe('Lazy Tool Discovery', () => {
         { name: 'read', description: 'Read a file. Returns content.' },
         { name: 'write_file', description: 'Write a file. Creates or overwrites.' },
         { name: 'bash', description: 'Run a shell command. Returns output.' },
-      ] as any;
-      const index = buildToolIndex(mockTools);
+      ] as const;
+      const index = buildToolIndex(mockTools as unknown as readonly Tool[]);
       expect(index).toContain('fs:');
       expect(index).toContain('shell:');
     });
@@ -198,7 +217,7 @@ describe('Lazy Tool Discovery', () => {
       const state = initLoadedToolsState(config);
       const tool = createRequestToolsTool(state);
 
-      const result = await tool.run({ groups: ['memory', 'web'] }, {} as any);
+      const result = await tool.run({ groups: ['memory', 'web'] }, {} as ToolContext);
       expect(result).toHaveProperty('content');
       expect(result.content).toContain('Loaded');
       expect(result.content).toContain('memory');
@@ -210,7 +229,7 @@ describe('Lazy Tool Discovery', () => {
       const state = initLoadedToolsState(config);
       const tool = createRequestToolsTool(state);
 
-      const result = await tool.run({ tools: ['recall', 'web_fetch'] }, {} as any);
+      const result = await tool.run({ tools: ['recall', 'web_fetch'] }, {} as ToolContext);
       expect(result).toHaveProperty('content');
       expect(result.content).toContain('recall');
       expect(result.content).toContain('web_fetch');
@@ -221,7 +240,10 @@ describe('Lazy Tool Discovery', () => {
       const state = initLoadedToolsState(config);
       const tool = createRequestToolsTool(state);
 
-      const result = await tool.run({ groups: ['unknown_group'], tools: ['unknown_tool'] }, {} as any);
+      const result = await tool.run(
+        { groups: ['unknown_group'], tools: ['unknown_tool'] },
+        {} as ToolContext,
+      );
       expect(result.content).toContain('Unknown groups: unknown_group');
       expect(result.content).toContain('Unknown tools: unknown_tool');
     });
@@ -229,20 +251,18 @@ describe('Lazy Tool Discovery', () => {
 
   describe('buildToolList in lazy mode', () => {
     it('filters tools to loaded groups + always-loaded', async () => {
-      // Use a more complete config that satisfies all tool sources
-      const config = createMockConfig({
-        tools: { discovery: 'lazy' },
-        search: { embeddings: false },
-        agents: { dirs: [], import_claude: false },
-        browser: { enabled: false },
-        context: { subagents: true, lazy_tools: false, sections: {}, progress_tail: 10 },
-      });
+      const config = createMockConfig({ tools: { discovery: 'lazy' } });
       const state = initLoadedToolsState(config);
 
-      const tools = await buildToolList(config, { repoRoot: '/test', env: {} }, { subagents: true, hasHistory: false, autoApprove: false, lazyTools: false }, state);
+      const tools = await buildToolList(
+        config,
+        { repoRoot: '/test', env: {} },
+        { subagents: true, hasHistory: false, autoApprove: false, lazyTools: false },
+        state,
+      );
 
       // Should include always-loaded tools
-      const toolNames = tools.map(t => t.name);
+      const toolNames = tools.map((t) => t.name);
       expect(toolNames).toContain('read');
       expect(toolNames).toContain('write_file');
       expect(toolNames).toContain('bash');
@@ -256,37 +276,64 @@ describe('Lazy Tool Discovery', () => {
     });
 
     it('includes all tools in full mode', async () => {
-      const config = createMockConfig({
-        tools: { discovery: 'full' },
-        search: { embeddings: false },
-        agents: { dirs: [], import_claude: false },
-        browser: { enabled: false },
-        context: { subagents: true, lazy_tools: false, sections: {}, progress_tail: 10 },
-      });
+      const config = createMockConfig({ tools: { discovery: 'full' } });
       const state = initLoadedToolsState(config);
 
-      const tools = await buildToolList(config, { repoRoot: '/test', env: {} }, { subagents: true, hasHistory: false, autoApprove: false, lazyTools: false }, null);
+      // Need hasHistory: true for recall to be exposed
+      const tools = await buildToolList(
+        config,
+        { repoRoot: '/test', env: {} },
+        { subagents: true, hasHistory: true, autoApprove: false, lazyTools: false },
+        null,
+      );
 
-      const toolNames = tools.map(t => t.name);
+      const toolNames = tools.map((t) => t.name);
       expect(toolNames).toContain('read');
       expect(toolNames).toContain('remember');
       expect(toolNames).toContain('recall');
       expect(toolNames).not.toContain('request_tools'); // meta-tool not in full mode
+
+      // Use state to avoid unused warning
+      expect(state.loadedGroups.size).toBeGreaterThan(0);
     });
   });
 
   describe('Tool Index in System Prompt', () => {
     it('includes toolIndex in cycle context when lazy mode', () => {
       const config = createMockConfig({ tools: { discovery: 'lazy' } });
-      const state = initLoadedToolsState(config);
+      initLoadedToolsState(config);
 
       const ctx = buildCycleContext({
         systemPrompt: 'test prompt',
         codemap: 'test codemap',
         goal: 'test goal',
         notes: 'test notes',
-        plan: { nodes: [], rootId: 'root' },
-        task: { id: 'task-1', title: 'Test Task', kind: 'code', approachesTried: [], lastRejection: undefined },
+        plan: { version: 1, goal: 'test goal', nodes: [] },
+        task: {
+          id: 'task-1',
+          title: 'Test Task',
+          kind: 'feature',
+          why: '',
+          acceptance: [],
+          checks: [],
+          dependsOn: [],
+          size: 'M',
+          steps: [],
+          allow: [],
+          type: 'task',
+          parentId: 'M1',
+          status: 'todo',
+          attempts: 0,
+          consecutiveRejections: 0,
+          failureSignatures: [],
+          approachesTried: [],
+          lastRejection: undefined,
+          rung: 0,
+          rungStartedAt: 0,
+          splitInto: [],
+          evidence: [],
+          escalated: false,
+        },
         progressTail: '',
         evidence: [],
         tools: [],
@@ -308,8 +355,32 @@ describe('Lazy Tool Discovery', () => {
         codemap: 'test codemap',
         goal: 'test goal',
         notes: 'test notes',
-        plan: { nodes: [], rootId: 'root' },
-        task: { id: 'task-1', title: 'Test Task', kind: 'code', approachesTried: [], lastRejection: undefined },
+        plan: { version: 1, goal: 'test goal', nodes: [] },
+        task: {
+          id: 'task-1',
+          title: 'Test Task',
+          kind: 'feature',
+          why: '',
+          acceptance: [],
+          checks: [],
+          dependsOn: [],
+          size: 'M',
+          steps: [],
+          allow: [],
+          type: 'task',
+          parentId: 'M1',
+          status: 'todo',
+          attempts: 0,
+          consecutiveRejections: 0,
+          failureSignatures: [],
+          approachesTried: [],
+          lastRejection: undefined,
+          rung: 0,
+          rungStartedAt: 0,
+          splitInto: [],
+          evidence: [],
+          escalated: false,
+        },
         progressTail: '',
         evidence: [],
         tools: [],
@@ -324,12 +395,7 @@ describe('Lazy Tool Discovery', () => {
 
   describe('Token Estimation', () => {
     it('estimates tokens for full vs lazy tool definitions', async () => {
-      const config = createMockConfig({
-        tools: { discovery: 'lazy' },
-        search: { embeddings: false },
-        agents: { dirs: [], import_claude: false },
-        browser: { enabled: false },
-      });
+      const config = createMockConfig({ tools: { discovery: 'lazy' } });
       const state = initLoadedToolsState(config);
 
       // Get all tools
@@ -342,7 +408,12 @@ describe('Lazy Tool Discovery', () => {
       const fullTokens = estimateTokens(JSON.stringify(fullSpecs));
 
       // Lazy mode: only loaded groups (fs, shell) + always-loaded
-      const lazyTools = await buildToolList(config, { repoRoot: '/test', env: {} }, { subagents: true, hasHistory: false, autoApprove: false, lazyTools: false }, state);
+      const lazyTools = await buildToolList(
+        config,
+        { repoRoot: '/test', env: {} },
+        { subagents: true, hasHistory: false, autoApprove: false, lazyTools: false },
+        state,
+      );
       const lazySpecs = lazyTools.map(toolSpec);
       const lazyTokens = estimateTokens(JSON.stringify(lazySpecs));
 
@@ -364,6 +435,9 @@ describe('Lazy Tool Discovery', () => {
       console.log(`Index tokens: ${indexTokens}`);
       console.log(`Omitted tokens: ${omitted}`);
       console.log(`Savings: ${Math.round((omitted / fullTokens) * 100)}%`);
+
+      // Use state to avoid unused warning
+      expect(state.loadedGroups.size).toBeGreaterThan(0);
     });
   });
 });
