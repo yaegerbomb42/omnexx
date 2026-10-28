@@ -45,3 +45,10 @@
   - Verified that dynamic state or volatile blocks never bust the stable prompt prefix cache.
   - Added unit test in `test/unit/providers/cache-pinning.test.ts` verifying stable prefix isolation and breakpoint placement.
   - All 269 unit test files (1,840 tests) and 20 integration test suites passed. Lint and typecheck clean.
+- **2026-10-28 (Task 2 Completed: AST & Symbol-Level Outline Reader)**:
+  - Enhanced `src/tools/outline.ts` with accurate `endLine` boundary calculation:
+    - Balanced curly brace matching for TypeScript, JavaScript, Go, Rust, Java, and C/C++.
+    - Indentation tracking for Python blocks (`def` and `class`).
+  - Added arrow function extraction (`export const fn = () => ...` and `const fn = async () => ...`) as callable `function` symbols.
+  - Enriched `renderOutline` to format line spans `(lines X-Y)`, allowing agents to pinpoint exact line ranges without reading whole multi-hundred-line files.
+  - Added test suite `test/unit/tools/outline-spans.test.ts`. All tool tests, typecheck, and ESLint passing cleanly.
