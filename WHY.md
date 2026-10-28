@@ -40,3 +40,11 @@
   - Resolved duplicate assignment in `src/cli/program.ts` and duplicate import in `src/core/supervisor.ts`.
   - Updated [CHANGELOG.md](file:///Users/yaeger/Desktop/omnexx/CHANGELOG.md).
   - All unit tests, typechecks, ESLint, and Prettier checks passing.
+- **2026-10-28 (Task 8: Dynamic Phase-Based Model Router)**:
+  - Implemented dynamic phase-aware model tiering in `src/router/stage.ts` and integrated into `src/router/router.ts` and `src/router/classify.ts`.
+  - Defined 3 task execution stages:
+    1. `Exploration & Tool Output Filtering`: routes grepping, listing directories, reading ASTs, and summarizing to Fast/Low-Cost models (Gemini Flash, Claude Haiku, Qwen 2.5 14B).
+    2. `Architecture & Core Implementation`: routes planning, replanning, splitting, refactoring, and patch design to High-Reasoning models (Claude Sonnet 3.7 / Opus, DeepSeek-R1, GPT-4o).
+    3. `Test Verification & Lint Triage`: routes test execution and lint triage to Fast/Low-Cost models (local Ollama / small models).
+  - Added unit test suite in `test/unit/router/stage-router.test.ts`.
+
