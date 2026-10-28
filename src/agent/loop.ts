@@ -232,6 +232,8 @@ export interface LoopDeps {
     onOutage?: (ms: number) => void;
   };
   signal?: AbortSignal;
+  /** Run deadline in ms (wall clock active); used to annotate tool results with time left. */
+  deadlineMs?: number;
   /** A model request is about to go out (for "waiting on the model" estimates). */
   onRequest?: (r: { model: string; inputTokens: number }) => void;
   /** A model request answered, after `ms`. */
@@ -952,15 +954,57 @@ export async function runAgentLoop(
           content = `invalid input for ${call.name}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
           isError = true;
         } else {
-          const out = await tool.run(parsed.data, deps.toolCtx);
-          content = out.content;
-          isError = out.isError === true;
-          miss = out.miss === true;
-          savedTokens = out.savedTokens ?? 0;
-          if (out.final && !isError) finished.now = true;
+          // Phase 2 enforcement: never let a tool ask for more time than the run has left.
+          const timeoutKeys = ['timeout', 'timeoutMs', 'timeout_ms', 'waitMs', 'wait_ms', 'duration', 'durationMs', 'maxMs'];
+          let refused = false;
+          let hint = '';
+          if (deps.deadlineMs) {
+            const remainingMs = Math.max(0, deps.deadlineMs - deps.clock.now());
+            for (const k of timeoutKeys) {
+              const v = (parsed.data as Record<string, unknown>)?.[k];
+              if (typeof v === 'number' && v > remainingMs) {
+                refused = true;
+                hint = `${Math.round(remainingMs / 1000)}s left, but ${k}=${v}ms; use a smaller timeout or split the work`;
+                break;
+              }
+            }
+            if (!refused && remainingMs < 60_000) {
+              refused = true;
+              hint = `only ${Math.round(remainingMs / 1000)}s left; finish, verify and report instead of starting more work`;
+            }
+          }
+          if (refused) {
+            content = `refused: ${hint}`;
+            isError = true;
+          } else {
+            const reminder = deps.deadlineMs
+              ? setInterval(() => {
+                  deps.events.emit('time.reminder', {
+                    tool: call.name,
+                    elapsed_s: Math.round((deps.clock.now() - toolStart) / 1000),
+                    remaining_s: Math.max(0, Math.round((deps.deadlineMs! - deps.clock.now()) / 1000)),
+                  });
+                }, 60_000)
+              : undefined;
+            if (reminder) reminder.unref?.();
+            const out = await tool.run(parsed.data, deps.toolCtx);
+            if (reminder) clearInterval(reminder);
+            content = out.content;
+            isError = out.isError === true;
+            miss = out.miss === true;
+            savedTokens = out.savedTokens ?? 0;
+            if (out.final && !isError) finished.now = true;
+          }
         }
       }
       content = deps.toolCtx.redactor.text(content);
+      if (deps.deadlineMs && !isError) {
+        const toolMs = deps.clock.now() - toolStart;
+        const remainingMs = Math.max(0, deps.deadlineMs - deps.clock.now());
+        const fmt = (ms: number): string =>
+          ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `${Math.round(ms / 1000)}s`;
+        content += `\n\n(${fmt(toolMs)}; ${fmt(remainingMs)} left)`;
+      }
       deps.events.emit('tool.call', {
         tool: call.name,
         input: summarizeInput(call.input),
