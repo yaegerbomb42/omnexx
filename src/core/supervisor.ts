@@ -22,7 +22,6 @@ import { settleSpecWork, specGate } from './spec-gate.js';
 import { FAST_TASK, fastPathSpent, fastPlan, tryFastPath } from './fast-path.js';
 import { resolveWriting } from './writing.js';
 import { EXIT } from '../cli/exit-codes.js';
-import { defaultSessionPool } from './exec.js';
 import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
 import { LockError } from '../errors.js';
