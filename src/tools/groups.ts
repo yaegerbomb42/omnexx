@@ -2,7 +2,7 @@ import type { Tool } from './types.js';
 
 /**
  * Tool group definitions. Each group maps to a set of tool names.
- * Groups are derived from existing tool metadata/categories.
+ * Each tool appears in exactly one group.
  */
 export const TOOL_GROUPS: Record<string, string[]> = {
   /** File system: read & edit files */
@@ -18,10 +18,6 @@ export const TOOL_GROUPS: Record<string, string[]> = {
   ],
   /** Shell commands */
   shell: ['bash', 'read_log'],
-  /** Git operations */
-  git: [], // Git tools don't exist as individual tools; bash handles git
-  /** Search tools */
-  search: ['search'],
   /** Web tools */
   web: ['web_fetch', 'web_search'],
   /** Browser tools */
@@ -30,8 +26,18 @@ export const TOOL_GROUPS: Record<string, string[]> = {
   memory: ['remember', 'recall', 'context', 'running_context', 'query_artifact', 'repl_projection'],
   /** Task/agent tools */
   task: ['task', 'todo'],
-  /** Core tools that are always available (not lazy-loadable) */
-  core: ['finish', 'reply', 'done'], // These don't exist yet but conceptually would be here
+};
+
+/**
+ * Human-readable purpose for each group (2-5 words).
+ */
+export const GROUP_PURPOSES: Record<string, string> = {
+  fs: 'read and edit files',
+  shell: 'run commands, read logs',
+  web: 'fetch pages, web search',
+  browser: 'drive a headless browser',
+  memory: 'notes, recall, artifacts',
+  task: 'subtasks and todo list',
 };
 
 /**
@@ -84,8 +90,7 @@ export function groupIndexLine(group: string, allTools: readonly Tool[]): string
  * Build the compact tool index for lazy mode.
  */
 export function buildToolIndex(allTools: readonly Tool[]): string {
-  // Include core groups + one per MCP server (handled separately)
-  const coreGroups = ['fs', 'shell', 'search', 'web', 'browser', 'memory', 'task'];
+  const coreGroups = ['fs', 'shell', 'web', 'browser', 'memory', 'task'];
   const lines: string[] = [];
   for (const group of coreGroups) {
     const line = groupIndexLine(group, allTools);

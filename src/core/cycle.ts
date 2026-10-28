@@ -39,7 +39,7 @@ import {
   sameFailureQuestion,
   toolSafetyQuestion,
 } from '../judge/uses.js';
-import { toolSpec, workerTools, buildToolList } from '../tools/registry.js';
+import { toolSpec, workerTools, buildToolListSync } from '../tools/registry.js';
 import { cycleRoute } from '../router/classify.js';
 import { readIntent } from '../agent/intent.js';
 import type { ToolContext } from '../tools/types.js';
@@ -427,19 +427,20 @@ export async function stepAct(run: Run): Promise<void> {
     autoApprove: run.config.policy.auto_approve,
     lazyTools: run.config.context.lazy_tools,
   };
-  const tools = await buildToolList(
-    run.config,
-    { repoRoot: run.worktree, env: run.deps.env },
-    exposureOpts,
-    run.loadedToolsState,
-  );
+  const isLazyMode = run.config.tools.discovery === 'lazy';
+
+  // Compute the full tool list ONCE and reuse it.
+  const allTools = await workerTools(run.config, { repoRoot: run.worktree, env: run.deps.env });
+  const tools = buildToolListSync(allTools, run.config, exposureOpts, run.loadedToolsState);
   const route = await run.router.pick(cycleRoute(task, run.budgetLeftFraction()));
   const shownNotes = task.id === FAST_TASK ? keepNewestNotes(notes, FAST_NOTES_TOKENS) : notes;
 
-  // Build tool index for lazy mode
-  const isLazyMode = run.config.tools.discovery === 'lazy';
+  // Build tool index for lazy mode with available tool names
+  const availableToolNames = isLazyMode ? new Set(allTools.map((t) => t.name)) : undefined;
   const toolIndex =
-    isLazyMode && run.loadedToolsState ? buildToolIndexForPrompt(run.loadedToolsState) : undefined;
+    isLazyMode && run.loadedToolsState
+      ? buildToolIndexForPrompt(run.loadedToolsState, availableToolNames)
+      : undefined;
 
   const ctx = buildCycleContext({
     systemPrompt: getWorkerPrompt(workModeOf(run.config)),
@@ -466,11 +467,9 @@ export async function stepAct(run: Run): Promise<void> {
     ...(toolIndex ? { toolIndex } : {}),
   });
 
-  // Telemetry: tool discovery mode and token savings
-  const allTools = await workerTools(run.config, { repoRoot: run.worktree, env: run.deps.env });
-  const fullToolSpecs = allTools.map(toolSpec);
-  const fullToolsTokens = estimateTokens(JSON.stringify(fullToolSpecs));
-  const lazyToolsTokens = estimateTokens(JSON.stringify(tools.map(toolSpec)));
+  // Telemetry: tool discovery token savings (lazy mode only; full mode does no extra work).
+  const fullToolsTokens = isLazyMode ? estimateTokens(JSON.stringify(allTools.map(toolSpec))) : 0;
+  const lazyToolsTokens = isLazyMode ? estimateTokens(JSON.stringify(tools.map(toolSpec))) : 0;
   const toolIndexTokens = toolIndex ? estimateTokens(toolIndex) : 0;
   const omittedTokens = isLazyMode ? fullToolsTokens - lazyToolsTokens - toolIndexTokens : 0;
 
@@ -480,97 +479,128 @@ export async function stepAct(run: Run): Promise<void> {
     stateBytes: JSON.stringify(ctx.first).length,
     tokens: contextBreakdown(ctx),
     memory: memory.stats(),
-    toolDiscovery: {
-      mode: run.config.tools.discovery,
-      loadedGroups: run.loadedToolsState ? [...run.loadedToolsState.loadedGroups] : [],
+    toolDiscovery: isLazyMode
+      ? {
+          mode: 'lazy',
+          loadedGroups: run.loadedToolsState ? [...run.loadedToolsState.loadedGroups] : [],
+          fullToolsTokens,
+          lazyToolsTokens,
+          toolIndexTokens,
+          omittedTokens: Math.max(0, omittedTokens),
+        }
+      : { mode: 'full' },
+  });
+
+  // Emit tool.discovery event in lazy mode with detailed token savings
+  if (isLazyMode) {
+    run.events.emit('tool.discovery', {
       fullToolsTokens,
       lazyToolsTokens,
       toolIndexTokens,
-      omittedTokens: Math.max(0, omittedTokens),
-    },
-  });
-  const deps = (models: readonly ResolvedModel[]): LoopDeps => ({
-    provider: run.deps.provider,
-    models,
-    providerBlocked: (p) => run.providerBlocked(p),
-    modelExhausted: (r) => run.modelExhausted(r),
-    markExhausted: (r) => {
-      run.markExhausted(r);
-    },
-    markRateLimited: (r, ms) => {
-      run.markRateLimited(r, ms);
-    },
-    strategy: run.strategy('worker'),
-    coolProvider: (p, ms) => {
-      run.coolProvider(p, ms);
-    },
-    tools,
-    toolCtx,
-    loadedToolsState: run.loadedToolsState,
-    budget: run.config.budget,
-    maxTokens: run.config.providers.anthropic.max_tokens,
-    clock: run.clock,
-    events: run.events,
-    cacheKey: run.state.runId,
-    purpose: 'main',
-    taskId: () => run.state.taskId,
-    cycle: () => run.state.cycle,
-    taskBudget: run.taskBudget,
-    // Quotas gone or every provider down: stop after a while instead of waiting for ever.
-    retry: { giveUpAfterMs: parseDuration(run.config.budget.max_provider_wait) },
-    spentUsd: () => run.state.spend.usd,
-    spentTodayUsd: () => run.spentToday(),
-    onUsage: (u, usd, model, provider, meta) =>
-      run.addSpend(u, usd, model, 'worker', provider, meta),
-    control: () => run.control(),
-    onPauseChange: (p) => {
-      run.paused = p;
-    },
-    signal: run.signal,
-    calibrationFile: tokenCalibrationFile(run.deps.paths),
-    parallelTasks: run.config.context.subagent_parallel,
-    watch: new InCycleWatch(
-      {
-        repeatedToolCall: run.config.stuck.repeated_tool_call,
-        noEditTurns: run.config.stuck.no_edit_turns,
-        burnTokens: burnThreshold(run.state.cycleTokens, run.config.stuck.burn_factor),
+      savedTokens: Math.max(0, omittedTokens),
+    });
+  }
+  const deps = (models: readonly ResolvedModel[]): LoopDeps => {
+    const base: LoopDeps = {
+      provider: run.deps.provider,
+      models,
+      providerBlocked: (p) => run.providerBlocked(p),
+      modelExhausted: (r) => run.modelExhausted(r),
+      markExhausted: (r) => {
+        run.markExhausted(r);
       },
-      () => editOps,
-    ),
-    compaction: {
-      settings: {
-        clearAt: run.config.context.clear_tool_results_at,
-        keepToolResults: run.config.context.keep_tool_results,
-        // Rolling memory bounds the prompt by construction, so the token-threshold fold stays
-        // off while it is on; prune/clear/budget in manageContext still run.
-        compactAt:
-          run.config.context.memory === 'rolling'
-            ? Number.MAX_SAFE_INTEGER
-            : run.config.context.compact_at,
-        keepTurns: run.config.context.compact_keep_turns,
-        ...(run.config.context.budget_tokens ? { budget: run.config.context.budget_tokens } : {}),
+      markRateLimited: (r, ms) => {
+        run.markRateLimited(r, ms);
       },
-      summarize: async (head, prior) => {
-        const s = await summarizeCycle(run, task, head, prior).catch(() => undefined);
-        if (!s) run.events.emit('context.fact_summary', { turns: head.length });
-        return ensureFacts(s ?? factSummary(head), head, edited);
+      strategy: run.strategy('worker'),
+      coolProvider: (p, ms) => {
+        run.coolProvider(p, ms);
       },
-    },
-    ...(run.config.context.memory === 'rolling'
-      ? {
-          rolling: {
-            every: run.config.context.memory_condense_every,
-            keepTurns: run.config.context.memory_keep_turns,
-            goal: `${task.id}: ${task.title}`,
-            readFile: (p: string) => readFile(join(run.worktree, p), 'utf8').catch(() => undefined),
-            onNote: (note: string) => {
-              // The current note on disk, next to progress.md, for `recall` and inspection.
-              void writeFileAtomic(run.store.file('memory.md'), note).catch(() => undefined);
+      tools,
+      toolCtx,
+      loadedToolsState: run.loadedToolsState,
+      budget: run.config.budget,
+      maxTokens: run.config.providers.anthropic.max_tokens,
+      clock: run.clock,
+      events: run.events,
+      cacheKey: run.state.runId,
+      purpose: 'main',
+      taskId: () => run.state.taskId,
+      cycle: () => run.state.cycle,
+      taskBudget: run.taskBudget,
+      // Quotas gone or every provider down: stop after a while instead of waiting for ever.
+      retry: { giveUpAfterMs: parseDuration(run.config.budget.max_provider_wait) },
+      spentUsd: () => run.state.spend.usd,
+      spentTodayUsd: () => run.spentToday(),
+      onUsage: (u, usd, model, provider, meta) =>
+        run.addSpend(u, usd, model, 'worker', provider, meta),
+      control: () => run.control(),
+      onPauseChange: (p) => {
+        run.paused = p;
+      },
+      signal: run.signal,
+      calibrationFile: tokenCalibrationFile(run.deps.paths),
+      parallelTasks: run.config.context.subagent_parallel,
+      watch: new InCycleWatch(
+        {
+          repeatedToolCall: run.config.stuck.repeated_tool_call,
+          noEditTurns: run.config.stuck.no_edit_turns,
+          burnTokens: burnThreshold(run.state.cycleTokens, run.config.stuck.burn_factor),
+        },
+        () => editOps,
+      ),
+      compaction: {
+        settings: {
+          clearAt: run.config.context.clear_tool_results_at,
+          keepToolResults: run.config.context.keep_tool_results,
+          // Rolling memory bounds the prompt by construction, so the token-threshold fold stays
+          // off while it is on; prune/clear/budget in manageContext still run.
+          compactAt:
+            run.config.context.memory === 'rolling'
+              ? Number.MAX_SAFE_INTEGER
+              : run.config.context.compact_at,
+          keepTurns: run.config.context.compact_keep_turns,
+          ...(run.config.context.budget_tokens ? { budget: run.config.context.budget_tokens } : {}),
+        },
+        summarize: async (head, prior) => {
+          const s = await summarizeCycle(run, task, head, prior).catch(() => undefined);
+          if (!s) run.events.emit('context.fact_summary', { turns: head.length });
+          return ensureFacts(s ?? factSummary(head), head, edited);
+        },
+      },
+      ...(run.config.context.memory === 'rolling'
+        ? {
+            rolling: {
+              every: run.config.context.memory_condense_every,
+              keepTurns: run.config.context.memory_keep_turns,
+              goal: `${task.id}: ${task.title}`,
+              readFile: (p: string) =>
+                readFile(join(run.worktree, p), 'utf8').catch(() => undefined),
+              onNote: (note: string) => {
+                // The current note on disk, next to progress.md, for `recall` and inspection.
+                void writeFileAtomic(run.store.file('memory.md'), note).catch(() => undefined);
+              },
             },
-          },
-        }
-      : {}),
-  });
+          }
+        : {}),
+    };
+    // In lazy mode, provide refreshTools so the loop can update the tool list each turn.
+    if (isLazyMode && run.loadedToolsState) {
+      return {
+        ...base,
+        refreshTools: () => {
+          const freshTools = buildToolListSync(
+            allTools,
+            run.config,
+            exposureOpts,
+            run.loadedToolsState,
+          );
+          return { tools: freshTools, specs: freshTools.map(toolSpec) };
+        },
+      };
+    }
+    return base;
+  };
   const loop = usesThinkLoop(run, task);
   const result = loop
     ? await actAsThinkLoop(run, task, {

@@ -53,8 +53,8 @@ describe('Lazy Tool Discovery', () => {
       expect(TOOL_GROUPS.fs).toContain('read');
       expect(TOOL_GROUPS.fs).toContain('write_file');
       expect(TOOL_GROUPS.fs).toContain('str_replace');
+      expect(TOOL_GROUPS.fs).toContain('search');
       expect(TOOL_GROUPS.shell).toContain('bash');
-      expect(TOOL_GROUPS.search).toContain('search');
       expect(TOOL_GROUPS.web).toContain('web_fetch');
       expect(TOOL_GROUPS.browser).toContain('browser');
       expect(TOOL_GROUPS.memory).toContain('remember');

@@ -22,6 +22,7 @@ import * as extraSources from './extra/index.js';
 import type { ToolSource, ToolWhere } from './extra/types.js';
 import type { Tool } from './types.js';
 import { createRequestToolsTool, type LoadedToolsState } from './request-tools.js';
+import { TOOL_GROUPS, GROUP_PURPOSES } from './groups.js';
 
 export const WORKER_TOOLS: readonly Tool[] = [
   readTool,
@@ -136,7 +137,19 @@ export async function buildToolList(
   loadedState: LoadedToolsState | null,
 ): Promise<readonly Tool[]> {
   const allTools = await workerTools(config, where);
+  return buildToolListSync(allTools, config, exposureOpts, loadedState);
+}
 
+/**
+ * Synchronous version of buildToolList that takes pre-computed allTools.
+ * Used for refreshTools in lazy mode to avoid re-fetching tools each turn.
+ */
+export function buildToolListSync(
+  allTools: readonly Tool[],
+  config: OmnexxConfig,
+  exposureOpts: ExposureOptions,
+  loadedState: LoadedToolsState | null,
+): readonly Tool[] {
   // Lazy mode: filter to loaded groups + always-loaded
   if (config.tools.discovery === 'lazy' && loadedState) {
     const filtered = allTools.filter((tool) => {
@@ -158,16 +171,22 @@ export async function buildToolList(
 
 /**
  * Build the compact tool index for lazy mode (shown in system prompt instead of full schemas).
+ * Lists every group in TOOL_GROUPS, marking loaded groups. Optionally filters by availableToolNames.
  */
-export function buildToolIndexForPrompt(loadedState: LoadedToolsState): string {
-  const lines: string[] = [];
-  for (const group of loadedState.loadedGroups) {
-    const tools = [...loadedState.toolToGroup.entries()]
-      .filter(([, g]) => g === group)
-      .map(([t]) => t);
-    if (tools.length) {
-      lines.push(`- ${group}: ${tools.join(', ')}`);
-    }
+export function buildToolIndexForPrompt(
+  loadedState: LoadedToolsState,
+  availableToolNames?: ReadonlySet<string>,
+): string {
+  const lines: string[] = [
+    'Call request_tools({groups:[...]}) to load full definitions for a group before using its tools. Groups marked loaded are ready.',
+  ];
+  for (const group of Object.keys(TOOL_GROUPS)) {
+    const purpose = GROUP_PURPOSES[group] ?? '';
+    const allToolsInGroup = TOOL_GROUPS[group] ?? [];
+    const tools = allToolsInGroup.filter((t) => !availableToolNames || availableToolNames.has(t));
+    if (!tools.length) continue;
+    const loadedMarker = loadedState.loadedGroups.has(group) ? ' loaded' : '';
+    lines.push(`- ${group} (${purpose})${loadedMarker}: ${tools.join(', ')}`);
   }
   return lines.join('\n');
 }
