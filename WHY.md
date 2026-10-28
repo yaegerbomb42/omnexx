@@ -40,3 +40,9 @@
   - Resolved duplicate assignment in `src/cli/program.ts` and duplicate import in `src/core/supervisor.ts`.
   - Updated [CHANGELOG.md](file:///Users/yaeger/Desktop/omnexx/CHANGELOG.md).
   - All unit tests, typechecks, ESLint, and Prettier checks passing.
+- **2026-10-28 (Task 6: Anti-Doom-Loop Ratchet & 2-Strike Rollback)**:
+  - Implemented `DoomLoopRatchet` in `src/core/doom-loop-ratchet.ts` to break recurring agent failure cycles.
+  - Implemented rolling hash deduplication of tool errors (`normalizeErrorSignature` & `hashErrorSignature`): identical tool failures twice in a row trigger execution interception with a strategy shift prompt (`Strategy failed twice with error: ... Roll back the file and propose an alternative strategy.`).
+  - Implemented the "Zero Partial Work" rollback ratchet on verification failures: when test/verification commands fail on dirty files, exactly 1 targeted fix turn is allowed. If verification fails a second time, modified files are immediately and atomically rolled back via git to the clean baseline state, preventing edit spirals.
+  - Integrated into `src/agent/loop.ts` and `src/core/cycle.ts`. Added unit test suite in `test/unit/core/doom-loop-ratchet.test.ts`.
+
