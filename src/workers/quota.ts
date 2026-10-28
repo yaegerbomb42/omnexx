@@ -24,7 +24,7 @@ export class QuotaStore {
 
   /** Serialize record() within this process so concurrent workers don't clobber state. */
   private async withLock<T>(fn: () => Promise<T>): Promise<T> {
-    let resolveQueue: () => void;
+    let resolveQueue: () => void = () => undefined;
     const prev = this.queue;
     this.queue = new Promise<void>((resolve) => {
       resolveQueue = resolve;
@@ -33,7 +33,7 @@ export class QuotaStore {
     try {
       return await fn();
     } finally {
-      resolveQueue!();
+      resolveQueue();
     }
   }
 
