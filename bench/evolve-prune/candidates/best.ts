@@ -13,6 +13,11 @@ const lineOf = (input: Record<string, unknown>, k: string): number | undefined =
   return typeof v === 'number' ? v : undefined;
 };
 
+/** Normalize a bash command for comparison: collapse whitespace, trim. */
+function normCmd(c: string): string {
+  return c.replace(/\s+/g, ' ').trim();
+}
+
 /** Does a later read cover an earlier one: same file, and the whole file or a wider range. */
 function covers(later: Record<string, unknown>, earlier: Record<string, unknown>): boolean {
   if (field(later, 'path') !== field(earlier, 'path')) return false;
@@ -38,8 +43,12 @@ function supersededBy(
     return `${String(field(call.input, 'path'))} was read again later; that read is current`;
   const command = field(call.input, 'command');
   if (call.name !== 'bash' || typeof command !== 'string') return undefined;
+  const nc = normCmd(command);
   const reruns = later.filter(
-    (l) => l.call.name === 'bash' && field(l.call.input, 'command') === command,
+    (l) =>
+      l.call.name === 'bash' &&
+      typeof field(l.call.input, 'command') === 'string' &&
+      normCmd(field(l.call.input, 'command') as string) === nc,
   );
   if (!reruns.length) return undefined;
   const shown = clip(command, 120);
@@ -111,4 +120,3 @@ export function pruneSuperseded(messages: readonly Message[]): {
   });
   return { messages: out, pruned: stubs.size, chars };
 }
-

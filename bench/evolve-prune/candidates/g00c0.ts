@@ -25,6 +25,22 @@ function covers(later: Record<string, unknown>, earlier: Record<string, unknown>
   return (ls ?? 1) <= es && le !== undefined && le >= ee;
 }
 
+/** Are two search invocations equivalent (same tool, same pattern, same path)? */
+function sameSearch(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  if (field(a, 'pattern') !== field(b, 'pattern')) return false;
+  const ap = field(a, 'path');
+  const bp = field(b, 'path');
+  if (ap === undefined && bp === undefined) return true;
+  if (ap === undefined || bp === undefined) return false;
+  return ap === bp;
+}
+
+const searchLabel = (call: CallInfo): string => {
+  const pattern = String(field(call.input, 'pattern') ?? '');
+  const path = field(call.input, 'path');
+  return path === undefined ? pattern : `${pattern} in ${String(path)}`;
+};
+
 /** Why an earlier result is dead weight given every result after it, or undefined if it isn't. */
 function supersededBy(
   call: CallInfo,
@@ -47,22 +63,21 @@ function supersededBy(
     return `\`${shown}\` failed here and passed later; the failure is resolved`;
   return `\`${shown}\` ${isError ? 'failed' : 'passed'} here and ran again later; that run is current`;
   if (call.name === 'grep' || call.name === 'glob') {
-    const p = field(call.input, 'pattern');
-    const r = later.some(
-      (l) =>
-        l.call.name === call.name &&
-        field(l.call.input, 'pattern') === p &&
-        field(l.call.input, 'path') === field(call.input, 'path'),
+    const repeats = later.filter(
+      (l) => l.call.name === call.name && sameSearch(l.call.input, call.input),
     );
-    if (r) return `${call.name} on \`${String(p)}\` repeated later; that result is current`;
+    if (!repeats.length) return undefined;
+    const shown = clip(searchLabel(call), 120);
+    return `search for \`${shown}\` was repeated later; that result is current`;
   }
+  return undefined;
 }
 
 /**
  * Stub tool results that later steps made dead weight: a file read again later (same lines or
- * the whole file), a command that failed and then passed, or a repeated grep/glob. Deterministic
- * and free; the call and its result stay paired, so every provider accepts the history. Returns
- * new messages.
+ * the whole file), a command that failed and then passed, and a repeated identical search.
+ * Deterministic and free; the call and its result stay paired, so every provider accepts the
+ * history. Returns new messages.
  */
 export function pruneSuperseded(messages: readonly Message[]): {
   messages: Message[];
