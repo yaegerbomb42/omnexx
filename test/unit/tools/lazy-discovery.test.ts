@@ -273,30 +273,27 @@ describe('Lazy Tool Discovery', () => {
   });
 
   describe('Tool Index in System Prompt', () => {
-    it('includes toolIndex in cycle context when lazy mode', () => {
-      const config = createMockConfig({ tools: { discovery: 'lazy' } });
-      initLoadedToolsState(config);
-
-      const ctx = buildCycleContext({
+    function cycleInputs(toolIndex?: string) {
+      return {
         systemPrompt: 'test prompt',
         codemap: 'test codemap',
         goal: 'test goal',
         notes: 'test notes',
-        plan: { version: 1, goal: 'test goal', nodes: [] },
+        plan: { version: 1 as const, goal: 'test goal', nodes: [] },
         task: {
           id: 'task-1',
           title: 'Test Task',
-          kind: 'feature',
+          kind: 'feature' as const,
           why: '',
           acceptance: [],
           checks: [],
           dependsOn: [],
-          size: 'M',
+          size: 'M' as const,
           steps: [],
           allow: [],
-          type: 'task',
+          type: 'task' as const,
           parentId: 'M1',
-          status: 'todo',
+          status: 'todo' as const,
           attempts: 0,
           consecutiveRejections: 0,
           failureSignatures: [],
@@ -311,8 +308,15 @@ describe('Lazy Tool Discovery', () => {
         progressTail: '',
         evidence: [],
         tools: [],
-        toolIndex: '- fs: read, write_file\n- shell: bash',
-      });
+        ...(toolIndex !== undefined ? { toolIndex } : {}),
+      };
+    }
+
+    it('includes toolIndex in cycle context when lazy mode', () => {
+      const config = createMockConfig({ tools: { discovery: 'lazy' } });
+      initLoadedToolsState(config);
+
+      const ctx = buildCycleContext(cycleInputs('- fs: read, write_file\n- shell: bash'));
 
       // The toolIndex should be included in slot6 (cycle anchor)
       const slot6Content = ctx.first.content[0];
@@ -324,41 +328,7 @@ describe('Lazy Tool Discovery', () => {
     });
 
     it('does not include toolIndex when not provided', () => {
-      const ctx = buildCycleContext({
-        systemPrompt: 'test prompt',
-        codemap: 'test codemap',
-        goal: 'test goal',
-        notes: 'test notes',
-        plan: { version: 1, goal: 'test goal', nodes: [] },
-        task: {
-          id: 'task-1',
-          title: 'Test Task',
-          kind: 'feature',
-          why: '',
-          acceptance: [],
-          checks: [],
-          dependsOn: [],
-          size: 'M',
-          steps: [],
-          allow: [],
-          type: 'task',
-          parentId: 'M1',
-          status: 'todo',
-          attempts: 0,
-          consecutiveRejections: 0,
-          failureSignatures: [],
-          approachesTried: [],
-          lastRejection: undefined,
-          rung: 0,
-          rungStartedAt: 0,
-          splitInto: [],
-          evidence: [],
-          escalated: false,
-        },
-        progressTail: '',
-        evidence: [],
-        tools: [],
-      });
+      const ctx = buildCycleContext(cycleInputs());
 
       const slot6Content = ctx.first.content[0];
       if (typeof slot6Content === 'object' && 'text' in slot6Content) {
