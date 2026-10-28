@@ -137,7 +137,7 @@ export function pruneSuperseded(messages: readonly Message[]): {
           (l) => l.call.name === 'bash' && normCmdEq(field(l.call.input, 'command'), command),
         );
         if (reruns.length) {
-          const shown = clip(command, 120);
+          const shown = clip(command, 60);
           if (r.isError && reruns.some((l) => !l.isError))
             why = `\`${shown}\` failed here and passed later`;
           else
@@ -146,7 +146,7 @@ export function pruneSuperseded(messages: readonly Message[]): {
       }
     } else if (r.call.name === 'grep' || r.call.name === 'glob') {
       if (later.some((l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input)))
-        why = `a later identical ${r.call.name} call`;
+        why = `later identical ${r.call.name}`;
     }
 
     if (!why) return;
