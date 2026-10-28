@@ -44,6 +44,7 @@
   - All unit tests, typechecks, ESLint, and Prettier checks passing.
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> origin/feat/subagent-research-sandbox
 =======
@@ -79,3 +80,10 @@
   - Created `src/agent/milestone-compactor.ts` with `foldMilestoneCheckpoint`, `formatMilestoneRecap`, `extractFilesTouched`, and `extractVerificationCommand`.
   - Automatically folds intermediate trial-and-error discussion turns (up to 10 turns) into a structured 3-line milestone recap (`Milestone X complete: ... - Changed: ... - Verified via: ...`) upon subtask/milestone commit, preserving the system prompt and reducing working context by >70-80% for subsequent subtasks.
   - Exported through `src/agent/compaction.ts` and added unit test suite in `test/unit/agent/milestone-compactor.test.ts`. PR #376.
+- **2026-10-28 (Task 8: Dynamic Phase-Based Model Router)**:
+  - Implemented dynamic phase-aware model tiering in `src/router/stage.ts` and integrated into `src/router/router.ts` and `src/router/classify.ts`.
+  - Defined 3 task execution stages:
+    1. `Exploration & Tool Output Filtering`: routes grepping, listing directories, reading ASTs, and summarizing to Fast/Low-Cost models (Gemini Flash, Claude Haiku, Qwen 2.5 14B).
+    2. `Architecture & Core Implementation`: routes planning, replanning, splitting, refactoring, and patch design to High-Reasoning models (Claude Sonnet 3.7 / Opus, DeepSeek-R1, GPT-4o).
+    3. `Test Verification & Lint Triage`: routes test execution and lint triage to Fast/Low-Cost models (local Ollama / small models).
+  - Added unit test suite in `test/unit/router/stage-router.test.ts`. PR #377.
