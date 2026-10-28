@@ -30,6 +30,42 @@ function covers(later: Record<string, unknown>, earlier: Record<string, unknown>
   return (ls ?? 1) <= es && le !== undefined && le >= ee;
 }
 
+/**
+ * A read is stale if the same path was modified (edit/write_file) after it and then re-read
+ * (any range, or the whole file) after the modification. The re-read reflects the new contents,
+ * so the old result is dead weight. We must NOT stub if the only later read happened before the
+ * edit (the old read is still the newest copy of those lines).
+ */
+function readStale(
+  call: CallInfo,
+  later: readonly { call: CallInfo; isError: boolean }[],
+): boolean {
+  if (call.name !== 'read') return false;
+  const path = field(call.input, 'path');
+  if (typeof path !== 'string') return false;
+
+  // Find the earliest mutation (edit/write_file) on the same path after this read.
+  let mutIdx = -1;
+  for (let i = 0; i < later.length; i++) {
+    const c = later[i].call;
+    if (
+      (c.name === 'edit' || c.name === 'write_file') &&
+      c.input['path'] === path
+    ) {
+      mutIdx = i;
+      break;
+    }
+  }
+  if (mutIdx === -1) return false;
+
+  // A re-read must occur after the mutation.
+  for (let i = mutIdx + 1; i < later.length; i++) {
+    const c = later[i].call;
+    if (c.name === 'read' && c.input['path'] === path) return true;
+  }
+  return false;
+}
+
 /** Why an earlier result is dead weight given every result after it, or undefined if it isn't. */
 function supersededBy(
   call: CallInfo,
@@ -41,6 +77,10 @@ function supersededBy(
     later.some((l) => l.call.name === 'read' && covers(l.call.input, call.input))
   )
     return `${String(field(call.input, 'path'))} was read again later; that read is current`;
+
+  if (call.name === 'read' && readStale(call, later))
+    return `${String(field(call.input, 'path'))} was edited and re-read later; the new read is current`;
+
   const command = field(call.input, 'command');
   if (call.name !== 'bash' || typeof command !== 'string') return undefined;
   const nc = normCmd(command);
@@ -59,8 +99,9 @@ function supersededBy(
 
 /**
  * Stub tool results that later steps made dead weight: a file read again later (same lines or
- * the whole file), and a command that failed and then passed. Deterministic and free; the call
- * and its result stay paired, so every provider accepts the history. Returns new messages.
+ * the whole file), a file edited and then re-read, and a command that failed and then passed.
+ * Deterministic and free; the call and its result stay paired, so every provider accepts the
+ * history. Returns new messages.
  */
 export function pruneSuperseded(messages: readonly Message[]): {
   messages: Message[];
