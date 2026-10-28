@@ -22,6 +22,7 @@ import { settleSpecWork, specGate } from './spec-gate.js';
 import { FAST_TASK, fastPathSpent, fastPlan, tryFastPath } from './fast-path.js';
 import { resolveWriting } from './writing.js';
 import { EXIT } from '../cli/exit-codes.js';
+import { defaultSessionPool } from './exec.js';
 import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
 import { LockError } from '../errors.js';
@@ -51,7 +52,6 @@ import {
   stepRollback,
   stepVerify,
 } from './cycle.js';
-import { defaultSessionPool } from './exec.js';
 import { startHeartbeat } from './heartbeat.js';
 import { acquireLock, defaultLockEnv, releaseLock, type LockEnv } from './lock.js';
 import type { OmnexxPaths } from './paths.js';
@@ -1065,7 +1065,7 @@ class Supervisor {
       const rounds = r.state.beyondRounds;
       return {
         status: 'finished',
-        reason: `all ${counts.tasks} tasks and ${counts.milestones} milestones done${rounds ? ` (goal plus ${rounds} improvement round${rounds === 1 ? '' : 's'})` : ''}`,
+        reason: `all ${counts.tasks} tasks and ${counts.milestones} milestones done${rounds ? ` (goal plus ${rounds} improvement round${rounds === 1 ? '' : 's'})` : ' (goal only)'}`,
       };
     }
     if (r.config.autonomous.enabled && (await this.parkBlocked())) return this.select();

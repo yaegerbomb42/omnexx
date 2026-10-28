@@ -429,11 +429,16 @@ function runTest(post: Post, name: string): void {
 
 let postRef: Post | undefined;
 
-export function open(post: Post): void {
+/** Open the page, optionally unfolded and scrolled to one section (e.g. the model list). */
+export function open(post: Post, section?: SectionId): void {
   testedOnOpen = false;
   document.body.classList.add('settings-open');
   q('settings', HTMLElement).hidden = false;
   draw();
+  if (section)
+    requestAnimationFrame(() => {
+      jumpTo(section);
+    });
   post({ type: 'settings' });
   post({ type: 'models' });
   post({ type: 'engineInfo' });
