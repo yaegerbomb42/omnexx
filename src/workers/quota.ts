@@ -16,9 +16,25 @@ const HOUR = 3_600_000;
 /** Per-worker usage and cooldowns, persisted in `$OMNEXX_HOME/workers/state.json` across runs and restarts. */
 export class QuotaStore {
   readonly path: string;
+  private queue: Promise<void> = Promise.resolve();
 
   constructor(home: string) {
     this.path = join(home, 'workers', 'state.json');
+  }
+
+  /** Serialize record() within this process so concurrent workers don't clobber state. */
+  private async withLock<T>(fn: () => Promise<T>): Promise<T> {
+    let resolveQueue: () => void;
+    const prev = this.queue;
+    this.queue = new Promise<void>((resolve) => {
+      resolveQueue = resolve;
+    });
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      resolveQueue!();
+    }
   }
 
   private async read(): Promise<QuotaFile> {
@@ -50,14 +66,16 @@ export class QuotaStore {
   }
 
   async record(id: string, status: WorkerStatus, policy: QuotaPolicy, now: number): Promise<void> {
-    const all = await this.read();
-    const e = all[id] ?? { runs: [] };
-    e.runs = [...e.runs.filter((t) => now - t < 24 * HOUR), now];
-    e.lastStatus = status;
-    if (status === 'quota_exhausted' || status === 'rate_limited')
-      e.cooldownUntil = now + policy.cooldownMs;
-    all[id] = e;
-    await writeJsonAtomic(this.path, all);
+    return this.withLock(async () => {
+      const all = await this.read();
+      const e = all[id] ?? { runs: [] };
+      e.runs = [...e.runs.filter((t) => now - t < 24 * HOUR), now];
+      e.lastStatus = status;
+      if (status === 'quota_exhausted' || status === 'rate_limited')
+        e.cooldownUntil = now + policy.cooldownMs;
+      all[id] = e;
+      await writeJsonAtomic(this.path, all);
+    });
   }
 }
 
