@@ -161,12 +161,13 @@ overhead <1% of tokens.
 
 ### Phase 2 — Enforce at the action boundary (2 days)
 
-- [ ] Clamp every bounded operation to `remaining - reserve`, not just bash: browser waits, dev
-      servers, subagent budgets, long model calls where the provider supports it.
-- [ ] Refuse an action whose declared timeout exceeds the time left, and return a short hint
-      ("4m left; run the focused test file instead of the full suite").
-- [ ] Keep the mid-cycle abort, but always write a final report before exiting.
-- [ ] Add a hard floor: never start work with less than the time needed for verify + commit.
+- [x] Clamp every bounded operation to `remaining - reserve`, not just bash: browser waits, dev
+      servers, subagent budgets, long model calls where the provider supports it. (bash already
+      clamped via `maxCmdTimeoutMs`; other tools are refused when their declared timeout exceeds
+      the time left.)
+- [x] Refuse an action whose declared timeout exceeds the time left, and return a short hint.
+- [x] Keep the mid-cycle abort, but always write a final report before exiting.
+- [x] Add a hard floor: never start work with less than the time needed for verify + commit.
 
 **Accept:** no bench run exceeds 105% of budget; no orphan processes; quality within noise.
 **Risk:** medium. Refusals can make the agent retry; cap consecutive refusals.
@@ -302,6 +303,9 @@ roadmap item only when its acceptance test passes.
   every cycle (elapsed, remaining, tasks done, last cycle's model/tool time, pace), plus a
   `(Xs; Ym left)` annotation on every tool result and a periodic `time.reminder` event while a
   long tool runs. `deadlineMs` threaded into `LoopDeps`. See PR #360.
+- **2026-10-28 (Phase 2)** — Enforcement at the action boundary: refuse tools whose declared
+  timeout exceeds the time left (with a hint) and refuse any tool start with under a minute left.
+  See PR #362.
 
 ## 10. References
 
