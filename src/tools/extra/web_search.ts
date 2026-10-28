@@ -263,11 +263,16 @@ export const webSearchTool: Tool<typeof schema> = {
           const searxUrl = activeWebConfig?.search_url ?? process.env.SEARXNG_URL;
           if (!searxUrl)
             return fail('Missing SearXNG instance URL (set SEARXNG_URL or [web] search_url)');
-          try {
-            const why = await privateTarget(new URL(searxUrl).hostname);
-            if (why) return fail(`SearXNG URL refused: ${why}`);
-          } catch {
-            return fail('Invalid SearXNG URL');
+          const parsed = new URL(searxUrl);
+          const allowList = activeWebConfig?.allow ?? ['*'];
+          const named = allowList.filter((a) => a !== '*');
+          if (!(named.length && named.some((a) => parsed.hostname === a || parsed.hostname.endsWith('.' + a)))) {
+            try {
+              const why = await privateTarget(parsed.hostname);
+              if (why) return fail(`SearXNG URL refused: ${why}`);
+            } catch {
+              return fail('Invalid SearXNG URL');
+            }
           }
           items = await searchSearxng(input.query, count, searxUrl);
           break;
