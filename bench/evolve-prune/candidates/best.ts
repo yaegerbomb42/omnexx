@@ -63,6 +63,20 @@ function readSupersededByEditThenRead(
   return false;
 }
 
+/** Normalize a bash command for comparison: trim and collapse internal whitespace. */
+function normCmdEq(a: unknown, b: unknown): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  return a.trim().replace(/\s+/g, ' ') === b.trim().replace(/\s+/g, ' ');
+}
+
+interface OrderEntry {
+  at: [number, number];
+  call: CallInfo;
+  isError: boolean;
+  size: number;
+  done: boolean;
+}
+
 /**
  * Stub tool results that later steps made dead weight: a file read again later (same lines or
  * the whole file), a read invalidated by an edit then re-read, and a command that failed and then
@@ -85,17 +99,13 @@ export function pruneSuperseded(messages: readonly Message[]): {
               ? (b.input as Record<string, unknown>)
               : {},
         });
-  const order: {
-    at: [number, number];
-    call: CallInfo;
-    isError: boolean;
-    size: number;
-    done: boolean;
-  }[] = [];
+
+  const order: OrderEntry[] = [];
   messages.forEach((m, i) => {
     m.content.forEach((b, j) => {
-      const call = b.type === 'tool_result' ? calls.get(b.toolUseId) : undefined;
-      if (b.type !== 'tool_result' || !call) return;
+      if (b.type !== 'tool_result') return;
+      const call = calls.get(b.toolUseId);
+      if (!call) return;
       order.push({
         at: [i, j],
         call,
@@ -105,17 +115,21 @@ export function pruneSuperseded(messages: readonly Message[]): {
       });
     });
   });
+
+  const keyAt = (at: [number, number]) => `${at[0]}|${at[1]}`;
   const stubs = new Map<string, string>();
   let chars = 0;
+
   order.forEach((r, k) => {
     if (r.done || r.size < MIN_SUPERSEDE_CHARS) return;
     const later = order.slice(k + 1);
     let why: string | undefined;
+
     if (r.call.name === 'read') {
       if (later.some((l) => l.call.name === 'read' && covers(l.call.input, r.call.input)))
-        why = `${String(field(r.call.input, 'path'))} was read again later; that read is current`;
+        why = `${String(field(r.call.input, 'path'))} was read again later`;
       else if (readSupersededByEditThenRead(k, order))
-        why = `${String(field(r.call.input, 'path'))} was edited and read again later; that read is current`;
+        why = `${String(field(r.call.input, 'path'))} was edited and read again later`;
     } else if (r.call.name === 'bash') {
       const command = field(r.call.input, 'command');
       if (typeof command === 'string') {
@@ -125,35 +139,33 @@ export function pruneSuperseded(messages: readonly Message[]): {
         if (reruns.length) {
           const shown = clip(command, 120);
           if (r.isError && reruns.some((l) => !l.isError))
-            why = `\`${shown}\` failed here and passed later; the failure is resolved`;
+            why = `\`${shown}\` failed here and passed later`;
           else
-            why = `\`${shown}\` ${r.isError ? 'failed' : 'passed'} here and ran again later; that run is current`;
+            why = `\`${shown}\` ${r.isError ? 'failed' : 'passed'} here and ran again later`;
         }
       }
     } else if (r.call.name === 'grep' || r.call.name === 'glob') {
       if (later.some((l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input)))
-        why = `a later identical ${r.call.name} call is current`;
+        why = `a later identical ${r.call.name} call`;
     }
+
     if (!why) return;
-    stubs.set(String(r.at), `${SUPERSEDED_PREFIX} ${why}]`);
+    stubs.set(keyAt(r.at), `${SUPERSEDED_PREFIX} ${why}]`);
     chars += r.size;
   });
+
   if (!stubs.size) return { messages: [...messages], pruned: 0, chars: 0 };
+
   const out = messages.map((m, i) => {
-    if (!m.content.some((_, j) => stubs.has(String([i, j])))) return m;
+    if (!m.content.some((_, j) => stubs.has(`${i}|${j}`))) return m;
     return {
       ...m,
       content: m.content.map((b, j): ContentBlock => {
-        const stub = stubs.get(String([i, j]));
+        const stub = stubs.get(`${i}|${j}`);
         return stub && b.type === 'tool_result' ? { ...b, content: stub } : b;
       }),
     };
   });
-  return { messages: out, pruned: stubs.size, chars };
-}
 
-/** Normalize a bash command for comparison: trim and collapse internal whitespace. */
-function normCmdEq(a: unknown, b: unknown): boolean {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  return a.trim().replace(/\s+/g, ' ') === b.trim().replace(/\s+/g, ' ');
+  return { messages: out, pruned: stubs.size, chars };
 }
