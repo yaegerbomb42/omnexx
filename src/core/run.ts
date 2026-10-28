@@ -153,6 +153,10 @@ export class Run {
   private readonly baseActiveMs: number;
   /** Waiting time that doesn't count as active (daily-cap pauses). */
   private excludedMs = 0;
+  cycleModelMs = 0;
+  cycleToolMs = 0;
+  lastCycleModelMs = 0;
+  lastCycleToolMs = 0;
 
   private constructor(
     readonly deps: RunDeps,

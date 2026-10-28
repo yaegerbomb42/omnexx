@@ -321,12 +321,40 @@ class Supervisor {
 
   private async cycle(taskId: string): Promise<void> {
     const r = this.run;
+    r.lastCycleModelMs = r.cycleModelMs;
+    r.lastCycleToolMs = r.cycleToolMs;
+    r.cycleModelMs = 0;
+    r.cycleToolMs = 0;
+    const cycleStartElapsed = r.elapsedMs();
+    const offTool = r.events.onEvent((e) => {
+      if (e.type === 'tool.call' && typeof e.ms === 'number') r.cycleToolMs += e.ms;
+    });
     r.state.cycle++;
     await r.setPhase('act', { taskId, pending: undefined, act: undefined });
     r.events.emit('cycle.start', { task: taskId });
     await stepAct(r);
     await stepVerify(r);
     await this.finishCycle();
+    const elapsedMs = r.elapsedMs();
+    const task = getNode(r.requirePlan(), taskId);
+    const estimateMin = task.minutes ?? ({ S: 15, M: 45, L: 120 } as Record<string, number>)[task.size] ?? 45;
+    if (elapsedMs > estimateMin * 1.5 * 60_000) {
+      r.events.emit('time.task_overrun', {
+        task: taskId,
+        elapsed_s: Math.round(elapsedMs / 1000),
+        estimate_min: estimateMin,
+      });
+    }
+    r.events.emit('time.report', {
+      elapsed_s: Math.round(elapsedMs / 1000),
+      remaining_s: Math.max(0, Math.round((r.deadlineMs - elapsedMs) / 1000)),
+      task_active_s: Math.round((elapsedMs - cycleStartElapsed) / 1000),
+      model_s: Math.round(r.cycleModelMs / 1000),
+      tool_s: Math.round(r.cycleToolMs / 1000),
+      overrun_s: Math.max(0, Math.round((elapsedMs - r.deadlineMs) / 1000)),
+      useful_ops: r.state.acceptedCommits,
+    });
+    offTool();
   }
 
   /** GUARD after RECORD: stuck signals → ladder; the judge's advisory next move; then SELECT. */
@@ -655,6 +683,12 @@ class Supervisor {
     if (r.state.phase === 'landing' && r.budgetLeftFraction() < 0.02) {
       r.events.emit('landing.floor', { left: r.budgetLeftFraction() });
       return { status: 'budget-stop', reason: 'landing floor reached (reserve kept for verify)' };
+    }
+    if (r.plan) {
+      const c = planCounts(r.plan);
+      if (c.tasks > 0 && c.done / c.tasks < 0.4 && r.budgetLeftFraction() <= 0.5) {
+        r.events.emit('time.replan_needed', { done: c.done, total: c.tasks, left: r.budgetLeftFraction() });
+      }
     }
     const goal = await r.store.readGoal();
     if (goal.hash !== r.state.goalHash) {
