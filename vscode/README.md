@@ -1,60 +1,53 @@
 # omnexx for VS Code
 
-A chat panel for the [omnexx](https://omnexx.org) coding agent, right in your sidebar: chat
-with it, have it plan, or let it run on its own for hours, and watch every step.
+<p align="center">
+  <b>Set a goal, walk away, come back to commits.</b><br>
+  An autonomous coding agent that works in your repository for hours, tests every change, and keeps only what passes.
+</p>
 
-![The omnexx chat panel mid-task](https://raw.githubusercontent.com/yaegerbomb42/omnexx/main/vscode/media/screenshot.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/yaegerbomb42/omnexx/main/docs/assets/demo.gif" alt="omnexx in action" width="780">
+</p>
 
-## Needs
+## How to Use
 
-Nothing else: omnexx is built into the extension. If you also install the CLI (`npm i -g omnexx`
-or `brew install yaegerbomb42/omnexx/omnexx`) and it's the same version or newer, the panel uses
-that one, so the terminal and the panel share one install. `omnexx.path` overrides both.
+1. **Open the panel**: Click the **omnexx** icon in the Activity Bar or press `Cmd+Alt+O` (`Ctrl+Alt+O`).
+2. **Select a model**: Click the model picker. Use **local Ollama (zero setup required)**, Anthropic, OpenAI, or OpenRouter.
+3. **Pick a mode & run**: Type your task and select how you want omnexx to work:
 
-## The chat panel
+| Mode           | What it does                                                         | Best for                             |
+| :------------- | :------------------------------------------------------------------- | :----------------------------------- |
+| **Plan**       | Explores codebase and outlines a complete plan without editing files | Pre-flight review & architecture     |
+| **Act**        | Turn-by-turn interactive pairing with approval prompts               | Targeted features & iterative fixes  |
+| **Autonomous** | Runs multi-hour unattended tasks in the background                   | Large refactors & deep backlog items |
 
-Open it from the omnexx icon in the activity bar, or press `Cmd+Alt+O` (`Ctrl+Alt+O`).
+<p align="center">
+  <img src="https://raw.githubusercontent.com/yaegerbomb42/omnexx/main/vscode/media/panel.png" alt="omnexx sidebar panel mid-task" width="380">
+  <img src="https://raw.githubusercontent.com/yaegerbomb42/omnexx/main/vscode/media/model-picker.png" alt="omnexx model picker" width="380">
+</p>
 
-- **Session stats**: uptime, model turns, tokens (hover for input, output and cache hits), cost,
-  and how full the context is.
-- **Modes**: **Act** works turn by turn with you, **Plan** investigates and proposes a plan
-  without editing, **Autonomous** starts a long run in the background.
-- **Approvals**: **Ask first** shows Allow / Deny before omnexx goes outside the repo or runs a
-  guarded command. **Auto-approve** goes ahead (hard-blocked commands stay blocked). Set the
-  default with `omnexx.autoApprove`.
-- **Trajectory**: the agent's step list as a timeline, with the active step's progress and what
-  it is doing right now.
-- **Activity inline**: actions, thinking and notes show in the conversation as they happen,
-  with an "est. 5s" countdown while the model answers.
-- **Composer**: Enter sends, Shift+Enter adds a line. While the agent works, a message steers it
-  at its next step; pause and stop sit next to the input, and Esc stops.
-- **Models and providers**: click the model name to switch, or add an API key or any
-  OpenAI-compatible endpoint (Ollama, LM Studio, OpenRouter…). The gear has the rest: project
-  and user settings, the approval default, and restart.
-- **Ollama, zero config**: with no provider set up, the first open picks the best tool-capable
-  model in your local Ollama, gives it a 32k context and uses it for every role. With none
-  pulled, a **Pull it now** button fetches a good small coding model.
-- File paths in replies open in the editor.
+## Highlights
 
-The panel drives `omnexx chat-server`, the same session as the terminal UI, so the
-conversation carries over: `omnexx -c` in a terminal continues it.
+- **Zero-Config Local Models**: Automatically detects and configures the best coding model in your local Ollama with 32k context. No API keys needed.
+- **Safety First**: Every kept change passes your project's tests, linting, and typechecks; failures are rolled back automatically.
+- **Live Trajectory**: Watch the real-time timeline of tasks, active sub-steps, token costs, and context utilization.
+- **Terminal Sync**: Built-in engine shares state with the CLI. Switch seamlessly between VS Code and `omnexx -c` in your terminal.
+- **Granular Approvals**: Toggle between **Ask first** (confirm commands and external paths) and **Auto-approve**.
 
-## History
+## Configuration
 
-Below the chat, **History** lists past chats and runs for the open folders under Today,
-Yesterday and Earlier, named by what was asked. Click a chat to reopen its transcript and carry
-on; a run shows its milestones and tasks, and you can watch, pause, resume or stop it.
+| Setting                 | Default  | Description                                           |
+| :---------------------- | :------- | :---------------------------------------------------- |
+| `omnexx.path`           | `(auto)` | Path to the `omnexx` executable (built-in by default) |
+| `omnexx.autoApprove`    | `false`  | Enable auto-approve mode for file edits and commands  |
+| `omnexx.showAllRuns`    | `false`  | Show history runs across all repositories             |
+| `omnexx.refreshSeconds` | `5`      | Refresh frequency (in seconds) for active run tasks   |
 
-## Settings
+## CLI Companion
 
-| Setting                 | Default | Meaning                                     |
-| ----------------------- | ------- | ------------------------------------------- |
-| `omnexx.path`           | (PATH)  | The omnexx executable                       |
-| `omnexx.autoApprove`    | `false` | Start chats in auto-approve mode            |
-| `omnexx.showAllRuns`    | `false` | List runs from every repository             |
-| `omnexx.refreshSeconds` | `5`     | How often a live run's todo list is re-read |
+The VS Code extension includes omnexx out of the box. To also install the standalone CLI:
 
-## Develop
-
-From this folder: `npm run build`, then press F5 in VS Code with this folder open. `npm run
-package` builds a `.vsix`.
+```bash
+brew install yaegerbomb42/omnexx/omnexx  # macOS / Linux
+npm i -g omnexx                         # Anywhere with Node 22+
+```

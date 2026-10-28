@@ -334,7 +334,8 @@ export class RunStore {
   async appendProgress(cycle: number, body: string): Promise<boolean> {
     const marker = `## Cycle ${cycle}\n`;
     const existing = await readTextOr(this.file('progress.md'), '');
-    if (existing.includes(marker)) return false;
+    if (new RegExp(`^${marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm').test(existing))
+      return false;
     await appendFile(this.file('progress.md'), `${marker}${body.trim()}\n\n`, { mode: 0o600 });
     return true;
   }

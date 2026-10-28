@@ -22,7 +22,6 @@ import { settleSpecWork, specGate } from './spec-gate.js';
 import { FAST_TASK, fastPathSpent, fastPlan, tryFastPath } from './fast-path.js';
 import { resolveWriting } from './writing.js';
 import { EXIT } from '../cli/exit-codes.js';
-import { defaultSessionPool } from './exec.js';
 import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
 import { LockError } from '../errors.js';
@@ -52,9 +51,9 @@ import {
   stepRollback,
   stepVerify,
 } from './cycle.js';
+import { defaultSessionPool } from './exec.js';
 import { startHeartbeat } from './heartbeat.js';
 import { acquireLock, defaultLockEnv, releaseLock, type LockEnv } from './lock.js';
-import { defaultSessionPool } from './exec.js';
 import type { OmnexxPaths } from './paths.js';
 import { bindRun, killRunChildren, reapStaleSupervisors, unbindRun } from './process-registry.js';
 import { TaskManager } from './task-manager.js';

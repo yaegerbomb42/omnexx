@@ -7,6 +7,7 @@ import type { PolicyContext } from '../security/command-policy.js';
 import { OutsideRootError, type PathJail } from '../security/paths.js';
 import type { Redactor } from '../security/redact.js';
 import type { SubagentResult } from '../agent/subagent.js';
+import type { ContractGate } from '../core/contract.js';
 
 /** An agent card a helper plays: its instructions and the tools it asked for. */
 export interface HelperCard {
@@ -65,6 +66,11 @@ export interface ToolContext {
     kind: SubagentKind,
     card?: HelperCard,
   ) => Promise<SubagentResult>;
+  /**
+   * Pre-flight acceptance contract gate: tracks target files, hypothesis, and verification command.
+   * When active, file edits outside targetFiles are rejected.
+   */
+  contractGate?: ContractGate;
 }
 
 export const SUBAGENT_KINDS = ['explore', 'research', 'review'] as const;

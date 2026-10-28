@@ -114,6 +114,10 @@ async function applyEdits(
   } catch (err) {
     return fail(await openError(ctx, path, err, 'Use write_file for new files.'));
   }
+  if (ctx.contractGate) {
+    const check = ctx.contractGate.validateEdit(path);
+    if (!check.ok) return fail(check.error ?? 'edit rejected by contract gate');
+  }
   const before = text;
   let altCandidate: string | null = null;
   const notes: string[] = [];
@@ -397,6 +401,10 @@ export const writeFileTool: Tool<typeof writeSchema> = {
       abs = await resolvePath(ctx, input.path, 'write');
     } catch (err) {
       return fail(err instanceof OmnexxError ? err.message : String(err));
+    }
+    if (ctx.contractGate) {
+      const check = ctx.contractGate.validateEdit(input.path);
+      if (!check.ok) return fail(check.error ?? 'write rejected by contract gate');
     }
     let before = '';
     try {

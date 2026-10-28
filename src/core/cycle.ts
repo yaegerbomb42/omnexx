@@ -41,6 +41,7 @@ import {
 import { exposedTools, toolSpec, workerTools } from '../tools/registry.js';
 import { cycleRoute } from '../router/classify.js';
 import { readIntent } from '../agent/intent.js';
+import { ContractGate } from './contract.js';
 import type { ToolContext } from '../tools/types.js';
 import { antiCheat, type Violation as AntiCheatViolation } from '../verify/anticheat.js';
 import { blocking, renderFindings, reviewChange } from '../verify/review.js';
@@ -277,6 +278,7 @@ export function toolContext(run: Run, edited: Set<string>): ToolContext {
     nextCommandId: () => `cmd-${run.state.cycle}-${++n}`,
     edited,
     reads: new Map(),
+    contractGate: new ContractGate(run.worktree),
     // Advisory, log-only, never awaited by the tool, skipped while the breaker is open.
     ...(judge.enabled('tool_safety') && judge.breakerState !== 'open'
       ? {

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.21.1
+
+Extension 0.17.1.
+
+- **VS Code Extension & Marketplace Overhaul**:
+  - Refreshed marketplace descriptor: concise, high-impact overview of autonomous coding capabilities.
+  - Replaced screenshot with high-fidelity UI panel assets displaying live trajectory, real-time token/cost meters, model picker, and animated demo.
+  - Streamlined extension documentation with an immediate 3-step quickstart and mode comparison matrix (Plan, Act, Autonomous).
+- **Core Engine Fixes**:
+  - Fixed duplicate `program` assignment in CLI runner.
+  - Fixed duplicate `defaultSessionPool` import in supervisor.
+
 ## 0.21.0
 
 Includes everything from the unpublished 0.20.0 tag. Extension 0.17.0.
