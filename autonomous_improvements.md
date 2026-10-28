@@ -311,8 +311,9 @@ roadmap item only when its acceptance test passes.
   `time.replan_needed` events. Slice enforcement and automatic re-planning remain advisory.
   See PR #365.
 - **2026-10-28 (Phases 5–6)** — `useful_ops` already emitted; `beyond` already mines evidence
-  and stops on idle rounds; `max_cycles` now scales with `max_hours`. Measurement (quality vs
-  budget) and the 48 h soak test remain. See PR #366.
+  and stops on idle rounds; `max_cycles` now scales with `max_hours`. Beyond rounds now run until
+  the landing reserve and are told the remaining minutes. Measurement (quality vs budget) and the
+  48 h soak test remain. See PR #372.
 
 ## 10. References
 
