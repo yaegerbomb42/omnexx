@@ -216,19 +216,22 @@ Pushes carry only the run id, repo name, status, a task title, counts and dollar
 
 ## `[stuck]`
 
-| Key                          | Default | Meaning                                                                                                               |
-| ---------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
-| `max_consecutive_rejections` | `3`     | Same task rejected N times in a row                                                                                   |
-| `max_same_signature`         | `3`     | Same normalized failure N times for a task                                                                            |
-| `max_task_cycles`            | `8`     | Cycles spent on one task without finishing it                                                                         |
-| `no_progress_cycles`         | `12`    | Run-level: no accepted commit in N cycles → `needs-human`                                                             |
-| `no_progress_hours`          | `3`     | Same, by time                                                                                                         |
-| `oscillation_window`         | `5`     | How many earlier green commits the A→B→A check looks back                                                             |
-| `repeated_tool_call`         | `3`     | In-cycle: the same tool call with identical arguments this many times ends the cycle                                  |
-| `no_edit_turns`              | `15`    | In-cycle: this many turns since the last file edit (or cycle start) ends the cycle                                    |
-| `burn_factor`                | `3`     | In-cycle: tokens above this × the median of recent cycles, before any edit, end the cycle (needs 3 cycles of history) |
+| Key                          | Default | Meaning                                                                                                                   |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `max_consecutive_rejections` | `3`     | Same task rejected N times in a row                                                                                       |
+| `max_same_signature`         | `3`     | Same normalized failure N times for a task                                                                                |
+| `max_task_cycles`            | `8`     | Cycles spent on one task without finishing it                                                                             |
+| `no_progress_cycles`         | `12`    | Run-level: no accepted commit in N cycles → `needs-human`                                                                 |
+| `no_progress_hours`          | `3`     | Same, by time                                                                                                             |
+| `oscillation_window`         | `5`     | How many earlier green commits the A→B→A check looks back                                                                 |
+| `repeated_tool_call`         | `3`     | In-cycle: the same tool call with identical arguments this many times ends the cycle                                      |
+| `no_edit_turns`              | `15`    | In-cycle: this many turns since the last file edit (or cycle start) ends the cycle                                        |
+| `burn_factor`                | `3`     | In-cycle: tokens above this × the median of recent cycles, before any edit, end the cycle (needs 3 cycles of history)     |
+| `max_idle_cycles`            | `3`     | Run-level: this many consecutive cycles rejected with no diff, no budget cut, and no failing check end the run as `stuck` |
 
 An in-cycle signal ends the cycle as `stuck` (events `stuck.in_cycle`, then `stuck.signal`). Its partial work still goes through VERIFY, so it's committed if the gates pass and rolled back otherwise; the next attempt gets the reason as evidence, and the strategy ladder climbs one rung.
+
+Separately, the run-level idle detector counts verify outcomes: a cycle rejected with no diff, no budget interruption, and no failing task check is idle, and any cycle with a diff resets the streak. At `max_idle_cycles` consecutive idle cycles the run ends in the terminal `stuck` state (exit code 2, like `needs-human`), with the idle count, the task, and the accepted-commit count in the reason and the report — a concrete resumption point. Identical-call counting is result-aware: re-reading a file that changed between reads, or retrying an errored call, does not count toward the streak. Autonomous runs are exempt from the idle trip: with nobody to ask, they park stalled work and move on instead.
 
 ## `[agent]`: the five settings the agent manages itself by
 

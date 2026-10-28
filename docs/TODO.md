@@ -37,6 +37,16 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-28 (single agent), branch `feat/doom-loop-hard-stop`:** doom-loop detector
+  that hard-stops a stuck run as `stuck` — result-aware identical-call counting in
+  `InCycleWatch` (a repeated call only counts when its result is also identical;
+  errored calls never count), a run-level idle-cycle detector (`isIdleCycle` in
+  `src/guard/stuck.ts`, counted in VERIFY, tripped in `guardPre` at
+  `stuck.max_idle_cycles`, default 3), a terminal `stuck` run status (exit 2), and
+  the idle count + task + accepted commits in the run reason and report. Autonomous
+  runs are exempt from the idle trip (they park stalled work and move on). See
+  `PR_DESCRIPTION.md` at the repo root.
+
 - **2026-10-22 (single agent), branch `feat/dual-execution-modes`:** dual execution modes —
   a work-domain axis (`[execution] domain = "swe" | "general"`, `src/config/work-mode.ts`)
   separate from the posture (`mode`). Default `swe` is byte-identical behavior. `general`

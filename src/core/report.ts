@@ -213,7 +213,7 @@ export async function writeReport(
     ...(parked.length
       ? parked.map((n) => `- ${n.id} ${n.title}: ${n.parkedReason ?? ''}`)
       : ['- Nothing parked.']),
-    ...(state.status === 'needs-human'
+    ...(state.status === 'needs-human' || state.status === 'stuck'
       ? [`- The run stopped for you: ${state.statusReason ?? ''}`]
       : []),
     ...suggestions(events),

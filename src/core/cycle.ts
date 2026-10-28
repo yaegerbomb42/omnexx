@@ -30,7 +30,7 @@ import { rollbackTo } from '../git/rollback.js';
 import { runCheck, runSentinel } from '../verify/sentinel.js';
 import { parseTrailers } from '../git/trailers.js';
 import { PathJail } from '../security/paths.js';
-import { burnThreshold, detectOscillation, InCycleWatch } from '../guard/stuck.js';
+import { burnThreshold, detectOscillation, InCycleWatch, isIdleCycle } from '../guard/stuck.js';
 import {
   CONFIDENT_FALSE,
   CONFIDENT_TRUE,
@@ -771,6 +771,23 @@ export async function stepVerify(run: Run): Promise<void> {
   const verdict: PendingVerdict['verdict'] = reasons.length ? 'reject' : 'accept';
   const done = verdict === 'accept' && checksPass;
   const signature = verdict === 'reject' ? failureSignature(reasons) : '';
+  // Doom-loop detector, run level: a rejected cycle with no diff, no budget cut, and
+  // no failing check produced nothing to act on. Consecutive idle cycles end the run
+  // as `stuck` (see guardPre); any cycle with a diff resets the streak.
+  const idleCycle = isIdleCycle({
+    verdict,
+    diffFiles: changes.length,
+    budgetCut,
+    checksFailed: checks.length > 0 && !checksPass,
+  });
+  run.state.idleCycles = idleCycle ? run.state.idleCycles + 1 : 0;
+  if (idleCycle)
+    run.events.emit('doom.idle_cycle', {
+      task: task.id,
+      cycle: run.state.cycle,
+      idleCycles: run.state.idleCycles,
+      reasons,
+    });
   run.events.emit('verify.result', {
     task: task.id,
     verdict,

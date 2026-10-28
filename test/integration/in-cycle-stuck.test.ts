@@ -20,7 +20,10 @@ describe('in-cycle stuck signals', () => {
     const t = await startTestRun({ provider, plan });
     await runBaseline(t.run);
     const verdict = await runOneCycle(t.run, 'M1.T01');
-    expect(provider.requests).toHaveLength(3);
+    // Result-aware counting: the read guard dedups the second read, so its result
+    // differs from the first — the identical-result streak is turns 2-4, and the
+    // loop still trips, one turn later than call-identity counting would.
+    expect(provider.requests).toHaveLength(4);
     expect(verdict).toMatchObject({ verdict: 'reject' });
     // The first cut-short attempt is a retry with the evidence, not a ladder climb.
     expect(verdict.stuck).not.toContain('repeated_tool_call');

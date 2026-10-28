@@ -31,6 +31,7 @@ export const RUN_STATUS = [
   'paused',
   'finished',
   'needs-human',
+  'stuck',
   'budget-stop',
   'user-stop',
   'error',
@@ -40,6 +41,7 @@ export const TERMINAL: readonly RunStatus[] = [
   'planned',
   'finished',
   'needs-human',
+  'stuck',
   'budget-stop',
   'user-stop',
 ];
@@ -122,6 +124,13 @@ export const stateSchema = z.object({
   acceptedCommits: z.number().default(0),
   /** Improvement rounds planned after the goal was met (beyond mode). */
   beyondRounds: z.number().int().default(0),
+  /**
+   * Consecutive cycles rejected with no diff, no budget interruption, and no failing
+   * check (doom-loop detector; see guard/stuck.ts isIdleCycle). Any cycle with a diff
+   * resets it; guardPre ends the run as `stuck` at stuck.max_idle_cycles. Reset to 0
+   * when the run stops stuck, so a resume gets a fresh window.
+   */
+  idleCycles: z.number().int().default(0),
   /** Autonomous mode: improvement rounds in a row that added nothing. */
   idleRounds: z.number().int().default(0),
   /** Paths earlier improvement rounds were shown as evidence, so each round gets fresh ones. */
@@ -334,8 +343,7 @@ export class RunStore {
   async appendProgress(cycle: number, body: string): Promise<boolean> {
     const marker = `## Cycle ${cycle}\n`;
     const existing = await readTextOr(this.file('progress.md'), '');
-    if (new RegExp(`^${marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm').test(existing))
-      return false;
+    if (existing.includes(marker)) return false;
     await appendFile(this.file('progress.md'), `${marker}${body.trim()}\n\n`, { mode: 0o600 });
     return true;
   }
