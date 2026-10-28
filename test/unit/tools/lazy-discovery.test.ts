@@ -19,6 +19,11 @@ function createMockConfig(overrides: Partial<OmnexxConfig> = {}): OmnexxConfig {
     git: { push: 'none' },
     sandbox: 'host',
     tools: { discovery: 'full' },
+    search: { embeddings: false },
+    agents: { dirs: [], import_claude: false, remote: {} },
+    browser: { enabled: false },
+    skills: { dirs: [], import_claude: false },
+    web: { fetch_enabled: false },
     ...overrides,
   } as OmnexxConfig;
 }
