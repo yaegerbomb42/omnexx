@@ -35,6 +35,8 @@ export interface RunFlags {
   hours?: string;
   /** Autonomous mode for this long, e.g. "8h" or "2d". */
   for?: string;
+  /** Improvement rounds after the goal is met (default 0; opt in per run). */
+  beyond?: string;
   gate?: string[];
   sandbox?: string;
   modelWorker?: string;
@@ -84,7 +86,17 @@ export function flagsToConfig(f: RunFlags): ConfigInput {
     ...(f.push ? { git: { push: f.push as 'none' } } : {}),
     ...planFlags(f),
     ...domainFlag(f),
+    ...beyondFlag(f),
   };
+}
+
+/** `--beyond N` as a [beyond] layer (highest precedence). */
+function beyondFlag(f: RunFlags): ConfigInput {
+  if (f.beyond === undefined) return {};
+  const n = Number(f.beyond);
+  if (!Number.isInteger(n) || n < 0 || n > 20)
+    throw new UsageError(`--beyond expects a whole number from 0 to 20, got "${f.beyond}"`);
+  return { beyond: { max_rounds: n } };
 }
 
 const WORK_DOMAIN_FLAG = ['swe', 'general'] as const;
