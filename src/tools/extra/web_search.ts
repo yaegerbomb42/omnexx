@@ -266,7 +266,10 @@ export const webSearchTool: Tool<typeof schema> = {
           const parsed = new URL(searxUrl);
           const allowList = activeWebConfig?.allow ?? ['*'];
           const named = allowList.filter((a) => a !== '*');
-          if (!(named.length && named.some((a) => parsed.hostname === a || parsed.hostname.endsWith('.' + a)))) {
+          if (!(
+            named.length &&
+            named.some((a) => parsed.hostname === a || parsed.hostname.endsWith('.' + a))
+          )) {
             try {
               const why = await privateTarget(parsed.hostname);
               if (why) return fail(`SearXNG URL refused: ${why}`);

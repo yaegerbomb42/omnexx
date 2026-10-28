@@ -493,7 +493,10 @@ export function createBrowserTool(
         return fail(`URL "${url}" is not a valid absolute URL`);
       }
       const named = config.allow.filter((a: string) => a !== '*');
-      if (!(named.length && named.some((a) => parsed.hostname === a || parsed.hostname.endsWith('.' + a)))) {
+      if (!(
+        named.length &&
+        named.some((a) => parsed.hostname === a || parsed.hostname.endsWith('.' + a))
+      )) {
         const why = await privateTarget(parsed.hostname);
         if (why) {
           ctx.events.emit('browser.denied', { url, allow: config.allow, reason: why });

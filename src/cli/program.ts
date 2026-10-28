@@ -504,9 +504,13 @@ export async function runCli(argv: readonly string[], io: CliIO): Promise<number
       println(io.stderr, line);
     },
   }).catch(() => undefined);
-  const program = createProgram(io, (c) => {
-    code = c;
-  }, { experimental: isExperimental(argv, io.env) });
+  const program = createProgram(
+    io,
+    (c) => {
+      code = c;
+    },
+    { experimental: isExperimental(argv, io.env) },
+  );
   try {
     await program.parseAsync([...argv], { from: 'user' });
     return code;

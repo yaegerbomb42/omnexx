@@ -74,7 +74,10 @@ function writeChildren(paths: OmnexxPaths, runId: string, entries: ChildEntry[])
   try {
     const dir = runDir(paths, runId);
     mkdirSync(dir, { recursive: true });
-    const tmp = join(dir, `${CHILDREN_FILE}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`);
+    const tmp = join(
+      dir,
+      `${CHILDREN_FILE}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`,
+    );
     writeFileSync(tmp, `${JSON.stringify(entries)}\n`, 'utf8');
     renameSync(tmp, childrenFile(paths, runId));
   } catch {

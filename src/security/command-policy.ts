@@ -290,9 +290,7 @@ class Checker {
       name === 'php'
     ) {
       const EVAL_FLAGS = new Set(['-c', '-e', '--eval', '-r', '--print', '-p']);
-      const hasEvalFlag = args.some(
-        (a) => EVAL_FLAGS.has(a) || /^-[a-z]*[cerp][a-z]*$/.test(a),
-      );
+      const hasEvalFlag = args.some((a) => EVAL_FLAGS.has(a) || /^-[a-z]*[cerp][a-z]*$/.test(a));
       if (hasEvalFlag) {
         return deny(
           'interpreter-eval',
