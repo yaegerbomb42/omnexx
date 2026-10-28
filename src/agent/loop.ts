@@ -38,6 +38,7 @@ import {
   type Usage,
 } from '../providers/types.js';
 import type { Tool, ToolContext } from '../tools/types.js';
+import { autoLoadToolGroup, type LoadedToolsState } from '../tools/request-tools.js';
 import {
   contextTokens,
   manageContext,
@@ -190,6 +191,8 @@ export interface LoopDeps {
   strategy?: Strategy;
   tools: readonly Tool[];
   toolCtx: ToolContext;
+  /** Lazy tool discovery state (persists across context compaction). */
+  loadedToolsState?: LoadedToolsState;
   budget: OmnexxConfig['budget'];
   maxTokens: number;
   clock: Clock;
@@ -909,6 +912,23 @@ export async function runAgentLoop(
 
     const finished = { now: false };
     const runCall = async (call: (typeof calls)[number]): Promise<ContentBlock> => {
+      // Lazy mode: auto-load tool group if tool exists but isn't loaded
+      if (deps.loadedToolsState && !deps.loadedToolsState.toolToGroup.has(call.name)) {
+        // Tool not in any group (e.g., MCP tools) - allow it
+      } else if (deps.loadedToolsState) {
+        const loadedGroup = autoLoadToolGroup(deps.loadedToolsState, call.name);
+        if (loadedGroup) {
+          deps.events.emit('tool.autoload', { tool: call.name, group: loadedGroup });
+          // Return an error asking the model to retry
+          return {
+            type: 'tool_result',
+            toolUseId: call.id,
+            content: `Tool "${call.name}" was not loaded; loaded group "${loadedGroup}". Retry the call.`,
+            isError: true,
+          };
+        }
+      }
+
       const tool = resolveTool(byName, call.name);
       let content: string;
       let isError: boolean;

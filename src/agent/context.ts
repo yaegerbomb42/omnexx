@@ -50,6 +50,8 @@ export interface CycleInputs {
   tools: ToolSpec[];
   /** Optional repo root directory to normalize absolute paths into $REPO references in prefix. */
   repoRoot?: string;
+  /** Lazy tool discovery: compact tool index for the system prompt (lazy mode only). */
+  toolIndex?: string;
 }
 
 const ALL_PINNED: SectionModes = {
@@ -246,6 +248,11 @@ export function buildCycleContext(i: CycleInputs): {
 
   const contents = contentsBlock(optional);
   if (contents) slot6Parts.push(contents);
+
+  // In lazy mode, include the compact tool index as a reference block
+  if (i.toolIndex?.trim()) {
+    slot6Parts.push(`# Available Tools (Lazy Mode)\n\n${i.toolIndex.trim()}`);
+  }
 
   slot6Parts.push(
     `# Your task now\n\nWork on ${i.task.id}: ${i.task.title}. Stop calling tools and summarize when it is done or you are blocked.`,

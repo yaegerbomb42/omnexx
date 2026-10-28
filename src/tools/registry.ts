@@ -21,6 +21,7 @@ import { workModeOf } from '../config/work-mode.js';
 import * as extraSources from './extra/index.js';
 import type { ToolSource, ToolWhere } from './extra/types.js';
 import type { Tool } from './types.js';
+import { createRequestToolsTool, type LoadedToolsState } from './request-tools.js';
 
 export const WORKER_TOOLS: readonly Tool[] = [
   readTool,
@@ -122,6 +123,52 @@ export async function readOnlyTools(
   sources?: Record<string, ToolSource>,
 ): Promise<readonly Tool[]> {
   return (await workerTools(config, where, sources)).filter((t) => t.readOnly);
+}
+
+/**
+ * Build the tool list for a provider request, with lazy loading support.
+ * In lazy mode, only tools from loaded groups + always-loaded tools are included.
+ */
+export async function buildToolList(
+  config: OmnexxConfig,
+  where: ToolWhere | undefined,
+  exposureOpts: ExposureOptions,
+  loadedState: LoadedToolsState | null,
+): Promise<readonly Tool[]> {
+  const allTools = await workerTools(config, where);
+
+  // Lazy mode: filter to loaded groups + always-loaded
+  if (config.tools?.discovery === 'lazy' && loadedState) {
+    const filtered = allTools.filter((tool) => {
+      if (loadedState.toolToGroup.has(tool.name)) {
+        return loadedState.loadedGroups.has(loadedState.toolToGroup.get(tool.name)!);
+      }
+      // Tools not in any group (e.g., MCP tools) are loaded by default
+      return true;
+    });
+    // Always include request_tools meta-tool in lazy mode
+    const requestToolsTool = createRequestToolsTool(loadedState);
+    return exposedTools([...filtered, requestToolsTool], exposureOpts);
+  }
+
+  // Full mode: all tools
+  return exposedTools(allTools, exposureOpts);
+}
+
+/**
+ * Build the compact tool index for lazy mode (shown in system prompt instead of full schemas).
+ */
+export function buildToolIndexForPrompt(loadedState: LoadedToolsState): string {
+  const lines: string[] = [];
+  for (const group of loadedState.loadedGroups) {
+    const tools = loadedState.toolToGroup
+      ? [...loadedState.toolToGroup.entries()].filter(([, g]) => g === group).map(([t]) => t)
+      : [];
+    if (tools.length) {
+      lines.push(`- ${group}: ${tools.join(', ')}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 /** JSON schema for the API, keys sorted so the cached prefix is byte-stable. */

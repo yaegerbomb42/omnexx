@@ -14,6 +14,7 @@ import {
   type CycleSummary,
 } from '../agent/compaction.js';
 import { buildCycleContext } from '../agent/context.js';
+import { buildToolIndexForPrompt } from '../tools/registry.js';
 import { factsBlockFor } from './facts.js';
 import { briefInput } from '../config/agent-settings.js';
 import { renderCodemap, type Codemap } from '../agent/codemap.js';
@@ -38,7 +39,7 @@ import {
   sameFailureQuestion,
   toolSafetyQuestion,
 } from '../judge/uses.js';
-import { exposedTools, toolSpec, workerTools } from '../tools/registry.js';
+import { exposedTools, toolSpec, workerTools, buildToolList } from '../tools/registry.js';
 import { cycleRoute } from '../router/classify.js';
 import { readIntent } from '../agent/intent.js';
 import type { ToolContext } from '../tools/types.js';
@@ -420,17 +421,26 @@ export async function stepAct(run: Run): Promise<void> {
   // `recall` only once an earlier cycle left history to search.
   const hasRecallableHistory =
     notes.length > 0 || task.evidence.length > 0 || progressTail.trim().length > 0;
-  const tools = exposedTools(
-    await workerTools(run.config, { repoRoot: run.worktree, env: run.deps.env }),
-    {
-      subagents: run.config.context.subagents,
-      hasHistory: hasRecallableHistory,
-      autoApprove: run.config.policy.auto_approve,
-      lazyTools: run.config.context.lazy_tools,
-    },
+  const exposureOpts = {
+    subagents: run.config.context.subagents,
+    hasHistory: hasRecallableHistory,
+    autoApprove: run.config.policy.auto_approve,
+    lazyTools: run.config.context.lazy_tools,
+  };
+  const tools = await buildToolList(
+    run.config,
+    { repoRoot: run.worktree, env: run.deps.env },
+    exposureOpts,
+    run.loadedToolsState,
   );
   const route = await run.router.pick(cycleRoute(task, run.budgetLeftFraction()));
   const shownNotes = task.id === FAST_TASK ? keepNewestNotes(notes, FAST_NOTES_TOKENS) : notes;
+
+  // Build tool index for lazy mode
+  const toolIndex = run.config.tools?.discovery === 'lazy' && run.loadedToolsState
+    ? buildToolIndexForPrompt(run.loadedToolsState)
+    : undefined;
+
   const ctx = buildCycleContext({
     systemPrompt: getWorkerPrompt(workModeOf(run.config)),
     codemap,
@@ -453,6 +463,7 @@ export async function stepAct(run: Run): Promise<void> {
       shownNotes.map((n) => n.text),
     ),
     tools: tools.map(toolSpec),
+    toolIndex,
   });
   run.events.emit('cycle.context', {
     task: task.id,
@@ -478,6 +489,7 @@ export async function stepAct(run: Run): Promise<void> {
     },
     tools,
     toolCtx,
+    loadedToolsState: run.loadedToolsState,
     budget: run.config.budget,
     maxTokens: run.config.providers.anthropic.max_tokens,
     clock: run.clock,
