@@ -40,3 +40,8 @@
   - Resolved duplicate assignment in `src/cli/program.ts` and duplicate import in `src/core/supervisor.ts`.
   - Updated [CHANGELOG.md](file:///Users/yaeger/Desktop/omnexx/CHANGELOG.md).
   - All unit tests, typechecks, ESLint, and Prettier checks passing.
+- **2026-10-28 (Task 1 Completed: Prompt Cache Pinning & Dynamic State Quarantine)**:
+  - Enforced `pinPrefix(req.system)` in `AnthropicProvider.buildParams()`, ensuring all stable blocks are placed first and `cache_control` breakpoint is placed strictly on the last stable block before volatile blocks.
+  - Verified that dynamic state or volatile blocks never bust the stable prompt prefix cache.
+  - Added unit test in `test/unit/providers/cache-pinning.test.ts` verifying stable prefix isolation and breakpoint placement.
+  - All 269 unit test files (1,840 tests) and 20 integration test suites passed. Lint and typecheck clean.
