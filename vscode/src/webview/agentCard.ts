@@ -7,12 +7,17 @@
 import { escapeHtml } from './render.js';
 import { flashSaved } from './savedMark.js';
 import {
+  applyModePreset,
+  detectMode,
+  EXECUTION_MODE_BUTTONS,
+  isExecutionMode,
   meaning,
   position,
   steps,
   withPosition,
   type AgentLevels,
   type AgentMeta,
+  type ExecutionMode,
   type SliderId,
   SLIDERS,
   type Slider,
@@ -25,6 +30,18 @@ let meta: AgentMeta | undefined;
 let askOnStart = true;
 let offered = false;
 let status = '';
+let selectedMode: ExecutionMode | null = null;
+
+function modePillHtml(activeMode: ExecutionMode | null): string {
+  const buttons = EXECUTION_MODE_BUTTONS.map(
+    (b) =>
+      `<button type="button" data-agent-mode="${b.id}" data-posture="${b.id}" aria-pressed="${String(b.id === activeMode)}" title="${escapeHtml(b.caption)}"><span class="posture-ico" aria-hidden="true">${b.icon}</span>${b.name}</button>`,
+  ).join('');
+  return `<div class="agent-mode-selector">
+  <div class="agent-mode-label">Execution Mode</div>
+  <div class="posture-pill" role="group" aria-label="Execution mode presets">${buttons}</div>
+</div>`;
+}
 
 function sliderHtml(s: Slider, l: AgentLevels, m: AgentMeta): string {
   const pos = position(s.id, l, m);
@@ -41,11 +58,13 @@ function cardHtml(withSave: boolean): string {
   if (!levels || !meta) return '<p class="hint">Loading agent settings…</p>';
   const l = levels;
   const m = meta;
+  const activeMode = selectedMode ?? detectMode(l);
   const footer = withSave
     ? `<label class="agent-ask"><input type="checkbox" data-agent-ask ${askOnStart ? 'checked' : ''}> Always ask when the panel opens</label>
 <div class="row-end"><span class="status" role="status">${escapeHtml(status)}</span><button class="primary" data-agent-save>Save</button></div>`
     : '';
   return `<div class="agent-card">
+${modePillHtml(activeMode)}
 ${SLIDERS.map((s) => sliderHtml(s, l, m)).join('\n')}
 ${footer}
 </div>`;
@@ -87,10 +106,20 @@ function isEditingCard(): boolean {
 
 /** Messages for the card; true when handled. */
 export function onMessage(m: { type: string } & Record<string, unknown>): boolean {
+  if (m.type === 'executionMode' && isExecutionMode(m.mode)) {
+    if (selectedMode !== m.mode) {
+      selectedMode = m.mode;
+      if (levels && meta) {
+        setMode(m.mode);
+      }
+    }
+    return false;
+  }
   if (m.type !== 'agentSettings') return false;
   levels = m.levels as AgentLevels;
   meta = m.meta as AgentMeta;
   askOnStart = m.askOnStart !== false;
+  selectedMode = detectMode(levels);
   const start = document.getElementById('agent-start');
   if (start && !offered && askOnStart) {
     offered = true;
@@ -100,6 +129,36 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
   if (isEditingCard()) return true;
   redraw();
   return true;
+}
+
+/** Programmatically switch mode and slide all 5 settings beneath it. */
+export function setMode(mode: ExecutionMode, post?: Post): void {
+  selectedMode = mode;
+  levels = applyModePreset(mode);
+  status = '';
+  if (meta) {
+    for (const s of SLIDERS) {
+      const pos = position(s.id, levels, meta);
+      const pct = Math.round((pos / steps(s.id, meta)) * 100);
+      document
+        .querySelectorAll<HTMLInputElement>(`input[data-agent-slider="${s.id}"]`)
+        .forEach((input) => {
+          input.value = String(pos);
+          input.style.setProperty('--p', `${String(pct)}%`);
+        });
+      const text = meaning(s.id, levels, meta);
+      document.querySelectorAll<HTMLElement>(`[data-agent-meaning="${s.id}"]`).forEach((n) => {
+        n.textContent = text;
+      });
+    }
+    document.querySelectorAll<HTMLElement>('[data-agent-mode]').forEach((btn) => {
+      btn.setAttribute('aria-pressed', String(btn.dataset.agentMode === mode));
+    });
+  }
+  if (post) {
+    save(post, askOnStart);
+    post({ type: 'setExecutionMode', mode });
+  }
 }
 
 function save(post: Post, ask: boolean): void {
@@ -122,6 +181,10 @@ export function wire(post: Post): void {
     const id = t.dataset.agentSlider as SliderId | undefined;
     if (!id) return;
     levels = withPosition(id, Number(t.value), levels, meta);
+    selectedMode = detectMode(levels);
+    document.querySelectorAll<HTMLElement>('[data-agent-mode]').forEach((btn) => {
+      btn.setAttribute('aria-pressed', String(btn.dataset.agentMode === selectedMode));
+    });
     t.style.setProperty('--p', `${String(Math.round((Number(t.value) / steps(id, meta)) * 100))}%`);
     status = '';
     // Update every copy of this slider's label (settings page and launch offer).
@@ -133,6 +196,14 @@ export function wire(post: Post): void {
   document.addEventListener('click', (e) => {
     const t = e.target instanceof Element ? e.target : null;
     if (!t) return;
+    const modeBtn = t.closest<HTMLElement>('[data-agent-mode]');
+    if (modeBtn) {
+      const mode = modeBtn.dataset.agentMode;
+      if (isExecutionMode(mode)) {
+        setMode(mode, post);
+      }
+      return;
+    }
     if (t.closest('[data-agent-save]')) {
       const box = t.closest('.agent-card');
       const ask = box?.querySelector<HTMLInputElement>('[data-agent-ask]')?.checked ?? askOnStart;

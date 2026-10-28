@@ -323,6 +323,25 @@
   gap: 8px;
 }
 
+.agent-mode-selector {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  border: 1px solid var(--bento-border);
+  border-radius: var(--radius-lg);
+  background: var(--bento-bg);
+  box-shadow: var(--bento-shadow);
+  margin-bottom: 2px;
+}
+
+.agent-mode-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .agent-row {
   display: grid;
   gap: 3px;
