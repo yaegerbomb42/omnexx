@@ -4,7 +4,7 @@ An optional mode that saves prompt tokens by sending only a compact tool index u
 
 ## Overview
 
-By default, Omnexx sends the full JSON schema for every tool to the provider on every request. This can consume thousands of tokens, especially with many tools loaded. **Lazy tool discovery** changes this behavior:
+By default, Omnexx sends the full JSON schema for every tool to the provider on every request. **Lazy tool discovery** changes this behavior:
 
 - **Full mode (default)**: All tool definitions sent every request (byte-identical to current behavior)
 - **Lazy mode**: Only a compact index of tool groups is sent; full definitions are loaded on demand
@@ -35,41 +35,42 @@ omnexx run "your goal" --tool-discovery lazy
 
 ### Tool Groups
 
-Tools are organized into groups:
+Tools are organized into groups (from `TOOL_GROUPS` with `GROUP_PURPOSES`):
 
-| Group     | Tools                                                                                  | Description                  |
-| --------- | -------------------------------------------------------------------------------------- | ---------------------------- |
-| `fs`      | read, write_file, str_replace, multi_edit, replace_lines, outline, read_symbol, search | File system operations       |
-| `shell`   | bash, read_log                                                                         | Shell commands               |
-| `search`  | search                                                                                 | Search tools                 |
-| `web`     | web_fetch, web_search                                                                  | Web browsing                 |
-| `browser` | browser                                                                                | Browser automation           |
-| `memory`  | remember, recall, context, running_context, query_artifact, repl_projection            | Notes & memory               |
-| `task`    | task, todo                                                                             | Sub-agents & task management |
+| Group     | Purpose                  | Tools                                                                                  |
+| --------- | ------------------------ | -------------------------------------------------------------------------------------- |
+| `fs`      | read and edit files      | read, write_file, str_replace, multi_edit, replace_lines, outline, read_symbol, search |
+| `shell`   | run commands, read logs  | bash, read_log                                                                         |
+| `web`     | fetch pages, web search  | web_fetch, web_search                                                                  |
+| `browser` | drive a headless browser | browser                                                                                |
+| `memory`  | notes, recall, artifacts | remember, recall, context, running_context, query_artifact, repl_projection            |
+| `task`    | subtasks and todo list   | task, todo                                                                             |
+
+There is no separate `search`, `git`, or `core` group — search lives in `fs`, and core tools are distributed across groups.
 
 ### Always-Loaded Tools
 
-These core tools are **always** fully defined, even in lazy mode:
+These core tools are **always** fully defined, even in lazy mode (via `ALWAYS_LOADED_TOOLS`):
 
-- `read`, `write_file`, `str_replace` - essential file operations
-- `bash` - shell execution
-- `search` - search
-- `todo` - task tracking
-- `more_tools` - legacy lazy-loading meta-tool
-- `request_tools` - the new meta-tool for loading groups
+- `read`, `write_file`, `str_replace` — essential file operations
+- `bash` — shell execution
+- `search` — search (in `fs` group)
+- `todo` — task tracking (in `task` group)
+- `more_tools` — legacy lazy-loading meta-tool
+- `request_tools` — the meta-tool for loading groups
 
 ### Compact Index Format
 
-In lazy mode, the system prompt includes a compact index like:
+In lazy mode, the system prompt includes a compact index with a header line and one line per group showing load status:
 
 ```
-- fs: Read and edit files — read, write_file, str_replace, multi_edit, replace_lines, outline, read_symbol, search
-- shell: Run shell commands — bash, read_log
-- search: Search files — search
-- web: Fetch and search web — web_fetch, web_search
-- browser: Browser automation — browser
-- memory: Notes and memory — remember, recall, context, running_context, query_artifact, repl_projection
-- task: Sub-agents and tasks — task, todo
+Call request_tools({groups:[...]}) to load full definitions for a group before using its tools. Groups marked loaded are ready.
+- fs (read and edit files) loaded: read, write_file, str_replace, multi_edit, replace_lines, outline, read_symbol, search
+- shell (run commands, read logs) loaded: bash, read_log
+- web (fetch pages, web search): web_fetch, web_search
+- browser (drive a headless browser): browser
+- memory (notes, recall, artifacts): remember, recall, context, running_context, query_artifact, repl_projection
+- task (subtasks and todo list): task, todo
 ```
 
 ### The `request_tools` Meta-Tool
@@ -95,7 +96,23 @@ If the model calls a tool whose group isn't loaded, the system automatically loa
 
 > "Tool `recall` was not loaded; loaded group `memory`. Retry the call."
 
-This avoids hard failures and lets the agent self-correct.
+This avoids hard failures and lets the agent self-correct. The `tool.autoload` event is emitted with `{tool, group}`.
+
+### Turn-Level Refresh
+
+The tool list is **refreshed every turn** (in `src/agent/loop.ts`), so:
+
+- `request_tools` calls take effect on the **next turn**
+- Auto-loaded groups are available on the **next turn**
+- The `refreshTools` function in `LoopDeps` rebuilds the tool list from the current `LoadedToolsState`
+
+### Persistence Across Compaction
+
+Loaded groups live on the Run as `LoadedToolsState` (in `src/tools/request-tools.ts`), which survives context compaction because it's stored on the run object, not in the conversation history.
+
+### MCP & Ungrouped Tools
+
+Tools not in any group (e.g., MCP server tools) are **always sent in full** — they bypass the lazy filtering entirely.
 
 ### LRU Unloading (Optional)
 
@@ -103,37 +120,58 @@ If `max_loaded_groups` is set, the least recently used groups are unloaded when 
 
 ## Token Savings
 
-Typical savings (approximate):
+Measured numbers from the unit test (`test/unit/tools/lazy-discovery-flow.test.ts`):
 
-| Mode                        | Tool Schema Tokens   |
-| --------------------------- | -------------------- |
-| Full                        | ~8,000–12,000 tokens |
-| Lazy (index only)           | ~500–800 tokens      |
-| Lazy (with 3 groups loaded) | ~2,000–3,000 tokens  |
+| Mode                                              | Tool Schema Tokens |
+| ------------------------------------------------- | ------------------ |
+| Full (all built-in tools)                         | 3,800              |
+| Lazy (fs+shell loaded by default, index included) | 2,706              |
+| **Saved**                                         | **1,094 (~29%)**   |
 
-The exact savings depend on your tool set and how many groups the agent loads.
+Savings grow as more grouped tools remain unloaded. The more groups the agent keeps off, the more tokens saved per request.
 
 ## Metrics
 
-Each cycle in lazy mode emits a `cycle.context` event with a `toolDiscovery` field:
+Each cycle in lazy mode emits two events:
+
+### `cycle.context` event with `toolDiscovery` field
 
 ```json
 {
   "toolDiscovery": {
     "mode": "lazy",
     "loadedGroups": ["fs", "shell", "memory"],
-    "fullToolsTokens": 9421,
+    "fullToolsTokens": 3800,
     "lazyToolsTokens": 2156,
-    "toolIndexTokens": 412,
-    "omittedTokens": 6853
+    "toolIndexTokens": 550,
+    "omittedTokens": 1094
   }
 }
 ```
 
-- `fullToolsTokens`: Tokens if all tools were sent
-- `lazyToolsTokens`: Tokens for currently loaded tools
-- `toolIndexTokens`: Tokens for the compact index
-- `omittedTokens`: Estimated savings (`fullToolsTokens - lazyToolsTokens - toolIndexTokens`)
+In full mode, only `{ "mode": "full" }` is emitted.
+
+### `tool.discovery` event with detailed token breakdown
+
+```json
+{
+  "fullToolsTokens": 3800,
+  "lazyToolsTokens": 2156,
+  "toolIndexTokens": 550,
+  "savedTokens": 1094
+}
+```
+
+### `tool.autoload` event
+
+Emitted when a tool's group is auto-loaded:
+
+```json
+{
+  "tool": "recall",
+  "group": "memory"
+}
+```
 
 ## Compatibility
 
@@ -143,7 +181,7 @@ Each cycle in lazy mode emits a `cycle.context` event with a `toolDiscovery` fie
 
 ## Best Practices
 
-1. **Start with full mode** if you're unsure - it's the safe default
+1. **Start with full mode** if you're unsure — it's the safe default
 2. **Enable lazy mode** for long-running tasks where token budget matters
 3. **Set `max_loaded_groups`** if you want to prevent unbounded group loading
-4. **Monitor `omittedTokens`** in telemetry to measure actual savings
+4. **Monitor `savedTokens`** in telemetry to measure actual savings

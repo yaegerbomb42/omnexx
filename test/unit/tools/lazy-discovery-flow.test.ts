@@ -15,7 +15,7 @@ import { estimateTokens } from '../../../src/core/tokens.js';
 import type { OmnexxConfig } from '../../../src/config/schema.js';
 
 // Mock config for testing (copied from lazy-discovery.test.ts)
-function createMockConfig(overrides: Partial<OmnexxConfig> = {}): OmnexxConfig {
+function createMockConfig(overrides: Record<string, unknown> = {}): OmnexxConfig {
   return {
     experimental: false,
     budget: { max_usd: 100, max_hours: 1 },
@@ -37,7 +37,7 @@ function createMockConfig(overrides: Partial<OmnexxConfig> = {}): OmnexxConfig {
     skills: { dirs: [], import_claude: false },
     web: { fetch_enabled: false },
     ...overrides,
-  } as OmnexxConfig;
+  } as unknown as OmnexxConfig;
 }
 
 const EXPOSURE_OPTS = {
