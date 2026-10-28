@@ -22,6 +22,7 @@ import { settleSpecWork, specGate } from './spec-gate.js';
 import { FAST_TASK, fastPathSpent, fastPlan, tryFastPath } from './fast-path.js';
 import { resolveWriting } from './writing.js';
 import { EXIT } from '../cli/exit-codes.js';
+import { defaultSessionPool } from './exec.js';
 import { DockerSandbox } from '../security/sandbox-docker.js';
 import { readBootId } from '../daemon/boot-id.js';
 import { LockError } from '../errors.js';
@@ -51,7 +52,6 @@ import {
   stepRollback,
   stepVerify,
 } from './cycle.js';
-import { defaultSessionPool } from './exec.js';
 import { startHeartbeat } from './heartbeat.js';
 import { acquireLock, defaultLockEnv, releaseLock, type LockEnv } from './lock.js';
 import type { OmnexxPaths } from './paths.js';
@@ -118,6 +118,7 @@ export const EXIT_FOR: Record<RunStatus, number> = {
   finished: EXIT.ok,
   planned: EXIT.ok,
   'needs-human': EXIT.needsHuman,
+  stuck: EXIT.needsHuman,
   'budget-stop': EXIT.budgetStop,
   'user-stop': EXIT.userStop,
   running: EXIT.error,
@@ -669,6 +670,23 @@ class Supervisor {
       r.events.emit('stuck.signal', { signal: 'no_progress', cycles: sinceCycles, ms: sinceMs });
       if (await this.recoverNoProgress(sinceCycles)) return undefined;
       return { status: 'needs-human', reason: `no accepted commit for ${sinceCycles} cycles` };
+    }
+    // Doom-loop detector, run level: consecutive cycles that produced no diff, no
+    // accepted commit, and no failing-check signal are the run going in circles, not
+    // working — stop it as `stuck` with a resumption point instead of burning cycles
+    // until the looser no-progress trip above. Autonomous runs are exempt: with nobody
+    // to ask, they park stalled work and move on (see recoverNoProgress).
+    if (!r.config.autonomous.enabled && r.state.idleCycles >= r.config.stuck.max_idle_cycles) {
+      const taskId = r.state.taskId ?? 'unknown';
+      const detail = `${r.state.idleCycles} consecutive cycles with no diff, no accepted commit, and no failing-check signal (task ${taskId}; ${r.state.acceptedCommits} accepted commits so far, last progress at cycle ${r.state.lastProgressCycle})`;
+      r.events.emit('stuck.signal', { signal: 'idle_cycles', task: taskId, detail });
+      // A resume gets a fresh window: the count served its purpose once the run stops.
+      r.state.idleCycles = 0;
+      await r.save();
+      return {
+        status: 'stuck',
+        reason: `stuck: ${detail}. What was done is on branch ${r.state.branch}; resume with a narrower goal or a different approach for ${taskId}.`,
+      };
     }
     return undefined;
   }
@@ -1328,7 +1346,7 @@ export async function supervise(
     await rememberRunTook(run, deps, outcome.status);
     const prUrl = deps.config.git.open_pr ? await openPullRequest(run) : undefined;
     const kind: NotifyKind =
-      outcome.status === 'needs-human'
+      outcome.status === 'needs-human' || outcome.status === 'stuck'
         ? 'needs-human'
         : outcome.status === 'budget-stop'
           ? 'budget'

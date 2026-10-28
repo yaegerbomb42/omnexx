@@ -1008,7 +1008,23 @@ export async function runAgentLoop(
     // Weaker models keep calling tools after the job is done; don't pay for that.
     if (finished.now) return end('done');
 
-    const finding = deps.watch?.afterTurn(turns, cycleTokens, calls);
+    // Pair each call with its result, so the watch compares outcomes, not just call
+    // identity: re-reading a file that changed between reads is checking, not looping,
+    // and retrying an errored call is recovery, not looping.
+    const resultsById = new Map(
+      results
+        .filter(
+          (b): b is Extract<ContentBlock, { type: 'tool_result' }> => b.type === 'tool_result',
+        )
+        .map((b) => [b.toolUseId, b]),
+    );
+    const callsWithResults = calls.map((c) => {
+      const r = resultsById.get(c.id);
+      return r
+        ? { name: c.name, input: c.input, result: r.content, isError: r.isError === true }
+        : { name: c.name, input: c.input };
+    });
+    const finding = deps.watch?.afterTurn(turns, cycleTokens, callsWithResults);
     if (finding) {
       deps.events.emit('stuck.in_cycle', {
         signal: finding.signal,

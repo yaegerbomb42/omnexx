@@ -48,6 +48,36 @@ describe('InCycleWatch', () => {
     edits = 1;
     expect(w.afterTurn(3, 5_000, [])).toBeUndefined();
   });
+
+  it('identical calls with different results are checking, not a loop', () => {
+    const w = new InCycleWatch({ ...limits, noEditTurns: 99 }, () => 0);
+    const call = (result: string) => ({ name: 'read', input: { path: 'a' }, result });
+    expect(w.afterTurn(1, 0, [call('v1')])).toBeUndefined();
+    expect(w.afterTurn(2, 0, [call('v2')])).toBeUndefined();
+    expect(w.afterTurn(3, 0, [call('v3')])).toBeUndefined();
+    expect(w.afterTurn(4, 0, [call('v4')])).toBeUndefined();
+  });
+
+  it('identical calls with identical results still trip at N', () => {
+    const w = new InCycleWatch({ ...limits, noEditTurns: 99 }, () => 0);
+    const call = () => ({ name: 'read', input: { path: 'a' }, result: 'same' });
+    expect(w.afterTurn(1, 0, [call()])).toBeUndefined();
+    expect(w.afterTurn(2, 0, [call()])).toBeUndefined();
+    expect(w.afterTurn(3, 0, [call()])).toMatchObject({ signal: 'repeated_tool_call' });
+  });
+
+  it('errored calls do not count: a retry after failure is recovery, not a loop', () => {
+    const w = new InCycleWatch({ ...limits, noEditTurns: 99 }, () => 0);
+    const failed = { name: 'bash', input: { command: 'make' }, result: 'boom', isError: true };
+    expect(w.afterTurn(1, 0, [failed])).toBeUndefined();
+    expect(w.afterTurn(2, 0, [failed])).toBeUndefined();
+    expect(w.afterTurn(3, 0, [failed])).toBeUndefined();
+    // And the retry that then succeeds starts its own streak.
+    const ok = { name: 'bash', input: { command: 'make' }, result: 'ok' };
+    expect(w.afterTurn(4, 0, [ok])).toBeUndefined();
+    expect(w.afterTurn(5, 0, [ok])).toBeUndefined();
+    expect(w.afterTurn(6, 0, [ok])).toMatchObject({ signal: 'repeated_tool_call' });
+  });
 });
 
 describe('burnThreshold', () => {

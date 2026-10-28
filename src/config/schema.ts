@@ -297,6 +297,12 @@ export const stuckSchema = z.strictObject({
   oscillation_window: z.number().int().positive().default(5),
   /** In-cycle: the same tool call with the same arguments this many times ends the cycle. */
   repeated_tool_call: z.number().int().min(2).default(3),
+  /**
+   * Run-level: this many consecutive cycles that were rejected with no diff, no budget
+   * interruption, and no failing check end the run as `stuck` (see guardPre). Autonomous
+   * runs are exempt: they park stalled work and move on instead (see recoverNoProgress).
+   */
+  max_idle_cycles: z.number().int().positive().default(3),
   /** In-cycle: this many turns without a file edit ends the cycle. */
   no_edit_turns: z.number().int().positive().default(15),
   /** In-cycle: tokens above this multiple of the median cycle, with no edit yet, end the cycle. */
