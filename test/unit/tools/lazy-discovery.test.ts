@@ -17,35 +17,9 @@ import {
 import { buildToolList } from '../../../src/tools/registry.js';
 import { buildCycleContext } from '../../../src/agent/context.js';
 import { estimateTokens } from '../../../src/core/tokens.js';
-import type { OmnexxConfig } from '../../../src/config/schema.js';
 import type { Tool } from '../../../src/tools/types.js';
 import type { ToolContext } from '../../../src/tools/types.js';
-
-// Mock config for testing
-function createMockConfig(overrides: Partial<OmnexxConfig> = {}): OmnexxConfig {
-  return {
-    experimental: false,
-    budget: { max_usd: 100, max_hours: 1 },
-    providers: { anthropic: { api_key: 'test', max_tokens: 4096 } },
-    context: { subagents: false, lazy_tools: false, sections: {}, progress_tail: 10 },
-    policy: { auto_approve: false },
-    execution: { mode: 'auto', domain: 'swe' },
-    models: {
-      planner: 'anthropic:claude-sonnet',
-      worker: 'anthropic:claude-sonnet',
-      cheap: 'anthropic:claude-haiku',
-    },
-    git: { push: 'none' },
-    sandbox: 'host',
-    tools: { discovery: 'full' },
-    search: { embeddings: false },
-    agents: { dirs: [], import_claude: false, remote: {} },
-    browser: { enabled: false },
-    skills: { dirs: [], import_claude: false },
-    web: { fetch_enabled: false },
-    ...overrides,
-  } as OmnexxConfig;
-}
+import { createMockConfig } from './lazy-test-helpers.js';
 
 describe('Lazy Tool Discovery', () => {
   describe('Tool Groups', () => {

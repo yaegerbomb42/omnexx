@@ -14,7 +14,6 @@ import {
   type CycleSummary,
 } from '../agent/compaction.js';
 import { buildCycleContext } from '../agent/context.js';
-import { buildToolIndexForPrompt } from '../tools/registry.js';
 import { factsBlockFor } from './facts.js';
 import { briefInput } from '../config/agent-settings.js';
 import { renderCodemap, type Codemap } from '../agent/codemap.js';
@@ -39,7 +38,12 @@ import {
   sameFailureQuestion,
   toolSafetyQuestion,
 } from '../judge/uses.js';
-import { toolSpec, workerTools, buildToolListSync } from '../tools/registry.js';
+import {
+  buildToolIndexForPrompt,
+  buildToolListSync,
+  toolSpec,
+  workerTools,
+} from '../tools/registry.js';
 import { cycleRoute } from '../router/classify.js';
 import { readIntent } from '../agent/intent.js';
 import type { ToolContext } from '../tools/types.js';

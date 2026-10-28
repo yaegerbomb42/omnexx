@@ -12,40 +12,7 @@ import {
   autoLoadToolGroup,
 } from '../../../src/tools/request-tools.js';
 import { estimateTokens } from '../../../src/core/tokens.js';
-import type { OmnexxConfig } from '../../../src/config/schema.js';
-
-// Mock config for testing (copied from lazy-discovery.test.ts)
-function createMockConfig(overrides: Record<string, unknown> = {}): OmnexxConfig {
-  return {
-    experimental: false,
-    budget: { max_usd: 100, max_hours: 1 },
-    providers: { anthropic: { api_key: 'test', max_tokens: 4096 } },
-    context: { subagents: false, lazy_tools: false, sections: {}, progress_tail: 10 },
-    policy: { auto_approve: false },
-    execution: { mode: 'auto', domain: 'swe' },
-    models: {
-      planner: 'anthropic:claude-sonnet',
-      worker: 'anthropic:claude-sonnet',
-      cheap: 'anthropic:claude-haiku',
-    },
-    git: { push: 'none' },
-    sandbox: 'host',
-    tools: { discovery: 'full' },
-    search: { embeddings: false },
-    agents: { dirs: [], import_claude: false, remote: {} },
-    browser: { enabled: false },
-    skills: { dirs: [], import_claude: false },
-    web: { fetch_enabled: false },
-    ...overrides,
-  } as unknown as OmnexxConfig;
-}
-
-const EXPOSURE_OPTS = {
-  subagents: true,
-  hasHistory: true,
-  autoApprove: false,
-  lazyTools: false,
-} as const;
+import { createMockConfig, EXPOSURE_OPTS } from './lazy-test-helpers.js';
 
 describe('Lazy Tool Discovery Flow', () => {
   describe('Flag Off Leaves Payload Unchanged', () => {
