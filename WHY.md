@@ -40,3 +40,8 @@
   - Resolved duplicate assignment in `src/cli/program.ts` and duplicate import in `src/core/supervisor.ts`.
   - Updated [CHANGELOG.md](file:///Users/yaeger/Desktop/omnexx/CHANGELOG.md).
   - All unit tests, typechecks, ESLint, and Prettier checks passing.
+- **2026-10-28 (Task 7: Milestone Compactor with Checkpoint Folding)**:
+  - Created `src/agent/milestone-compactor.ts` with `foldMilestoneCheckpoint`, `formatMilestoneRecap`, `extractFilesTouched`, and `extractVerificationCommand`.
+  - Automatically folds intermediate trial-and-error discussion turns (up to 10 turns) into a structured 3-line milestone recap (`Milestone X complete: ... - Changed: ... - Verified via: ...`) upon subtask/milestone commit, preserving the system prompt and reducing working context by >70-80% for subsequent subtasks.
+  - Exported through `src/agent/compaction.ts` and added unit test suite in `test/unit/agent/milestone-compactor.test.ts`.
+
