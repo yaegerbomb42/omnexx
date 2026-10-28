@@ -40,7 +40,7 @@ describe('web_search tool', () => {
 
     process.env.BRAVE_API_KEY = 'test-brave-key';
     setWebSearchConfig({
-      allow: ['*'],
+      allow: ['*', '127.0.0.1'],
       deny: [],
       fetch_timeout: '15s',
       max_fetch_bytes: 5 * 1024 * 1024,
@@ -79,7 +79,7 @@ describe('web_search tool', () => {
 
     process.env.TAVILY_API_KEY = 'test-tavily-key';
     setWebSearchConfig({
-      allow: ['*'],
+      allow: ['*', '127.0.0.1'],
       deny: [],
       fetch_timeout: '15s',
       max_fetch_bytes: 5 * 1024 * 1024,
@@ -118,7 +118,7 @@ describe('web_search tool', () => {
 
     process.env.EXA_API_KEY = 'test-exa-key';
     setWebSearchConfig({
-      allow: ['*'],
+      allow: ['*', '127.0.0.1'],
       deny: [],
       fetch_timeout: '15s',
       max_fetch_bytes: 5 * 1024 * 1024,
@@ -156,7 +156,7 @@ describe('web_search tool', () => {
     });
 
     setWebSearchConfig({
-      allow: ['*'],
+      allow: ['*', '127.0.0.1'],
       deny: [],
       fetch_timeout: '15s',
       max_fetch_bytes: 5 * 1024 * 1024,
@@ -187,7 +187,7 @@ describe('web_search tool', () => {
       });
     });
     setWebSearchConfig({
-      allow: ['*'],
+      allow: ['*', '127.0.0.1'],
       deny: [],
       fetch_timeout: '15s',
       max_fetch_bytes: 5 * 1024 * 1024,
@@ -217,7 +217,7 @@ describe('web_search tool', () => {
       });
     });
     setWebSearchConfig({
-      allow: ['*'],
+      allow: ['*', '127.0.0.1'],
       deny: [],
       fetch_timeout: '15s',
       max_fetch_bytes: 5 * 1024 * 1024,

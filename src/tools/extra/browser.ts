@@ -19,6 +19,7 @@ import { fail, ok, resolvePath, type Tool, type ToolContext, type ToolOutput } f
 import { detectBrowserBackend } from './browser/detector.js';
 import { BrowserSessionManager, type BrowserManagerOptions } from './browser/manager.js';
 import { isUrlAllowed } from './browser/security.js';
+import { privateTarget } from './private-address.js';
 import { trimSnapshot } from './browser/snapshot.js';
 import { asLayoutReport, formatPageCheck, LAYOUT_PROBE } from './browser/page-check.js';
 import type { BrowserBackend, BrowserRequest } from './browser/types.js';
@@ -474,7 +475,7 @@ export function createBrowserTool(
       if (!input.ref) throw new UsageError(`action "${input.action}" requires "ref" parameter`);
       return input.ref;
     };
-    const checkUrl = (url: string | undefined): string | ToolOutput => {
+    const checkUrl = async (url: string | undefined): Promise<string | ToolOutput> => {
       if (!url) return fail(`action "${input.action}" requires "url" parameter`);
       if (!isUrlAllowed(url, config.allow)) {
         ctx.events.emit('browser.denied', {
@@ -484,13 +485,31 @@ export function createBrowserTool(
         });
         return fail(`URL "${url}" is refused by browser allowlist (${config.allow.join(', ')})`);
       }
+      // Named (non-wildcard) hosts opt out of the private-address check, matching web_fetch.
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        return fail(`URL "${url}" is not a valid absolute URL`);
+      }
+      const named = config.allow.filter((a: string) => a !== '*');
+      if (!(
+        named.length &&
+        named.some((a) => parsed.hostname === a || parsed.hostname.endsWith('.' + a))
+      )) {
+        const why = await privateTarget(parsed.hostname);
+        if (why) {
+          ctx.events.emit('browser.denied', { url, allow: config.allow, reason: why });
+          return fail(`URL "${url}" is refused: ${why}`);
+        }
+      }
       return url;
     };
     const retried = (r: boolean): string => (r ? ' (after refreshing a stale ref)' : '');
 
     switch (input.action) {
       case 'open': {
-        const url = checkUrl(input.url);
+        const url = await checkUrl(input.url);
         if (typeof url !== 'string') return url;
         await session.ensureDevServerForUrl(url);
         const backend = await session.getBackend();
@@ -781,7 +800,7 @@ export function createBrowserTool(
       }
 
       case 'new_tab': {
-        const url = checkUrl(input.url);
+        const url = await checkUrl(input.url);
         if (typeof url !== 'string') return url;
         await session.ensureDevServerForUrl(url);
         const backend = await session.getBackend();
@@ -991,7 +1010,7 @@ export function createBrowserTool(
           // A repo file: only inside the jail, so the page can't be pointed at anything else.
           target = pathToFileURL(await resolvePath(ctx, target, 'read')).href;
         } else if (target !== undefined) {
-          const url = checkUrl(target);
+          const url = await checkUrl(target);
           if (typeof url !== 'string') return url;
           await session.ensureDevServerForUrl(url);
         }
