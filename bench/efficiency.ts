@@ -116,6 +116,26 @@ export function efficiency(
   };
 }
 
+/** Time-budget metrics derived from a run's `time.report` events. */
+export function timeMetrics(
+  events: readonly RunEvent[],
+  wallMs: number,
+): { on_budget: boolean; overrun_ms: number; active_ratio: number; useful_ops_per_hour: number } | undefined {
+  const reports = events.filter((e) => e.type === 'time.report');
+  if (!reports.length) return undefined;
+  const last = reports[reports.length - 1]!;
+  const elapsedS = num(last.elapsed_s);
+  const overrunS = num(last.overrun_s);
+  const usefulOps = num(last.useful_ops);
+  const activeRatio = wallMs > 0 ? Math.min(1, (elapsedS * 1000) / wallMs) : 0;
+  const hours = elapsedS / 3600;
+  return {
+    on_budget: overrunS === 0,
+    overrun_ms: overrunS * 1000,
+    active_ratio: Number(activeRatio.toFixed(3)),
+    useful_ops_per_hour: hours > 0 ? Number((usefulOps / hours).toFixed(2)) : 0,
+  };
+}
 /** A saved run log's events, oldest first; [] when there is none or a line doesn't parse. */
 export async function readRunEvents(runDir: string): Promise<RunEvent[]> {
   const text = await readFile(join(runDir, 'events.jsonl'), 'utf-8').catch(() => '');
