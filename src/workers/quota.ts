@@ -67,7 +67,10 @@ export class Semaphore {
   private readonly waiting: (() => void)[] = [];
   peak = 0;
 
-  constructor(private readonly max: number) {}
+  constructor(private readonly max: number) {
+    // A non-positive cap would deadlock every acquire(); clamp to at least one.
+    this.max = Math.max(1, max);
+  }
 
   async acquire(): Promise<() => void> {
     if (this.active >= this.max) await new Promise<void>((r) => this.waiting.push(r));

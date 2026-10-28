@@ -79,7 +79,7 @@ export async function runHooks(
   const ran: HookRunResult[] = [];
   for (const hook of opts.hooks) {
     if (hook.on !== event) continue;
-    if (hook.match !== undefined && tool !== undefined && !matchGlob(hook.match, tool)) continue;
+    if (hook.match !== undefined && (tool === undefined || !matchGlob(hook.match, tool))) continue;
     const execOpts: ExecOptions = {
       cwd: opts.cwd,
       env: { ...opts.env, OMNEXX_EVENT: event },
