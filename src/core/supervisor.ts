@@ -54,7 +54,6 @@ import {
 } from './cycle.js';
 import { startHeartbeat } from './heartbeat.js';
 import { acquireLock, defaultLockEnv, releaseLock, type LockEnv } from './lock.js';
-import { defaultSessionPool } from './exec.js';
 import type { OmnexxPaths } from './paths.js';
 import { bindRun, killRunChildren, reapStaleSupervisors, unbindRun } from './process-registry.js';
 import { TaskManager } from './task-manager.js';

@@ -504,9 +504,6 @@ export async function runCli(argv: readonly string[], io: CliIO): Promise<number
       println(io.stderr, line);
     },
   }).catch(() => undefined);
-  const program = createProgram(io, (c) => {
-    code = c;
-  });
   const program = createProgram(
     io,
     (c) => {
