@@ -186,13 +186,13 @@ need it; no partial commits.
 
 ### Phase 4 — Allocate time, re-plan on burn (1 week)
 
-- [ ] Planner estimates minutes per milestone (or a `size → minutes` table calibrated from
-      Phase 0 history; `S/M/L` already exists).
+- [x] Planner estimates minutes per milestone (`minutes` field on plan nodes; `S/M/L` still
+      defaults to 15/45/120). (Calibration from Phase 0 history is the follow-up.)
 - [ ] Supervisor gives each milestone a slice of the remaining time and checks burn at cycle
-      boundaries.
+      boundaries. (Advisory only today: `time.task_overrun` event.)
 - [ ] Over 1.5× a slice: park, split or descope before starting more.
 - [ ] Ahead of pace: pull the next slice forward; if nothing is left, go to `beyond` with evidence.
-- [ ] Re-plan trigger: 50% of time spent and <40% of planned tasks done.
+- [x] Re-plan trigger: 50% of time spent and <40% of planned tasks done (`time.replan_needed`).
 
 **Accept:** fewer tasks started-but-unfinished at the deadline; better quality per active hour on
 the time suite.
@@ -309,6 +309,9 @@ roadmap item only when its acceptance test passes.
 - **2026-10-28 (Phase 3)** — Landing instead of stopping: `inWrapup` enters a `landing` phase
   and keeps going; a 2% hard floor leaves room for final verify, which now runs in the exit path.
   See PR #363.
+- **2026-10-28 (Phase 4)** — Per-task time estimates (`minutes`), `time.task_overrun` and
+  `time.replan_needed` events. Slice enforcement and automatic re-planning remain advisory.
+  See PR #365.
 
 ## 10. References
 
