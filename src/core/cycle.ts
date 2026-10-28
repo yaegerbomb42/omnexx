@@ -50,7 +50,7 @@ import { failureSignature, judgeGate } from '../verify/ratchet.js';
 import { readTextOr, writeFileAtomic } from './atomic.js';
 import { applyRemember, keepNewestNotes, renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
-import { getNode, type PlanNode } from './plan.js';
+import { getNode, planCounts, type PlanNode } from './plan.js';
 import { foldPrompt } from './fold-prompt.js';
 import { MemoryHarness } from './memory/index.js';
 import { RunningContext } from './running-context.js';
@@ -446,6 +446,23 @@ export async function stepAct(run: Run): Promise<void> {
     role: await loadRoleCard(run.store, task, run.state.repoRoot),
     sections: run.config.context.sections,
     ...briefInput(run.config),
+    clock: (() => {
+      const elapsedMs = run.elapsedMs();
+      const remainingMs = Math.max(0, run.deadlineMs - elapsedMs);
+      const fmt = (ms: number): string =>
+        ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `${Math.round(ms / 1000)}s`;
+      const counts = run.plan ? planCounts(run.plan) : undefined;
+      const left = run.budgetLeftFraction();
+      const pace = left >= 0.5 ? 'on pace' : left >= 0.2 ? 'tight' : 'behind';
+      const parts = [
+        `Elapsed ${fmt(elapsedMs)} of ${run.config.budget.max_hours}h`,
+        `${fmt(remainingMs)} left`,
+        counts ? `${counts.done} of ${counts.tasks} tasks done` : '',
+        run.lastCycleModelMs ? `last cycle: ${fmt(run.lastCycleModelMs)} model, ${fmt(run.lastCycleToolMs)} tools` : '',
+        `pace: ${pace}`,
+      ].filter(Boolean);
+      return `# Clock\n\n${parts.join(' · ')}`;
+    })(),
     facts: await factsBlockFor(
       run.deps.paths,
       run.state.repoRoot,
@@ -501,6 +518,7 @@ export async function stepAct(run: Run): Promise<void> {
       run.paused = p;
     },
     signal: run.signal,
+    deadlineMs: run.deadlineMs,
     calibrationFile: tokenCalibrationFile(run.deps.paths),
     parallelTasks: run.config.context.subagent_parallel,
     watch: new InCycleWatch(

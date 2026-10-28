@@ -321,6 +321,8 @@ class Supervisor {
 
   private async cycle(taskId: string): Promise<void> {
     const r = this.run;
+    r.lastCycleModelMs = r.cycleModelMs;
+    r.lastCycleToolMs = r.cycleToolMs;
     r.cycleModelMs = 0;
     r.cycleToolMs = 0;
     const cycleStartElapsed = r.elapsedMs();
