@@ -11,7 +11,7 @@ import * as agentCard from './agentCard.js';
 import * as posture from './posture.js';
 import * as domain from './domain.js';
 import * as stats from './stats.js';
-import { badge } from './modelPicker.js';
+import { badge, providerHue } from './modelPicker.js';
 import { emptyStateHtml } from './emptyState.js';
 import { escapeHtml } from './render.js';
 import * as providerForm from './providerForm.js';
@@ -57,6 +57,8 @@ const CUSTOM = '__custom';
 let chosen = 'anthropic';
 /** Filter text for the provider tiles. */
 let tileQuery = '';
+/** The add form's provider list starts short; this opens the rest. */
+let showAllProviders = false;
 
 let catalog: CatalogProvider[] = [];
 let connected: ConnectedProvider[] = [];
@@ -156,12 +158,23 @@ function connectedHtml(): string {
   if (!connected.length) return emptyStateHtml();
   return `<ul class="providers">${connected
     .map((p) => {
+      const result = tests[p.name];
+      const state = result === 'running' ? 'busy' : result ? (result.ok ? 'ok' : 'bad') : 'idle';
+      const dotTitle =
+        state === 'ok'
+          ? 'Tested OK'
+          : state === 'bad'
+            ? 'Test failed'
+            : state === 'busy'
+              ? 'Checking…'
+              : p.local || p.key
+                ? 'Not tested yet'
+                : 'Needs a key';
       const key = p.local
         ? '<span class="pill local">local</span>'
         : p.key
           ? `<span class="pill ok">key ${escapeHtml(p.key)}</span>${p.keySource && p.keySource !== 'credentials file' ? `<span class="pill">from ${escapeHtml(p.keySource)}</span>` : ''}`
           : '<span class="pill warn">no key</span>';
-      const result = tests[p.name];
       const check =
         result === 'running'
           ? '<span class="pill busy">checking…</span>'
@@ -172,7 +185,7 @@ function connectedHtml(): string {
         confirmingRemove === p.name
           ? `<button class="danger-btn" data-remove-confirm="${escapeHtml(p.name)}">Remove</button><button class="ghost" data-remove-cancel>Cancel</button>`
           : `<button class="ghost" data-remove="${escapeHtml(p.name)}" title="Remove ${escapeHtml(p.label)} and its stored key">Remove</button>`;
-      return `<li class="provider"><div class="p-main"><div class="p-name">${escapeHtml(p.label)}</div><div class="p-url">${escapeHtml(p.baseUrl)}</div><div class="p-tags">${key}${check}</div></div><div class="p-actions"><button class="ghost" data-test="${escapeHtml(p.name)}" title="Check that omnexx can reach it">Test</button>${remove}</div></li>`;
+      return `<li class="provider" data-state="${state}" style="--h:${String(providerHue(p.name))}"><span class="p-dot" role="img" aria-label="${escapeHtml(dotTitle)}" title="${escapeHtml(dotTitle)}"></span><div class="p-main"><div class="p-name">${escapeHtml(p.label)}</div><div class="p-url" title="${escapeHtml(p.baseUrl)}">${escapeHtml(p.baseUrl)}</div><div class="p-tags">${key}${check}</div></div><div class="p-actions"><button class="ghost" data-test="${escapeHtml(p.name)}" title="Check that omnexx can reach it">Test</button>${remove}</div></li>`;
     })
     .join('')}</ul>`;
 }
@@ -183,12 +196,18 @@ function tilesHtml(): string {
     words.every((w) => `${c.name} ${c.label}`.toLowerCase().includes(w));
   const tile = (name: string, label: string, sub: string): string =>
     `<button class="ptile${chosen === name ? ' on' : ''}" data-provider="${escapeHtml(name)}" aria-pressed="${String(chosen === name)}" title="${escapeHtml(label)}">${badge(name === CUSTOM ? 'url' : name)}<span class="t-label">${escapeHtml(label.replace(/\s*\(.*\)$/, ''))}</span><span class="t-sub">${escapeHtml(sub)}</span></button>`;
-  const hosted = catalog.filter((c) => !c.local && fits(c));
+  const hostedAll = catalog.filter((c) => !c.local && fits(c));
+  const searchable = words.length > 0;
+  const hosted = searchable || showAllProviders ? hostedAll : hostedAll.slice(0, 8);
   const local = catalog.filter((c) => c.local && fits(c));
   const custom =
     words.length === 0 ||
     words.every((w) => 'custom url openai anthropic compatible endpoint proxy'.includes(w));
-  return `${hosted.length ? `<div class="t-group">Hosted</div><div class="tiles">${hosted.map((c) => tile(c.name, c.label, c.fields?.length ? 'needs setup' : c.freeTier ? 'free tier' : c.keyPrefix ? `${c.keyPrefix}…` : 'API key')).join('')}</div>` : ''}${local.length ? `<div class="t-group">On your machine</div><div class="tiles">${local.map((c) => tile(c.name, c.label, 'no key')).join('')}</div>` : ''}${custom ? `<div class="t-group">Other</div><div class="tiles">${tile(CUSTOM, 'Custom endpoint', 'OpenAI / Anthropic API')}</div>` : ''}${!hosted.length && !local.length && !custom ? '<p class="hint">No provider matches.</p>' : ''}`;
+  const more =
+    !searchable && hostedAll.length > 8
+      ? `<button class="t-show-all ghost small" data-show-all>${showAllProviders ? 'Show less' : `Show all (${String(hostedAll.length)})`}</button>`
+      : '';
+  return `${hosted.length ? `<div class="t-group">Hosted</div><div class="tiles">${hosted.map((c) => tile(c.name, c.label, c.fields?.length ? 'needs setup' : c.freeTier ? 'free tier' : c.keyPrefix ? `${c.keyPrefix}…` : 'API key')).join('')}</div>${more}` : ''}${local.length ? `<div class="t-group">On your machine</div><div class="tiles">${local.map((c) => tile(c.name, c.label, 'no key')).join('')}</div>` : ''}${custom ? `<div class="t-group">Other</div><div class="tiles">${tile(CUSTOM, 'Custom endpoint', 'OpenAI / Anthropic API')}</div>` : ''}${!hosted.length && !local.length && !custom ? '<p class="hint">No provider matches.</p>' : ''}`;
 }
 
 /** Where the folded sections are remembered (the webview's state; tests and first run: memory). */
@@ -556,6 +575,11 @@ export function wire(post: Post): void {
     const fold = t.closest<HTMLElement>('[data-sec-toggle]')?.dataset.secToggle;
     if (layout.isSectionId(fold)) {
       setFolded(fold, !folded.includes(fold));
+      return;
+    }
+    if (t.closest('[data-show-all]')) {
+      showAllProviders = !showAllProviders;
+      q('tile-box', HTMLElement).innerHTML = tilesHtml();
       return;
     }
     const tileName = t.closest<HTMLElement>('[data-provider]')?.dataset.provider;
