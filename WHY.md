@@ -40,15 +40,16 @@
   - Resolved duplicate assignment in `src/cli/program.ts` and duplicate import in `src/core/supervisor.ts`.
   - Updated [CHANGELOG.md](file:///Users/yaeger/Desktop/omnexx/CHANGELOG.md).
   - All unit tests, typechecks, ESLint, and Prettier checks passing.
-- **2026-10-28 (Task 1 Completed: Prompt Cache Pinning & Dynamic State Quarantine)**:
-  - Enforced `pinPrefix(req.system)` in `AnthropicProvider.buildParams()`, ensuring all stable blocks are placed first and `cache_control` breakpoint is placed strictly on the last stable block before volatile blocks.
-  - Verified that dynamic state or volatile blocks never bust the stable prompt prefix cache.
-  - Added unit test in `test/unit/providers/cache-pinning.test.ts` verifying stable prefix isolation and breakpoint placement.
-  - All 269 unit test files (1,840 tests) and 20 integration test suites passed. Lint and typecheck clean.
-- **2026-10-28 (Task 2 Completed: AST & Symbol-Level Outline Reader)**:
-  - Enhanced `src/tools/outline.ts` with accurate `endLine` boundary calculation:
-    - Balanced curly brace matching for TypeScript, JavaScript, Go, Rust, Java, and C/C++.
-    - Indentation tracking for Python blocks (`def` and `class`).
-  - Added arrow function extraction (`export const fn = () => ...` and `const fn = async () => ...`) as callable `function` symbols.
-  - Enriched `renderOutline` to format line spans `(lines X-Y)`, allowing agents to pinpoint exact line ranges without reading whole multi-hundred-line files.
-  - Added test suite `test/unit/tools/outline-spans.test.ts`. All tool tests, typecheck, and ESLint passing cleanly.
+- **2026-10-28 (Task 1: Prompt Cache Pinning & Dynamic State Quarantine)**:
+  - Enforced `pinPrefix(req.system)` in Anthropic wire payload generation (`src/providers/anthropic.ts`).
+  - Placed ephemeral dynamic session state (`ctx.volatilePrompt`) at the user prompt suffix.
+  - Verified stable blocks come first with `cacheBreakpoint` exclusively on the last stable block before volatile blocks. PR #357.
+- **2026-10-28 (Task 2: AST & Symbol-Level Outline Reader)**:
+  - Extended symbol extraction in `src/tools/outline.ts` to compute exact line spans (`lines X-Y`) using bracket/indent matchers (`findBraceEndLine`, `findPythonEndLine`).
+  - Added support for top-level `const fn = () =>` / `const fn = function` arrow/anonymous function declarations.
+  - Formatted outline output as `kind name (lines X-Y)`. PR #360.
+- **2026-10-28 (Task 3: Tool Output Compactor & Error-Trace Reducer)**:
+  - Enhanced `src/tools/output-compress.ts` to fold high-volume package manager noise (npm deprecation warnings, audit notices, funding prompts) and build tickers (vite module transformation lines) into clean single-line summaries while guaranteeing that error lines and failure traces are never suppressed.
+  - Stripped git tutorial advice (`use "git add..."`) from command output to free up LLM context space.
+  - Collapsed excessive blank lines.
+  - Added unit test suite in `test/unit/tools/output-compress.test.ts` verifying >50-80% line reduction on noisy failing test runs with 100% assertion and project stack frame retention. PR #367.
