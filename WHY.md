@@ -40,3 +40,10 @@
   - Resolved duplicate assignment in `src/cli/program.ts` and duplicate import in `src/core/supervisor.ts`.
   - Updated [CHANGELOG.md](file:///Users/yaeger/Desktop/omnexx/CHANGELOG.md).
   - All unit tests, typechecks, ESLint, and Prettier checks passing.
+- **2026-10-28 (Task 2 Completed: AST & Symbol-Level Outline Reader)**:
+  - Enhanced `src/tools/outline.ts` with accurate `endLine` boundary calculation:
+    - Balanced curly brace matching for TypeScript, JavaScript, Go, Rust, Java, and C/C++.
+    - Indentation tracking for Python blocks (`def` and `class`).
+  - Added arrow function extraction (`export const fn = () => ...` and `const fn = async () => ...`) as callable `function` symbols.
+  - Enriched `renderOutline` to format line spans `(lines X-Y)`, allowing agents to pinpoint exact line ranges without reading whole multi-hundred-line files.
+  - Added test suite `test/unit/tools/outline-spans.test.ts`. All tool tests, typecheck, and ESLint passing cleanly.
