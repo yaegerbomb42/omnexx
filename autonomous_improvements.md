@@ -130,13 +130,16 @@ Ordered by evidence-per-day. Each phase is shippable on its own.
 
 Without numbers we cannot tell adherence from productive use.
 
-- [ ] Emit one `time.report` event per cycle and at exit: `elapsed_s`, `remaining_s`,
+- [x] Emit one `time.report` event per cycle and at exit: `elapsed_s`, `remaining_s`,
       `task_active_s`, `model_s`, `tool_s`, `overrun_s`, `useful_ops`.
-- [ ] Add a time section to `omnexx usage` (the usage ledger already attributes waste: repeat
+- [x] Add a time section to `omnexx usage` (the usage ledger already attributes waste: repeat
       reads, same-error retries, compactions that did not shrink, resent context — see
-      `docs/usage.md`).
+      `docs/usage.md`). Reads `time.report` events from the run's events file (latest run, or
+      the run id passed as the task argument).
 - [ ] Extend the bench with `on_budget`, `overrun`, `active_ratio` and `useful_ops_per_hour`.
-- [ ] New suite `bench/suites/time/` with the same task at 15 m, 1 h and 4 h budgets.
+      (Types added to `BenchmarkResult`; the omnexx runner still has to populate them from the
+      run's events — follow-up.)
+- [x] New suite `bench/suites/time/` with the same task at 15 m, 1 h and 4 h budgets.
 
 **Accept:** a real 8 h run produces a readable time report; the bench prints on-budget %.
 **Risk:** low. No behaviour change.
@@ -288,6 +291,13 @@ roadmap item only when its acceptance test passes.
   estimator. Surveyed Claude Code, Codex, OpenHands, Devin, Factory, Cursor and the time-budget
   papers. Round 1 conclusion: omnexx already has honest accounting and hard caps; it is missing
   in-loop time feedback, allocation and a landing phase. No measurements taken yet.
+- **2026-10-28 (Phase 0)** — Emitted a `time.report` event per cycle (in `Supervisor.cycle`)
+  and at exit, with elapsed/remaining/task-active/model/tool/overrun/useful-ops fields;
+  accumulators live on `Run` and are fed from `onResponse` and the `tool.call` event. Added a
+  Time section to `omnexx usage` reading `time.report` events from the run's events file. Added
+  `on_budget`/`overrun_ms`/`active_ratio`/`useful_ops_per_hour` to `BenchmarkResult` and a
+  `time` bench suite reusing jimmy10 tasks. The omnexx runner still has to populate the four
+  bench fields — left as a follow-up.
 
 ## 10. References
 
