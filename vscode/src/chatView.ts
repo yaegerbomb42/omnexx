@@ -541,7 +541,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 <footer class="composer">
   <div id="suggest" class="suggest" hidden role="listbox" aria-label="Suggestions"></div>
   <div id="statusline" class="statusline" role="status" aria-label="Session status">
-    <button id="model" class="status-model" data-action="pickModel" title="Chat model: click to switch or add a provider">Pick a model</button>
+    <button id="model" class="status-model" data-action="settingsModels" title="Chat model: click to see your models in Settings">Pick a model</button>
     <span class="sep" aria-hidden="true">·</span>
     <span id="status-tokens" class="status-item" title="Tokens used this session">0 tok</span>
     <span class="sep" aria-hidden="true">·</span>
