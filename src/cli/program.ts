@@ -222,6 +222,10 @@ export function createProgram(
       'autonomous mode: keep improving the repo for this long (e.g. 45m, 8h, 2d)',
     )
     .option(
+      '--beyond <n>',
+      'improvement rounds after the goal is met (default 0; opt in, e.g. --beyond 2)',
+    )
+    .option(
       '--gate <command>',
       'gate command (repeatable)',
       (v: string, prev: string[] | undefined) => [...(prev ?? []), v],

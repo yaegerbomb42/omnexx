@@ -69,3 +69,21 @@ describe('planning flags', () => {
     expect(() => flagsToConfig(flags)).toThrow(message);
   });
 });
+
+describe('run --beyond', () => {
+  it('maps --beyond onto [beyond]', () => {
+    expect(flagsToConfig({ beyond: '2' })).toMatchObject({ beyond: { max_rounds: 2 } });
+    expect(flagsToConfig({ beyond: '0' })).toMatchObject({ beyond: { max_rounds: 0 } });
+    expect(flagsToConfig({})).not.toHaveProperty('beyond');
+  });
+
+  it.each([
+    [{ beyond: '-1' }, /--beyond expects a whole number from 0 to 20/],
+    [{ beyond: '21' }, /--beyond expects a whole number from 0 to 20/],
+    [{ beyond: '2.5' }, /--beyond expects a whole number from 0 to 20/],
+    [{ beyond: 'soon' }, /--beyond expects a whole number from 0 to 20/],
+  ])('rejects %j', (flags, message) => {
+    expect(() => flagsToConfig(flags)).toThrow(UsageError);
+    expect(() => flagsToConfig(flags)).toThrow(message);
+  });
+});
