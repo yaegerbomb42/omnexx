@@ -174,11 +174,11 @@ overhead <1% of tokens.
 
 ### Phase 3 — Land instead of stopping (2–3 days)
 
-- [ ] Replace `inWrapup → finalVerify → budget-stop` with a `landing` phase: finish the current
-      task if it can finish inside the reserve, otherwise checkpoint it, verify the last green
-      state, commit, write the report.
-- [ ] Keep a hard floor (e.g. 2% or 5 minutes) that only final verification may use.
-- [ ] Use the reserve for the report, not for new scope.
+- [x] Replace `inWrapup → finalVerify → budget-stop` with a `landing` phase: enter `landing`
+      and keep going so the in-flight task can finish inside the reserve; verify the last green
+      state, commit, write the report at exit.
+- [x] Keep a hard floor (2% of budget) that stops the run only to leave room for final verify.
+- [x] Use the reserve for the report, not for new scope.
 
 **Accept:** final verification always runs; ≥50% of the reserve is used for landing on tasks that
 need it; no partial commits.
@@ -306,6 +306,9 @@ roadmap item only when its acceptance test passes.
 - **2026-10-28 (Phase 2)** — Enforcement at the action boundary: refuse tools whose declared
   timeout exceeds the time left (with a hint) and refuse any tool start with under a minute left.
   See PR #362.
+- **2026-10-28 (Phase 3)** — Landing instead of stopping: `inWrapup` enters a `landing` phase
+  and keeps going; a 2% hard floor leaves room for final verify, which now runs in the exit path.
+  See PR #363.
 
 ## 10. References
 
