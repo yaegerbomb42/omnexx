@@ -146,7 +146,7 @@ describe('autonomous mode', () => {
     const out = await supervise(t.run.deps, t.run.state.runId, opts);
 
     // Assert
-    expect(out.status).toBe('needs-human');
+    expect(out.status).toBe('blocked');
     expect(out.reason).toMatch(/no accepted commit/);
     const events = await readEvents(t.run.store.eventsPath);
     expect(events.filter((e) => e.type === 'autonomous.recover')).toHaveLength(2);

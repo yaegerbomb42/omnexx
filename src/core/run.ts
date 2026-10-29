@@ -146,7 +146,7 @@ export class Run {
   paused = false;
   /**
    * Set by the supervisor's idle watchdog when no event has arrived for `idleTimeoutMs`.
-   * The next cycle boundary ends the run as needs-human; a pause loop does not reset it.
+   * The next cycle boundary ends the run as blocked; a pause loop does not reset it.
    */
   idleTimedOut = false;
   /** Where commands run. The supervisor swaps in the docker sandbox when sandbox = "docker". */
@@ -156,6 +156,11 @@ export class Run {
   private excludedMs = 0;
   /** Lazy tool discovery: tracks which tool groups are loaded for this session. */
   loadedToolsState: LoadedToolsState | null = null;
+  /** Per-cycle accumulators for the time.report event (reset at cycle start). */
+  cycleModelMs = 0;
+  cycleToolMs = 0;
+  lastCycleModelMs = 0;
+  lastCycleToolMs = 0;
 
   private constructor(
     readonly deps: RunDeps,

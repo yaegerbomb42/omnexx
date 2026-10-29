@@ -73,7 +73,8 @@ export async function recordFinishedRun(
   sample: RunSample,
   status: string,
 ): Promise<void> {
-  if (status === 'user-stop' || status === 'error' || sample.wallMs <= 0) return;
+  if (status === 'user-stop' || status === 'error' || status === 'failed' || sample.wallMs <= 0)
+    return;
   await appendRunSample(runHistoryFile(paths), sample).catch(() => undefined);
 }
 

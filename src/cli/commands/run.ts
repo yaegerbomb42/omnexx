@@ -33,8 +33,12 @@ export interface RunFlags {
   /** Per-task token cap. */
   taskTokens?: string;
   hours?: string;
+  /** Run-level turn cap: stop as expired after this many worker + planner turns. */
+  maxTurns?: string;
   /** Autonomous mode for this long, e.g. "8h" or "2d". */
   for?: string;
+  /** Improvement rounds after the goal is met (default 0; opt in per run). */
+  beyond?: string;
   gate?: string[];
   sandbox?: string;
   modelWorker?: string;
@@ -60,12 +64,32 @@ export function flagsToConfig(f: RunFlags): ConfigInput {
       throw new UsageError(`--${name} expects a positive number, got "${v}"`);
     return n;
   };
+  const posInt = (v: string | undefined, name: string): number | undefined => {
+    const n = num(v, name);
+    if (n !== undefined && !Number.isInteger(n))
+      throw new UsageError(`--${name} expects a whole number, got "${v}"`);
+    return n;
+  };
+  /** --hours accepts bare hours ("0.5", "2") or a duration ("30m", "1h30m"). */
+  const hoursValue = (v: string | undefined): number | undefined => {
+    if (v === undefined) return undefined;
+    let hours: number;
+    try {
+      hours = parseDuration(v) / 3_600_000;
+    } catch {
+      return num(v, 'hours');
+    }
+    if (!Number.isFinite(hours) || hours <= 0)
+      throw new UsageError(`--hours expects a positive number, got "${v}"`);
+    return hours;
+  };
   const auto = autonomousHours(f);
   const budget = {
     max_usd: num(f.budget, 'budget'),
     ...(f.taskBudget ? { task_max_usd: num(f.taskBudget, 'task-budget') } : {}),
     ...(f.taskTokens ? { task_max_tokens: Math.floor(num(f.taskTokens, 'task-tokens') ?? 0) } : {}),
-    max_hours: auto ?? num(f.hours, 'hours'),
+    ...(f.maxTurns ? { max_turns: posInt(f.maxTurns, 'max-turns') } : {}),
+    max_hours: auto ?? hoursValue(f.hours),
     // A day of work is many cycles; the clock is the cap, not the cycle count.
     ...(auto ? { max_cycles: AUTONOMOUS_MAX_CYCLES } : {}),
   };
@@ -87,7 +111,17 @@ export function flagsToConfig(f: RunFlags): ConfigInput {
     ...(f.toolDiscovery ? { tools: { discovery: f.toolDiscovery as 'full' | 'lazy' } } : {}),
     ...planFlags(f),
     ...domainFlag(f),
+    ...beyondFlag(f),
   };
+}
+
+/** `--beyond N` as a [beyond] layer (highest precedence). */
+function beyondFlag(f: RunFlags): ConfigInput {
+  if (f.beyond === undefined) return {};
+  const n = Number(f.beyond);
+  if (!Number.isInteger(n) || n < 0 || n > 20)
+    throw new UsageError(`--beyond expects a whole number from 0 to 20, got "${f.beyond}"`);
+  return { beyond: { max_rounds: n } };
 }
 
 const WORK_DOMAIN_FLAG = ['swe', 'general'] as const;
