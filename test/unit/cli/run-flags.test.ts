@@ -27,6 +27,25 @@ describe('run --for (autonomous mode)', () => {
   });
 });
 
+describe('run --hours and --max-turns (normal-run budgets)', () => {
+  it('accepts bare hours and durations for --hours', () => {
+    expect(flagsToConfig({ hours: '2' }).budget).toMatchObject({ max_hours: 2 });
+    expect(flagsToConfig({ hours: '0.5' }).budget).toMatchObject({ max_hours: 0.5 });
+    expect(flagsToConfig({ hours: '30m' }).budget).toMatchObject({ max_hours: 0.5 });
+    expect(flagsToConfig({ hours: '1h30m' }).budget).toMatchObject({ max_hours: 1.5 });
+  });
+  it('maps --max-turns onto [budget] without autonomous mode', () => {
+    const cfg = flagsToConfig({ maxTurns: '100' });
+    expect(cfg.budget).toMatchObject({ max_turns: 100 });
+    expect(cfg).not.toHaveProperty('autonomous');
+  });
+  it('rejects non-positive and fractional turn caps', () => {
+    expect(() => flagsToConfig({ maxTurns: '0' })).toThrow(UsageError);
+    expect(() => flagsToConfig({ maxTurns: '1.5' })).toThrow(UsageError);
+    expect(() => flagsToConfig({ hours: '0h' })).toThrow(UsageError);
+  });
+});
+
 describe('autonomousFocus', () => {
   it('tries the user areas first, then the rubric, and wraps around', () => {
     const extra = ['docs'];
