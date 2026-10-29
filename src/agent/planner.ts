@@ -72,7 +72,14 @@ export type PlannerMode =
   | { kind: 'expand'; milestoneId: string }
   | { kind: 'replan'; reason: string }
   | { kind: 'split'; taskId: string; reason: string }
-  | { kind: 'beyond'; round: number; maxRounds?: number; focus?: string; evidence?: string; remainingMinutes?: number }
+  | {
+      kind: 'beyond';
+      round: number;
+      maxRounds?: number;
+      focus?: string;
+      evidence?: string;
+      remainingMinutes?: number;
+    }
   | { kind: 'audit'; round: number; gaps: string };
 
 /** The running context belongs to a task's worker cycles; finding integrations to chat and worker turns; the plan is the planner's checklist. */
