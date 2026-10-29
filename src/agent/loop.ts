@@ -957,19 +957,17 @@ export async function runAgentLoop(
           content = `invalid input for ${call.name}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
           isError = true;
         } else {
-          const reminder = deps.deadlineMs
+          const deadlineMs = deps.deadlineMs;
+          const reminder = deadlineMs
             ? setInterval(() => {
                 deps.events.emit('time.reminder', {
                   tool: call.name,
                   elapsed_s: Math.round((deps.clock.now() - toolStart) / 1000),
-                  remaining_s: Math.max(
-                    0,
-                    Math.round((deps.deadlineMs! - deps.clock.now()) / 1000),
-                  ),
+                  remaining_s: Math.max(0, Math.round((deadlineMs - deps.clock.now()) / 1000)),
                 });
               }, 60_000)
             : undefined;
-          if (reminder) reminder.unref?.();
+          if (reminder) reminder.unref();
           const out = await tool.run(parsed.data, deps.toolCtx);
           if (reminder) clearInterval(reminder);
           content = out.content;
