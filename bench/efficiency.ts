@@ -125,7 +125,8 @@ export function timeMetrics(
   | undefined {
   const reports = events.filter((e) => e.type === 'time.report');
   if (!reports.length) return undefined;
-  const last = reports[reports.length - 1]!;
+  const last = reports.at(-1);
+  if (!last) return undefined;
   const elapsedS = num(last.elapsed_s);
   const overrunS = num(last.overrun_s);
   const usefulOps = num(last.useful_ops);

@@ -98,17 +98,20 @@ async function timeSection(
   const events = await readEvents(join(dir, 'events.jsonl'));
   const reports = events.filter((e) => e.type === 'time.report');
   if (!reports.length) return;
-  const last = reports[reports.length - 1]!;
+  const last = reports.at(-1);
+  if (!last) return;
   const d = (last.data ?? {}) as Record<string, unknown>;
+  const fmt = (v: unknown, dflt: string): string =>
+    typeof v === 'number' || typeof v === 'string' ? String(v) : dflt;
   println(io.stdout, '');
   println(io.stdout, pc.bold('Time'));
   println(
     io.stdout,
-    `  elapsed ${String(d.elapsed_s ?? '?')}s · remaining ${String(d.remaining_s ?? '?')}s · overrun ${String(d.overrun_s ?? 0)}s`,
+    `  elapsed ${fmt(d.elapsed_s, '?')}s · remaining ${fmt(d.remaining_s, '?')}s · overrun ${fmt(d.overrun_s, '0')}s`,
   );
   println(
     io.stdout,
-    `  model ${String(d.model_s ?? '?')}s · tools ${String(d.tool_s ?? '?')}s · useful ops ${String(d.useful_ops ?? '?')}`,
+    `  model ${fmt(d.model_s, '?')}s · tools ${fmt(d.tool_s, '?')}s · useful ops ${fmt(d.useful_ops, '?')}`,
   );
   println(io.stdout, pc.dim(`  ${String(reports.length)} time.report events in ${dir}`));
 }
