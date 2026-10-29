@@ -146,6 +146,12 @@ export async function writeReport(
   state: RunState,
   plan: Plan | undefined,
   now: number,
+  budget?: {
+    maxHours: number;
+    maxTurns?: number;
+    maxUsd: number;
+    maxCycles: number;
+  },
 ): Promise<string> {
   const events = await readEvents(store.eventsPath);
   const c = plan ? planCounts(plan) : undefined;
@@ -164,6 +170,11 @@ export async function writeReport(
     `**${state.status}**${state.statusReason ? `: ${state.statusReason}` : ''}`,
     '',
     `Active for ${formatDuration(state.activeMs)} (${formatDuration(now - state.startedAt)} since start), ${state.cycle} cycles: ${state.acceptedCommits} accepted commits, ${state.rejectedCycles} rejected.`,
+    ...(budget
+      ? [
+          `Budget: ${formatDuration(state.activeMs)} of ${formatDuration(budget.maxHours * 3_600_000)} · ${state.spend.turns} turns${budget.maxTurns !== undefined ? ` of ${budget.maxTurns}` : ''} · ${usd(state.spend.usd)} of ${usd(budget.maxUsd)} · ${state.cycle} of ${budget.maxCycles} cycles.`,
+        ]
+      : []),
     c
       ? `Tasks: ${c.done} done, ${c.parked} parked, ${c.todo} open of ${c.tasks}. Milestones: ${c.milestonesDone}/${c.milestones}.`
       : '',
@@ -213,8 +224,13 @@ export async function writeReport(
     ...(parked.length
       ? parked.map((n) => `- ${n.id} ${n.title}: ${n.parkedReason ?? ''}`)
       : ['- Nothing parked.']),
-    ...(state.status === 'needs-human' || state.status === 'stuck'
+    ...(state.status === 'blocked'
       ? [`- The run stopped for you: ${state.statusReason ?? ''}`]
+      : []),
+    ...(state.status === 'expired'
+      ? [
+          `- The run stopped on its budget: ${state.statusReason ?? ''} Raise the budget, then resume with \`omnexx resume ${state.runId}\`.`,
+        ]
       : []),
     ...suggestions(events),
     ...(assumptions.length
@@ -224,6 +240,9 @@ export async function writeReport(
           '',
           ...assumptions.map((a) => `- ${a}`),
         ]
+      : []),
+    ...(state.status === 'stuck'
+      ? [`- The run stopped for you: ${state.statusReason ?? ''}`]
       : []),
     '',
     `## ${REPORT_SECTIONS[7]}`,

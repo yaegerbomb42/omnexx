@@ -78,16 +78,17 @@ The container runs as your uid/gid with `--cap-drop ALL`, `no-new-privileges`, a
 
 | Key                    | Default  | Meaning                                                                                                                                                                                                                                     |
 | ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `max_usd`              | `50`     | Run total. The pre-flight check before every call keeps spend under it. Hitting it → `budget-stop` (exit 3), resumable after raising it.                                                                                                    |
+| `max_usd`              | `50`     | Run total. The pre-flight check before every call keeps spend under it. Hitting it → `expired` (exit 3), resumable after raising it.                                                                                                        |
 | `max_usd_per_day`      | `50`     | Rolling 24 h cap. Each call is pre-flighted against it; at 90%, or when a call is refused, the run pauses (status `paused`, ntfy `budget`) until half the cap is free, then resumes on its own. The wait does not count toward `max_hours`. |
-| `max_hours`            | `24`     | Active wall-clock across restarts.                                                                                                                                                                                                          |
+| `max_hours`            | `24`     | Active wall-clock across restarts. Flag: `--hours` (bare hours or a duration, e.g. `30m`). Hitting it → `expired` (exit 3).                                                                                                                 |
 | `max_cycles`           | `300`    |                                                                                                                                                                                                                                             |
+| `max_turns`            | unset    | Run-level turn cap (worker + planner turns). Flag: `--max-turns`. Hitting it → `expired` (exit 3), resumable after raising it.                                                                                                              |
 | `max_turns_per_cycle`  | `40`     |                                                                                                                                                                                                                                             |
 | `max_tokens_per_cycle` | `400000` | Input + output of every call in a cycle, before cache discounts.                                                                                                                                                                            |
-| `task_max_tokens`      | unset    | Per-task input + output. The pre-flight check parks the task (checkpoint to `checkpoints/task-*.json`, `budget-stop`) before it can cross 100%; warns once at `warn_at`.                                                                    |
+| `task_max_tokens`      | unset    | Per-task input + output. The pre-flight check parks the task (checkpoint to `checkpoints/task-*.json`, `expired`) before it can cross 100%; warns once at `warn_at`.                                                                        |
 | `task_max_usd`         | unset    | Per-task dollars, same parking path. Kept separate from `max_usd` so one runaway task cannot drain a healthy run's budget.                                                                                                                  |
 | `max_cmd_timeout`      | `"30m"`  | Upper bound for every gate, check and `bash` call.                                                                                                                                                                                          |
-| `warn_at`              | `0.8`    | ntfy `budget` warning at this fraction of the tightest of USD / hours / cycles.                                                                                                                                                             |
+| `warn_at`              | `0.8`    | ntfy `budget` warning at this fraction of the tightest of USD / hours / cycles / turns.                                                                                                                                                     |
 | `wrapup_reserve`       | `0.08`   | In the last 8%: no new task, verify `lastGreen`, report, stop. `0` disables.                                                                                                                                                                |
 
 ## `[models]` and `[pricing.<alias>]`
@@ -216,17 +217,17 @@ Pushes carry only the run id, repo name, status, a task title, counts and dollar
 
 ## `[stuck]`
 
-| Key                          | Default | Meaning                                                                                                                   |
-| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `max_consecutive_rejections` | `3`     | Same task rejected N times in a row                                                                                       |
-| `max_same_signature`         | `3`     | Same normalized failure N times for a task                                                                                |
-| `max_task_cycles`            | `8`     | Cycles spent on one task without finishing it                                                                             |
-| `no_progress_cycles`         | `12`    | Run-level: no accepted commit in N cycles → `needs-human`                                                                 |
-| `no_progress_hours`          | `3`     | Same, by time                                                                                                             |
-| `oscillation_window`         | `5`     | How many earlier green commits the A→B→A check looks back                                                                 |
-| `repeated_tool_call`         | `3`     | In-cycle: the same tool call with identical arguments this many times ends the cycle                                      |
-| `no_edit_turns`              | `15`    | In-cycle: this many turns since the last file edit (or cycle start) ends the cycle                                        |
-| `burn_factor`                | `3`     | In-cycle: tokens above this × the median of recent cycles, before any edit, end the cycle (needs 3 cycles of history)     |
+| Key                          | Default | Meaning                                                                                                               |
+| ---------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
+| `max_consecutive_rejections` | `3`     | Same task rejected N times in a row                                                                                   |
+| `max_same_signature`         | `3`     | Same normalized failure N times for a task                                                                            |
+| `max_task_cycles`            | `8`     | Cycles spent on one task without finishing it                                                                         |
+| `no_progress_cycles`         | `12`    | Run-level: no accepted commit in N cycles → `blocked`                                                                 |
+| `no_progress_hours`          | `3`     | Same, by time                                                                                                         |
+| `oscillation_window`         | `5`     | How many earlier green commits the A→B→A check looks back                                                             |
+| `repeated_tool_call`         | `3`     | In-cycle: the same tool call with identical arguments this many times ends the cycle                                  |
+| `no_edit_turns`              | `15`    | In-cycle: this many turns since the last file edit (or cycle start) ends the cycle                                    |
+| `burn_factor`                | `3`     | In-cycle: tokens above this × the median of recent cycles, before any edit, end the cycle (needs 3 cycles of history) |
 | `max_idle_cycles`            | `3`     | Run-level: this many consecutive cycles rejected with no diff, no budget cut, and no failing check end the run as `stuck` |
 
 An in-cycle signal ends the cycle as `stuck` (events `stuck.in_cycle`, then `stuck.signal`). Its partial work still goes through VERIFY, so it's committed if the gates pass and rolled back otherwise; the next attempt gets the reason as evidence, and the strategy ladder climbs one rung.

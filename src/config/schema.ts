@@ -73,6 +73,8 @@ export const budgetSchema = z.strictObject({
   max_hours: z.number().positive().default(24),
   max_cycles: z.number().int().positive().default(300),
   max_turns_per_cycle: z.number().int().positive().default(40),
+  /** Run-level turn cap: unset means no cap. Hitting it ends the run as expired. */
+  max_turns: z.number().int().positive().optional(),
   max_tokens_per_cycle: z.number().int().positive().default(400_000),
   /**
    * Per-task caps on top of the run-level budget. A single runaway task is parked (checkpointed

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AnthropicProvider } from '../../../src/providers/anthropic.js';
 import {
   cacheKeyFor,
   lastStableIndex,
@@ -10,7 +11,7 @@ import {
   stableBlocks,
   volatileBlocks,
 } from '../../../src/providers/cache-pinning.js';
-import type { SystemBlock, ToolSpec } from '../../../src/providers/types.js';
+import type { CompletionRequest, SystemBlock, ToolSpec } from '../../../src/providers/types.js';
 
 const SYSTEM: SystemBlock[] = [
   { text: 'You are a helpful assistant.', volatile: false },
@@ -126,5 +127,48 @@ describe('cache pinning', () => {
     expect(a).toBe('omnexx-run-1-abcdef0123456789');
     // The same inputs give the same key.
     expect(cacheKeyFor('run-1', 'abcdef0123456789')).toBe(a);
+  });
+
+  it('guarantees AnthropicProvider builds params with stable blocks first and breakpoint on last stable', () => {
+    const provider = new AnthropicProvider({
+      apiKey: 'k',
+      cacheTtl: '5m',
+      prefixTtl: '1h',
+      timeoutMs: 1000,
+    });
+    // Volatile block intentionally placed before a stable block:
+    const mixedSystem: SystemBlock[] = [
+      { text: 'Dynamic Goal', volatile: true },
+      { text: 'Core System Instructions', volatile: false },
+      { text: 'Dynamic Notes', volatile: true },
+      { text: 'Immutable Formatting Rules', volatile: false },
+      { text: 'Cycle 3 State', volatile: true },
+    ];
+    const dummyReq: CompletionRequest = {
+      model: 'claude-sonnet-5-5',
+      system: mixedSystem,
+      tools: TOOLS,
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      maxTokens: 100,
+      messageBreakpoints: [],
+    };
+    const params = provider.buildParams(dummyReq);
+    const system = params.system as { text: string; cache_control?: { ttl?: string } }[];
+
+    // Expect stable blocks placed first
+    expect(system.map((s) => s.text)).toEqual([
+      'Core System Instructions',
+      'Immutable Formatting Rules',
+      'Dynamic Goal',
+      'Dynamic Notes',
+      'Cycle 3 State',
+    ]);
+
+    // Breakpoint must be exclusively on the last stable block (index 1)
+    expect(system[0]?.cache_control).toBeUndefined();
+    expect(system[1]?.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+    expect(system[2]?.cache_control).toBeUndefined();
+    expect(system[3]?.cache_control).toBeUndefined();
+    expect(system[4]?.cache_control).toBeUndefined();
   });
 });
