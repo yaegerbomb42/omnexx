@@ -32,6 +32,117 @@
   --sec: var(--vscode-descriptionForeground, #9d9d9d);
 }
 
+/* The sticky header holds the page title and the tab bar. */
+.settings .set-top {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  margin: 0 -12px 14px;
+  padding: 8px 12px 0;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--vscode-contrastBorder, var(--glass-border));
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.12);
+}
+
+.settings .set-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+}
+
+.settings .set-head h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  letter-spacing: -0.01em;
+}
+
+.set-tabbar {
+  display: flex;
+  gap: 4px;
+  margin: 0 -4px;
+  padding: 0 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.set-tab {
+  --sec: var(--vscode-textLink-foreground, var(--accent));
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 8px 10px 7px;
+  border: 1px solid var(--vscode-contrastBorder, transparent);
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-md, 6px) var(--radius-md, 6px) 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.set-tab[data-settings-tab='providers'] {
+  --sec: var(--vscode-charts-blue, #3794ff);
+}
+
+.set-tab[data-settings-tab='agent'] {
+  --sec: var(--vscode-charts-purple, #b180d7);
+}
+
+.set-tab[data-settings-tab='tools'] {
+  --sec: var(--vscode-charts-red, #f14c4c);
+}
+
+.set-tab[data-settings-tab='appearance'] {
+  --sec: var(--vscode-terminal-ansiCyan, #29b8db);
+}
+
+.set-tab[data-settings-tab='advanced'] {
+  --sec: var(--vscode-descriptionForeground, #9d9d9d);
+}
+
+.set-tab:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--sec) 10%, transparent);
+}
+
+.set-tab:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+  color: var(--fg);
+}
+
+.set-tab[aria-selected='true'] {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--sec) 14%, transparent);
+  border-bottom-color: var(--sec);
+}
+
+.set-tab .sec-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--sec);
+}
+
+.set-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.set-panel:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
 .set-nav {
   position: sticky;
   top: 0;
@@ -79,13 +190,13 @@
 }
 
 .settings .set-section {
-  scroll-margin-top: 64px;
+  scroll-margin-top: 104px;
   background: var(--glass-card);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
+  border: 1px solid var(--vscode-contrastBorder, var(--glass-border));
   border-radius: var(--radius-md, 8px);
-  margin-bottom: 12px;
+  margin-bottom: 0;
   box-shadow:
     var(--glass-highlight),
     0 2px 8px rgba(0, 0, 0, 0.08);
@@ -102,6 +213,89 @@
 .settings .set-section[data-sec] {
   gap: 0;
   padding: 0;
+}
+
+/* Cards that are not one of the foldable sections (work modes, theme, placeholder). */
+.settings .set-card .sec-head.static {
+  cursor: default;
+}
+
+.settings .set-card .sec-head.static:hover {
+  background: color-mix(in srgb, var(--sec, var(--surface)) 8%, transparent);
+}
+
+.settings .set-placeholder {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+
+.soon-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground) 55%, transparent);
+  border-radius: var(--radius-full);
+  color: var(--vscode-editorWarning-foreground);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+.placeholder-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.placeholder-row .hint {
+  flex: 1;
+  margin: 0;
+}
+
+.soon-switch {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  width: 34px;
+  height: 18px;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.soon-switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+}
+
+.soon-switch > span {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border: 1px solid var(--vscode-contrastBorder, var(--line));
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+}
+
+.soon-switch > span::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground, var(--muted));
+}
+
+.soon-switch input:disabled + span {
+  filter: grayscale(1);
 }
 
 .sec-head {
@@ -1504,5 +1698,27 @@
   .sec-chev,
   .sec-saved {
     transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .settings .set-top,
+  .settings .set-section,
+  .settings .set-card,
+  .settings .set-placeholder,
+  .set-tab,
+  .soon-switch > span {
+    border-color: var(--vscode-contrastBorder, ButtonText);
+  }
+
+  .set-tab[aria-selected='true'] {
+    border-bottom-color: Highlight;
+  }
+
+  .set-tab:focus-visible,
+  .set-panel:focus-visible,
+  .sec-head:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
   }
 }

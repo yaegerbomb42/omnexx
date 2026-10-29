@@ -963,6 +963,11 @@ settings.useFoldStore({
     const prev = vscode.getState();
     vscode.setState({ ...(typeof prev === 'object' && prev ? prev : {}), folded });
   },
+  getTab: () => (vscode.getState() as { tab?: unknown } | undefined)?.tab,
+  setTab: (tab) => {
+    const prev = vscode.getState();
+    vscode.setState({ ...(typeof prev === 'object' && prev ? prev : {}), tab });
+  },
 });
 settings.wire(post);
 agentCard.wire(post);

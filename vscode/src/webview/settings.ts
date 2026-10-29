@@ -1,7 +1,7 @@
 /**
- * The settings page inside the chat panel (the gear): the chat model, connected providers, a form
- * to add one, the approval default, the agent's browser, and advanced links. Data comes from `omnexx chat-server`
- * (`settings`, `models`) through the extension; keys arrive masked and are sent once, on save.
+ * The tabbed settings page inside the chat panel (the gear): providers and models, the agent,
+ * tools, appearance and advanced links. Data comes from `omnexx chat-server` (`settings`,
+ * `models`) through the extension; keys arrive masked and are sent once, on save.
  */
 import * as modelPicker from './modelPicker.js';
 import * as roles from './roles.js';
@@ -17,7 +17,7 @@ import { escapeHtml } from './render.js';
 import * as providerForm from './providerForm.js';
 import * as layout from './settingsLayout.js';
 import { flashSaved } from './savedMark.js';
-import type { SectionId } from './settingsLayout.js';
+import type { SectionId, TabId } from './settingsLayout.js';
 
 export interface CatalogProvider {
   name: string;
@@ -210,20 +210,28 @@ function tilesHtml(): string {
   return `${hosted.length ? `<div class="t-group">Hosted</div><div class="tiles">${hosted.map((c) => tile(c.name, c.label, c.fields?.length ? 'needs setup' : c.freeTier ? 'free tier' : c.keyPrefix ? `${c.keyPrefix}…` : 'API key')).join('')}</div>${more}` : ''}${local.length ? `<div class="t-group">On your machine</div><div class="tiles">${local.map((c) => tile(c.name, c.label, 'no key')).join('')}</div>` : ''}${custom ? `<div class="t-group">Other</div><div class="tiles">${tile(CUSTOM, 'Custom endpoint', 'OpenAI / Anthropic API')}</div>` : ''}${!hosted.length && !local.length && !custom ? '<p class="hint">No provider matches.</p>' : ''}`;
 }
 
-/** Where the folded sections are remembered (the webview's state; tests and first run: memory). */
+/**
+ * Where the folded sections and the open tab are remembered (the webview's state; tests and
+ * first run: memory). `getTab`/`setTab` are optional so an older store still works.
+ */
 export interface FoldStore {
   get: () => unknown;
   set: (folded: SectionId[]) => void;
+  getTab?: () => unknown;
+  setTab?: (tab: TabId) => void;
 }
 
 let folded: SectionId[] = [...layout.FOLDED_BY_DEFAULT];
 let foldStore: FoldStore | undefined;
+let tab: TabId = layout.TABS[0]?.id ?? 'providers';
 
-/** Use the webview's saved state for which sections are folded. */
+/** Use the webview's saved state for which sections are folded and which tab is open. */
 export function useFoldStore(store: FoldStore): void {
   foldStore = store;
   const saved = store.get();
   if (Array.isArray(saved)) folded = saved.filter(layout.isSectionId);
+  const savedTab = store.getTab?.();
+  if (layout.isTabId(savedTab)) tab = savedTab;
 }
 
 function setFolded(id: SectionId, fold: boolean): void {
@@ -236,8 +244,32 @@ function setFolded(id: SectionId, fold: boolean): void {
   if (body) body.hidden = fold;
 }
 
-/** A nav chip: unfold its section and bring it into view. */
+/** Paint the tab state already in `tab` without writing it back to the store. */
+function paintTab(focus = false): void {
+  document.querySelectorAll<HTMLElement>('[role="tab"][data-settings-tab]').forEach((el) => {
+    const active = el.dataset.settingsTab === tab;
+    el.classList.toggle('on', active);
+    el.setAttribute('aria-selected', String(active));
+    el.tabIndex = active ? 0 : -1;
+  });
+  document.querySelectorAll<HTMLElement>('[data-settings-panel]').forEach((el) => {
+    const active = el.dataset.settingsPanel === tab;
+    el.classList.toggle('active', active);
+    el.hidden = !active;
+  });
+  if (focus) document.getElementById(`set-tab-${tab}`)?.focus();
+}
+
+/** Switch tabs, remember the choice, and optionally move keyboard focus to the new tab. */
+function selectTab(id: TabId, focus = false): void {
+  tab = id;
+  foldStore?.setTab?.(id);
+  paintTab(focus);
+}
+
+/** A nav chip: switch to its tab, unfold its section and bring it into view. */
 function jumpTo(id: SectionId): void {
+  selectTab(layout.tabForSection(id));
   setFolded(id, false);
   document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -266,14 +298,30 @@ function approvalsHtml(): string {
 
 function advancedHtml(): string {
   return `<div class="advanced-modes"><div class="posture-title">Experimental modes</div>
-<p class="hint">Work mode and execution posture live here, out of the way: they only appear in the chat header when experimental mode is on (<code>--experimental</code>, or <code>experimental = true</code> in config.toml).</p>
-${posture.cardHtml()}${domain.cardHtml()}</div>
+<p class="hint">Work mode and execution posture live in the Agent tab, out of the way: they only appear in the chat header when experimental mode is on (<code>--experimental</code>, or <code>experimental = true</code> in config.toml).</p>
+<button class="ghost small" data-goto-tab="agent">Open work modes</button></div>
 <div id="engine-box" class="engine">${engineHtml()}</div>
   <div class="links">
     <button class="ghost" data-action-ext="editToml">Edit project settings (omnexx.toml)</button>
     <button class="ghost" data-action-ext="editUserConfig">Edit user settings (config.toml)</button>
     <button class="ghost" data-action-ext="restart">Restart omnexx</button>
   </div>`;
+}
+
+function workModesHtml(): string {
+  return `<p class="hint">Experimental mode only adds these to the chat header.</p>${posture.cardHtml()}${domain.cardHtml()}`;
+}
+
+function appearanceHtml(): string {
+  return `<p class="hint">omnexx follows your VS Code color theme, including high-contrast themes. There are no separate display preferences to set here.</p>
+<p class="hint">The chat header and this page use theme variables, so contrast, fonts, and zoom stay consistent with the rest of the editor.</p>`;
+}
+
+function comingSoonHtml(): string {
+  return `<section class="set-section set-placeholder" id="sec-discovery" aria-labelledby="sec-discovery-title">
+<div class="sec-head static"><span class="sec-titles"><span class="sec-title" id="sec-discovery-title">Tool discovery mode <span class="soon-badge">Coming soon</span></span><span class="sec-sub">Let omnexx search for a useful tool when the current tools do not cover a task.</span></span></div>
+<div class="sec-body"><div class="placeholder-row"><span class="hint">Not available yet. The switch is disabled until discovery lands.</span><label class="soon-switch" title="Tool discovery mode is coming soon"><input type="checkbox" role="switch" aria-label="Tool discovery mode (coming soon)" disabled><span aria-hidden="true"></span></label></div></div>
+</section>`;
 }
 
 function shortcutsHtml(): string {
@@ -297,20 +345,41 @@ function shortcutsHtml(): string {
 
 function draw(): void {
   const page = q('settings', HTMLElement);
+  const panel = (id: TabId, body: string): string => layout.tabPanelHtml(id, body, tab === id);
   page.innerHTML = `
-<div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
-${layout.navHtml()}
-${sec('agent', `<div id="agent-box">${agentCard.html()}</div><div id="token-budget">${stats.tokenBudgetHtml()}</div><div id="live-stats">${stats.liveStatsHtml()}</div>`)}
-${sec('model', modelFieldHtml())}
-${sec('models', `<div id="roles-box">${roles.html()}</div>`)}
-${sec('skills', `<div id="skills-box">${skills.html()}</div>`)}
+<div class="set-top">
+  <div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
+  ${layout.tabsHtml(tab)}
+</div>
+<div class="set-panels">
+${panel(
+  'providers',
+  `${sec('model', modelFieldHtml())}
 ${sec('providers', connectedHtml())}
-${sec('add', addFormHtml(), 'add')}
+${sec('add', addFormHtml(), 'add')}`,
+)}
+${panel(
+  'agent',
+  `${sec('agent', `<div id="agent-box">${agentCard.html()}</div><div id="token-budget">${stats.tokenBudgetHtml()}</div><div id="live-stats">${stats.liveStatsHtml()}</div>`)}
+${sec('models', `<div id="roles-box">${roles.html()}</div>`)}
 ${sec('approvals', approvalsHtml())}
-${sec('mcp', `<div id="mcp-box">${mcp.html()}</div>`)}
+${layout.cardHtml('Work modes', 'How much autonomy a run has and what kind of work it does.', workModesHtml())}`,
+)}
+${panel(
+  'tools',
+  `${sec('mcp', `<div id="mcp-box">${mcp.html()}</div>`)}
+${sec('skills', `<div id="skills-box">${skills.html()}</div>`)}
 ${sec('browser', `<div id="browser-box">${browserHtml()}</div>`)}
-${sec('advanced', advancedHtml())}
-${sec('shortcuts', shortcutsHtml())}`;
+${comingSoonHtml()}`,
+)}
+${panel(
+  'appearance',
+  `${layout.cardHtml('Theme', 'omnexx follows your VS Code color theme, including high contrast.', appearanceHtml())}
+${sec('shortcuts', shortcutsHtml())}`,
+)}
+${panel('advanced', sec('advanced', advancedHtml()))}
+</div>`;
+  paintTab();
   posture.render();
   domain.render();
   stats.refresh();
@@ -567,6 +636,16 @@ export function wire(post: Post): void {
     if (roles.click(t, post)) return;
     if (mcp.click(t, post)) return;
     if (skills.click(t, post)) return;
+    const tabId = t.closest<HTMLElement>('[data-settings-tab]')?.dataset.settingsTab;
+    if (layout.isTabId(tabId)) {
+      selectTab(tabId);
+      return;
+    }
+    const gotoId = t.closest<HTMLElement>('[data-goto-tab]')?.dataset.gotoTab;
+    if (layout.isTabId(gotoId)) {
+      selectTab(gotoId, true);
+      return;
+    }
     const jump = t.closest<HTMLElement>('[data-sec-jump]')?.dataset.secJump;
     if (layout.isSectionId(jump)) {
       jumpTo(jump);
@@ -663,6 +742,17 @@ export function wire(post: Post): void {
     if (e.target instanceof Element && e.target.closest('#browser-box')) saveBrowser(post, {});
   });
   page.addEventListener('keydown', (e) => {
+    const tabEl =
+      e.target instanceof Element ? e.target.closest<HTMLElement>('[role="tab"]') : null;
+    const currentTab = tabEl?.dataset.settingsTab;
+    if (layout.isTabId(currentTab)) {
+      const next = layout.nextTabFor(currentTab, e.key);
+      if (next) {
+        e.preventDefault();
+        selectTab(next, true);
+        return;
+      }
+    }
     if (mcp.keydown(e, post)) return;
     if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
       if (e.target.closest('#browser-box')) e.target.blur();
