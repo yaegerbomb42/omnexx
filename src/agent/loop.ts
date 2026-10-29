@@ -233,6 +233,8 @@ export interface LoopDeps {
     onOutage?: (ms: number) => void;
   };
   signal?: AbortSignal;
+  /** Run deadline in ms (wall clock active); used to annotate tool results with time left. */
+  deadlineMs?: number;
   /** A model request is about to go out (for "waiting on the model" estimates). */
   onRequest?: (r: { model: string; inputTokens: number }) => void;
   /** A model request answered, after `ms`. */
@@ -955,7 +957,19 @@ export async function runAgentLoop(
           content = `invalid input for ${call.name}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
           isError = true;
         } else {
+          const deadlineMs = deps.deadlineMs;
+          const reminder = deadlineMs
+            ? setInterval(() => {
+                deps.events.emit('time.reminder', {
+                  tool: call.name,
+                  elapsed_s: Math.round((deps.clock.now() - toolStart) / 1000),
+                  remaining_s: Math.max(0, Math.round((deadlineMs - deps.clock.now()) / 1000)),
+                });
+              }, 60_000)
+            : undefined;
+          if (reminder) reminder.unref();
           const out = await tool.run(parsed.data, deps.toolCtx);
+          if (reminder) clearInterval(reminder);
           content = out.content;
           isError = out.isError === true;
           miss = out.miss === true;
@@ -964,6 +978,13 @@ export async function runAgentLoop(
         }
       }
       content = deps.toolCtx.redactor.text(content);
+      if (deps.deadlineMs) {
+        const toolMs = deps.clock.now() - toolStart;
+        const remainingMs = Math.max(0, deps.deadlineMs - deps.clock.now());
+        const fmt = (ms: number): string =>
+          ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `${Math.round(ms / 1000)}s`;
+        content += `\n\n(${fmt(toolMs)}; ${fmt(remainingMs)} left)`;
+      }
       deps.events.emit('tool.call', {
         tool: call.name,
         input: summarizeInput(call.input),

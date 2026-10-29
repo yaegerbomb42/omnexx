@@ -156,6 +156,8 @@ export class Run {
   /** Per-cycle accumulators for the time.report event (reset at cycle start). */
   cycleModelMs = 0;
   cycleToolMs = 0;
+  lastCycleModelMs = 0;
+  lastCycleToolMs = 0;
 
   private constructor(
     readonly deps: RunDeps,
