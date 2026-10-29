@@ -197,9 +197,7 @@
   border: 1px solid var(--vscode-contrastBorder, var(--glass-border));
   border-radius: var(--radius-md, 8px);
   margin-bottom: 0;
-  box-shadow:
-    var(--glass-highlight),
-    var(--shadow-sm);
+  box-shadow: var(--glass-highlight), var(--shadow-sm);
   overflow: hidden;
   transition:
     border-color var(--dur-base) var(--ease),
@@ -210,9 +208,7 @@
 .settings .set-section:hover {
   border-color: color-mix(in srgb, var(--sec, var(--line)) 45%, transparent);
   transform: translateY(-1px);
-  box-shadow:
-    var(--glass-highlight),
-    var(--shadow-md);
+  box-shadow: var(--glass-highlight), var(--shadow-md);
 }
 
 .settings .set-section[data-sec] {

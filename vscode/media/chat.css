@@ -92,15 +92,9 @@
     0 12px 32px color-mix(in srgb, var(--accent) 10%, transparent);
   /* Multi-layer elevation: ambient (tight, dark) + key light (wide, soft).
      Use --shadow-sm for rows, --shadow-md for cards, --shadow-lg for popovers. */
-  --shadow-sm:
-    0 1px 2px rgb(0 0 0 / 12%),
-    0 1px 3px rgb(0 0 0 / 8%);
-  --shadow-md:
-    0 2px 6px rgb(0 0 0 / 14%),
-    0 8px 20px rgb(0 0 0 / 10%);
-  --shadow-lg:
-    0 4px 12px rgb(0 0 0 / 16%),
-    0 16px 40px rgb(0 0 0 / 14%);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 12%), 0 1px 3px rgb(0 0 0 / 8%);
+  --shadow-md: 0 2px 6px rgb(0 0 0 / 14%), 0 8px 20px rgb(0 0 0 / 10%);
+  --shadow-lg: 0 4px 12px rgb(0 0 0 / 16%), 0 16px 40px rgb(0 0 0 / 14%);
   /* Subtle film grain for large glass surfaces (composer, model picker). The
      tile is near-invisible by design — texture, not a pattern. */
   --glass-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
@@ -115,10 +109,7 @@
     color-mix(in srgb, var(--surface) 86%, transparent)
   );
   --bento-border: color-mix(in srgb, var(--fg) 13%, transparent);
-  --bento-shadow:
-    0 1px 2px rgb(3 7 18 / 18%),
-    0 6px 16px rgb(3 7 18 / 16%),
-    var(--glass-highlight);
+  --bento-shadow: 0 1px 2px rgb(3 7 18 / 18%), 0 6px 16px rgb(3 7 18 / 16%), var(--glass-highlight);
   /* Execution posture gradients (active pill segments) and their glow colors. */
   --grad-efficient: linear-gradient(92deg, #2b6cb8, #4aa3e0);
   --grad-normal: linear-gradient(92deg, #5b21b6, #8b5cf6);
