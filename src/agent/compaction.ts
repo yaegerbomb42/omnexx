@@ -296,11 +296,7 @@ interface OrderEntry {
  * passed. Deterministic and free; the call and its result stay paired, so every provider accepts
  * the history. Returns new messages.
  */
-export function pruneSuperseded(messages: readonly Message[]): {
-  messages: Message[];
-  pruned: number;
-  chars: number;
-} {
+function collectCalls(messages: readonly Message[]): Map<string, CallInfo> {
   const calls = new Map<string, CallInfo>();
   for (const m of messages)
     for (const b of m.content)
@@ -312,7 +308,10 @@ export function pruneSuperseded(messages: readonly Message[]): {
               ? (b.input as Record<string, unknown>)
               : {},
         });
+  return calls;
+}
 
+function collectOrder(messages: readonly Message[], calls: Map<string, CallInfo>): OrderEntry[] {
   const order: OrderEntry[] = [];
   messages.forEach((m, i) => {
     m.content.forEach((b, j) => {
@@ -328,51 +327,47 @@ export function pruneSuperseded(messages: readonly Message[]): {
       });
     });
   });
+  return order;
+}
 
-  const keyAt = (at: [number, number]) => `${at[0]}|${at[1]}`;
-  const stubs = new Map<string, string>();
-  let chars = 0;
+function readReason(r: OrderEntry, later: readonly OrderEntry[]): string | undefined {
+  if (later.some((l) => l.call.name === 'read' && covers(l.call.input, r.call.input)))
+    return `${String(field(r.call.input, 'path'))} was read again later`;
+  if (readSupersededByEditThenRead(field(r.call.input, 'path'), later))
+    return `${String(field(r.call.input, 'path'))} was edited and read again later`;
+  return undefined;
+}
 
-  order.forEach((r, k) => {
-    if (r.done || r.size < MIN_SUPERSEDE_CHARS) return;
-    const later = order.slice(k + 1);
-    let why: string | undefined;
+function bashReason(r: OrderEntry, later: readonly OrderEntry[]): string | undefined {
+  const command = field(r.call.input, 'command');
+  if (typeof command !== 'string') return undefined;
+  const reruns = later.filter(
+    (l) => l.call.name === 'bash' && normCmdEq(field(l.call.input, 'command'), command),
+  );
+  if (!reruns.length) return undefined;
+  const shown = clip(command, 60);
+  if (r.isError && reruns.some((l) => !l.isError))
+    return `\`${shown}\` failed here and passed later`;
+  return `\`${shown}\` ${r.isError ? 'failed' : 'passed'} here and ran again later`;
+}
 
-    if (r.call.name === 'read') {
-      if (later.some((l) => l.call.name === 'read' && covers(l.call.input, r.call.input)))
-        why = `${String(field(r.call.input, 'path'))} was read again later`;
-      else if (readSupersededByEditThenRead(field(r.call.input, 'path'), later))
-        why = `${String(field(r.call.input, 'path'))} was edited and read again later`;
-    } else if (r.call.name === 'bash') {
-      const command = field(r.call.input, 'command');
-      if (typeof command === 'string') {
-        const reruns = later.filter(
-          (l) => l.call.name === 'bash' && normCmdEq(field(l.call.input, 'command'), command),
-        );
-        if (reruns.length) {
-          const shown = clip(command, 60);
-          if (r.isError && reruns.some((l) => !l.isError))
-            why = `\`${shown}\` failed here and passed later`;
-          else why = `\`${shown}\` ${r.isError ? 'failed' : 'passed'} here and ran again later`;
-        }
-      }
-    } else if (r.call.name === 'grep' || r.call.name === 'glob') {
-      if (
-        later.some(
-          (l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input),
-        )
-      )
-        why = `later identical ${r.call.name}`;
-    }
+function searchReason(r: OrderEntry, later: readonly OrderEntry[]): string | undefined {
+  return later.some(
+    (l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input),
+  )
+    ? `later identical ${r.call.name}`
+    : undefined;
+}
 
-    if (!why) return;
-    stubs.set(keyAt(r.at), `${SUPERSEDED_PREFIX} ${why}]`);
-    chars += r.size;
-  });
+function supersededReason(r: OrderEntry, later: readonly OrderEntry[]): string | undefined {
+  if (r.call.name === 'read') return readReason(r, later);
+  if (r.call.name === 'bash') return bashReason(r, later);
+  if (r.call.name === 'grep' || r.call.name === 'glob') return searchReason(r, later);
+  return undefined;
+}
 
-  if (!stubs.size) return { messages: [...messages], pruned: 0, chars: 0 };
-
-  const out = messages.map((m, i) => {
+function applyStubs(messages: readonly Message[], stubs: Map<string, string>): Message[] {
+  return messages.map((m, i) => {
     if (!m.content.some((_, j) => stubs.has(`${i}|${j}`))) return m;
     return {
       ...m,
@@ -382,8 +377,27 @@ export function pruneSuperseded(messages: readonly Message[]): {
       }),
     };
   });
+}
 
-  return { messages: out, pruned: stubs.size, chars };
+export function pruneSuperseded(messages: readonly Message[]): {
+  messages: Message[];
+  pruned: number;
+  chars: number;
+} {
+  const order = collectOrder(messages, collectCalls(messages));
+  const stubs = new Map<string, string>();
+  let chars = 0;
+
+  order.forEach((r, k) => {
+    if (r.done || r.size < MIN_SUPERSEDE_CHARS) return;
+    const why = supersededReason(r, order.slice(k + 1));
+    if (!why) return;
+    stubs.set(`${r.at[0]}|${r.at[1]}`, `${SUPERSEDED_PREFIX} ${why}]`);
+    chars += r.size;
+  });
+
+  if (!stubs.size) return { messages: [...messages], pruned: 0, chars: 0 };
+  return { messages: applyStubs(messages, stubs), pruned: stubs.size, chars };
 }
 /**
  * Split after the first message into the part to summarize and the recent tail to keep. The tail
