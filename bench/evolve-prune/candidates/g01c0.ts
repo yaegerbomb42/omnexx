@@ -33,9 +33,7 @@ function supersededBy(
 ): string | undefined {
   if (
     call.name === 'read' &&
-    later.some(
-      (l) => l.call.name === 'read' && covers(l.call.input, call.input),
-    )
+    later.some((l) => l.call.name === 'read' && covers(l.call.input, call.input))
   )
     return `${String(field(call.input, 'path'))} was read again later`;
   const command = field(call.input, 'command');
@@ -45,8 +43,7 @@ function supersededBy(
   );
   if (!reruns.length) return undefined;
   const shown = clip(command, 120);
-  if (isError && reruns.some((l) => !l.isError))
-    return `\`${shown}\` failed then passed later`;
+  if (isError && reruns.some((l) => !l.isError)) return `\`${shown}\` failed then passed later`;
   return `\`${shown}\` ran again later`;
 }
 

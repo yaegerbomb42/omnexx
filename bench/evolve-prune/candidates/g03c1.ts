@@ -48,10 +48,7 @@ function readStale(
   let mutIdx = -1;
   for (let i = 0; i < later.length; i++) {
     const c = later[i].call;
-    if (
-      (c.name === 'edit' || c.name === 'write_file') &&
-      c.input['path'] === path
-    ) {
+    if ((c.name === 'edit' || c.name === 'write_file') && c.input['path'] === path) {
       mutIdx = i;
       break;
     }
@@ -174,7 +171,7 @@ export function pruneSuperseded(messages: readonly Message[]): {
     chars += r.size;
   });
   if (!stubs.size) return { messages: [...messages], pruned: 0, chars: 0 };
-  
+
   // Map from order index to message/block position
   const posMap = new Map<number, [number, number]>();
   order.forEach((r, k) => posMap.set(k, r.at));
@@ -186,41 +183,41 @@ export function pruneSuperseded(messages: readonly Message[]): {
       const b = m.content[j];
       if (b.type === 'tool_result') {
         // Find the order index for this position
-        // We need to reverse map [i,j] to k. 
+        // We need to reverse map [i,j] to k.
         // Simpler: iterate order and check if at matches [i,j]
       }
     }
-    
+
     // More efficient: build a set of "i,j" strings for stubs
     const stubPositions = new Set<string>();
     stubs.forEach((_, k) => {
       const at = posMap.get(k);
       if (at) stubPositions.add(`${at[0]},${at[1]}`);
     });
-    
+
     if (!m.content.some((_, j) => stubPositions.has(`${i},${j}`))) return m;
-    
+
     return {
       ...m,
       content: m.content.map((b, j): ContentBlock => {
         const posKey = `${i},${j}`;
         if (b.type === 'tool_result' && stubPositions.has(posKey)) {
-            // Find the stub text for this position
-            // We need to get the stub text from the map
-            // We stored it by k, but we need it by position. Let's refactor to store by position.
+          // Find the stub text for this position
+          // We need to get the stub text from the map
+          // We stored it by k, but we need it by position. Let's refactor to store by position.
         }
         return b;
       }),
     };
   });
-  
+
   // Refactor: store stubs by position string directly
   const stubsByPos = new Map<string, string>();
   order.forEach((r, k) => {
-      const s = stubs.get(k);
-      if (s) {
-          stubsByPos.set(`${r.at[0]},${r.at[1]}`, s);
-      }
+    const s = stubs.get(k);
+    if (s) {
+      stubsByPos.set(`${r.at[0]},${r.at[1]}`, s);
+    }
   });
 
   const out2 = messages.map((m, i) => {

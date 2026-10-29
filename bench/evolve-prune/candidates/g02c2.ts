@@ -123,7 +123,11 @@ export function pruneSuperseded(messages: readonly Message[]): {
         }
       }
     } else if (r.call.name === 'grep' || r.call.name === 'glob') {
-      if (later.some((l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input)))
+      if (
+        later.some(
+          (l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input),
+        )
+      )
         why = `a later identical ${r.call.name} call is current`;
     }
     if (!why) return;

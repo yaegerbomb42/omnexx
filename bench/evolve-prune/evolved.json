@@ -1,74 +1,74 @@
 {
- "train": {
-  "tokens": 11907,
-  "raw": 15707,
-  "dropped": []
- },
- "holdout": {
-  "tokens": 6524,
-  "raw": 10321,
-  "dropped": []
- },
- "perCase": {
-  "reread-fix": {
-   "tokens": 1556,
-   "raw": 2189,
-   "dropped": []
+  "train": {
+    "tokens": 11907,
+    "raw": 15707,
+    "dropped": []
   },
-  "test-flip": {
-   "tokens": 903,
-   "raw": 1536,
-   "dropped": []
+  "holdout": {
+    "tokens": 6524,
+    "raw": 10321,
+    "dropped": []
   },
-  "edit-then-read": {
-   "tokens": 1633,
-   "raw": 2267,
-   "dropped": []
-  },
-  "grep-repeat": {
-   "tokens": 906,
-   "raw": 1546,
-   "dropped": []
-  },
-  "narrow-reads": {
-   "tokens": 1469,
-   "raw": 1469,
-   "dropped": []
-  },
-  "cmd-ws": {
-   "tokens": 838,
-   "raw": 1468,
-   "dropped": []
-  },
-  "trap-edit-noreread": {
-   "tokens": 1697,
-   "raw": 2327,
-   "dropped": []
-  },
-  "trap-distinct-cmds": {
-   "tokens": 2905,
-   "raw": 2905,
-   "dropped": []
-  },
-  "ho-multi-read": {
-   "tokens": 1640,
-   "raw": 2905,
-   "dropped": []
-  },
-  "ho-test-regress": {
-   "tokens": 908,
-   "raw": 1538,
-   "dropped": []
-  },
-  "ho-grep-glob": {
-   "tokens": 1545,
-   "raw": 2180,
-   "dropped": []
-  },
-  "ho-ws-glob": {
-   "tokens": 2431,
-   "raw": 3698,
-   "dropped": []
+  "perCase": {
+    "reread-fix": {
+      "tokens": 1556,
+      "raw": 2189,
+      "dropped": []
+    },
+    "test-flip": {
+      "tokens": 903,
+      "raw": 1536,
+      "dropped": []
+    },
+    "edit-then-read": {
+      "tokens": 1633,
+      "raw": 2267,
+      "dropped": []
+    },
+    "grep-repeat": {
+      "tokens": 906,
+      "raw": 1546,
+      "dropped": []
+    },
+    "narrow-reads": {
+      "tokens": 1469,
+      "raw": 1469,
+      "dropped": []
+    },
+    "cmd-ws": {
+      "tokens": 838,
+      "raw": 1468,
+      "dropped": []
+    },
+    "trap-edit-noreread": {
+      "tokens": 1697,
+      "raw": 2327,
+      "dropped": []
+    },
+    "trap-distinct-cmds": {
+      "tokens": 2905,
+      "raw": 2905,
+      "dropped": []
+    },
+    "ho-multi-read": {
+      "tokens": 1640,
+      "raw": 2905,
+      "dropped": []
+    },
+    "ho-test-regress": {
+      "tokens": 908,
+      "raw": 1538,
+      "dropped": []
+    },
+    "ho-grep-glob": {
+      "tokens": 1545,
+      "raw": 2180,
+      "dropped": []
+    },
+    "ho-ws-glob": {
+      "tokens": 2431,
+      "raw": 3698,
+      "dropped": []
+    }
   }
- }
 }

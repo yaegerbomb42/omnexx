@@ -74,9 +74,7 @@ function supersededBy(
 ): string | undefined {
   if (call.name === 'read') {
     const path = field(call.input, 'path');
-    if (
-      later.some((l) => l.call.name === 'read' && covers(l.call.input, call.input))
-    )
+    if (later.some((l) => l.call.name === 'read' && covers(l.call.input, call.input)))
       return `${String(path)} was read again later; that read is current`;
     const staleIdx = staleReadIndex(call.input, later);
     if (staleIdx >= 0)

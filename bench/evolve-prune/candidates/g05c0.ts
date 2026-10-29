@@ -165,7 +165,11 @@ export function pruneSuperseded(messages: readonly Message[]): {
       const useId = block.type === 'tool_result' ? block.toolUseId : '';
       const lastIdx = useIdToLastIdx.get(useId);
       if (lastIdx === k) return; // keep newest
-      if (later.some((l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input)))
+      if (
+        later.some(
+          (l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input),
+        )
+      )
         why = `a later identical ${r.call.name} call is current`;
     }
     if (!why) return;

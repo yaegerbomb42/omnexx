@@ -84,7 +84,8 @@ function deepEq(a: unknown, b: unknown): boolean {
   const ka = Object.keys(a as object);
   const kb = Object.keys(b as object);
   if (ka.length !== kb.length) return false;
-  for (const k of ka) if (!deepEq((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) return false;
+  for (const k of ka)
+    if (!deepEq((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) return false;
   return true;
 }
 
@@ -159,12 +160,15 @@ export function pruneSuperseded(messages: readonly Message[]): {
           const shown = clip(command, 60);
           if (r.isError && reruns.some((l) => !l.isError))
             why = `\`${shown}\` failed here and passed later`;
-          else
-            why = `\`${shown}\` ${r.isError ? 'failed' : 'passed'} here and ran again later`;
+          else why = `\`${shown}\` ${r.isError ? 'failed' : 'passed'} here and ran again later`;
         }
       }
     } else if (r.call.name === 'grep' || r.call.name === 'glob') {
-      if (later.some((l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input)))
+      if (
+        later.some(
+          (l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input),
+        )
+      )
         why = `later identical ${r.call.name}`;
     } else if (r.call.name !== 'edit' && r.call.name !== 'write_file') {
       // Generalized: any repeated identical call (not edit/write) is superseded.

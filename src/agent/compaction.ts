@@ -251,7 +251,7 @@ function sameSearchInput(a: Record<string, unknown>, b: Record<string, unknown>)
   const norm = (x: Record<string, unknown>) =>
     JSON.stringify(
       Object.keys(x)
-        .sort()
+        .sort((p, q) => p.localeCompare(q))
         .map((k) => [k, x[k]]),
     );
   return norm(a) === norm(b);

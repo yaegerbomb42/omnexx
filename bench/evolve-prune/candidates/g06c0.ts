@@ -19,7 +19,8 @@ function deepEq(a: unknown, b: unknown): boolean {
   const ka = Object.keys(a as object);
   const kb = Object.keys(b as object);
   if (ka.length !== kb.length) return false;
-  for (const k of ka) if (!deepEq((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) return false;
+  for (const k of ka)
+    if (!deepEq((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) return false;
   return true;
 }
 
@@ -148,7 +149,11 @@ export function pruneSuperseded(messages: readonly Message[]): {
         }
       }
     } else if (r.call.name === 'grep' || r.call.name === 'glob') {
-      if (later.some((l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input)))
+      if (
+        later.some(
+          (l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input),
+        )
+      )
         why = `a later identical ${r.call.name} call is current`;
     } else if (r.call.name !== 'edit' && r.call.name !== 'write_file') {
       if (later.some((l) => l.call.name === r.call.name && deepEq(l.call.input, r.call.input)))

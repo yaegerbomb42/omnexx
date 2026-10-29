@@ -48,10 +48,7 @@ function readStale(
   let mutIdx = -1;
   for (let i = 0; i < later.length; i++) {
     const c = later[i].call;
-    if (
-      (c.name === 'edit' || c.name === 'write_file') &&
-      c.input['path'] === path
-    ) {
+    if ((c.name === 'edit' || c.name === 'write_file') && c.input['path'] === path) {
       mutIdx = i;
       break;
     }
@@ -92,8 +89,7 @@ function supersededBy(
   );
   if (!reruns.length) return undefined;
   const shown = clip(command, 120);
-  if (isError && reruns.some((l) => !l.isError))
-    return `\`${shown}\` failed here, passed later`;
+  if (isError && reruns.some((l) => !l.isError)) return `\`${shown}\` failed here, passed later`;
   return `\`${shown}\` ${isError ? 'failed' : 'passed'} here, ran again later`;
 }
 

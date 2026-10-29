@@ -174,12 +174,15 @@ export function pruneSuperseded(messages: readonly Message[]): {
           const shown = clip(command, 60);
           if (r.isError && reruns.some((l) => !l.isError))
             why = `\`${shown}\` failed here and passed later`;
-          else
-            why = `\`${shown}\` ${r.isError ? 'failed' : 'passed'} here and ran again later`;
+          else why = `\`${shown}\` ${r.isError ? 'failed' : 'passed'} here and ran again later`;
         }
       }
     } else if (r.call.name === 'grep' || r.call.name === 'glob') {
-      if (later.some((l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input)))
+      if (
+        later.some(
+          (l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input),
+        )
+      )
         why = `later identical ${r.call.name}`;
     } else if (!NO_SUPERSEDE.has(r.call.name)) {
       const normA = normInput(r.call.name, r.call.input);

@@ -48,10 +48,7 @@ function readStale(
   let mutIdx = -1;
   for (let i = 0; i < later.length; i++) {
     const c = later[i].call;
-    if (
-      (c.name === 'edit' || c.name === 'write_file') &&
-      c.input['path'] === path
-    ) {
+    if ((c.name === 'edit' || c.name === 'write_file') && c.input['path'] === path) {
       mutIdx = i;
       break;
     }
