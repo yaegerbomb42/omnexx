@@ -238,7 +238,7 @@ export function createProgram(
     .option('--model-worker <alias>', 'worker model alias, e.g. sonnet')
     .option(
       '--tool-discovery <mode>',
-      'full (all tools every request) | lazy (compact index, load on demand)',
+      'lazy (default: compact index, load on demand) | full (all tools every request)',
     )
     .option('--push <mode>', 'none | branch')
     .option('--from <ref>', 'branch the run from this ref (default HEAD)')

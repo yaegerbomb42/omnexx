@@ -41,7 +41,8 @@ describe('running context', () => {
             }),
           ][turn] ?? say('Fixed add().'));
     const provider = new ScriptedProvider(script);
-    const t = await startTestRun({ provider, plan });
+    // The script calls running_context directly, so send every tool (no lazy request_tools step).
+    const t = await startTestRun({ provider, plan, config: { tools: { discovery: 'full' } } });
     await runBaseline(t.run);
     expect((await runOneCycle(t.run, 'M1.T01')).verdict).toBe('reject');
     const second = provider.requests.length;

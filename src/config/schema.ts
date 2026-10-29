@@ -341,9 +341,9 @@ export const contextSchema = z.strictObject({
   /** Raw turns kept verbatim after the memory note when memory is rolling. */
   memory_keep_turns: z.number().int().min(1).default(2),
   /**
-   * Serve rarely called read-only tools (remember, running_context, recall, outline, read_symbol)
-   * through one `more_tools` tool, keeping their schemas out of the cached prefix. Off by default
-   * until a bench shows the model still reaches for them when it should.
+   * Legacy (#229): serve rarely called read-only tools (remember, running_context, recall, outline,
+   * read_symbol) through one `more_tools` tool. Superseded by `[tools] discovery = "lazy"` (the
+   * default); only applies with `discovery = "full"`, so the two mechanisms never stack.
    */
   lazy_tools: z.boolean().default(false),
   /**

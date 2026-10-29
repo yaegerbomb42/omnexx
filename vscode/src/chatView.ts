@@ -118,7 +118,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     if (m.type === 'ready') {
       // A new omnexx process: apply the approval default from settings.
       if (approvalDefault()) this.server.send({ type: 'yolo', on: true });
-      this.post({ type: 'prefs', autoApproveDefault: approvalDefault() });
+      this.post({
+        type: 'prefs',
+        autoApproveDefault: approvalDefault(),
+        lazyToolDiscovery: lazyToolDiscoveryPref(),
+      });
     }
     if (m.type === 'contextFiles' && Array.isArray(m.files)) {
       this.contextPaths = new Map(
@@ -156,6 +160,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     else if (type === 'open' && typeof m.path === 'string') await openPath(m.path);
     else if (type === 'restart') this.server.restart();
     else if (type === 'setApprovalDefault') await this.setApprovalDefault(m.on === true);
+    else if (type === 'setLazyToolDiscovery') await this.setLazyToolDiscovery(m.on === true);
     else if (type === 'openContextFile' && typeof m.path === 'string')
       await this.openContext(m.path);
     else if (type === 'engineInfo') await this.postEngine();
@@ -338,6 +343,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       .update('autoApprove', on, vscode.ConfigurationTarget.Global);
     this.server.send({ type: 'yolo', on });
     this.post({ type: 'prefs', autoApproveDefault: on });
+  }
+
+  private async setLazyToolDiscovery(on: boolean): Promise<void> {
+    await vscode.workspace
+      .getConfiguration('omnexx')
+      .update('lazyToolDiscovery', on, vscode.ConfigurationTarget.Global);
+    // The mode is read when the chat server starts.
+    this.server.restart();
   }
 
   private listModels(): Promise<{ items: ModelItem[]; unreachable: string[] }> {
@@ -705,6 +718,10 @@ const USER_STARTER = '# omnexx user settings\n';
 
 function approvalDefault(): boolean {
   return vscode.workspace.getConfiguration('omnexx').get<boolean>('autoApprove') ?? false;
+}
+
+function lazyToolDiscoveryPref(): boolean {
+  return vscode.workspace.getConfiguration('omnexx').get<boolean>('lazyToolDiscovery') ?? true;
 }
 
 function userConfigPath(): string {

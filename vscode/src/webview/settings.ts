@@ -64,6 +64,7 @@ let catalog: CatalogProvider[] = [];
 let connected: ConnectedProvider[] = [];
 let current: string | null = null;
 let autoApproveDefault = false;
+let lazyToolDiscovery = true;
 let confirmingRemove: string | undefined;
 /** Provider checks: running, or what the last one found. */
 let tests: Record<string, 'running' | { ok: boolean; detail: string }> = {};
@@ -380,10 +381,10 @@ function appearanceHtml(): string {
 <p class="hint">The chat header and this page use theme variables, so contrast, fonts, and zoom stay consistent with the rest of the editor.</p>`;
 }
 
-function comingSoonHtml(): string {
-  return `<section class="set-section set-placeholder" id="sec-discovery" aria-labelledby="sec-discovery-title">
-<div class="sec-head static"><span class="sec-titles"><span class="sec-title" id="sec-discovery-title">Tool discovery mode <span class="soon-badge">Coming soon</span></span><span class="sec-sub">Let omnexx search for a useful tool when the current tools do not cover a task.</span></span></div>
-<div class="sec-body"><div class="placeholder-row"><span class="hint">Not available yet. The switch is disabled until discovery lands.</span><label class="soon-switch" title="Tool discovery mode is coming soon"><input type="checkbox" role="switch" aria-label="Tool discovery mode (coming soon)" disabled><span aria-hidden="true"></span></label></div></div>
+function toolDiscoveryHtml(): string {
+  return `<section class="set-section" id="sec-discovery" aria-labelledby="sec-discovery-title">
+<div class="sec-head static"><span class="sec-titles"><span class="sec-title" id="sec-discovery-title">Lazy tool discovery</span><span class="sec-sub">Send a compact tool index and load full tool definitions only when needed. Saves tokens.</span></span></div>
+<div class="sec-body" id="sec-body-discovery"><div class="placeholder-row"><span class="hint">${lazyToolDiscovery ? 'On (default): tools load on demand.' : 'Off: every tool definition is sent with each request.'} Changing it restarts omnexx.</span><label class="soon-switch live" title="Lazy tool discovery"><input type="checkbox" role="switch" aria-label="Lazy tool discovery" data-lazy-tools ${lazyToolDiscovery ? 'checked' : ''}><span aria-hidden="true"></span></label></div></div>
 </section>`;
 }
 
@@ -444,7 +445,7 @@ ${panel(
   `${sec('mcp', `<div id="mcp-box">${mcp.html()}</div>`)}
 ${sec('skills', `<div id="skills-box">${skills.html()}</div>`)}
 ${sec('browser', `<div id="browser-box">${browserHtml()}</div>`)}
-${comingSoonHtml()}`,
+${toolDiscoveryHtml()}`,
 )}
 ${panel(
   'appearance',
@@ -660,6 +661,7 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
     return true;
   } else if (m.type === 'prefs') {
     autoApproveDefault = m.autoApproveDefault === true;
+    lazyToolDiscovery = m.lazyToolDiscovery !== false;
   } else if (m.type === 'error' && saving) {
     saving = false;
     status = {
@@ -815,6 +817,12 @@ export function wire(post: Post): void {
   // The browser text fields save when the person leaves them (or presses Enter).
   page.addEventListener('change', (e) => {
     if (e.target instanceof Element && e.target.closest('#browser-box')) saveBrowser(post, {});
+    if (e.target instanceof HTMLInputElement && e.target.matches('[data-lazy-tools]')) {
+      lazyToolDiscovery = e.target.checked;
+      post({ type: 'setLazyToolDiscovery', on: lazyToolDiscovery });
+      const sec = document.getElementById('sec-discovery');
+      if (sec) sec.outerHTML = toolDiscoveryHtml();
+    }
   });
   page.addEventListener('keydown', (e) => {
     const tabEl =

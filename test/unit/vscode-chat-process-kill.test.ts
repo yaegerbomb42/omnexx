@@ -66,7 +66,10 @@ const h = vi.hoisted(() => {
 
 vi.mock('node:child_process', () => ({ spawn: h.spawnMock }));
 vi.mock('../../vscode/src/engine.js', () => ({ engine: h.engineMock }));
-vi.mock('vscode', () => ({ EventEmitter: h.VsEmitter }));
+vi.mock('vscode', () => ({
+  EventEmitter: h.VsEmitter,
+  workspace: { getConfiguration: () => ({ get: () => undefined }) },
+}));
 
 const ENGINE = {
   source: 'bundled',

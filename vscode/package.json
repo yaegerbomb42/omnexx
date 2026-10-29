@@ -306,6 +306,11 @@
           "minimum": 2,
           "description": "How often the sidebar re-reads a live run's todo list. Takes effect after a reload."
         },
+        "omnexx.lazyToolDiscovery": {
+          "type": "boolean",
+          "default": true,
+          "description": "Lazy tool discovery: send a compact tool index and load full tool definitions on demand (saves tokens). Turn off to send every tool definition each request (same as --tool-discovery full)."
+        },
         "omnexx.autoApprove": {
           "type": "boolean",
           "default": false,
