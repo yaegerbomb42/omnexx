@@ -23,6 +23,14 @@ export interface BenchmarkResult {
   provider_outage_ms?: number;
   /** Turns, tool calls per turn, gate and idle time; only for harnesses that log events. */
   efficiency?: Efficiency;
+  /** Wall-clock overrun vs the run's --hours cap, in ms (0 if on budget). */
+  overrun_ms?: number;
+  /** Fraction of the run's --hours cap actually spent working (0..1). */
+  active_ratio?: number;
+  /** Accepted commits + passing gates per active hour. */
+  useful_ops_per_hour?: number;
+  /** Whether the run finished within its --hours cap. */
+  on_budget?: boolean;
 }
 
 /** What a runner returns: metrics (resolved is overwritten by the hidden check) and where the work is. */

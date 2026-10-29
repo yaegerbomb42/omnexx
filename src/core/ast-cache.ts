@@ -237,8 +237,9 @@ export class AstCache {
       paths: Object.fromEntries(this.paths),
     };
     await mkdir(dirname(this.file), { recursive: true });
-    // Written to a temp file and renamed, so a crash never leaves a half-written cache.
-    const tmp = `${this.file}.tmp`;
+    // Written to a unique temp file and renamed, so concurrent flushes never clobber each other
+    // and a crash never leaves a half-written cache.
+    const tmp = `${this.file}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
     await writeFile(tmp, `${JSON.stringify(file)}\n`, { mode: 0o600 });
     await rename(tmp, this.file);
     this.dirty = false;

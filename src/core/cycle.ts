@@ -41,16 +41,18 @@ import {
 import { exposedTools, toolSpec, workerTools } from '../tools/registry.js';
 import { cycleRoute } from '../router/classify.js';
 import { readIntent } from '../agent/intent.js';
+import { ContractGate } from './contract.js';
 import type { ToolContext } from '../tools/types.js';
 import { antiCheat, type Violation as AntiCheatViolation } from '../verify/anticheat.js';
 import { blocking, renderFindings, reviewChange } from '../verify/review.js';
 import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
 import { runGates, toBaseline } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
+import { DoomLoopRatchet } from './doom-loop-ratchet.js';
 import { readTextOr, writeFileAtomic } from './atomic.js';
 import { applyRemember, keepNewestNotes, renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
-import { getNode, type PlanNode } from './plan.js';
+import { getNode, planCounts, type PlanNode } from './plan.js';
 import { foldPrompt } from './fold-prompt.js';
 import { MemoryHarness } from './memory/index.js';
 import { RunningContext } from './running-context.js';
@@ -277,6 +279,7 @@ export function toolContext(run: Run, edited: Set<string>): ToolContext {
     nextCommandId: () => `cmd-${run.state.cycle}-${++n}`,
     edited,
     reads: new Map(),
+    contractGate: new ContractGate(run.worktree),
     // Advisory, log-only, never awaited by the tool, skipped while the breaker is open.
     ...(judge.enabled('tool_safety') && judge.breakerState !== 'open'
       ? {
@@ -446,6 +449,25 @@ export async function stepAct(run: Run): Promise<void> {
     role: await loadRoleCard(run.store, task, run.state.repoRoot),
     sections: run.config.context.sections,
     ...briefInput(run.config),
+    clock: (() => {
+      const elapsedMs = run.elapsedMs();
+      const remainingMs = Math.max(0, run.deadlineMs - elapsedMs);
+      const fmt = (ms: number): string =>
+        ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `${Math.round(ms / 1000)}s`;
+      const counts = run.plan ? planCounts(run.plan) : undefined;
+      const left = run.budgetLeftFraction();
+      const pace = left >= 0.5 ? 'on pace' : left >= 0.2 ? 'tight' : 'behind';
+      const parts = [
+        `Elapsed ${fmt(elapsedMs)} of ${run.config.budget.max_hours}h`,
+        `${fmt(remainingMs)} left`,
+        counts ? `${counts.done} of ${counts.tasks} tasks done` : '',
+        run.lastCycleModelMs
+          ? `last cycle: ${fmt(run.lastCycleModelMs)} model, ${fmt(run.lastCycleToolMs)} tools`
+          : '',
+        `pace: ${pace}`,
+      ].filter(Boolean);
+      return `# Clock\n\n${parts.join(' · ')}`;
+    })(),
     facts: await factsBlockFor(
       run.deps.paths,
       run.state.repoRoot,
@@ -493,11 +515,16 @@ export async function stepAct(run: Run): Promise<void> {
     spentTodayUsd: () => run.spentToday(),
     onUsage: (u, usd, model, provider, meta) =>
       run.addSpend(u, usd, model, 'worker', provider, meta),
+    onResponse: ({ ms }) => {
+      run.cycleModelMs += ms;
+    },
     control: () => run.control(),
     onPauseChange: (p) => {
       run.paused = p;
     },
     signal: run.signal,
+    // Absolute deadline on run.clock: the loop compares it against clock.now().
+    deadlineMs: run.clock.now() + Math.max(0, run.deadlineMs - run.elapsedMs()),
     calibrationFile: tokenCalibrationFile(run.deps.paths),
     parallelTasks: run.config.context.subagent_parallel,
     watch: new InCycleWatch(
@@ -508,6 +535,11 @@ export async function stepAct(run: Run): Promise<void> {
       },
       () => editOps,
     ),
+    doomLoopRatchet: new DoomLoopRatchet({
+      worktree: run.worktree,
+      cleanSha: run.state.lastGreen,
+      events: run.events,
+    }),
     compaction: {
       settings: {
         clearAt: run.config.context.clear_tool_results_at,
