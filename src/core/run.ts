@@ -43,6 +43,7 @@ import { runShell, type Executor } from './exec.js';
 import { usageFile, type OmnexxPaths } from './paths.js';
 import type { Plan } from './plan.js';
 import { RunStore, type Phase, type RunState } from './run-store.js';
+import { initLoadedToolsState, type LoadedToolsState } from '../tools/request-tools.js';
 
 export interface RunHooks {
   /** Called after a phase transition is persisted, before its side effects. Chaos tests kill here. */
@@ -145,7 +146,7 @@ export class Run {
   paused = false;
   /**
    * Set by the supervisor's idle watchdog when no event has arrived for `idleTimeoutMs`.
-   * The next cycle boundary ends the run as needs-human; a pause loop does not reset it.
+   * The next cycle boundary ends the run as blocked; a pause loop does not reset it.
    */
   idleTimedOut = false;
   /** Where commands run. The supervisor swaps in the docker sandbox when sandbox = "docker". */
@@ -153,6 +154,13 @@ export class Run {
   private readonly baseActiveMs: number;
   /** Waiting time that doesn't count as active (daily-cap pauses). */
   private excludedMs = 0;
+  /** Lazy tool discovery: tracks which tool groups are loaded for this session. */
+  loadedToolsState: LoadedToolsState | null = null;
+  /** Per-cycle accumulators for the time.report event (reset at cycle start). */
+  cycleModelMs = 0;
+  cycleToolMs = 0;
+  lastCycleModelMs = 0;
+  lastCycleToolMs = 0;
 
   private constructor(
     readonly deps: RunDeps,
@@ -177,6 +185,10 @@ export class Run {
       },
       () => deps.clock.now(),
     );
+    // Initialize lazy tool discovery state
+    if (deps.config.tools.discovery === 'lazy') {
+      this.loadedToolsState = initLoadedToolsState(deps.config);
+    }
     this.events = new EventLog(store.eventsPath, state.runId, this.redactor, deps.clock);
     // Waste is derived from events that already know the tool/compaction outcome: no extra
     // bookkeeping in the loop, and every run (even one interrupted mid-call) leaves a trail.

@@ -21,4 +21,5 @@ export { security } from './security.js';
 export { sentinel } from './sentinel.js';
 export { skills } from './skills.js';
 export { sweBench } from './swe-bench.js';
+export { tools } from './tools.js';
 export { web } from './web.js';

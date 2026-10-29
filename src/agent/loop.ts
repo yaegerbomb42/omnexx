@@ -38,6 +38,7 @@ import {
   type Usage,
 } from '../providers/types.js';
 import type { Tool, ToolContext } from '../tools/types.js';
+import { autoLoadToolGroup, type LoadedToolsState } from '../tools/request-tools.js';
 import {
   contextTokens,
   manageContext,
@@ -54,6 +55,7 @@ import {
 } from './rolling-memory.js';
 import { turnRequest } from './context.js';
 import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
+import type { DoomLoopRatchet } from '../core/doom-loop-ratchet.js';
 import { todoItemsOf, todoNudge, todoTool, type TodoItem } from '../tools/todo.js';
 
 /** Thrown inside the retry loop when a pre-flight check refuses the call; ends the cycle, never retried. */
@@ -190,6 +192,8 @@ export interface LoopDeps {
   strategy?: Strategy;
   tools: readonly Tool[];
   toolCtx: ToolContext;
+  /** Lazy tool discovery state (persists across context compaction). */
+  loadedToolsState?: LoadedToolsState | null;
   budget: OmnexxConfig['budget'];
   maxTokens: number;
   clock: Clock;
@@ -232,6 +236,8 @@ export interface LoopDeps {
     onOutage?: (ms: number) => void;
   };
   signal?: AbortSignal;
+  /** Run deadline in ms (wall clock active); used to annotate tool results with time left. */
+  deadlineMs?: number;
   /** A model request is about to go out (for "waiting on the model" estimates). */
   onRequest?: (r: { model: string; inputTokens: number }) => void;
   /** A model request answered, after `ms`. */
@@ -278,6 +284,14 @@ export interface LoopDeps {
    * The loop loads it once and writes the EMA after each turn that reports prompt tokens.
    */
   calibrationFile?: string;
+  /**
+   * Optional function to refresh the tool list (for lazy tool discovery).
+   * When set, called at the start of every turn to get the current tool list and specs.
+   * When undefined, behavior is identical to before (tools fixed for the whole cycle).
+   */
+  refreshTools?: () => { tools: readonly Tool[]; specs: ToolSpec[] };
+  /** Anti-doom-loop ratchet tracking repeated tool failures and enforcing rollback on broken verifications. */
+  doomLoopRatchet?: DoomLoopRatchet;
 }
 
 /** Uncalibrated size of the prompt the provider will see, and that size scaled by the model's ratio. */
@@ -449,7 +463,6 @@ export async function runAgentLoop(
   let todos: readonly TodoItem[] = [];
   let todoNudged = false;
   let lastCondenseTurn = 0;
-  const byName = new Map(deps.tools.map((t) => [t.name, t]));
   const end = (e: LoopEnd): LoopResult => ({ end: e, turns, finalText, usage, usd, messages });
   // The stable prefix never changes within a cycle; size it once for the per-turn breakdown.
   const prefixTokens = {
@@ -465,7 +478,17 @@ export async function runAgentLoop(
   let previousPromptTokens = 0;
   let bookkeepingHinted = false;
   let changedSomething = false;
+  // Mutable copy of ctx so we can refresh tools each turn when refreshTools is provided.
+  let liveCtx = ctx;
+  // byName must be rebuilt when tools change.
+  let byName = new Map(deps.tools.map((t) => [t.name, t]));
   for (;;) {
+    // Refresh tools at the start of each turn if refreshTools is provided (lazy mode).
+    if (deps.refreshTools) {
+      const { tools: freshTools, specs: freshSpecs } = deps.refreshTools();
+      byName = new Map(freshTools.map((t) => [t.name, t]));
+      liveCtx = { ...liveCtx, tools: freshSpecs };
+    }
     let signal = await deps.control();
     if (signal === 'pause') {
       deps.events.emit('control.paused', { turn: turns });
@@ -578,7 +601,7 @@ export async function runAgentLoop(
               // The provider is up: send the real request once more, cooling or not.
               try {
                 const req = {
-                  ...turnRequest(ctx, messages, m.id, deps.maxTokens, deps.cacheKey),
+                  ...turnRequest(liveCtx, messages, m.id, deps.maxTokens, deps.cacheKey),
                   route: m.provider,
                   ...(deps.signal ? { signal: deps.signal } : {}),
                 };
@@ -638,7 +661,7 @@ export async function runAgentLoop(
             // Use terminal prefix lock convention on the final turn to preserve KV cache warmth
             const isTerminalTurn = turns >= deps.budget.max_turns_per_cycle - 1;
             const req = turnRequest(
-              ctx,
+              liveCtx,
               messages,
               m.id,
               deps.maxTokens,
@@ -909,6 +932,23 @@ export async function runAgentLoop(
 
     const finished = { now: false };
     const runCall = async (call: (typeof calls)[number]): Promise<ContentBlock> => {
+      // Lazy mode: auto-load tool group if tool exists but isn't loaded
+      if (deps.loadedToolsState && !deps.loadedToolsState.toolToGroup.has(call.name)) {
+        // Tool not in any group (e.g., MCP tools) - allow it
+      } else if (deps.loadedToolsState) {
+        const loadedGroup = autoLoadToolGroup(deps.loadedToolsState, call.name);
+        if (loadedGroup) {
+          deps.events.emit('tool.autoload', { tool: call.name, group: loadedGroup });
+          // Return an error asking the model to retry
+          return {
+            type: 'tool_result',
+            toolUseId: call.id,
+            content: `Tool "${call.name}" was not loaded; loaded group "${loadedGroup}". Retry the call.`,
+            isError: true,
+          };
+        }
+      }
+
       const tool = resolveTool(byName, call.name);
       let content: string;
       let isError: boolean;
@@ -952,15 +992,67 @@ export async function runAgentLoop(
           content = `invalid input for ${call.name}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
           isError = true;
         } else {
-          const out = await tool.run(parsed.data, deps.toolCtx);
-          content = out.content;
-          isError = out.isError === true;
-          miss = out.miss === true;
-          savedTokens = out.savedTokens ?? 0;
-          if (out.final && !isError) finished.now = true;
+          // Phase 2 enforcement: never let a tool ask for more time than the run has left.
+          const timeoutKeys = [
+            'timeout',
+            'timeoutMs',
+            'timeout_ms',
+            'waitMs',
+            'wait_ms',
+            'duration',
+            'durationMs',
+            'maxMs',
+          ];
+          let refused = false;
+          let hint = '';
+          if (deps.deadlineMs) {
+            const remainingMs = Math.max(0, deps.deadlineMs - deps.clock.now());
+            for (const k of timeoutKeys) {
+              const v = (parsed.data as Record<string, unknown>)[k];
+              if (typeof v === 'number' && v > remainingMs) {
+                refused = true;
+                hint = `${Math.round(remainingMs / 1000)}s left, but ${k}=${v}ms; use a smaller timeout or split the work`;
+                break;
+              }
+            }
+            if (!refused && remainingMs < 60_000) {
+              refused = true;
+              hint = `only ${Math.round(remainingMs / 1000)}s left; finish, verify and report instead of starting more work`;
+            }
+          }
+          if (refused) {
+            content = `refused: ${hint}`;
+            isError = true;
+          } else {
+            const deadlineMs = deps.deadlineMs;
+            const reminder = deadlineMs
+              ? setInterval(() => {
+                  deps.events.emit('time.reminder', {
+                    tool: call.name,
+                    elapsed_s: Math.round((deps.clock.now() - toolStart) / 1000),
+                    remaining_s: Math.max(0, Math.round((deadlineMs - deps.clock.now()) / 1000)),
+                  });
+                }, 60_000)
+              : undefined;
+            if (reminder) reminder.unref();
+            const out = await tool.run(parsed.data, deps.toolCtx);
+            if (reminder) clearInterval(reminder);
+            content = out.content;
+            isError = out.isError === true;
+            miss = out.miss === true;
+            savedTokens = out.savedTokens ?? 0;
+            if (out.final && !isError) finished.now = true;
+          }
         }
       }
       content = deps.toolCtx.redactor.text(content);
+      if (deps.deadlineMs && !isError) {
+        const toolMs = deps.clock.now() - toolStart;
+        const remainingMs = Math.max(0, deps.deadlineMs - deps.clock.now());
+        const fmt = (ms: number): string =>
+          ms >= 60_000 ? `${(ms / 60_000).toFixed(1)}m` : `${Math.round(ms / 1000)}s`;
+        content += `\n\n(${fmt(toolMs)}; ${fmt(remainingMs)} left)`;
+      }
       deps.events.emit('tool.call', {
         tool: call.name,
         input: summarizeInput(call.input),
@@ -972,6 +1064,60 @@ export async function runAgentLoop(
         bytes: content.length,
         ms: deps.clock.now() - toolStart,
       });
+      if (deps.doomLoopRatchet) {
+        if (
+          [
+            'write_file',
+            'str_replace',
+            'multi_edit',
+            'replace_lines',
+            'apply_patch',
+            'patch',
+          ].includes(call.name) &&
+          !isError
+        ) {
+          const path = (call.input as { path?: unknown }).path;
+          if (typeof path === 'string') deps.doomLoopRatchet.recordFileModified(path);
+        }
+        if (isError) {
+          const intervention = await deps.doomLoopRatchet.recordToolFailure(
+            call.name,
+            JSON.stringify(call.input).slice(0, 80),
+            content,
+          );
+          if (intervention.action !== 'none' && intervention.message) {
+            ratchetInterventions.push(intervention.message);
+          }
+        } else {
+          deps.doomLoopRatchet.recordToolSuccess();
+          if (call.name === 'bash') {
+            const cmd = (call.input as { command?: unknown }).command;
+            if (typeof cmd === 'string') {
+              const intervention = await deps.doomLoopRatchet.recordVerificationResult(
+                cmd,
+                false,
+                content,
+              );
+              if (intervention.action !== 'none' && intervention.message) {
+                ratchetInterventions.push(intervention.message);
+              }
+            }
+          }
+        }
+        if (call.name === 'bash' && isError) {
+          const cmd = (call.input as { command?: unknown }).command;
+          if (typeof cmd === 'string') {
+            const intervention = await deps.doomLoopRatchet.recordVerificationResult(
+              cmd,
+              true,
+              content,
+            );
+            if (intervention.action !== 'none' && intervention.message) {
+              ratchetInterventions.push(intervention.message);
+            }
+          }
+        }
+      }
       return {
         type: 'tool_result',
         toolUseId: call.id,
@@ -980,6 +1126,7 @@ export async function runAgentLoop(
       };
     };
     const results: ContentBlock[] = [];
+    const ratchetInterventions: string[] = [];
     // A turn of only `task` calls fans out: read-only helpers can't conflict with each other.
     // Otherwise runs of consecutive concurrency-safe calls (reads, searches) go out together;
     // every other call runs alone, in order, so writes and commands never interleave.
@@ -1003,6 +1150,11 @@ export async function runAgentLoop(
     if (steer.length) {
       results.push({ type: 'text', text: steeringText(steer) });
       deps.events.emit('steer.applied', { count: steer.length, turn: turns });
+    }
+    if (ratchetInterventions.length) {
+      for (const msg of ratchetInterventions) {
+        results.push({ type: 'text', text: msg });
+      }
     }
     messages.push({ role: 'user', content: results });
     // Weaker models keep calling tools after the job is done; don't pay for that.
