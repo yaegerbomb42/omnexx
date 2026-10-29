@@ -38,7 +38,7 @@
   top: 0;
   z-index: 6;
   margin: 0 -12px 14px;
-  padding: 8px 12px 0;
+  padding: 10px var(--pad-x) 0;
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -56,7 +56,7 @@
 .settings .set-head h2 {
   margin: 0;
   font-size: var(--fs-lg);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
 .set-tabbar {
@@ -171,7 +171,7 @@
   font-size: var(--fs-xs);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all var(--dur-base) var(--ease);
 }
 
 .set-chip:hover,
@@ -199,15 +199,20 @@
   margin-bottom: 0;
   box-shadow:
     var(--glass-highlight),
-    0 2px 8px rgba(0, 0, 0, 0.08);
+    var(--shadow-sm);
   overflow: hidden;
   transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
+    border-color var(--dur-base) var(--ease),
+    box-shadow var(--dur-base) var(--ease),
+    transform var(--dur-base) var(--ease);
 }
 
 .settings .set-section:hover {
   border-color: color-mix(in srgb, var(--sec, var(--line)) 45%, transparent);
+  transform: translateY(-1px);
+  box-shadow:
+    var(--glass-highlight),
+    var(--shadow-md);
 }
 
 .settings .set-section[data-sec] {
@@ -1743,5 +1748,119 @@
   .sec-head:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: 2px;
+  }
+}
+
+/* Combined UI polish: hooks added by the settings pass (Agent 3) + stats tones (Agent 4). */
+.nav-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bento-bg);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.nav-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.set-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.set-chip.on {
+  background: color-mix(in srgb, var(--sec) 24%, transparent);
+  border-color: var(--sec);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--sec) 25%, transparent);
+}
+
+.mp-skeleton {
+  height: 28px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  animation: ls-shimmer 1.6s ease-in-out infinite alternate;
+}
+
+.mp-search-icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.mp-clear {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+}
+
+.mp-hints {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  padding: var(--space-2) var(--space-3);
+}
+
+.mp-tag-vision {
+  border-color: color-mix(in srgb, var(--role-violet) 45%, transparent);
+  color: var(--role-violet);
+}
+
+.mp-tag-reasoning {
+  border-color: color-mix(in srgb, var(--role-amber) 45%, transparent);
+  color: var(--role-amber);
+}
+
+.pulse {
+  animation: mcp-pulse 1.6s var(--ease-soft, ease-in-out) infinite;
+}
+
+.t-check {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.budget-fill.warm {
+  background: var(--role-amber);
+}
+
+.ci-budget-summary.warm {
+  color: var(--role-amber);
+}
+
+kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--bento-bg);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+}
+
+@keyframes ls-shimmer {
+  from {
+    opacity: 0.45;
+  }
+  to {
+    opacity: 0.9;
   }
 }

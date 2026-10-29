@@ -90,7 +90,7 @@ export function extrasHtml(p: FormProvider | undefined, custom: boolean): string
 
 function probeHtml(): string {
   if (!probe) return '';
-  if (probe === 'running') return '<span class="pill busy">testing…</span>';
+  if (probe === 'running') return '<span class="pill busy pulse">testing…</span>';
   const models = probe.models.length
     ? `<div class="hint">${escapeHtml(probe.models.slice(0, 6).join(', '))}${probe.models.length > 6 ? ', …' : ''}</div>`
     : '';

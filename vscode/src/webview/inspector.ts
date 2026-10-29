@@ -7,6 +7,7 @@
  * keeping only the system prompt and tools intact.
  */
 import { escapeHtml, formatTokens } from './render.js';
+import { budgetTone } from './stats.js';
 
 type Post = (msg: Record<string, unknown>) => void;
 type Group = 'system' | 'tools' | 'notes' | 'chat';
@@ -106,13 +107,17 @@ function budgetHtml(): string {
 
   const budgetMax = budget > 0 ? budget : Math.max(1, used * 1.25);
   const pct = budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : 100;
+  // Tone only when a real budget is known; without one the fill is 100% by construction.
+  const tone = budget > 0 ? budgetTone(pct) : '';
+  const share = (n: number): string =>
+    used > 0 ? ` (${String(Math.round((n / used) * 100))}%)` : '';
 
   const sysPct = Math.min(100, (sysTokens / budgetMax) * 100);
   const toolPct = Math.min(100, (toolTokens / budgetMax) * 100);
   const notePct = Math.min(100, (noteTokens / budgetMax) * 100);
   const chatPct = Math.min(100, (chatTokens / budgetMax) * 100);
 
-  const meter = `<div class="ci-meter" role="meter" aria-valuemin="0" aria-valuemax="${String(budgetMax)}" aria-valuenow="${String(used)}" aria-label="Context used">
+  const meter = `<div class="ci-meter" role="meter" aria-valuemin="0" aria-valuemax="${String(budgetMax)}" aria-valuenow="${String(used)}" aria-valuetext="${String(pct)}% used" aria-label="Context used">
     <i class="ci-m-system" style="width:${String(sysPct)}%" title="System: ${formatTokens(sysTokens)} tok"></i>
     <i class="ci-m-tools" style="width:${String(toolPct)}%" title="Tools: ${formatTokens(toolTokens)} tok"></i>
     <i class="ci-m-notes" style="width:${String(notePct)}%" title="Notes: ${formatTokens(noteTokens)} tok"></i>
@@ -120,17 +125,17 @@ function budgetHtml(): string {
   </div>`;
 
   return `
-    <div class="ci-budget-summary">
+    <div class="ci-budget-summary${tone ? ` ${tone}` : ''}">
       <div class="ci-budget-title">
         <span class="ci-budget-badge">⚡ Active Context Window</span>
         <span class="ci-budget-count"><b>${formatTokens(used)}</b>${budget > 0 ? ` / ${formatTokens(budget)}` : ''} tok (${pct}%)</span>
       </div>
       ${meter}
       <div class="ci-budget-legend">
-        <span class="ci-leg-item ci-leg-system"><i class="ci-dot"></i>System: <b>${formatTokens(sysTokens)}</b></span>
-        <span class="ci-leg-item ci-leg-tools"><i class="ci-dot"></i>Tools: <b>${formatTokens(toolTokens)}</b></span>
-        <span class="ci-leg-item ci-leg-notes"><i class="ci-dot"></i>Notes: <b>${formatTokens(noteTokens)}</b></span>
-        <span class="ci-leg-item ci-leg-chat"><i class="ci-dot"></i>History: <b>${formatTokens(chatTokens)}</b></span>
+        <span class="ci-leg-item ci-leg-system"><i class="ci-dot"></i>System: <b>${formatTokens(sysTokens)}</b>${share(sysTokens)}</span>
+        <span class="ci-leg-item ci-leg-tools"><i class="ci-dot"></i>Tools: <b>${formatTokens(toolTokens)}</b>${share(toolTokens)}</span>
+        <span class="ci-leg-item ci-leg-notes"><i class="ci-dot"></i>Notes: <b>${formatTokens(noteTokens)}</b>${share(noteTokens)}</span>
+        <span class="ci-leg-item ci-leg-chat"><i class="ci-dot"></i>History: <b>${formatTokens(chatTokens)}</b>${share(chatTokens)}</span>
       </div>
     </div>`;
 }
@@ -184,6 +189,9 @@ function groupHtml(g: (typeof GROUPS)[number]): string {
       </div>`;
   const extra = g.id === 'notes' ? addNoteHtml() : '';
   const groupTokens = sum(list);
+  const totalUsed = sum(items);
+  const groupShare =
+    totalUsed > 0 ? ` · ${String(Math.round((groupTokens / totalUsed) * 100))}%` : '';
 
   return `
     <div class="ci-container-card ci-group-${g.id}">
@@ -201,7 +209,7 @@ function groupHtml(g: (typeof GROUPS)[number]): string {
           </div>
           <div class="ci-group-right">
             <span class="ci-group-tokens"><b>${formatTokens(groupTokens)}</b> tok</span>
-            <span class="ci-group-count">${list.length} item${list.length === 1 ? '' : 's'}</span>
+            <span class="ci-group-count">${list.length} item${list.length === 1 ? '' : 's'}${groupShare}</span>
           </div>
         </summary>
         <div class="ci-group-content">

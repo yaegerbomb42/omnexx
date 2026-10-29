@@ -143,19 +143,29 @@ const meta = (id: SectionId): SectionMeta => {
   return found;
 };
 
-/** The sticky row of colored jump chips. */
-export function navHtml(): string {
-  return `<nav class="set-nav" aria-label="Settings sections">${SECTIONS.map(
-    (s) =>
-      `<button class="set-chip" data-sec="${s.id}" data-sec-jump="${s.id}" title="${escapeHtml(s.subtitle)}">${icon(s.icon)}<span>${escapeHtml(s.chip)}</span></button>`,
-  ).join('')}</nav>`;
+/** The sticky row of colored jump chips. Counts add a badge (e.g. Providers (3)) and
+ *  `active` marks the section currently in view (see the scroll-spy in settings.ts). */
+export function navHtml(
+  counts: Partial<Record<SectionId, number>> = {},
+  active?: SectionId,
+): string {
+  return `<nav class="set-nav" aria-label="Settings sections">${SECTIONS.map((s) => {
+    const count = counts[s.id] ?? 0;
+    const isActive = s.id === active;
+    return `<button class="set-chip${isActive ? ' on' : ''}" data-sec="${s.id}" data-sec-jump="${s.id}" title="${escapeHtml(s.subtitle)}"${isActive ? ' aria-current="location"' : ''}>${icon(s.icon)}<span>${escapeHtml(s.chip)}</span>${count > 0 ? `<span class="set-count">${String(count)}</span>` : ''}</button>`;
+  }).join('')}</nav>`;
 }
 
-/** The sticky header's tab list. The selected tab keeps tabindex 0; the rest are -1. */
-export function tabsHtml(selected: TabId = TABS[0]?.id ?? 'providers'): string {
+/** The sticky header's tab list. The selected tab keeps tabindex 0; the rest are -1.
+ *  Counts add a badge to a tab (e.g. the providers tab shows connected providers). */
+export function tabsHtml(
+  selected: TabId = TABS[0]?.id ?? 'providers',
+  counts: Partial<Record<TabId, number>> = {},
+): string {
   return `<div class="set-tabbar" role="tablist" aria-label="Settings tabs">${TABS.map((t) => {
     const active = t.id === selected;
-    return `<button class="set-tab${active ? ' on' : ''}" type="button" role="tab" id="set-tab-${t.id}" data-settings-tab="${t.id}" aria-selected="${String(active)}" aria-controls="set-panel-${t.id}" tabindex="${active ? '0' : '-1'}">${icon(t.icon)}<span>${escapeHtml(t.label)}</span></button>`;
+    const count = counts[t.id] ?? 0;
+    return `<button class="set-tab${active ? ' on' : ''}" type="button" role="tab" id="set-tab-${t.id}" data-settings-tab="${t.id}" aria-selected="${String(active)}" aria-controls="set-panel-${t.id}" tabindex="${active ? '0' : '-1'}">${icon(t.icon)}<span>${escapeHtml(t.label)}</span>${count > 0 ? `<span class="set-count">${String(count)}</span>` : ''}</button>`;
   }).join('')}</div>`;
 }
 

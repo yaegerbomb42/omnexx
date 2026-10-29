@@ -178,7 +178,7 @@ function connectedHtml(): string {
           : '<span class="pill warn">no key</span>';
       const check =
         result === 'running'
-          ? '<span class="pill busy">checking…</span>'
+          ? '<span class="pill busy pulse">checking…</span>'
           : result
             ? `<span class="pill ${result.ok ? 'ok' : 'warn'}">${result.ok ? '✓' : '✗'} ${escapeHtml(result.detail)}</span>`
             : '';
@@ -186,7 +186,7 @@ function connectedHtml(): string {
         confirmingRemove === p.name
           ? `<button class="danger-btn" data-remove-confirm="${escapeHtml(p.name)}">Remove</button><button class="ghost" data-remove-cancel>Cancel</button>`
           : `<button class="ghost" data-remove="${escapeHtml(p.name)}" title="Remove ${escapeHtml(p.label)} and its stored key">Remove</button>`;
-      return `<li class="provider" data-state="${state}" style="--h:${String(providerHue(p.name))}"><span class="p-dot" role="img" aria-label="${escapeHtml(dotTitle)}" title="${escapeHtml(dotTitle)}"></span><div class="p-main"><div class="p-name">${escapeHtml(p.label)}</div><div class="p-url" title="${escapeHtml(p.baseUrl)}">${escapeHtml(p.baseUrl)}</div><div class="p-tags">${key}${check}</div></div><div class="p-actions"><button class="ghost" data-test="${escapeHtml(p.name)}" title="Check that omnexx can reach it">Test</button>${remove}</div></li>`;
+      return `<li class="provider" data-state="${state}" style="--h:${String(providerHue(p.name))}"><span class="p-dot${state === 'busy' ? ' pulse' : ''}" role="img" aria-label="${escapeHtml(dotTitle)}" title="${escapeHtml(dotTitle)}"></span><div class="p-main"><div class="p-name">${escapeHtml(p.label)}</div><div class="p-url" title="${escapeHtml(p.baseUrl)}">${escapeHtml(p.baseUrl)}</div><div class="p-tags">${key}${check}</div></div><div class="p-actions"><button class="ghost" data-test="${escapeHtml(p.name)}" title="Check that omnexx can reach it">Test</button>${remove}</div></li>`;
     })
     .join('')}</ul>`;
 }
@@ -196,7 +196,7 @@ function tilesHtml(): string {
   const fits = (c: CatalogProvider): boolean =>
     words.every((w) => `${c.name} ${c.label}`.toLowerCase().includes(w));
   const tile = (name: string, label: string, sub: string): string =>
-    `<button class="ptile${chosen === name ? ' on' : ''}" data-provider="${escapeHtml(name)}" aria-pressed="${String(chosen === name)}" title="${escapeHtml(label)}">${badge(name === CUSTOM ? 'url' : name)}<span class="t-label">${escapeHtml(label.replace(/\s*\(.*\)$/, ''))}</span><span class="t-sub">${escapeHtml(sub)}</span></button>`;
+    `<button class="ptile${chosen === name ? ' on' : ''}" data-provider="${escapeHtml(name)}" aria-pressed="${String(chosen === name)}" title="${escapeHtml(label)}" style="--h:${String(providerHue(name === CUSTOM ? 'url' : name))}">${badge(name === CUSTOM ? 'url' : name)}<span class="t-label">${escapeHtml(label.replace(/\s*\(.*\)$/, ''))}</span><span class="t-sub">${escapeHtml(sub)}</span>${chosen === name ? '<span class="t-check" aria-hidden="true">✓</span>' : ''}</button>`;
   const hostedAll = catalog.filter((c) => !c.local && fits(c));
   const searchable = words.length > 0;
   const hosted = searchable || showAllProviders ? hostedAll : hostedAll.slice(0, 8);
@@ -235,6 +235,10 @@ export function useFoldStore(store: FoldStore): void {
   if (layout.isTabId(savedTab)) tab = savedTab;
 }
 
+/** One animation token per section body, so a fast re-toggle never lets a stale
+ *  transitionend/timeout finish a newer animation. */
+const foldTokens = new WeakMap<HTMLElement, number>();
+
 function setFolded(id: SectionId, fold: boolean): void {
   folded = layout.toggled(folded, id, fold);
   foldStore?.set(folded);
@@ -242,7 +246,41 @@ function setFolded(id: SectionId, fold: boolean): void {
   section?.classList.toggle('folded', fold);
   section?.querySelector('.sec-head')?.setAttribute('aria-expanded', String(!fold));
   const body = document.getElementById(`sec-body-${id}`);
-  if (body) body.hidden = fold;
+  if (!body) return;
+  // Reduced motion: instant, as before.
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    body.hidden = fold;
+    return;
+  }
+  const token = (foldTokens.get(body) ?? 0) + 1;
+  foldTokens.set(body, token);
+  const done = (): void => {
+    if (foldTokens.get(body) !== token) return;
+    if (fold) body.hidden = true;
+    body.style.transition = '';
+    body.style.height = '';
+    body.style.overflow = '';
+  };
+  body.style.overflow = 'hidden';
+  if (fold) {
+    body.style.height = `${String(body.scrollHeight)}px`;
+    requestAnimationFrame(() => {
+      if (foldTokens.get(body) !== token) return;
+      body.style.transition = 'height 0.25s ease';
+      body.style.height = '0px';
+    });
+  } else {
+    body.hidden = false;
+    body.style.height = '0px';
+    requestAnimationFrame(() => {
+      if (foldTokens.get(body) !== token) return;
+      body.style.transition = 'height 0.25s ease';
+      body.style.height = `${String(body.scrollHeight)}px`;
+    });
+  }
+  body.addEventListener('transitionend', done, { once: true });
+  // Fallback: a cancelled transition still settles.
+  setTimeout(done, 300);
 }
 
 /** Paint the tab state already in `tab` without writing it back to the store. */
@@ -273,6 +311,31 @@ function jumpTo(id: SectionId): void {
   selectTab(layout.tabForSection(id));
   setFolded(id, false);
   document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+let spy: IntersectionObserver | undefined;
+
+/** Scroll-spy: mark the nav chip for the section currently in view. Re-armed after
+ *  every redraw (draw() replaces the section elements). Inert when no chip nav is
+ *  rendered — the tabbed page shows its position through the tab bar instead. */
+function armScrollSpy(): void {
+  spy?.disconnect();
+  if (!('IntersectionObserver' in window)) return;
+  const page = document.getElementById('settings');
+  if (!page?.querySelector('[data-sec-jump]')) return;
+  spy = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const id = (e.target as HTMLElement).dataset.sec;
+        if (!id) continue;
+        for (const c of page.querySelectorAll<HTMLElement>('[data-sec-jump]'))
+          c.classList.toggle('on', c.dataset.secJump === id);
+      }
+    },
+    { rootMargin: '-20% 0px -70% 0px' },
+  );
+  for (const s of page.querySelectorAll<HTMLElement>('[data-sec]')) spy.observe(s);
 }
 
 const sec = (id: SectionId, body: string, extra = ''): string =>
@@ -336,10 +399,21 @@ function shortcutsHtml(): string {
     ['Ctrl+Shift+Alt+Z / Cmd+Shift+Alt+Z', 'Undo Last Message\u2019s Edits'],
     ['Ctrl+Shift+Alt+M / Cmd+Shift+Alt+M', 'Pick Chat Model'],
   ];
+  // Each key gets its own <kbd> (alternatives separated by ' / '), so the
+  // stylesheet can render real key caps instead of one flat string.
+  const kbd = (combo: string): string =>
+    combo
+      .split(' / ')
+      .map((alt) =>
+        alt
+          .split('+')
+          .map((k) => `<kbd>${escapeHtml(k)}</kbd>`)
+          .join('+'),
+      )
+      .join(' / ');
   return `<table class="shortcuts"><thead><tr><th>Keybinding</th><th>Action</th></tr></thead><tbody>${rows
     .map(
-      ([key, action]) =>
-        `<tr><td class="key">${escapeHtml(key)}</td><td>${escapeHtml(action)}</td></tr>`,
+      ([key, action]) => `<tr><td class="key">${kbd(key)}</td><td>${escapeHtml(action)}</td></tr>`,
     )
     .join('')}</tbody></table>`;
 }
@@ -349,8 +423,8 @@ function draw(): void {
   const panel = (id: TabId, body: string): string => layout.tabPanelHtml(id, body, tab === id);
   page.innerHTML = `
 <div class="set-top">
-  <div class="set-head"><button class="ghost back" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
-  ${layout.tabsHtml(tab)}
+  <div class="set-head"><button class="ghost back nav-pill" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
+  ${layout.tabsHtml(tab, { providers: connected.length })}
 </div>
 <div class="set-panels">
 ${panel(
@@ -386,6 +460,7 @@ ${panel('advanced', sec('advanced', advancedHtml()))}
   stats.refresh();
   syncForm();
   drawStatus();
+  armScrollSpy();
 }
 
 function selectedProvider(): CatalogProvider | undefined {

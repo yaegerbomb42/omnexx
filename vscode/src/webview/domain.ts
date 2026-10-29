@@ -65,7 +65,7 @@ export function pillHtml(): string {
   const meta = metaFor(current);
   const buttons = DOMAINS.map(
     (d) =>
-      `<button data-domain="${d.id}" aria-pressed="${String(d.id === current)}" title="${escapeHtml(d.caption)}"><span class="posture-ico" aria-hidden="true">${d.icon}</span>${d.name}</button>`,
+      `<button data-domain="${d.id}"${d.id === current ? ' class="active"' : ''} aria-pressed="${String(d.id === current)}" title="${escapeHtml(d.caption)}"><span class="posture-ico" aria-hidden="true">${d.icon}</span>${d.name}</button>`,
   ).join('');
   return `<div class="domain-head"><span class="domain-label">Work mode</span><span class="domain-hint">what kind of work runs do</span></div>
 <div class="posture-pill domain-pill" role="group" aria-label="Work mode">${buttons}</div>
