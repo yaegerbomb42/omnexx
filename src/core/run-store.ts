@@ -21,6 +21,7 @@ export const PHASES = [
   'record',
   'guard',
   'wrapup',
+  'landing',
   'done',
 ] as const;
 export type Phase = (typeof PHASES)[number];

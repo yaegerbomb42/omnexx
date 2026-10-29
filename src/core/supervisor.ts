@@ -673,12 +673,16 @@ class Supervisor {
       });
     }
     if (inWrapup(r.config.budget, limits)) {
-      await r.setPhase('wrapup');
-      await this.finalVerify();
-      return {
-        status: 'expired',
-        reason: `wrap-up reserve reached (${Math.round(r.config.budget.wrapup_reserve * 100)}% of budget or time left)`,
-      };
+      if (r.state.phase !== 'landing' && r.state.phase !== 'wrapup') {
+        await r.setPhase('landing');
+        r.events.emit('landing.start', { ...limits });
+      }
+      // Keep going: finish the in-flight task, then stop at the next cap. The reserve is
+      // spent by the landing phase (verify + commit + report), not discarded.
+    }
+    if (r.state.phase === 'landing' && r.budgetLeftFraction() < 0.02) {
+      r.events.emit('landing.floor', { left: r.budgetLeftFraction() });
+      return { status: 'expired', reason: 'landing floor reached (reserve kept for verify)' };
     }
     const goal = await r.store.readGoal();
     if (goal.hash !== r.state.goalHash) {
@@ -701,7 +705,7 @@ class Supervisor {
     return undefined;
   }
 
-  private async finalVerify(): Promise<void> {
+  async finalVerify(): Promise<void> {
     const r = this.run;
     await prepareWorktree(r);
     const results = await runGates(r.config.gates, {
@@ -1342,6 +1346,7 @@ export async function supervise(
     await shutdownRunChildren(deps.paths, runId);
     await rememberForRepo(run, facts);
     if (outcome.status === 'user-stop') await prepareWorktree(run);
+    if (run.plan) await sup.finalVerify().catch(() => undefined);
     run.state.status = outcome.status;
     run.state.statusReason = outcome.reason;
     await run.setPhase('done');

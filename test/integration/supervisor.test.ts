@@ -664,7 +664,7 @@ describe('M2: stuck handling, budget and judge', () => {
       expect(final && getNode(final, id).consecutiveRejections).toBe(0);
   });
 
-  it('wrap-up reserve: no new task starts in the reserve window; report written, lastGreen clean', async () => {
+  it('wrap-up reserve: the run lands (no hard stop at the reserve); report written, lastGreen clean', async () => {
     const plan = planner([
       {
         id: 'M1',
@@ -688,15 +688,12 @@ describe('M2: stuck handling, budget and judge', () => {
     };
     const out = await superviseTest(t);
     expect(out.status).toBe('expired');
-    expect(out.reason).toMatch(/wrap-up reserve/);
     const events = await readEvents(t.run.store.eventsPath);
-    const starts = types(events, 'cycle.start');
-    const wrap = events.findIndex((e) => e.type === 'phase' && e.phase === 'wrapup');
-    expect(wrap).toBeGreaterThan(-1);
-    expect(events.slice(wrap).some((e) => e.type === 'cycle.start')).toBe(false);
-    expect(starts.length).toBeLessThan(3);
-    expect(types(events, 'final.verify')).toHaveLength(1);
-    expect(await readFile(t.run.store.file('REPORT.md'), 'utf8')).toContain('wrap-up reserve');
+    // Phase 3: entering the reserve switches to landing instead of stopping.
+    expect(types(events, 'landing.start').length).toBeGreaterThan(0);
+    const landing = events.findIndex((e) => e.type === 'phase' && e.phase === 'landing');
+    expect(landing).toBeGreaterThan(-1);
+    expect(await readFile(t.run.store.file('REPORT.md'), 'utf8')).toBeTruthy();
     expect(await isClean(t.run.worktree)).toBe(true);
   });
 
