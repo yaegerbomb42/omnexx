@@ -43,6 +43,8 @@ export interface CycleInputs {
   role?: string;
   /** What the user's agent settings mean (effort, time); a volatile block after the goal. */
   brief?: string;
+  /** Wall-clock budget status for this run; a volatile block so the cache prefix stays stable. */
+  clock?: string;
   /** The repo's verified facts (how it builds and tests); a volatile block after the settings. */
   facts?: string;
   /** How each section reaches the model; all pinned when unset (the old behaviour). */
@@ -197,6 +199,12 @@ export function buildCycleContext(i: CycleInputs): {
     blocks.push({
       label: 'settings',
       text: canonicalizePrefixText(clampSlot(i.brief.trim(), SLOT_CHAR_BUDGETS.facts), i.repoRoot),
+    });
+  }
+  if (i.clock?.trim()) {
+    blocks.push({
+      label: 'clock',
+      text: canonicalizePrefixText(clampSlot(i.clock.trim(), SLOT_CHAR_BUDGETS.facts), i.repoRoot),
     });
   }
   if (i.facts?.trim()) {
