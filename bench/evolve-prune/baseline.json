@@ -1,0 +1,74 @@
+{
+  "train": {
+    "tokens": 13830,
+    "raw": 15707,
+    "dropped": []
+  },
+  "holdout": {
+    "tokens": 8448,
+    "raw": 10321,
+    "dropped": []
+  },
+  "perCase": {
+    "reread-fix": {
+      "tokens": 1563,
+      "raw": 2189,
+      "dropped": []
+    },
+    "test-flip": {
+      "tokens": 912,
+      "raw": 1536,
+      "dropped": []
+    },
+    "edit-then-read": {
+      "tokens": 1640,
+      "raw": 2267,
+      "dropped": []
+    },
+    "grep-repeat": {
+      "tokens": 1546,
+      "raw": 1546,
+      "dropped": []
+    },
+    "narrow-reads": {
+      "tokens": 1469,
+      "raw": 1469,
+      "dropped": []
+    },
+    "cmd-ws": {
+      "tokens": 1468,
+      "raw": 1468,
+      "dropped": []
+    },
+    "trap-edit-noreread": {
+      "tokens": 2327,
+      "raw": 2327,
+      "dropped": []
+    },
+    "trap-distinct-cmds": {
+      "tokens": 2905,
+      "raw": 2905,
+      "dropped": []
+    },
+    "ho-multi-read": {
+      "tokens": 1655,
+      "raw": 2905,
+      "dropped": []
+    },
+    "ho-test-regress": {
+      "tokens": 915,
+      "raw": 1538,
+      "dropped": []
+    },
+    "ho-grep-glob": {
+      "tokens": 2180,
+      "raw": 2180,
+      "dropped": []
+    },
+    "ho-ws-glob": {
+      "tokens": 3698,
+      "raw": 3698,
+      "dropped": []
+    }
+  }
+}

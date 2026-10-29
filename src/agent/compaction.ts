@@ -246,39 +246,57 @@ function covers(later: Record<string, unknown>, earlier: Record<string, unknown>
   return (ls ?? 1) <= es && le !== undefined && le >= ee;
 }
 
-/** Why an earlier result is dead weight given every result after it, or undefined if it isn't. */
-function supersededBy(
-  call: CallInfo,
-  isError: boolean,
-  later: readonly { call: CallInfo; isError: boolean }[],
-): string | undefined {
-  if (
-    call.name === 'read' &&
-    later.some((l) => l.call.name === 'read' && covers(l.call.input, call.input))
-  )
-    return `${String(field(call.input, 'path'))} was read again later; that read is current`;
-  const command = field(call.input, 'command');
-  if (call.name !== 'bash' || typeof command !== 'string') return undefined;
-  const reruns = later.filter(
-    (l) => l.call.name === 'bash' && field(l.call.input, 'command') === command,
-  );
-  if (!reruns.length) return undefined;
-  const shown = clip(command, 120);
-  if (isError && reruns.some((l) => !l.isError))
-    return `\`${shown}\` failed here and passed later; the failure is resolved`;
-  return `\`${shown}\` ${isError ? 'failed' : 'passed'} here and ran again later; that run is current`;
+/** Are two grep/glob inputs identical (every field, key order ignored)? */
+function sameSearchInput(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const norm = (x: Record<string, unknown>) =>
+    JSON.stringify(
+      Object.keys(x)
+        .sort((p, q) => p.localeCompare(q))
+        .map((k) => [k, x[k]]),
+    );
+  return norm(a) === norm(b);
+}
+
+/**
+ * Does a later edit/write_file invalidate an earlier read, and is there a later read that
+ * restores the file's contents? A read becomes stale when a later edit/write_file of the same
+ * path is followed by a later read of that path (any range), but keep it if no later read exists.
+ */
+function readSupersededByEditThenRead(
+  path: unknown,
+  later: readonly { call: CallInfo }[],
+): boolean {
+  if (path === undefined) return false;
+  let sawEdit = false;
+  for (const { call: c } of later) {
+    if ((c.name === 'edit' || c.name === 'write_file') && field(c.input, 'path') === path)
+      sawEdit = true;
+    else if (sawEdit && c.name === 'read' && field(c.input, 'path') === path) return true;
+  }
+  return false;
+}
+
+/** Normalize a bash command for comparison: trim and collapse internal whitespace. */
+function normCmdEq(a: unknown, b: unknown): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  return a.trim().replace(/\s+/g, ' ') === b.trim().replace(/\s+/g, ' ');
+}
+
+interface OrderEntry {
+  at: [number, number];
+  call: CallInfo;
+  isError: boolean;
+  size: number;
+  done: boolean;
 }
 
 /**
  * Stub tool results that later steps made dead weight: a file read again later (same lines or
- * the whole file), and a command that failed and then passed. Deterministic and free; the call
- * and its result stay paired, so every provider accepts the history. Returns new messages.
+ * the whole file), a read invalidated by an edit then re-read, and a command that failed and then
+ * passed. Deterministic and free; the call and its result stay paired, so every provider accepts
+ * the history. Returns new messages.
  */
-export function pruneSuperseded(messages: readonly Message[]): {
-  messages: Message[];
-  pruned: number;
-  chars: number;
-} {
+function collectCalls(messages: readonly Message[]): Map<string, CallInfo> {
   const calls = new Map<string, CallInfo>();
   for (const m of messages)
     for (const b of m.content)
@@ -290,17 +308,16 @@ export function pruneSuperseded(messages: readonly Message[]): {
               ? (b.input as Record<string, unknown>)
               : {},
         });
-  const order: {
-    at: [number, number];
-    call: CallInfo;
-    isError: boolean;
-    size: number;
-    done: boolean;
-  }[] = [];
+  return calls;
+}
+
+function collectOrder(messages: readonly Message[], calls: Map<string, CallInfo>): OrderEntry[] {
+  const order: OrderEntry[] = [];
   messages.forEach((m, i) => {
     m.content.forEach((b, j) => {
-      const call = b.type === 'tool_result' ? calls.get(b.toolUseId) : undefined;
-      if (b.type !== 'tool_result' || !call) return;
+      if (b.type !== 'tool_result') return;
+      const call = calls.get(b.toolUseId);
+      if (!call) return;
       order.push({
         at: [i, j],
         call,
@@ -310,29 +327,78 @@ export function pruneSuperseded(messages: readonly Message[]): {
       });
     });
   });
-  const stubs = new Map<string, string>();
-  let chars = 0;
-  order.forEach((r, k) => {
-    if (r.done || r.size < MIN_SUPERSEDE_CHARS) return;
-    const why = supersededBy(r.call, r.isError, order.slice(k + 1));
-    if (!why) return;
-    stubs.set(String(r.at), `${SUPERSEDED_PREFIX} ${why}]`);
-    chars += r.size;
-  });
-  if (!stubs.size) return { messages: [...messages], pruned: 0, chars: 0 };
-  const out = messages.map((m, i) => {
-    if (!m.content.some((_, j) => stubs.has(String([i, j])))) return m;
+  return order;
+}
+
+function readReason(r: OrderEntry, later: readonly OrderEntry[]): string | undefined {
+  if (later.some((l) => l.call.name === 'read' && covers(l.call.input, r.call.input)))
+    return `${String(field(r.call.input, 'path'))} was read again later`;
+  if (readSupersededByEditThenRead(field(r.call.input, 'path'), later))
+    return `${String(field(r.call.input, 'path'))} was edited and read again later`;
+  return undefined;
+}
+
+function bashReason(r: OrderEntry, later: readonly OrderEntry[]): string | undefined {
+  const command = field(r.call.input, 'command');
+  if (typeof command !== 'string') return undefined;
+  const reruns = later.filter(
+    (l) => l.call.name === 'bash' && normCmdEq(field(l.call.input, 'command'), command),
+  );
+  if (!reruns.length) return undefined;
+  const shown = clip(command, 60);
+  if (r.isError && reruns.some((l) => !l.isError))
+    return `\`${shown}\` failed here and passed later`;
+  return `\`${shown}\` ${r.isError ? 'failed' : 'passed'} here and ran again later`;
+}
+
+function searchReason(r: OrderEntry, later: readonly OrderEntry[]): string | undefined {
+  return later.some(
+    (l) => l.call.name === r.call.name && sameSearchInput(l.call.input, r.call.input),
+  )
+    ? `later identical ${r.call.name}`
+    : undefined;
+}
+
+function supersededReason(r: OrderEntry, later: readonly OrderEntry[]): string | undefined {
+  if (r.call.name === 'read') return readReason(r, later);
+  if (r.call.name === 'bash') return bashReason(r, later);
+  if (r.call.name === 'grep' || r.call.name === 'glob') return searchReason(r, later);
+  return undefined;
+}
+
+function applyStubs(messages: readonly Message[], stubs: Map<string, string>): Message[] {
+  return messages.map((m, i) => {
+    if (!m.content.some((_, j) => stubs.has(`${i}|${j}`))) return m;
     return {
       ...m,
       content: m.content.map((b, j): ContentBlock => {
-        const stub = stubs.get(String([i, j]));
+        const stub = stubs.get(`${i}|${j}`);
         return stub && b.type === 'tool_result' ? { ...b, content: stub } : b;
       }),
     };
   });
-  return { messages: out, pruned: stubs.size, chars };
 }
 
+export function pruneSuperseded(messages: readonly Message[]): {
+  messages: Message[];
+  pruned: number;
+  chars: number;
+} {
+  const order = collectOrder(messages, collectCalls(messages));
+  const stubs = new Map<string, string>();
+  let chars = 0;
+
+  order.forEach((r, k) => {
+    if (r.done || r.size < MIN_SUPERSEDE_CHARS) return;
+    const why = supersededReason(r, order.slice(k + 1));
+    if (!why) return;
+    stubs.set(`${r.at[0]}|${r.at[1]}`, `${SUPERSEDED_PREFIX} ${why}]`);
+    chars += r.size;
+  });
+
+  if (!stubs.size) return { messages: [...messages], pruned: 0, chars: 0 };
+  return { messages: applyStubs(messages, stubs), pruned: stubs.size, chars };
+}
 /**
  * Split after the first message into the part to summarize and the recent tail to keep. The tail
  * starts at an assistant message so every tool_use keeps its tool_result. Undefined when fewer
