@@ -79,7 +79,9 @@ describe('rankCandidatesForStage', () => {
     };
   };
 
-  const highReasoningCandidate = mockCandidate('anthropic:claude-3-7-sonnet', 'high', 'normal', ['planner']);
+  const highReasoningCandidate = mockCandidate('anthropic:claude-3-7-sonnet', 'high', 'normal', [
+    'planner',
+  ]);
   const fastLowCostCandidate = mockCandidate('google:gemini-2.0-flash', 'low', 'fast', ['cheap']);
 
   const candidates: Candidate[] = [highReasoningCandidate, fastLowCostCandidate];
