@@ -120,23 +120,46 @@ describe('preflight', () => {
 describe('run limits, warn and wrap-up', () => {
   const budget = defaultConfig({ budget: { max_usd: 50, max_hours: 24, max_cycles: 300 } }).budget;
   it('hits each cap', () => {
-    expect(runLimitHit(budget, { spentUsd: 50, elapsedMs: 0, cycles: 0 })?.kind).toBe('max_usd');
-    expect(runLimitHit(budget, { spentUsd: 0, elapsedMs: 24 * 3_600_000, cycles: 0 })?.kind).toBe(
-      'max_hours',
+    expect(runLimitHit(budget, { spentUsd: 50, elapsedMs: 0, cycles: 0, turns: 0 })?.kind).toBe(
+      'max_usd',
     );
-    expect(runLimitHit(budget, { spentUsd: 0, elapsedMs: 0, cycles: 300 })?.kind).toBe(
+    expect(
+      runLimitHit(budget, { spentUsd: 0, elapsedMs: 24 * 3_600_000, cycles: 0, turns: 0 })?.kind,
+    ).toBe('max_hours');
+    expect(runLimitHit(budget, { spentUsd: 0, elapsedMs: 0, cycles: 300, turns: 0 })?.kind).toBe(
       'max_cycles',
     );
-    expect(runLimitHit(budget, { spentUsd: 1, elapsedMs: 1, cycles: 1 })).toBeUndefined();
+    expect(runLimitHit(budget, { spentUsd: 1, elapsedMs: 1, cycles: 1, turns: 1 })).toBeUndefined();
+  });
+  it('hits the run-level turn cap, and ignores turns without one', () => {
+    const capped = defaultConfig({
+      budget: { max_usd: 50, max_hours: 24, max_cycles: 300, max_turns: 10 },
+    }).budget;
+    expect(runLimitHit(capped, { spentUsd: 0, elapsedMs: 0, cycles: 0, turns: 10 })?.kind).toBe(
+      'max_turns',
+    );
+    expect(runLimitHit(capped, { spentUsd: 0, elapsedMs: 0, cycles: 0, turns: 9 })).toBeUndefined();
+    expect(
+      runLimitHit(budget, { spentUsd: 0, elapsedMs: 0, cycles: 0, turns: 10_000 }),
+    ).toBeUndefined();
   });
   it('warns at 80% and enters wrap-up in the last 8% of the tightest dimension', () => {
-    const at = (f: number) => ({ spentUsd: 0, elapsedMs: f * 24 * 3_600_000, cycles: 0 });
+    const at = (f: number) => ({ spentUsd: 0, elapsedMs: f * 24 * 3_600_000, cycles: 0, turns: 0 });
     expect(budgetFraction(budget, at(0.5))).toBeCloseTo(0.5);
     expect(shouldWarn(budget, at(0.79))).toBe(false);
     expect(shouldWarn(budget, at(0.8))).toBe(true);
     expect(inWrapup(budget, at(0.91))).toBe(false);
     expect(inWrapup(budget, at(0.93))).toBe(true);
     expect(inWrapup(defaultConfig({ budget: { wrapup_reserve: 0 } }).budget, at(0.99))).toBe(false);
+  });
+  it('counts turns toward the tightest dimension for warn and wrap-up', () => {
+    const capped = defaultConfig({
+      budget: { max_usd: 50, max_hours: 24, max_cycles: 300, max_turns: 10 },
+    }).budget;
+    const turns = (t: number) => ({ spentUsd: 0, elapsedMs: 0, cycles: 0, turns: t });
+    expect(budgetFraction(capped, turns(5))).toBeCloseTo(0.5);
+    expect(shouldWarn(capped, turns(8))).toBe(true);
+    expect(inWrapup(capped, turns(10))).toBe(true);
   });
 });
 

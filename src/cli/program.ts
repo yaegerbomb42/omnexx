@@ -202,7 +202,11 @@ export function createProgram(
     .option('--budget <usd>', 'run-level spend cap in USD')
     .option('--task-budget <usd>', 'per-task spend cap; the task is checkpointed and parked at it')
     .option('--task-tokens <n>', 'per-task token cap; the task is checkpointed and parked at it')
-    .option('--hours <n>', 'wall-clock cap in hours')
+    .option('--hours <n>', 'wall-clock cap: hours (e.g. 2, 0.5) or a duration (e.g. 30m, 1h30m)')
+    .option(
+      '--max-turns <n>',
+      'run-level turn cap: stop as expired after this many worker + planner turns',
+    )
     .option(
       '--plan <mode>',
       'auto (short goals try one pass first) | fast (always) | full (plan milestones first)',
@@ -220,6 +224,10 @@ export function createProgram(
     .option(
       '--for <duration>',
       'autonomous mode: keep improving the repo for this long (e.g. 45m, 8h, 2d)',
+    )
+    .option(
+      '--beyond <n>',
+      'improvement rounds after the goal is met (default 0; opt in, e.g. --beyond 2)',
     )
     .option(
       '--gate <command>',

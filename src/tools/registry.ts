@@ -16,6 +16,7 @@ import { taskTool } from './task.js';
 import { runningContextTool } from './running-context.js';
 import { queryArtifactTool } from './query-artifact.js';
 import { replProjectionTool } from './repl-projection.js';
+import { defineContractTool } from './contract.js';
 import type { OmnexxConfig } from '../config/schema.js';
 import { workModeOf } from '../config/work-mode.js';
 import * as extraSources from './extra/index.js';
@@ -41,6 +42,7 @@ export const WORKER_TOOLS: readonly Tool[] = [
   replProjectionTool,
   contextTool,
   todoTool,
+  defineContractTool,
 ] as Tool[];
 
 export const READ_ONLY_TOOLS: readonly Tool[] = WORKER_TOOLS.filter((t) => t.readOnly);
