@@ -32,7 +32,7 @@ function sliderHtml(s: Slider, l: AgentLevels, m: AgentMeta): string {
   return `<div class="agent-row${s.prominent ? ' prominent' : ''}">
   <div class="agent-row-head"><label for="agent-${s.id}">${s.name}</label>
   <span class="agent-meaning" data-agent-meaning="${s.id}">${escapeHtml(meaning(s.id, l, m))}</span></div>
-  <input id="agent-${s.id}" type="range" min="1" max="${String(steps(s.id, m))}" step="1" value="${String(pos)}" style="--p:${String(pct)}%" data-agent-slider="${s.id}">
+  <input id="agent-${s.id}" type="range" min="1" max="${String(steps(s.id, m))}" step="1" value="${String(pos)}" style="--p:${String(pct)}%" data-agent-slider="${s.id}" aria-valuetext="${escapeHtml(meaning(s.id, l, m))}">
   <span class="agent-hint">${escapeHtml(s.hint)}</span>
 </div>`;
 }
@@ -123,6 +123,7 @@ export function wire(post: Post): void {
     if (!id) return;
     levels = withPosition(id, Number(t.value), levels, meta);
     t.style.setProperty('--p', `${String(Math.round((Number(t.value) / steps(id, meta)) * 100))}%`);
+    t.setAttribute('aria-valuetext', meaning(id, levels, meta));
     status = '';
     // Update every copy of this slider's label (settings page and launch offer).
     const text = meaning(id, levels, meta);

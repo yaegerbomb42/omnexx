@@ -70,7 +70,7 @@ export function pillHtml(): string {
   const meta = metaFor(current);
   const buttons = MODES.map(
     (m) =>
-      `<button data-posture="${m.id}" aria-pressed="${String(m.id === current)}" title="${escapeHtml(m.caption)}"><span class="posture-ico" aria-hidden="true">${m.icon}</span>${m.name}</button>`,
+      `<button data-posture="${m.id}"${m.id === current ? ' class="active"' : ''} aria-pressed="${String(m.id === current)}" title="${escapeHtml(m.caption)}"><span class="posture-ico" aria-hidden="true">${m.icon}</span>${m.name}</button>`,
   ).join('');
   return `<div class="posture-pill" role="group" aria-label="Execution posture">${buttons}</div>
 <p class="posture-caption">${escapeHtml(meta.caption)}</p>

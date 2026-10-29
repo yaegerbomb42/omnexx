@@ -11,10 +11,10 @@
   --space-2: 4px;
   --space-3: 6px;
   --space-4: 8px;
-  --space-5: 12px;
-  --space-6: 16px;
-  --space-7: 24px;
-  --space-8: 32px;
+  --space-5: 14px;
+  --space-6: 20px;
+  --space-7: 28px;
+  --space-8: 40px;
   --gap: var(--space-4);
   /* One horizontal gutter for the whole panel: header, sections, log, composer. */
   --pad-x: var(--space-5);
@@ -23,12 +23,16 @@
   --fs-md: var(--vscode-font-size, 13px);
   --fs-lg: calc(var(--vscode-font-size, 13px) * 1.08);
 
-  /* Motion tokens (§3.5): durations and the one easing, gated by reduced-motion. */
-  --dur-fast: 120ms;
-  --dur-base: 200ms;
-  --dur-slow: 300ms;
-  --dur-fade: 600ms;
-  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Motion tokens (§3.5): durations and easings, gated by reduced-motion.
+     --ease is the default expo-out; --ease-soft is the gentler in-out for
+     hovers and pulses; --ease-spring is reserved for pop-in surfaces. */
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 340ms;
+  --dur-fade: 700ms;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-soft: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 
   /* Z scale (§P2.14): popovers, nav, overlays. */
   --z-sticky: 5;
@@ -37,27 +41,28 @@
   --z-suggest: 25;
   --z-overlay: 40;
 
-  /* Radii (§3.2): xs → chips, sm → small surfaces, md → buttons/inputs,
-     lg → cards/modals, full → pills. */
-  --radius-xs: 2px;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
+  /* Radii (§3.2): xs → chips, sm → small surfaces, md → buttons/inputs (8px),
+     lg → cards/modals (12px), full → pills. */
+  --radius-xs: 3px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
   --radius-full: 999px;
 
   --fg: var(--vscode-foreground);
   --muted: var(--vscode-descriptionForeground);
   --surface: var(--vscode-sideBar-background);
-  --card: color-mix(in srgb, var(--vscode-foreground) 6%, var(--surface));
-  --card-strong: color-mix(in srgb, var(--vscode-foreground) 10%, var(--surface));
+  --card: color-mix(in srgb, var(--vscode-foreground) 8%, var(--surface));
+  --card-strong: color-mix(in srgb, var(--vscode-foreground) 12%, var(--surface));
   --line: color-mix(in srgb, var(--vscode-foreground) 16%, transparent);
 
-  /* Semantic Palette */
-  --violet: var(--vscode-charts-purple, #a78bfa);
+  /* Semantic Palette: deeper violet, warmer amber (fallbacks only — the theme
+     variables win when the theme defines them). */
+  --violet: var(--vscode-charts-purple, #8b5cf6);
   --teal: var(--vscode-terminal-ansiCyan, #2dd4bf);
   --emerald: var(--vscode-testing-iconPassed, #3fb950);
   --rose: var(--vscode-testing-iconFailed, #f87171);
-  --amber: var(--vscode-editorWarning-foreground, #f5a524);
+  --amber: var(--vscode-editorWarning-foreground, #f59e0b);
   --pink: #f472b6;
   --ok: var(--emerald);
   --warn: var(--amber);
@@ -67,19 +72,38 @@
   --brand: var(--accent);
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
 
-  /* Glassmorphism Tokens */
-  --glass-bg: color-mix(in srgb, var(--surface) 74%, transparent);
+  /* Glassmorphism Tokens: slightly more opaque for legibility, deeper blur for
+     depth, and a softer two-sided inner light (top highlight + faint bottom
+     shade) so panels read as lit from above rather than rimmed. */
+  --glass-bg: color-mix(in srgb, var(--surface) 78%, transparent);
   --glass-card: color-mix(
     in srgb,
-    var(--fg) 5%,
-    color-mix(in srgb, var(--surface) 82%, transparent)
+    var(--fg) 6%,
+    color-mix(in srgb, var(--surface) 84%, transparent)
   );
   --glass-border: color-mix(in srgb, var(--fg) 14%, transparent);
-  --glass-highlight: inset 0 1px 0 0 color-mix(in srgb, #ffffff 10%, transparent);
-  --glass-blur: blur(10px) saturate(140%);
+  --glass-highlight:
+    inset 0 1px 0 0 color-mix(in srgb, #ffffff 8%, transparent),
+    inset 0 -1px 0 0 color-mix(in srgb, #000000 6%, transparent);
+  --glass-blur: blur(14px) saturate(150%);
   --glow:
     0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
-    0 4px 16px color-mix(in srgb, var(--accent) 18%, transparent);
+    0 4px 16px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 12px 32px color-mix(in srgb, var(--accent) 10%, transparent);
+  /* Multi-layer elevation: ambient (tight, dark) + key light (wide, soft).
+     Use --shadow-sm for rows, --shadow-md for cards, --shadow-lg for popovers. */
+  --shadow-sm:
+    0 1px 2px rgb(0 0 0 / 12%),
+    0 1px 3px rgb(0 0 0 / 8%);
+  --shadow-md:
+    0 2px 6px rgb(0 0 0 / 14%),
+    0 8px 20px rgb(0 0 0 / 10%);
+  --shadow-lg:
+    0 4px 12px rgb(0 0 0 / 16%),
+    0 16px 40px rgb(0 0 0 / 14%);
+  /* Subtle film grain for large glass surfaces (composer, model picker). The
+     tile is near-invisible by design — texture, not a pattern. */
+  --glass-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
   --mono: var(--vscode-editor-font-family, ui-monospace, monospace);
 
   /* Bento glass tokens: the shared surface language of the posture pill, the swarm
@@ -87,14 +111,18 @@
   --bento-bg: linear-gradient(
     165deg,
     color-mix(in srgb, var(--fg) 7%, transparent),
+    color-mix(in srgb, var(--accent) 3%, transparent) 55%,
     color-mix(in srgb, var(--surface) 86%, transparent)
   );
   --bento-border: color-mix(in srgb, var(--fg) 13%, transparent);
-  --bento-shadow: 0 3px 12px rgb(3 7 18 / 20%), var(--glass-highlight);
+  --bento-shadow:
+    0 1px 2px rgb(3 7 18 / 18%),
+    0 6px 16px rgb(3 7 18 / 16%),
+    var(--glass-highlight);
   /* Execution posture gradients (active pill segments) and their glow colors. */
   --grad-efficient: linear-gradient(92deg, #2b6cb8, #4aa3e0);
-  --grad-normal: linear-gradient(92deg, #6d4fc2, #9d7bea);
-  --grad-extreme: linear-gradient(92deg, #c2571b, #e8a33d);
+  --grad-normal: linear-gradient(92deg, #5b21b6, #8b5cf6);
+  --grad-extreme: linear-gradient(92deg, #b45309, #f59e0b);
   --seg-efficient: #38bdf8;
   --seg-normal: #c084fc;
   --seg-extreme: #fbbf24;
@@ -118,13 +146,15 @@ body.vscode-light {
   --pink: color-mix(in srgb, var(--rose) 55%, var(--violet));
   --ok: var(--emerald);
   --warn: var(--amber);
-  --glass-bg: color-mix(in srgb, var(--surface) 85%, transparent);
+  --glass-bg: color-mix(in srgb, var(--surface) 88%, transparent);
   --glass-card: color-mix(
     in srgb,
     var(--fg) 4%,
     color-mix(in srgb, var(--surface) 90%, transparent)
   );
-  --glass-highlight: inset 0 1px 0 0 color-mix(in srgb, #ffffff 65%, transparent);
+  --glass-highlight:
+    inset 0 1px 0 0 color-mix(in srgb, #ffffff 50%, transparent),
+    inset 0 -1px 0 0 color-mix(in srgb, #000000 5%, transparent);
   --glow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
@@ -146,6 +176,32 @@ body.vscode-high-contrast-light {
 *::before,
 *::after {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--fg) 22%, transparent) transparent;
+}
+
+/* Thin themed scrollbars (Chromium): transparent track, pill thumb. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fg) 22%, transparent);
+  border: 2px solid transparent;
+  border-radius: var(--radius-full);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--fg) 34%, transparent);
+  border: 2px solid transparent;
+  border-radius: var(--radius-full);
+  background-clip: padding-box;
 }
 
 [hidden] {
@@ -165,7 +221,9 @@ body {
   background: var(--surface);
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
-  line-height: 1.4;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   /* Accent resolves per theme class (§P0.4): link color normally, focusBorder in
      high-contrast so interactive affordances never blend into the theme. */
   --accent: var(--vscode-textLink-foreground, #36c5f0);
@@ -175,11 +233,18 @@ button {
   font: inherit;
   color: inherit;
   cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease);
 }
 
 button:disabled {
   cursor: default;
   opacity: 0.4;
+}
+
+/* Micro-press feedback on every button (theme buttons keep their own
+   background transitions; the transform transition above still applies). */
+button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 svg {
@@ -225,6 +290,7 @@ svg {
 
 .chip:hover {
   border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
 }
 
 .top .chip.model {
@@ -262,7 +328,7 @@ svg {
 
 .icon:hover:not(:disabled) {
   color: var(--fg);
-  background: var(--vscode-toolbar-hoverBackground);
+  background: color-mix(in srgb, var(--accent) 12%, var(--vscode-toolbar-hoverBackground));
 }
 
 .icon.small {
@@ -695,9 +761,11 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   border-radius: var(--radius-lg);
   border: 1px solid var(--glass-border);
   background: var(--vscode-editorWidget-background, var(--surface));
+  background-image: var(--glass-noise);
+  background-size: 120px 120px;
   box-shadow:
-    0 12px 32px rgb(0 0 0 / 0.35),
-    0 0 20px color-mix(in srgb, var(--accent) 18%, transparent);
+    var(--shadow-lg),
+    0 0 24px color-mix(in srgb, var(--accent) 18%, transparent);
   overflow: hidden;
 }
 
@@ -727,6 +795,8 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   margin: 0;
   padding: 0 4px 4px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--fg) 22%, transparent) transparent;
 }
 
 .mp-group {
@@ -755,7 +825,11 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 }
 
 .mp-group-head:hover {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--violet) 8%,
+    color-mix(in srgb, var(--accent) 12%, transparent)
+  );
 }
 
 .mp-group-head .badge {
@@ -808,7 +882,11 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 }
 
 .mp-item:hover {
-  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--violet) 6%,
+    color-mix(in srgb, var(--accent) 10%, transparent)
+  );
 }
 
 .mp-item.active {
@@ -1010,7 +1088,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 }
 
 .helper.working .h-dot {
-  animation: mcp-pulse 1.2s ease-in-out infinite;
+  animation: mcp-pulse 1.6s var(--ease-soft) infinite;
 }
 
 .helper.done .h-status {
@@ -1327,14 +1405,34 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 
 .msg {
   overflow-wrap: anywhere;
+  animation: msg-in var(--dur-slow) var(--ease) both;
+}
+
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
 }
 
 .msg.user {
   border-radius: var(--radius-md);
-  background: var(--card);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--accent) 9%, var(--card)),
+    var(--card)
+  );
   border: 1px solid var(--line);
-  box-shadow: var(--glass-highlight);
+  box-shadow: var(--shadow-sm), var(--glass-highlight);
   padding: var(--space-4) var(--space-5);
+  transition:
+    transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.msg.user:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md), var(--glass-highlight);
 }
 
 .msg.user .who {
@@ -1364,7 +1462,10 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 .msg.assistant {
   position: relative;
   line-height: 1.55;
-  padding: 0 2px;
+  padding: 0 2px 0 8px;
+  /* Assistant side stays flat and uncarded; the accent line is the distinction
+     from the tinted user card. Inset so it costs no layout. */
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .msg.assistant > :first-child {
@@ -1389,6 +1490,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 .msg.assistant h5,
 .msg.assistant h6 {
   margin: 10px 0 2px;
+  letter-spacing: -0.02em;
 }
 
 .stream-cursor {
@@ -1454,6 +1556,8 @@ pre {
   border-radius: var(--radius-lg);
   box-shadow: var(--bento-shadow);
   overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--fg) 22%, transparent) transparent;
 }
 
 pre[data-streaming='true'] {
@@ -1490,7 +1594,7 @@ pre[data-streaming='true'] {
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 6px var(--accent);
-  animation: mcp-pulse 1s ease-in-out infinite;
+  animation: mcp-pulse 1.6s var(--ease-soft) infinite;
 }
 
 .diff-line {
@@ -1718,7 +1822,7 @@ details.msg.think[open] > summary::after {
 }
 
 .tool:hover {
-  background: var(--glass-card);
+  background: color-mix(in srgb, var(--accent) 10%, var(--glass-card));
   border-color: var(--glass-border);
 }
 
@@ -1813,7 +1917,7 @@ details.msg.think[open] > summary::after {
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 6px var(--accent);
-  animation: mcp-pulse 1s ease-in-out infinite;
+  animation: mcp-pulse 1.6s var(--ease-soft) infinite;
 }
 
 /* Active Working Cockpit HUD */
@@ -1842,6 +1946,7 @@ details.msg.think[open] > summary::after {
   border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  box-shadow: var(--shadow-sm);
   color: var(--fg);
   font-family: var(--mono);
   font-size: var(--fs-xs);
@@ -2017,6 +2122,8 @@ details.msg.think[open] > summary::after {
   gap: var(--space-4);
   padding: 10px var(--pad-x) var(--space-5);
   background: var(--glass-bg);
+  background-image: var(--glass-noise);
+  background-size: 120px 120px;
   backdrop-filter: var(--glass-blur);
   border-top: 1px solid var(--line);
   flex: none;
@@ -2028,7 +2135,7 @@ details.msg.think[open] > summary::after {
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, var(--line));
   border-radius: var(--radius-lg);
-  box-shadow: 0 2px 10px rgb(0 0 0 / 16%);
+  box-shadow: var(--shadow-md);
   transition:
     border-color var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease);
@@ -2038,7 +2145,8 @@ details.msg.think[open] > summary::after {
   border-color: var(--vscode-focusBorder, var(--accent));
   box-shadow:
     0 0 0 1px var(--vscode-focusBorder, var(--accent)),
-    0 4px 14px rgb(0 0 0 / 20%);
+    0 2px 6px rgb(0 0 0 / 14%),
+    0 8px 20px rgb(0 0 0 / 12%);
 }
 
 textarea {
@@ -2079,7 +2187,8 @@ textarea::placeholder {
   color: var(--vscode-button-foreground, #fff);
   transition:
     background var(--dur-fast) var(--ease),
-    opacity var(--dur-fast) var(--ease);
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
 }
 
 .send:hover:not(:disabled) {
@@ -2132,7 +2241,7 @@ textarea::placeholder {
 }
 
 .composer .chip:hover {
-  background: var(--vscode-toolbar-hoverBackground);
+  background: color-mix(in srgb, var(--accent) 12%, var(--vscode-toolbar-hoverBackground));
   color: var(--fg);
 }
 
@@ -2155,7 +2264,7 @@ textarea::placeholder {
 }
 
 .modes button:hover {
-  background: var(--vscode-toolbar-hoverBackground);
+  background: color-mix(in srgb, var(--accent) 12%, var(--vscode-toolbar-hoverBackground));
   color: var(--fg);
 }
 
@@ -2290,8 +2399,13 @@ textarea::placeholder {
 }
 
 @keyframes mcp-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
   50% {
-    opacity: 0.3;
+    opacity: 0.45;
   }
 }
 
@@ -2359,7 +2473,7 @@ textarea::placeholder {
 }
 
 .b-ctrl-btn:hover {
-  background: var(--surface-hover);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-hover));
   border-color: var(--line);
 }
 
@@ -2434,7 +2548,7 @@ textarea::placeholder {
 }
 
 .b-tab:hover {
-  background: var(--surface-hover);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-hover));
   color: var(--fg);
 }
 
@@ -2617,7 +2731,8 @@ textarea::placeholder {
   .spinner,
   .tool-pulse,
   .code-stream-dot,
-  .stream-cursor {
+  .stream-cursor,
+  .msg {
     animation: none;
   }
 
@@ -2625,4 +2740,170 @@ textarea::placeholder {
   .chev {
     transition: none;
   }
+}
+
+/* Combined UI polish: hooks added by the chat/stats passes (Agents 2 + 4). */
+.msg-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  font-size: var(--fs-xs);
+}
+
+.msg-time {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.msg-accent {
+  display: block;
+  height: 2px;
+  border-radius: 2px;
+  margin: var(--space-2) 0;
+}
+
+.msg-brand {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.01em;
+}
+
+.code-line {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.code-ln {
+  flex: none;
+  width: 2.5em;
+  text-align: right;
+  color: var(--muted);
+  font-family: var(--mono);
+  user-select: none;
+}
+
+.tool-run-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+  margin: var(--space-3) 0 var(--space-2);
+}
+
+.empty-sub {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.empty-hint {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.suggestion-card {
+  text-align: left;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bento-bg);
+  cursor: pointer;
+}
+
+.suggestion-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.suggestion-icon {
+  font-size: 16px;
+}
+
+.suggestion-title {
+  font-weight: 600;
+}
+
+.suggestion-hint {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.working-copy {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.working.cockpit-hud.is-thinking .working-copy {
+  color: var(--role-violet);
+}
+
+.working.cockpit-hud.is-tool .working-copy {
+  color: var(--role-amber);
+}
+
+.working.cockpit-hud.is-paused .working-copy {
+  color: var(--muted);
+}
+
+.ls-skeleton {
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  animation: ls-shimmer 1.6s var(--ease-soft, ease-in-out) infinite alternate;
+}
+
+@keyframes ls-shimmer {
+  from {
+    opacity: 0.45;
+  }
+  to {
+    opacity: 0.9;
+  }
+}
+
+.t-div {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+}
+
+.head-agent-pill {
+  border-radius: var(--radius-full);
+  padding: 3px 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.helper .wire.wire-working {
+  background: var(--role-blue);
+}
+
+.helper .wire.wire-done {
+  background: var(--ok);
+}
+
+.helper .wire.wire-stopped {
+  background: var(--muted);
+}
+
+.b-visual-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+  overflow: hidden;
+}
+
+.b-visual-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--brand);
 }

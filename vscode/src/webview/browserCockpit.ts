@@ -179,10 +179,11 @@ export function drawVisual(v: BrowserVisualMsg): void {
   const summary = el('b-visual-summary');
   if (summary) {
     const pct = `${(v.changedRatio * 100).toFixed(2)}%`;
+    const barPct = Math.min(100, v.changedRatio * 100);
     const size = v.dimensionsMatch
       ? `${String(v.width)}×${String(v.height)}`
       : `${String(v.baselineWidth)}×${String(v.baselineHeight)} → ${String(v.currentWidth)}×${String(v.currentHeight)}`;
-    summary.innerHTML = `<div class="b-visual-verdict ${v.pass ? 'ok' : 'bad'}">${v.pass ? '✓ match' : '✗ changed'} · ${escapeHtml(v.name)}</div><div class="b-visual-facts"><span>${escapeHtml(pct)} pixels changed</span><span>${escapeHtml(size)}</span><span>mean Δ ${(v.meanDelta * 100).toFixed(2)}%</span></div><div class="b-visual-files"><code>${escapeHtml(v.baseline)}</code></div>`;
+    summary.innerHTML = `<div class="b-visual-verdict ${v.pass ? 'ok' : 'bad'}">${v.pass ? '✓ match' : '✗ changed'} · ${escapeHtml(v.name)}</div><div class="b-visual-facts"><span>${escapeHtml(pct)} pixels changed</span><span>${escapeHtml(size)}</span><span>mean Δ ${(v.meanDelta * 100).toFixed(2)}%</span></div><div class="b-visual-bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${barPct.toFixed(2)}" aria-label="Pixels changed"><span style="width:${String(barPct)}%"></span></div><div class="b-visual-files"><code>${escapeHtml(v.baseline)}</code></div>`;
   }
   const img = el('b-visual-img');
   if (img instanceof HTMLImageElement && v.data) {
