@@ -47,6 +47,7 @@ const mockBudget = {
   max_usd_per_day: 10,
   max_hours: 1,
   max_cycles: 10,
+  cycles_per_hour: 12,
   max_turns_per_cycle: 5,
   max_tokens_per_cycle: 10000,
   max_cmd_timeout: '2m',
