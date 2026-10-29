@@ -1,6 +1,6 @@
 import { program } from 'commander';
 import { join, resolve } from 'node:path';
-import { getHard10Suite, getJimmy10Suite, getWeb5Suite } from './suites/index.ts';
+import { getHard10Suite, getJimmy10Suite, getTimeSuite, getWeb5Suite } from './suites/index.ts';
 import { OmnexxRunner } from './runners/omnexx.ts';
 import {
   anthropicEndpointFromEnv,
@@ -29,6 +29,7 @@ import type { AgentRunner } from './runners/base.ts';
 
 const SUITES: Record<string, () => Suite> = {
   jimmy10: getJimmy10Suite,
+  time: getTimeSuite,
   web5: getWeb5Suite,
   hard10: getHard10Suite,
 };

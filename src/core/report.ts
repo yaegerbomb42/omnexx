@@ -241,9 +241,7 @@ export async function writeReport(
           ...assumptions.map((a) => `- ${a}`),
         ]
       : []),
-    ...(state.status === 'stuck'
-      ? [`- The run stopped for you: ${state.statusReason ?? ''}`]
-      : []),
+    ...(state.status === 'stuck' ? [`- The run stopped for you: ${state.statusReason ?? ''}`] : []),
     '',
     `## ${REPORT_SECTIONS[7]}`,
     '',

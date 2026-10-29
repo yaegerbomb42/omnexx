@@ -496,6 +496,9 @@ export async function stepAct(run: Run): Promise<void> {
     spentTodayUsd: () => run.spentToday(),
     onUsage: (u, usd, model, provider, meta) =>
       run.addSpend(u, usd, model, 'worker', provider, meta),
+    onResponse: ({ ms }) => {
+      run.cycleModelMs += ms;
+    },
     control: () => run.control(),
     onPauseChange: (p) => {
       run.paused = p;

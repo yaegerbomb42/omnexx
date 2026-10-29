@@ -325,12 +325,29 @@ class Supervisor {
 
   private async cycle(taskId: string): Promise<void> {
     const r = this.run;
+    r.cycleModelMs = 0;
+    r.cycleToolMs = 0;
+    const cycleStartElapsed = r.elapsedMs();
+    const offTool = r.events.onEvent((e) => {
+      if (e.type === 'tool.call' && typeof e.ms === 'number') r.cycleToolMs += e.ms;
+    });
     r.state.cycle++;
     await r.setPhase('act', { taskId, pending: undefined, act: undefined });
     r.events.emit('cycle.start', { task: taskId });
     await stepAct(r);
     await stepVerify(r);
     await this.finishCycle();
+    const elapsedMs = r.elapsedMs();
+    r.events.emit('time.report', {
+      elapsed_s: Math.round(elapsedMs / 1000),
+      remaining_s: Math.max(0, Math.round((r.deadlineMs - elapsedMs) / 1000)),
+      task_active_s: Math.round((elapsedMs - cycleStartElapsed) / 1000),
+      model_s: Math.round(r.cycleModelMs / 1000),
+      tool_s: Math.round(r.cycleToolMs / 1000),
+      overrun_s: Math.max(0, Math.round((elapsedMs - r.deadlineMs) / 1000)),
+      useful_ops: r.state.acceptedCommits,
+    });
+    offTool();
   }
 
   /** GUARD after RECORD: stuck signals → ladder; the judge's advisory next move; then SELECT. */
@@ -1344,6 +1361,16 @@ export async function supervise(
     run.state.status = outcome.status;
     run.state.statusReason = outcome.reason;
     await run.setPhase('done');
+    const elapsedMs = run.elapsedMs();
+    run.events.emit('time.report', {
+      elapsed_s: Math.round(elapsedMs / 1000),
+      remaining_s: Math.max(0, Math.round((run.deadlineMs - elapsedMs) / 1000)),
+      task_active_s: 0,
+      model_s: Math.round(run.cycleModelMs / 1000),
+      tool_s: Math.round(run.cycleToolMs / 1000),
+      overrun_s: Math.max(0, Math.round((elapsedMs - run.deadlineMs) / 1000)),
+      useful_ops: run.state.acceptedCommits,
+    });
     run.events.emit('run.finish', {
       status: outcome.status,
       reason: outcome.reason,

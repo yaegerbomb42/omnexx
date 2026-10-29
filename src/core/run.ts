@@ -153,6 +153,9 @@ export class Run {
   private readonly baseActiveMs: number;
   /** Waiting time that doesn't count as active (daily-cap pauses). */
   private excludedMs = 0;
+  /** Per-cycle accumulators for the time.report event (reset at cycle start). */
+  cycleModelMs = 0;
+  cycleToolMs = 0;
 
   private constructor(
     readonly deps: RunDeps,

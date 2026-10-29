@@ -977,9 +977,14 @@ export async function runAgentLoop(
       });
       if (deps.doomLoopRatchet) {
         if (
-          ['write_file', 'str_replace', 'multi_edit', 'replace_lines', 'apply_patch', 'patch'].includes(
-            call.name,
-          ) &&
+          [
+            'write_file',
+            'str_replace',
+            'multi_edit',
+            'replace_lines',
+            'apply_patch',
+            'patch',
+          ].includes(call.name) &&
           !isError
         ) {
           const path = (call.input as { path?: unknown }).path;
@@ -999,7 +1004,11 @@ export async function runAgentLoop(
           if (call.name === 'bash') {
             const cmd = (call.input as { command?: unknown }).command;
             if (typeof cmd === 'string') {
-              const intervention = await deps.doomLoopRatchet.recordVerificationResult(cmd, false, content);
+              const intervention = await deps.doomLoopRatchet.recordVerificationResult(
+                cmd,
+                false,
+                content,
+              );
               if (intervention.action !== 'none' && intervention.message) {
                 ratchetInterventions.push(intervention.message);
               }
@@ -1009,7 +1018,11 @@ export async function runAgentLoop(
         if (call.name === 'bash' && isError) {
           const cmd = (call.input as { command?: unknown }).command;
           if (typeof cmd === 'string') {
-            const intervention = await deps.doomLoopRatchet.recordVerificationResult(cmd, true, content);
+            const intervention = await deps.doomLoopRatchet.recordVerificationResult(
+              cmd,
+              true,
+              content,
+            );
             if (intervention.action !== 'none' && intervention.message) {
               ratchetInterventions.push(intervention.message);
             }
