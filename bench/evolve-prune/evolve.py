@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Evolutionary loop on pruneSuperseded() using Groq qwen/qwen3.8-27b. Keys from env GROQ_API_KEY_1..14."""
-import json, os, re, subprocess, sys, time, urllib.request, random, itertools
+import json, os, re, subprocess, sys, time, urllib.request, secrets, itertools
+RNG = secrets.SystemRandom()
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SRC = os.path.join(ROOT, 'src/agent/compaction.ts')
 LOG = os.path.join(ROOT, 'evolve-log.jsonl')
@@ -26,9 +27,13 @@ def evaluate(region):
         t = subprocess.run(['npx', 'vitest', 'run', 'test/unit/agent/prune.test.ts', 'test/unit/agent/compaction.test.ts'], cwd=ROOT, capture_output=True, text=True, timeout=300)
         s['tests'] = t.returncode == 0
         if not s['tests']: s['testfail'] = re.findall(r'(?:FAIL|AssertionError|Expected).*', t.stdout)[:6]
-        drops = s['train']['dropped'] + s['holdout']['dropped']
         s['ok'] = s['tests'] and not s['train']['dropped']
-        s['why'] = '' if s['ok'] else ('tests failed: %s' % s.get('testfail') if not s['tests'] else 'dropped must-keep: %s' % s['train']['dropped'])
+        if s['ok']:
+            s['why'] = ''
+        elif not s['tests']:
+            s['why'] = 'tests failed: %s' % s.get('testfail')
+        else:
+            s['why'] = 'dropped must-keep: %s' % s['train']['dropped']
         return s
     finally:
         open(SRC, 'w').write(ORIG)
@@ -51,7 +56,7 @@ def ask(parent, pscore, hint, failures):
             f"Recent failed attempts (avoid these):\n{json.dumps(failures[-3:])[:1200]}\nMutation idea to try: {hint}\nKeep it concise and correct.")
     body = json.dumps({'model': 'qwen/qwen3.8-27b', 'messages': [{'role': 'system', 'content': SYS}, {'role': 'user', 'content': user}],
                        'max_completion_tokens': 3500, 'temperature': 0.7, 'reasoning_format': 'hidden'}).encode()
-    for attempt in range(len(KEYS)):
+    for _ in range(len(KEYS)):
         ki = next(keycyc)
         req = urllib.request.Request('https://api.groq.com/openai/v1/chat/completions', body, {'Authorization': 'Bearer ' + KEYS[ki], 'Content-Type': 'application/json', 'User-Agent': 'omx-evolve'})
         try:
@@ -78,7 +83,7 @@ base = evaluate(BASE_REGION); log({'event': 'baseline', 'train': base['train'], 
 pop = [(BASE_REGION, base)]; failures = []; calls = 0
 for g in range(GENS):
     for c in range(POP):
-        parent, ps = random.choice(pop[:2]) if len(pop) > 1 else pop[0]
+        parent, ps = RNG.choice(pop[:2]) if len(pop) > 1 else pop[0]
         hint = HINTS[(g * POP + c) % len(HINTS)]
         code, usage, ki = ask(parent, ps, hint, failures); calls += 1
         if not code: log({'event': 'no_code', 'gen': g, 'usage': usage}); continue

@@ -11,3 +11,7 @@ bench/results/
 .env
 .env.local
 src/.*_bak/
+
+# Generated evolution candidates; only best.ts is kept.
+bench/evolve-prune/candidates/*
+!bench/evolve-prune/candidates/best.ts
