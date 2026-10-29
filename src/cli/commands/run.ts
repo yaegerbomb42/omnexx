@@ -52,6 +52,8 @@ export interface RunFlags {
   mode?: string;
   planHelpers?: string;
   planMilestones?: string;
+  /** full | lazy: tool discovery mode */
+  toolDiscovery?: string;
 }
 
 export function flagsToConfig(f: RunFlags): ConfigInput {
@@ -106,6 +108,7 @@ export function flagsToConfig(f: RunFlags): ConfigInput {
         }
       : {}),
     ...(f.push ? { git: { push: f.push as 'none' } } : {}),
+    ...(f.toolDiscovery ? { tools: { discovery: f.toolDiscovery as 'full' | 'lazy' } } : {}),
     ...planFlags(f),
     ...domainFlag(f),
     ...beyondFlag(f),

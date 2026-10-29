@@ -22,6 +22,8 @@ import { workModeOf } from '../config/work-mode.js';
 import * as extraSources from './extra/index.js';
 import type { ToolSource, ToolWhere } from './extra/types.js';
 import type { Tool } from './types.js';
+import { createRequestToolsTool, type LoadedToolsState } from './request-tools.js';
+import { TOOL_GROUPS, GROUP_PURPOSES } from './groups.js';
 
 export const WORKER_TOOLS: readonly Tool[] = [
   readTool,
@@ -124,6 +126,71 @@ export async function readOnlyTools(
   sources?: Record<string, ToolSource>,
 ): Promise<readonly Tool[]> {
   return (await workerTools(config, where, sources)).filter((t) => t.readOnly);
+}
+
+/**
+ * Build the tool list for a provider request, with lazy loading support.
+ * In lazy mode, only tools from loaded groups + always-loaded tools are included.
+ */
+export async function buildToolList(
+  config: OmnexxConfig,
+  where: ToolWhere | undefined,
+  exposureOpts: ExposureOptions,
+  loadedState: LoadedToolsState | null,
+): Promise<readonly Tool[]> {
+  const allTools = await workerTools(config, where);
+  return buildToolListSync(allTools, config, exposureOpts, loadedState);
+}
+
+/**
+ * Synchronous version of buildToolList that takes pre-computed allTools.
+ * Used for refreshTools in lazy mode to avoid re-fetching tools each turn.
+ */
+export function buildToolListSync(
+  allTools: readonly Tool[],
+  config: OmnexxConfig,
+  exposureOpts: ExposureOptions,
+  loadedState: LoadedToolsState | null,
+): readonly Tool[] {
+  // Lazy mode: filter to loaded groups + always-loaded
+  if (config.tools.discovery === 'lazy' && loadedState) {
+    const filtered = allTools.filter((tool) => {
+      if (loadedState.toolToGroup.has(tool.name)) {
+        const group = loadedState.toolToGroup.get(tool.name);
+        return group ? loadedState.loadedGroups.has(group) : false;
+      }
+      // Tools not in any group (e.g., MCP tools) are loaded by default
+      return true;
+    });
+    // Always include request_tools meta-tool in lazy mode
+    const requestToolsTool = createRequestToolsTool(loadedState);
+    return exposedTools([...filtered, requestToolsTool], exposureOpts);
+  }
+
+  // Full mode: all tools
+  return exposedTools(allTools, exposureOpts);
+}
+
+/**
+ * Build the compact tool index for lazy mode (shown in system prompt instead of full schemas).
+ * Lists every group in TOOL_GROUPS, marking loaded groups. Optionally filters by availableToolNames.
+ */
+export function buildToolIndexForPrompt(
+  loadedState: LoadedToolsState,
+  availableToolNames?: ReadonlySet<string>,
+): string {
+  const lines: string[] = [
+    'Call request_tools({groups:[...]}) to load full definitions for a group before using its tools. Groups marked loaded are ready.',
+  ];
+  for (const group of Object.keys(TOOL_GROUPS)) {
+    const purpose = GROUP_PURPOSES[group] ?? '';
+    const allToolsInGroup = TOOL_GROUPS[group] ?? [];
+    const tools = allToolsInGroup.filter((t) => !availableToolNames || availableToolNames.has(t));
+    if (!tools.length) continue;
+    const loadedMarker = loadedState.loadedGroups.has(group) ? ' loaded' : '';
+    lines.push(`- ${group} (${purpose})${loadedMarker}: ${tools.join(', ')}`);
+  }
+  return lines.join('\n');
 }
 
 /** JSON schema for the API, keys sorted so the cached prefix is byte-stable. */

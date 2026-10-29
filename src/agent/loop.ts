@@ -38,6 +38,7 @@ import {
   type Usage,
 } from '../providers/types.js';
 import type { Tool, ToolContext } from '../tools/types.js';
+import { autoLoadToolGroup, type LoadedToolsState } from '../tools/request-tools.js';
 import {
   contextTokens,
   manageContext,
@@ -191,6 +192,8 @@ export interface LoopDeps {
   strategy?: Strategy;
   tools: readonly Tool[];
   toolCtx: ToolContext;
+  /** Lazy tool discovery state (persists across context compaction). */
+  loadedToolsState?: LoadedToolsState | null;
   budget: OmnexxConfig['budget'];
   maxTokens: number;
   clock: Clock;
@@ -281,6 +284,12 @@ export interface LoopDeps {
    * The loop loads it once and writes the EMA after each turn that reports prompt tokens.
    */
   calibrationFile?: string;
+  /**
+   * Optional function to refresh the tool list (for lazy tool discovery).
+   * When set, called at the start of every turn to get the current tool list and specs.
+   * When undefined, behavior is identical to before (tools fixed for the whole cycle).
+   */
+  refreshTools?: () => { tools: readonly Tool[]; specs: ToolSpec[] };
   /** Anti-doom-loop ratchet tracking repeated tool failures and enforcing rollback on broken verifications. */
   doomLoopRatchet?: DoomLoopRatchet;
 }
@@ -454,7 +463,6 @@ export async function runAgentLoop(
   let todos: readonly TodoItem[] = [];
   let todoNudged = false;
   let lastCondenseTurn = 0;
-  const byName = new Map(deps.tools.map((t) => [t.name, t]));
   const end = (e: LoopEnd): LoopResult => ({ end: e, turns, finalText, usage, usd, messages });
   // The stable prefix never changes within a cycle; size it once for the per-turn breakdown.
   const prefixTokens = {
@@ -470,7 +478,17 @@ export async function runAgentLoop(
   let previousPromptTokens = 0;
   let bookkeepingHinted = false;
   let changedSomething = false;
+  // Mutable copy of ctx so we can refresh tools each turn when refreshTools is provided.
+  let liveCtx = ctx;
+  // byName must be rebuilt when tools change.
+  let byName = new Map(deps.tools.map((t) => [t.name, t]));
   for (;;) {
+    // Refresh tools at the start of each turn if refreshTools is provided (lazy mode).
+    if (deps.refreshTools) {
+      const { tools: freshTools, specs: freshSpecs } = deps.refreshTools();
+      byName = new Map(freshTools.map((t) => [t.name, t]));
+      liveCtx = { ...liveCtx, tools: freshSpecs };
+    }
     let signal = await deps.control();
     if (signal === 'pause') {
       deps.events.emit('control.paused', { turn: turns });
@@ -583,7 +601,7 @@ export async function runAgentLoop(
               // The provider is up: send the real request once more, cooling or not.
               try {
                 const req = {
-                  ...turnRequest(ctx, messages, m.id, deps.maxTokens, deps.cacheKey),
+                  ...turnRequest(liveCtx, messages, m.id, deps.maxTokens, deps.cacheKey),
                   route: m.provider,
                   ...(deps.signal ? { signal: deps.signal } : {}),
                 };
@@ -643,7 +661,7 @@ export async function runAgentLoop(
             // Use terminal prefix lock convention on the final turn to preserve KV cache warmth
             const isTerminalTurn = turns >= deps.budget.max_turns_per_cycle - 1;
             const req = turnRequest(
-              ctx,
+              liveCtx,
               messages,
               m.id,
               deps.maxTokens,
@@ -914,6 +932,23 @@ export async function runAgentLoop(
 
     const finished = { now: false };
     const runCall = async (call: (typeof calls)[number]): Promise<ContentBlock> => {
+      // Lazy mode: auto-load tool group if tool exists but isn't loaded
+      if (deps.loadedToolsState && !deps.loadedToolsState.toolToGroup.has(call.name)) {
+        // Tool not in any group (e.g., MCP tools) - allow it
+      } else if (deps.loadedToolsState) {
+        const loadedGroup = autoLoadToolGroup(deps.loadedToolsState, call.name);
+        if (loadedGroup) {
+          deps.events.emit('tool.autoload', { tool: call.name, group: loadedGroup });
+          // Return an error asking the model to retry
+          return {
+            type: 'tool_result',
+            toolUseId: call.id,
+            content: `Tool "${call.name}" was not loaded; loaded group "${loadedGroup}". Retry the call.`,
+            isError: true,
+          };
+        }
+      }
+
       const tool = resolveTool(byName, call.name);
       let content: string;
       let isError: boolean;
