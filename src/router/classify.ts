@@ -1,6 +1,7 @@
 import type { PlanNode } from '../core/plan.js';
 import type { RouteAction } from './actions.js';
 import type { RouteContext } from './router.js';
+import { stageForAction } from './stage.js';
 
 /** The action for a worker cycle on `task`, from its kind, size and history. */
 export function cycleAction(task: PlanNode): RouteAction {
@@ -24,8 +25,10 @@ export function cycleAction(task: PlanNode): RouteAction {
 
 /** Route context for a worker cycle. An escalated task goes to a different, stronger model. */
 export function cycleRoute(task: PlanNode, budgetLeft: number): RouteContext {
+  const action = cycleAction(task);
   return {
-    action: cycleAction(task),
+    action,
+    stage: stageForAction(action),
     ...(task.escalated ? { escalate: true } : {}),
     needs: { tools: true },
     facts: {

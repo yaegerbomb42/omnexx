@@ -683,6 +683,282 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   box-shadow: inset 0 0 0 1px hsl(var(--h, 210) 70% 55% / 45%);
 }
 
+/* Model picker: a searchable popover whose provider headers stay in view and fold. */
+.model-picker {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  z-index: var(--z-pop);
+  max-height: min(60vh, 460px);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--glass-border);
+  background: var(--vscode-editorWidget-background, var(--surface));
+  box-shadow:
+    0 12px 32px rgb(0 0 0 / 0.35),
+    0 0 20px color-mix(in srgb, var(--accent) 18%, transparent);
+  overflow: hidden;
+}
+
+.mp-search {
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.mp-search input {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--vscode-input-border, var(--line));
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font: inherit;
+}
+
+.mp-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+
+.mp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px 4px;
+  overflow-y: auto;
+}
+
+.mp-group {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  margin: 0;
+}
+
+.mp-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: 7px 8px 6px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--vscode-editorWidget-background, var(--surface));
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mp-group-head:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.mp-group-head .badge {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  font-size: 0.85em;
+}
+
+.mp-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-count {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.92em;
+  letter-spacing: 0;
+}
+
+.mp-chev {
+  flex: none;
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.mp-group-head[aria-expanded='false'] .mp-chev {
+  transform: rotate(-90deg);
+}
+
+.mp-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 6px 10px 6px 30px;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-md);
+  font-family: var(--mono);
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.mp-item:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.mp-item.active {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 20%, transparent),
+    color-mix(in srgb, var(--violet) 14%, transparent)
+  );
+}
+
+.mp-item.current {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.mp-item.current .mp-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mp-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-meta {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.82em;
+  opacity: 0.8;
+}
+
+.mp-tag {
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.mp-tag-free {
+  border-color: color-mix(in srgb, var(--vscode-charts-green, var(--ok)) 45%, transparent);
+  color: var(--vscode-charts-green, var(--ok));
+}
+
+.mp-check {
+  flex: none;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.mp-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 14px 12px;
+  color: var(--muted);
+}
+
+.mp-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 6px 8px;
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-xs);
+}
+
+.mp-foot .ghost {
+  margin-left: auto;
+}
+
+.mp-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: var(--vscode-editorWarning-foreground);
+  font-size: var(--fs-xs);
+}
+
+.mp-note-label {
+  font-weight: 600;
+}
+
+.mp-warn-pill {
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground) 35%, transparent);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 14%, transparent);
+  color: var(--vscode-editorWarning-foreground);
+  font-family: var(--mono);
+}
+
+.mp-custom-entry {
+  border-top: 1px dashed var(--line);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-weight: 500;
+}
+
+.mp-custom-entry strong {
+  color: var(--accent);
+}
+
+/* The chat model field in Settings: a badge, the model name, and where it runs. */
+.field.picker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--vscode-input-border, var(--line));
+  border-radius: var(--radius-md);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  text-align: left;
+  cursor: pointer;
+}
+
+.field.picker:hover {
+  border-color: var(--accent);
+}
+
+.pk-name {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pk-sub {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.caret {
+  margin-left: auto;
+  color: var(--muted);
+}
+
 .h-name {
   font-weight: 600;
   overflow: hidden;

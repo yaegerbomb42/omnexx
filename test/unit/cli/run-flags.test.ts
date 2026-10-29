@@ -27,6 +27,25 @@ describe('run --for (autonomous mode)', () => {
   });
 });
 
+describe('run --hours and --max-turns (normal-run budgets)', () => {
+  it('accepts bare hours and durations for --hours', () => {
+    expect(flagsToConfig({ hours: '2' }).budget).toMatchObject({ max_hours: 2 });
+    expect(flagsToConfig({ hours: '0.5' }).budget).toMatchObject({ max_hours: 0.5 });
+    expect(flagsToConfig({ hours: '30m' }).budget).toMatchObject({ max_hours: 0.5 });
+    expect(flagsToConfig({ hours: '1h30m' }).budget).toMatchObject({ max_hours: 1.5 });
+  });
+  it('maps --max-turns onto [budget] without autonomous mode', () => {
+    const cfg = flagsToConfig({ maxTurns: '100' });
+    expect(cfg.budget).toMatchObject({ max_turns: 100 });
+    expect(cfg).not.toHaveProperty('autonomous');
+  });
+  it('rejects non-positive and fractional turn caps', () => {
+    expect(() => flagsToConfig({ maxTurns: '0' })).toThrow(UsageError);
+    expect(() => flagsToConfig({ maxTurns: '1.5' })).toThrow(UsageError);
+    expect(() => flagsToConfig({ hours: '0h' })).toThrow(UsageError);
+  });
+});
+
 describe('autonomousFocus', () => {
   it('tries the user areas first, then the rubric, and wraps around', () => {
     const extra = ['docs'];
@@ -64,6 +83,24 @@ describe('planning flags', () => {
     [{ planHelpers: '9' }, /--plan-helpers expects a whole number from 0 to 8/],
     [{ planMilestones: '0' }, /--plan-milestones expects a whole number from 1 to 30/],
     [{ planMilestones: '2.5' }, /--plan-milestones/],
+  ])('rejects %j', (flags, message) => {
+    expect(() => flagsToConfig(flags)).toThrow(UsageError);
+    expect(() => flagsToConfig(flags)).toThrow(message);
+  });
+});
+
+describe('run --beyond', () => {
+  it('maps --beyond onto [beyond]', () => {
+    expect(flagsToConfig({ beyond: '2' })).toMatchObject({ beyond: { max_rounds: 2 } });
+    expect(flagsToConfig({ beyond: '0' })).toMatchObject({ beyond: { max_rounds: 0 } });
+    expect(flagsToConfig({})).not.toHaveProperty('beyond');
+  });
+
+  it.each([
+    [{ beyond: '-1' }, /--beyond expects a whole number from 0 to 20/],
+    [{ beyond: '21' }, /--beyond expects a whole number from 0 to 20/],
+    [{ beyond: '2.5' }, /--beyond expects a whole number from 0 to 20/],
+    [{ beyond: 'soon' }, /--beyond expects a whole number from 0 to 20/],
   ])('rejects %j', (flags, message) => {
     expect(() => flagsToConfig(flags)).toThrow(UsageError);
     expect(() => flagsToConfig(flags)).toThrow(message);

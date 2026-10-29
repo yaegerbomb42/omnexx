@@ -7,7 +7,7 @@ import { fetchCard, sendMessage, type RemoteCard } from '../../integrations/a2a.
 import { readSecrets, SECRET_PREFIX } from '../../integrations/secrets.js';
 import { fail, ok, type Tool } from '../types.js';
 import type { ToolSource, ToolWhere } from './types.js';
-import type { SubagentResult } from '../../agent/subagent.js';
+import { formatSubagentResult } from '../../agent/subagent.js';
 
 /** A remote agent's reply is capped like a web page, and marked as untrusted text. */
 const REPLY_MAX_CHARS = 16_000;
@@ -46,15 +46,6 @@ export function agentCatalog(local: readonly AgentCard[], remote: readonly strin
     ...remote.map((r) => `- ${r} (remote A2A agent)`),
   ];
   return lines.join('\n');
-}
-
-function formatSubagentResult(result: SubagentResult): string {
-  let out = result.findings;
-  if (result.files.length) {
-    out += '\n\nFiles:\n' + result.files.map((f) => `  - ${f}`).join('\n');
-  }
-  out += `\n\nConfidence: ${Math.round(result.confidence * 100)}%`;
-  return out;
 }
 
 export function agentTool(

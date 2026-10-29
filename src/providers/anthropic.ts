@@ -7,6 +7,7 @@ import type {
   Tool,
 } from '@anthropic-ai/sdk/resources/messages/messages';
 import { ProviderError } from '../errors.js';
+import { pinPrefix } from './cache-pinning.js';
 import { anthropicThinking } from './turn-effort.js';
 import type {
   CompletionRequest,
@@ -57,7 +58,8 @@ export class AnthropicProvider implements Provider {
     // Longer TTLs must come before shorter ones; the prefix always precedes the messages.
     const prefixTtl = this.opts.cacheTtl === '1h' ? '1h' : (this.opts.prefixTtl ?? '5m');
     const prefixCache = { type: 'ephemeral' as const, ttl: prefixTtl };
-    const system: TextBlockParam[] = req.system.map((b) => ({
+    const pinnedSystem = pinPrefix(req.system);
+    const system: TextBlockParam[] = pinnedSystem.map((b) => ({
       type: 'text',
       text: b.text,
       ...(b.cacheBreakpoint ? { cache_control: prefixCache } : {}),

@@ -52,6 +52,17 @@ export async function privateTarget(
   const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
   if (PRIVATE_NAMES.has(host) || host.endsWith('.localhost'))
     return `${host} is this machine or the cloud metadata service`;
+  // Reject alternate (decimal/octet/hex/shorthand) IPv4 spellings that node's isIP does not
+  // recognize but an HTTP client may still resolve to a private address.
+  if (/^[0-9a-fx.:]+$/i.test(host) && !host.includes(':')) {
+    const parts = host.split('.');
+    const numericLooking = parts.every((p) => /^(0x[0-9a-f]+|0[0-7]*|[0-9]+)$/i.test(p));
+    if (numericLooking && parts.length < 5) {
+      if (parts.length !== 4 || !isIP(host)) {
+        return `${host} is not a safe public hostname`;
+      }
+    }
+  }
   if (isIP(host)) return isPrivateAddress(host) ? `${host} is a private address` : undefined;
   let addresses: readonly string[];
   try {
