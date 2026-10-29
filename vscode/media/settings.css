@@ -239,6 +239,232 @@
   color: var(--muted);
 }
 
+/* Connected providers: compact cards with a status dot and the provider's hue on the edge. */
+.providers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.provider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid hsl(var(--h, 210) 65% 52%);
+  border-radius: var(--radius-md, 6px);
+  background: var(--card-strong, var(--card));
+}
+
+.p-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vscode-descriptionForeground) 14%, transparent);
+}
+
+.provider[data-state='ok'] .p-dot {
+  background: var(--vscode-testing-iconPassed);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vscode-testing-iconPassed) 18%, transparent);
+}
+
+.provider[data-state='bad'] .p-dot {
+  background: var(--vscode-testing-iconFailed);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vscode-testing-iconFailed) 18%, transparent);
+}
+
+.provider[data-state='busy'] .p-dot {
+  background: var(--vscode-charts-blue, var(--accent));
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--vscode-charts-blue, var(--accent)) 18%, transparent);
+}
+
+.p-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.p-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p-url {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.provider .pill {
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+}
+
+.provider .pill.ok {
+  border-color: color-mix(in srgb, var(--vscode-testing-iconPassed) 55%, transparent);
+  color: var(--vscode-testing-iconPassed);
+}
+
+.provider .pill.warn {
+  border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 55%, transparent);
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.provider .pill.local {
+  border-color: color-mix(in srgb, var(--violet) 55%, transparent);
+  color: var(--violet);
+}
+
+.provider .pill.busy {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent);
+}
+
+.p-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.p-actions .ghost,
+.p-actions .danger-btn {
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 4px);
+  background: none;
+  color: var(--fg);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.p-actions .ghost:hover {
+  border-color: var(--accent);
+}
+
+.p-actions .danger-btn {
+  border-color: color-mix(in srgb, var(--bad) 60%, transparent);
+  color: var(--bad);
+}
+
+/* Provider tiles: a short, colorful grid with the rest behind one toggle. */
+.tile-box {
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.t-group {
+  margin: 10px 0 5px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 6px;
+}
+
+.ptile {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--card-strong, var(--card));
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.ptile .badge {
+  grid-row: span 2;
+}
+
+.ptile .t-label {
+  overflow: hidden;
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ptile .t-sub {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ptile:hover,
+.ptile:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.ptile.on {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--card-strong, var(--card)), var(--card-strong, var(--card))) padding-box,
+    linear-gradient(135deg, var(--accent), var(--violet)) border-box;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.t-show-all {
+  margin-top: 6px;
+  padding: 2px 10px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--vscode-textLink-foreground);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.t-show-all:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ==========================================================================
    Bento glass: Execution Posture card, glass slider rows, Token Budget bar,
    Live Stats card — surfaces share the tokens defined in chat.css.
@@ -717,12 +943,12 @@
 
 .mp-custom-entry {
   border-top: 1px dashed var(--line);
-  background: color-mix(in srgb, #36c5f0 8%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   font-weight: 500;
 }
 
 .mp-custom-entry strong {
-  color: #36c5f0;
+  color: var(--accent);
 }
 
 /* ==========================================================================

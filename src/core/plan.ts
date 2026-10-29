@@ -31,6 +31,8 @@ export const nodeInputSchema = z.strictObject({
   checks: z.array(z.string().min(1).max(500)).max(10).default([]),
   dependsOn: z.array(id).default([]),
   size: z.enum(['S', 'M', 'L']).default('M'),
+  /** Estimated minutes for this task; the supervisor uses it to slice the run's time budget. */
+  minutes: z.number().int().positive().optional(),
   kind: z.enum(TASK_KINDS).default('feature'),
   steps: z.array(z.string().max(300)).max(15).default([]),
   /** Lets one task delete tests, add skips, rewrite snapshots or touch protected paths. */

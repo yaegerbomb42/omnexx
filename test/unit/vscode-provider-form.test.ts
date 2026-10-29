@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { modelDetailTags } from '../../vscode/src/webview/badge.js';
 import * as form from '../../vscode/src/webview/providerForm.js';
 
 const azure: form.FormProvider = {
@@ -55,5 +56,19 @@ describe('settings: provider form extras', () => {
     expect(
       form.onProbe({ ok: true, detail: '2 models', baseUrl: 'https://h/v1', models: ['a', 'b'] }),
     ).toContain('a, b');
+  });
+});
+
+describe('model picker: model detail tags', () => {
+  it('reads a free tag and a parameter size from the model id', () => {
+    expect(modelDetailTags('llama-3.3-70b:free')).toEqual(['free', '70b']);
+    expect(modelDetailTags('qwen2.5-coder-32b-instruct')).toEqual(['32b']);
+    expect(modelDetailTags('gpt-4o')).toEqual([]);
+  });
+
+  it('recognizes a bare free tag and mixed-case or mixed-expert sizes', () => {
+    expect(modelDetailTags('free')).toEqual(['free']);
+    expect(modelDetailTags('mixtral-8x7b-free')).toEqual(['free', '8x7b']);
+    expect(modelDetailTags('Gemma-2-27B')).toEqual(['27b']);
   });
 });

@@ -56,6 +56,10 @@ export const replaceLinesTool: Tool<typeof schema> = {
     } catch (err) {
       return fail(await openError(ctx, input.path, err));
     }
+    if (ctx.contractGate) {
+      const check = ctx.contractGate.validateEdit(input.path);
+      if (!check.ok) return fail(check.error ?? 'edit rejected by contract gate');
+    }
     const lines = text.split('\n');
     const at = locateRange(lines, input.start, input.end, input.expected_hash);
     if (!at.ok) return fail(`${input.path}: ${at.reason}`);

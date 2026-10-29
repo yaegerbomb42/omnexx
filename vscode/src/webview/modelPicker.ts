@@ -3,10 +3,10 @@
  * grouped by provider, with the current one checked. Opens from the header chip and from the
  * settings page; arrow keys, Enter and Escape work.
  */
-import { badge, type ModelItem } from './badge.js';
+import { badge, modelDetailTags, type ModelItem } from './badge.js';
 import { escapeHtml } from './render.js';
 
-export { badge, providerHue, type ModelItem } from './badge.js';
+export { badge, modelDetailTags, providerHue, type ModelItem } from './badge.js';
 
 type Post = (msg: Record<string, unknown>) => void;
 
@@ -18,6 +18,8 @@ let cursor = 0;
 let loading = false;
 let anchor: HTMLElement | undefined;
 let post: Post | undefined;
+/** Provider groups the person folded shut; searching opens them all again. */
+let collapsed = new Set<string>();
 /** When set, picking a model hands it here (e.g. to add it to a role) instead of switching chat. */
 let onPick: ((ref: string) => void) | undefined;
 
@@ -29,7 +31,24 @@ function root(): HTMLElement {
 
 function matches(): ModelItem[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  return items.filter((m) => words.every((w) => m.ref.toLowerCase().includes(w)));
+  return items.filter((m) => {
+    const haystack = `${m.provider} ${m.ref}`.toLowerCase();
+    return words.every((w) => haystack.includes(w));
+  });
+}
+
+function isGroupCollapsed(provider: string): boolean {
+  return !query && collapsed.has(provider);
+}
+
+function allItems(): ModelItem[] {
+  const list = matches();
+  const custom = customModelItem();
+  return custom ? [...list, custom] : list;
+}
+
+function visibleItems(): ModelItem[] {
+  return allItems().filter((m) => !isGroupCollapsed(m.provider));
 }
 
 function customModelItem(): ModelItem | undefined {
@@ -44,20 +63,34 @@ function customModelItem(): ModelItem | undefined {
 }
 
 function draw(): void {
-  const list = matches();
+  const all = allItems();
   const custom = customModelItem();
-  const all = custom ? [...list, custom] : list;
-  cursor = Math.min(cursor, Math.max(0, all.length - 1));
+  const visible = all.filter((m) => !isGroupCollapsed(m.provider));
+  const counts = new Map<string, number>();
+  for (const m of all) counts.set(m.provider, (counts.get(m.provider) ?? 0) + 1);
+  const rowIndex = new Map<ModelItem, number>();
+  visible.forEach((m, i) => rowIndex.set(m, i));
+  cursor = Math.min(cursor, Math.max(0, visible.length - 1));
   let rows = '';
   let lastProvider = '';
-  all.forEach((m, i) => {
+  all.forEach((m) => {
+    const folded = isGroupCollapsed(m.provider);
     if (m.provider !== lastProvider) {
       lastProvider = m.provider;
-      rows += `<li class="mp-group">${badge(m.provider)}<span>${escapeHtml(m.provider)}</span></li>`;
+      const count = counts.get(m.provider) ?? 0;
+      rows += `<li class="mp-group" role="presentation"><button type="button" class="mp-group-head" data-mp-group="${escapeHtml(m.provider)}" aria-expanded="${String(!folded)}" title="${folded ? 'Expand' : 'Collapse'} ${escapeHtml(m.provider)}">${badge(m.provider)}<span class="mp-group-name">${escapeHtml(m.provider)}</span><span class="mp-count">${String(count)}</span><span class="mp-chev" aria-hidden="true">▾</span></button></li>`;
     }
+    if (folded) return;
     const isCurrent = m.ref === current;
     const isCustom = m.ref === custom?.ref;
-    rows += `<li class="mp-item${i === cursor ? ' active' : ''}${isCurrent ? ' current' : ''}${isCustom ? ' mp-custom-entry' : ''}" role="option" aria-selected="${String(isCurrent)}" data-ref="${escapeHtml(m.ref)}" data-index="${String(i)}"><span class="mp-name">${isCustom ? `Use model "<strong>${escapeHtml(m.ref)}</strong>"` : escapeHtml(m.model)}</span>${isCurrent ? '<span class="mp-check">✓</span>' : ''}</li>`;
+    const detail = modelDetailTags(m.model)
+      .map(
+        (tag) =>
+          `<span class="mp-tag${tag === 'free' ? ' mp-tag-free' : ''}">${escapeHtml(tag)}</span>`,
+      )
+      .join('');
+    const idx = rowIndex.get(m) ?? 0;
+    rows += `<li class="mp-item${idx === cursor ? ' active' : ''}${isCurrent ? ' current' : ''}${isCustom ? ' mp-custom-entry' : ''}" role="option" aria-selected="${String(isCurrent)}" data-ref="${escapeHtml(m.ref)}" data-index="${String(idx)}"><span class="mp-name">${isCustom ? `Use model "<strong>${escapeHtml(m.ref)}</strong>"` : escapeHtml(m.model)}</span>${detail ? `<span class="mp-meta">${detail}</span>` : ''}${isCurrent ? '<span class="mp-check" aria-label="Current model">✓</span>' : ''}</li>`;
   });
   const empty = loading
     ? '<li class="mp-empty"><span class="spinner"></span> Loading models…</li>'
@@ -65,7 +98,7 @@ function draw(): void {
       ? '<li class="mp-empty">No model matches.</li>'
       : '<li class="mp-empty">No models yet. Add a provider in Settings or type a model ID directly.</li>';
   const note = unreachable.length
-    ? `<div class="mp-note">Couldn't reach: ${escapeHtml(unreachable.join(', '))}</div>`
+    ? `<div class="mp-note" role="status"><span class="mp-note-label">Couldn't reach:</span>${unreachable.map((p) => `<span class="mp-warn-pill">${escapeHtml(p)}</span>`).join('')}</div>`
     : '';
   const list$ = root().querySelector('.mp-list');
   if (list$) list$.innerHTML = rows || empty;
@@ -90,6 +123,7 @@ export function open(from: HTMLElement, p: Post, pick?: (ref: string) => void): 
   post = p;
   onPick = pick;
   query = '';
+  collapsed = new Set<string>();
   cursor = Math.max(
     0,
     matches().findIndex((m) => m.ref === current),
@@ -147,9 +181,7 @@ export function wire(openSettings: () => void): void {
     }
   });
   el.addEventListener('keydown', (e) => {
-    const list = matches();
-    const custom = customModelItem();
-    const all = custom ? [...list, custom] : list;
+    const all = visibleItems();
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       cursor = (cursor + (e.key === 'ArrowDown' ? 1 : -1) + all.length) % Math.max(1, all.length);
@@ -166,6 +198,15 @@ export function wire(openSettings: () => void): void {
   });
   el.addEventListener('click', (e) => {
     const t = e.target instanceof Element ? e.target : null;
+    const group = t?.closest<HTMLElement>('[data-mp-group]')?.dataset.mpGroup;
+    if (group) {
+      if (!query) {
+        if (collapsed.has(group)) collapsed.delete(group);
+        else collapsed.add(group);
+        draw();
+      }
+      return;
+    }
     const ref = t?.closest<HTMLElement>('[data-ref]')?.dataset.ref;
     if (ref) choose(ref);
     else if (t?.closest('[data-mp-settings]')) {
