@@ -83,17 +83,33 @@ function draw(): void {
     if (folded) return;
     const isCurrent = m.ref === current;
     const isCustom = m.ref === custom?.ref;
+    // Capability tags get their own highlight; sizes keep their plain tag.
     const detail = modelDetailTags(m.model)
-      .map(
-        (tag) =>
-          `<span class="mp-tag${tag === 'free' ? ' mp-tag-free' : ''}">${escapeHtml(tag)}</span>`,
-      )
+      .map((tag) => {
+        const cls =
+          tag === 'free'
+            ? ' mp-tag-free'
+            : tag === 'vision'
+              ? ' mp-tag-vision'
+              : tag === 'reasoning'
+                ? ' mp-tag-reasoning'
+                : '';
+        const label =
+          tag === 'free'
+            ? 'Free'
+            : tag === 'vision'
+              ? 'Vision'
+              : tag === 'reasoning'
+                ? 'Reasoning'
+                : tag;
+        return `<span class="mp-tag${cls}">${escapeHtml(label)}</span>`;
+      })
       .join('');
     const idx = rowIndex.get(m) ?? 0;
     rows += `<li class="mp-item${idx === cursor ? ' active' : ''}${isCurrent ? ' current' : ''}${isCustom ? ' mp-custom-entry' : ''}" role="option" aria-selected="${String(isCurrent)}" data-ref="${escapeHtml(m.ref)}" data-index="${String(idx)}"><span class="mp-name">${isCustom ? `Use model "<strong>${escapeHtml(m.ref)}</strong>"` : escapeHtml(m.model)}</span>${detail ? `<span class="mp-meta">${detail}</span>` : ''}${isCurrent ? '<span class="mp-check" aria-label="Current model">✓</span>' : ''}</li>`;
   });
   const empty = loading
-    ? '<li class="mp-empty"><span class="spinner"></span> Loading models…</li>'
+    ? '<li class="mp-skeleton" aria-hidden="true"></li>'.repeat(5)
     : items.length
       ? '<li class="mp-empty">No model matches.</li>'
       : '<li class="mp-empty">No models yet. Add a provider in Settings or type a model ID directly.</li>';
@@ -101,10 +117,15 @@ function draw(): void {
     ? `<div class="mp-note" role="status"><span class="mp-note-label">Couldn't reach:</span>${unreachable.map((p) => `<span class="mp-warn-pill">${escapeHtml(p)}</span>`).join('')}</div>`
     : '';
   const list$ = root().querySelector('.mp-list');
-  if (list$) list$.innerHTML = rows || empty;
+  if (list$) {
+    list$.innerHTML = rows || empty;
+    list$.setAttribute('aria-busy', String(loading));
+  }
   const note$ = root().querySelector('.mp-foot');
   if (note$)
-    note$.innerHTML = `${note}<button class="ghost small" data-mp-settings>Add a provider…</button>`;
+    note$.innerHTML = `${note}<span class="mp-hints">↑↓ navigate · Enter select · Esc close</span><button class="ghost small" data-mp-settings>Add a provider…</button>`;
+  const clear$ = root().querySelector('[data-mp-clear]');
+  if (clear$) clear$.toggleAttribute('hidden', !query);
   root().querySelector('.mp-item.active')?.scrollIntoView({ block: 'nearest' });
 }
 
@@ -132,7 +153,7 @@ export function open(from: HTMLElement, p: Post, pick?: (ref: string) => void): 
   const el = root();
   el.hidden = false;
   el.innerHTML =
-    '<div class="mp-search"><input id="mp-input" type="text" placeholder="Search models…" aria-label="Search models" spellcheck="false" autocomplete="off"></div><ul class="mp-list" role="listbox"></ul><div class="mp-foot"></div>';
+    '<div class="mp-search"><span class="mp-search-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span><input id="mp-input" type="text" placeholder="Search models…" aria-label="Search models" spellcheck="false" autocomplete="off"><button type="button" class="mp-clear" data-mp-clear aria-label="Clear search" hidden>×</button></div><ul class="mp-list" role="listbox"></ul><div class="mp-foot"></div>';
   place();
   draw();
   document.getElementById('mp-input')?.focus();
@@ -198,6 +219,15 @@ export function wire(openSettings: () => void): void {
   });
   el.addEventListener('click', (e) => {
     const t = e.target instanceof Element ? e.target : null;
+    if (t?.closest('[data-mp-clear]')) {
+      query = '';
+      cursor = 0;
+      const input = document.getElementById('mp-input');
+      if (input instanceof HTMLInputElement) input.value = '';
+      draw();
+      document.getElementById('mp-input')?.focus();
+      return;
+    }
     const group = t?.closest<HTMLElement>('[data-mp-group]')?.dataset.mpGroup;
     if (group) {
       if (!query) {

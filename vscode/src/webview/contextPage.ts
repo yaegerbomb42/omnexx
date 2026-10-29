@@ -56,11 +56,17 @@ function draw(): void {
     el.innerHTML = `${head}<p class="hint"><span class="spinner"></span> Reading context files…</p>`;
     return;
   }
+  const pinned = sum('pinned');
+  const optional = sum('optional');
+  const hidden = sum('hidden');
+  const total = pinned + optional + hidden;
+  const share = (n: number): string =>
+    total > 0 ? ` · ${String(Math.round((n / total) * 100))}%` : '';
   const sections = files.filter((f) => f.section);
   const notes = files.filter((f) => !f.section);
   el.innerHTML = `${head}
 <section class="set-section"><h3>What the agent sees</h3>
-  <div class="ctx-sum"><div><b>~${formatTokens(sum('pinned'))}</b><span>sent every step</span></div><div><b>~${formatTokens(sum('optional'))}</b><span>on request</span></div><div><b>~${formatTokens(sum('hidden'))}</b><span>hidden</span></div></div>
+  <div class="ctx-sum"><div><b>~${formatTokens(pinned)}</b><span>sent every step${share(pinned)}</span></div><div><b>~${formatTokens(optional)}</b><span>on request${share(optional)}</span></div><div><b>~${formatTokens(hidden)}</b><span>hidden${share(hidden)}</span></div></div>
   <p class="hint">${runId ? `From the latest run here (${escapeHtml(runId)}). ` : 'No run here yet: sections appear after the first one. '}Omnexx keeps managing what's inside; you decide what goes in.</p>
   ${sections.length ? `<ul class="cfiles">${sections.map(rowHtml).join('')}</ul>` : ''}
 </section>

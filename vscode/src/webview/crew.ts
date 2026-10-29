@@ -69,7 +69,7 @@ function footHtml(h: Helper): string {
 function cardHtml(h: Helper): string {
   const name = h.agent ?? KIND_LABEL[h.kind] ?? h.kind;
   const role = roleOf(h);
-  return `<li class="helper ${h.status} accent-${role.accent}"><span class="wire" aria-hidden="true"></span><div class="h-card"><div class="h-top">${badge(name)}<span class="h-name">${escapeHtml(name)}</span><span class="h-role">${role.role}</span>${statusHtml(h)}</div>${statusLineHtml(h)}<div class="h-task">${escapeHtml(h.description)}</div><div class="h-foot">${footHtml(h)}</div></div></li>`;
+  return `<li class="helper ${h.status} accent-${role.accent}"><span class="wire wire-${h.status}" aria-hidden="true"></span><div class="h-card"><div class="h-top">${badge(name)}<span class="h-name">${escapeHtml(name)}</span><span class="h-role">${role.role}</span>${statusHtml(h)}</div>${statusLineHtml(h)}<div class="h-task">${escapeHtml(h.description)}</div><div class="h-foot">${footHtml(h)}</div></div></li>`;
 }
 
 export function drawCrew(helpers: readonly Helper[], logoSrc: string): void {
@@ -81,7 +81,7 @@ export function drawCrew(helpers: readonly Helper[], logoSrc: string): void {
     ? `${String(working)} working`
     : `${String(helpers.length)} reported`;
   el('crew-body').innerHTML =
-    `<div class="head-agent"><img src="${logoSrc}" alt=""><span>omnexx</span></div><ul class="helpers">${helpers.map(cardHtml).join('')}</ul>`;
+    `<div class="head-agent head-agent-pill"><img src="${logoSrc}" alt=""><span>omnexx</span></div><ul class="helpers">${helpers.map(cardHtml).join('')}</ul>`;
 }
 
 export function resetViews(): void {

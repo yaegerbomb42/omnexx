@@ -191,12 +191,28 @@ function fenceBlock(lines: readonly string[], start: number): Parsed {
   while (i < lines.length && !isFence(lines[i] ?? '')) body.push(lines[i++] ?? '');
   const validLang = /^[\w+-]{1,20}$/.test(lang) ? lang : '';
   const attr = validLang ? ` data-lang="${validLang}"` : '';
-  const inner =
-    validLang === 'diff' || validLang === 'patch'
-      ? renderDiffLines(body)
-      : escapeHtml(body.join('\n'));
+  if (validLang === 'diff' || validLang === 'patch') {
+    return {
+      html: `<pre${attr}><code>${renderDiffLines(body)}</code></pre>`,
+      next: i + 1,
+    };
+  }
+  // Long blocks get a line-number gutter (one numbered row per line) so the
+  // reader can point at a line; short blocks keep the plain single-node shape.
+  // A trailing empty line from the closing fence is not a real line.
+  const numbered = [...body];
+  if (numbered.at(-1) === '') numbered.pop();
+  if (numbered.length > 5) {
+    const rows = numbered
+      .map(
+        (line, n) =>
+          `<span class="code-line"><span class="code-ln" aria-hidden="true">${String(n + 1)}</span><span>${escapeHtml(line)}</span></span>`,
+      )
+      .join('\n');
+    return { html: `<pre${attr}><code>${rows}</code></pre>`, next: i + 1 };
+  }
   return {
-    html: `<pre${attr}><code>${inner}</code></pre>`,
+    html: `<pre${attr}><code>${escapeHtml(body.join('\n'))}</code></pre>`,
     next: i + 1,
   };
 }
