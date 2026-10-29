@@ -1074,7 +1074,7 @@ class Supervisor {
       const rounds = r.state.beyondRounds;
       return {
         status: 'finished',
-        reason: `all ${counts.tasks} tasks and ${counts.milestones} milestones done${rounds ? ` (goal plus ${rounds} improvement round${rounds === 1 ? '' : 's'})` : ''}`,
+        reason: `all ${counts.tasks} tasks and ${counts.milestones} milestones done${rounds ? ` (goal plus ${rounds} improvement round${rounds === 1 ? '' : 's'})` : ' (goal only)'}`,
       };
     }
     if (r.config.autonomous.enabled && (await this.parkBlocked())) return this.select();
