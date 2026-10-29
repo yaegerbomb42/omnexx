@@ -340,6 +340,16 @@ class Supervisor {
     await stepVerify(r);
     await this.finishCycle();
     const elapsedMs = r.elapsedMs();
+    const task = getNode(r.requirePlan(), taskId);
+    const estimateMin =
+      task.minutes ?? ({ S: 15, M: 45, L: 120 } as Record<string, number>)[task.size] ?? 45;
+    if (elapsedMs > estimateMin * 1.5 * 60_000) {
+      r.events.emit('time.task_overrun', {
+        task: taskId,
+        elapsed_s: Math.round(elapsedMs / 1000),
+        estimate_min: estimateMin,
+      });
+    }
     r.events.emit('time.report', {
       elapsed_s: Math.round(elapsedMs / 1000),
       remaining_s: Math.max(0, Math.round((r.deadlineMs - elapsedMs) / 1000)),
@@ -683,6 +693,16 @@ class Supervisor {
     if (r.state.phase === 'landing' && r.budgetLeftFraction() < 0.02) {
       r.events.emit('landing.floor', { left: r.budgetLeftFraction() });
       return { status: 'expired', reason: 'landing floor reached (reserve kept for verify)' };
+    }
+    if (r.plan) {
+      const c = planCounts(r.plan);
+      if (c.tasks > 0 && c.done / c.tasks < 0.4 && r.budgetLeftFraction() <= 0.5) {
+        r.events.emit('time.replan_needed', {
+          done: c.done,
+          total: c.tasks,
+          left: r.budgetLeftFraction(),
+        });
+      }
     }
     const goal = await r.store.readGoal();
     if (goal.hash !== r.state.goalHash) {
