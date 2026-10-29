@@ -257,7 +257,8 @@ export class ShellSession {
         const savedCwd = readFileSync(this.cwdStatePath, 'utf8').trim();
         if (savedCwd && existsSync(savedCwd)) {
           this.lastCwd = savedCwd;
-          bootstrapLines.push(`cd "${savedCwd.replace(/"/g, '\\"')}" >/dev/null 2>&1 || true`);
+          const escaped = savedCwd.replace(/'/g, "'\\''");
+          bootstrapLines.push(`cd '${escaped}' >/dev/null 2>&1 || true`);
         }
       } catch {
         // fallback to spawnCwd

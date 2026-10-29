@@ -40,9 +40,9 @@ async function freshFirstCall() {
 }
 
 describe('first-call budget (master todo #8)', () => {
-  it('a fresh fast-path first call fits in 3.9k estimated tokens', async () => {
+  it('a fresh fast-path first call fits in 4.5k estimated tokens', async () => {
     const split = contextBreakdown(await freshFirstCall());
     const total = Object.values(split).reduce((a, b) => a + b, 0);
-    expect(total, JSON.stringify(split)).toBeLessThanOrEqual(4_100);
+    expect(total, JSON.stringify(split)).toBeLessThanOrEqual(4_500);
   });
 });

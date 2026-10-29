@@ -95,7 +95,7 @@ export interface SuperviseOptions {
   pausePollMs?: number;
   notifier?: Notifier;
   /**
-   * No progress for this long ends the run as needs-human ("supervisor idle for 15m").
+   * No progress for this long ends the run as blocked ("supervisor idle for 15m").
    * Default 15 minutes. A pause (or daily-cap pause) is not progress, so a paused run
    * times out too; `omnexx resume` restarts it. Wall-clock, so a warped test clock cannot
    * end a run early.
@@ -117,6 +117,10 @@ export interface Outcome {
 export const EXIT_FOR: Record<RunStatus, number> = {
   finished: EXIT.ok,
   planned: EXIT.ok,
+  blocked: EXIT.needsHuman,
+  expired: EXIT.budgetStop,
+  stuck: EXIT.needsHuman,
+  failed: EXIT.error,
   'needs-human': EXIT.needsHuman,
   'budget-stop': EXIT.budgetStop,
   'user-stop': EXIT.userStop,
@@ -321,12 +325,31 @@ class Supervisor {
 
   private async cycle(taskId: string): Promise<void> {
     const r = this.run;
+    r.lastCycleModelMs = r.cycleModelMs;
+    r.lastCycleToolMs = r.cycleToolMs;
+    r.cycleModelMs = 0;
+    r.cycleToolMs = 0;
+    const cycleStartElapsed = r.elapsedMs();
+    const offTool = r.events.onEvent((e) => {
+      if (e.type === 'tool.call' && typeof e.ms === 'number') r.cycleToolMs += e.ms;
+    });
     r.state.cycle++;
     await r.setPhase('act', { taskId, pending: undefined, act: undefined });
     r.events.emit('cycle.start', { task: taskId });
     await stepAct(r);
     await stepVerify(r);
     await this.finishCycle();
+    const elapsedMs = r.elapsedMs();
+    r.events.emit('time.report', {
+      elapsed_s: Math.round(elapsedMs / 1000),
+      remaining_s: Math.max(0, Math.round((r.deadlineMs - elapsedMs) / 1000)),
+      task_active_s: Math.round((elapsedMs - cycleStartElapsed) / 1000),
+      model_s: Math.round(r.cycleModelMs / 1000),
+      tool_s: Math.round(r.cycleToolMs / 1000),
+      overrun_s: Math.max(0, Math.round((elapsedMs - r.deadlineMs) / 1000)),
+      useful_ops: r.state.acceptedCommits,
+    });
+    offTool();
   }
 
   /** GUARD after RECORD: stuck signals → ladder; the judge's advisory next move; then SELECT. */
@@ -520,7 +543,7 @@ class Supervisor {
     await this.notify('budget', { hint: r.state.statusReason });
     const pausedAt = r.clock.now();
     while (r.clock.now() < until) {
-      if (r.idleTimedOut) return { status: 'needs-human', reason: IDLE_REASON };
+      if (r.idleTimedOut) return { status: 'blocked', reason: IDLE_REASON };
       const c = await r.control();
       if (c === 'stop' || c === 'stop-now')
         return { status: 'user-stop', reason: 'stopped during the daily-cap pause' };
@@ -574,9 +597,9 @@ class Supervisor {
   private async guardPre(): Promise<Outcome | undefined> {
     const r = this.run;
     // Idle for 15m with no progress (a pause is not progress): end the run so the
-    // supervisor does not sit forever. needs-human, not user-stop: nobody asked to stop;
+    // supervisor does not sit forever. blocked, not user-stop: nobody asked to stop;
     // a human decides whether to resume.
-    if (r.idleTimedOut) return { status: 'needs-human', reason: IDLE_REASON };
+    if (r.idleTimedOut) return { status: 'blocked', reason: IDLE_REASON };
     let c = await r.control();
     if (c === 'pause') {
       r.state.status = 'paused';
@@ -584,7 +607,7 @@ class Supervisor {
       r.events.emit('control.paused', { at: 'cycle-boundary' });
       while (c === 'pause') {
         await r.clock.sleep(this.opts.pausePollMs ?? 1_000);
-        if (this.idleEnded()) return { status: 'needs-human', reason: IDLE_REASON };
+        if (this.idleEnded()) return { status: 'blocked', reason: IDLE_REASON };
         c = await r.control();
       }
       r.state.status = 'running';
@@ -601,7 +624,7 @@ class Supervisor {
         detail: r.state.providersUnavailable,
       });
       return {
-        status: 'budget-stop',
+        status: 'expired',
         reason: `no model could take a call for ${wait} (quotas used up, keys rejected or providers down): ${r.state.providersUnavailable.slice(0, 300)}. Add a provider or wait for quotas to reset, then \`omnexx resume\`.`,
       };
     }
@@ -611,7 +634,7 @@ class Supervisor {
         detail: 'the next model call could exceed max_usd',
       });
       return {
-        status: 'budget-stop',
+        status: 'expired',
         reason: `max_usd reached (${r.state.spend.usd.toFixed(2)} of ${r.config.budget.max_usd}; the next call could exceed it)`,
       };
     }
@@ -624,17 +647,22 @@ class Supervisor {
         checkpoint: hit.checkpoint,
       });
       return {
-        status: 'budget-stop',
+        status: 'expired',
         reason: `task ${hit.taskId} parked at ${hit.kind} after ${String(hit.tokens)} tokens / $${hit.usd.toFixed(2)}${hit.checkpoint ? `; state saved to ${hit.checkpoint}` : ''}. Raise [budget] task_max_* or resume to continue.`,
       };
     }
     const paused = await this.dailyCapPause();
     if (paused) return paused;
-    const limits = { spentUsd: r.state.spend.usd, elapsedMs: r.elapsedMs(), cycles: r.state.cycle };
+    const limits = {
+      spentUsd: r.state.spend.usd,
+      elapsedMs: r.elapsedMs(),
+      cycles: r.state.cycle,
+      turns: r.state.spend.turns,
+    };
     const hit = runLimitHit(r.config.budget, limits);
     if (hit) {
       r.events.emit('budget.stop', { kind: hit.kind, detail: hit.detail });
-      return { status: 'budget-stop', reason: `${hit.kind} reached (${hit.detail})` };
+      return { status: 'expired', reason: `${hit.kind} reached (${hit.detail})` };
     }
     if (shouldWarn(r.config.budget, limits) && !r.state.warned.includes('budget')) {
       r.state.warned.push('budget');
@@ -654,7 +682,7 @@ class Supervisor {
     }
     if (r.state.phase === 'landing' && r.budgetLeftFraction() < 0.02) {
       r.events.emit('landing.floor', { left: r.budgetLeftFraction() });
-      return { status: 'budget-stop', reason: 'landing floor reached (reserve kept for verify)' };
+      return { status: 'expired', reason: 'landing floor reached (reserve kept for verify)' };
     }
     const goal = await r.store.readGoal();
     if (goal.hash !== r.state.goalHash) {
@@ -672,7 +700,7 @@ class Supervisor {
     ) {
       r.events.emit('stuck.signal', { signal: 'no_progress', cycles: sinceCycles, ms: sinceMs });
       if (await this.recoverNoProgress(sinceCycles)) return undefined;
-      return { status: 'needs-human', reason: `no accepted commit for ${sinceCycles} cycles` };
+      return { status: 'blocked', reason: `no accepted commit for ${sinceCycles} cycles` };
     }
     return undefined;
   }
@@ -1069,14 +1097,14 @@ class Supervisor {
       const rounds = r.state.beyondRounds;
       return {
         status: 'finished',
-        reason: `all ${counts.tasks} tasks and ${counts.milestones} milestones done${rounds ? ` (goal plus ${rounds} improvement round${rounds === 1 ? '' : 's'})` : ''}`,
+        reason: `all ${counts.tasks} tasks and ${counts.milestones} milestones done${rounds ? ` (goal plus ${rounds} improvement round${rounds === 1 ? '' : 's'})` : ' (goal only)'}`,
       };
     }
     if (r.config.autonomous.enabled && (await this.parkBlocked())) return this.select();
     const parked = plan.nodes.filter((n) => n.status === 'parked').length;
     r.events.emit('ladder.rung', { rung: 'stop_and_ask', parked });
     return {
-      status: 'needs-human',
+      status: 'blocked',
       reason: `nothing runnable: ${parked} parked node(s) need a decision`,
     };
   }
@@ -1123,9 +1151,9 @@ class Supervisor {
         // Retries used up on this model: plan with the next one before asking anyone.
         if (err.end !== 'max_usd' && this.fallBackPlanner(err.end)) continue;
         return err.end === 'max_usd'
-          ? { status: 'budget-stop', reason: 'max_usd reached while planning' }
+          ? { status: 'expired', reason: 'max_usd reached while planning' }
           : {
-              status: 'needs-human',
+              status: 'blocked',
               reason:
                 err.end === NO_TOOL_CALLS
                   ? 'the planner model never called a tool: it (or the server in front of it) may not support tool calling; pick another planner model with `omnexx models`'
@@ -1300,7 +1328,7 @@ export async function supervise(
       if (run.abort.signal.aborted)
         outcome = { status: 'user-stop', reason: 'stopped immediately (--now)' };
       else {
-        run.state.status = 'error';
+        run.state.status = 'failed';
         run.state.statusReason = (err as Error).message;
         await run.save();
         run.events.emit('run.error', { error: (err as Error).message });
@@ -1322,6 +1350,16 @@ export async function supervise(
     run.state.status = outcome.status;
     run.state.statusReason = outcome.reason;
     await run.setPhase('done');
+    const elapsedMs = run.elapsedMs();
+    run.events.emit('time.report', {
+      elapsed_s: Math.round(elapsedMs / 1000),
+      remaining_s: Math.max(0, Math.round((run.deadlineMs - elapsedMs) / 1000)),
+      task_active_s: 0,
+      model_s: Math.round(run.cycleModelMs / 1000),
+      tool_s: Math.round(run.cycleToolMs / 1000),
+      overrun_s: Math.max(0, Math.round((elapsedMs - run.deadlineMs) / 1000)),
+      useful_ops: run.state.acceptedCommits,
+    });
     run.events.emit('run.finish', {
       status: outcome.status,
       reason: outcome.reason,
@@ -1329,13 +1367,20 @@ export async function supervise(
       commits: run.state.acceptedCommits,
       cycles: run.state.cycle,
     });
-    await writeReport(run.store, run.state, run.plan, deps.clock.now());
+    await writeReport(run.store, run.state, run.plan, deps.clock.now(), {
+      maxHours: deps.config.budget.max_hours,
+      ...(deps.config.budget.max_turns !== undefined
+        ? { maxTurns: deps.config.budget.max_turns }
+        : {}),
+      maxUsd: deps.config.budget.max_usd,
+      maxCycles: deps.config.budget.max_cycles,
+    });
     await rememberRunTook(run, deps, outcome.status);
     const prUrl = deps.config.git.open_pr ? await openPullRequest(run) : undefined;
     const kind: NotifyKind =
-      outcome.status === 'needs-human'
+      outcome.status === 'blocked'
         ? 'needs-human'
-        : outcome.status === 'budget-stop'
+        : outcome.status === 'expired'
           ? 'budget'
           : outcome.status === 'user-stop'
             ? 'stopped'
