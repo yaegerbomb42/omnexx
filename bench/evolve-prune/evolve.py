@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Evolutionary loop on pruneSuperseded() using Groq qwen/qwen3.8-27b. Keys from env GROQ_API_KEY_1..14."""
 import json, os, re, subprocess, sys, time, urllib.request, secrets, itertools
-RNG = secrets.SystemRandom()
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SRC = os.path.join(ROOT, 'src/agent/compaction.ts')
 LOG = os.path.join(ROOT, 'evolve-log.jsonl')
@@ -83,11 +82,11 @@ base = evaluate(BASE_REGION); log({'event': 'baseline', 'train': base['train'], 
 pop = [(BASE_REGION, base)]; failures = []; calls = 0
 for g in range(GENS):
     for c in range(POP):
-        parent, ps = RNG.choice(pop[:2]) if len(pop) > 1 else pop[0]
+        parent, ps = secrets.choice(pop[:2]) if len(pop) > 1 else pop[0]
         hint = HINTS[(g * POP + c) % len(HINTS)]
         code, usage, ki = ask(parent, ps, hint, failures); calls += 1
         if not code: log({'event': 'no_code', 'gen': g, 'usage': usage}); continue
-        s = evaluate(code); fn = f'{OUT}/g{g:02d}c{c}.ts'; open(fn, 'w').write(code)
+        s = evaluate(code); fn = f'{OUT}/g{g:02d}c{c}.ts.txt'; open(fn, 'w').write(code)
         rec = {'event': 'candidate', 'gen': g, 'cand': c, 'hint': hint, 'key': ki + 1, 'usage': usage, 'file': os.path.relpath(fn, ROOT),
                'ok': s.get('ok'), 'why': s.get('why'), 'train': s.get('train'), 'holdout': s.get('holdout')}
         log(rec); print(json.dumps({k: rec[k] for k in ('gen', 'cand', 'ok', 'why')}), (s.get('train') or {}).get('tokens'), (s.get('holdout') or {}).get('tokens'), usage.get('total_tokens'), flush=True)
@@ -95,6 +94,6 @@ for g in range(GENS):
         else: failures.append({'hint': hint, 'why': (s.get('why') or '')[:300]})
     pop.sort(key=lambda p: fit(p[1])); pop = pop[:4]
     log({'event': 'gen_done', 'gen': g, 'best_train': fit(pop[0][1]), 'best_holdout': pop[0][1]['holdout']['tokens'], 'calls': calls})
-    open(f'{OUT}/best.ts', 'w').write(pop[0][0])
+    open(f'{OUT}/best.ts.txt', 'w').write(pop[0][0])
     subprocess.run(f'git add -A bench evolve-log.jsonl && git commit -qm "bench: evolve-prune gen {g}" && git push -q origin feat/evolved-compaction', shell=True, cwd=ROOT, capture_output=True)
 print('DONE best train', fit(pop[0][1]), 'holdout', pop[0][1]['holdout'])
