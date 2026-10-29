@@ -669,7 +669,12 @@ class Supervisor {
       cycles: r.state.cycle,
       turns: r.state.spend.turns,
     };
-    const hit = runLimitHit(r.config.budget, limits);
+    // max_cycles scales with max_hours (cycles_per_hour), so a long run is not cut short by cycles.
+    const effectiveMaxCycles = Math.max(
+      r.config.budget.max_cycles,
+      Math.ceil(r.config.budget.max_hours * r.config.budget.cycles_per_hour),
+    );
+    const hit = runLimitHit({ ...r.config.budget, max_cycles: effectiveMaxCycles }, limits);
     if (hit) {
       r.events.emit('budget.stop', { kind: hit.kind, detail: hit.detail });
       return { status: 'expired', reason: `${hit.kind} reached (${hit.detail})` };
