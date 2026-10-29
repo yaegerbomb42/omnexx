@@ -743,3 +743,12 @@ export async function manageContext(
   }
   return g.messages;
 }
+
+export {
+  formatMilestoneRecap,
+  foldMilestoneCheckpoint,
+  extractFilesTouched,
+  extractVerificationCommand,
+  type CheckpointMetadata,
+  type FoldResult,
+} from './milestone-compactor.js';

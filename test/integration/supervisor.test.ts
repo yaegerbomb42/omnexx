@@ -353,14 +353,36 @@ describe('M2: stuck handling, budget and judge', () => {
     const out = await superviseTest(t);
 
     // Assert
-    expect(out.status).toBe('budget-stop');
+    expect(out.status).toBe('expired');
     expect(out.reason).toMatch(/max_hours/);
     const events = await readEvents(t.run.store.eventsPath);
     expect(types(events, 'budget.deadline')).toHaveLength(1);
     expect(events.filter((e) => e.type === 'stuck.signal' && e.signal === 'hung')).toEqual([]);
   });
 
-  it('every model out of quota: stops with budget-stop after max_provider_wait instead of waiting for ever', async () => {
+  it('a run-level turn cap ends the run as expired with a summary, not an error', async () => {
+    // Arrange: one task, one turn of budget. The first cycle spends the turn;
+    // the next boundary stops the run instead of starting another cycle.
+    const plan = planner([{ id: 'M1', title: 'First', tasks: [fileTask('M1.T01')] }]);
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider: new ScriptedProvider(scenario(plan, fileWorker)),
+      config: { gates: [GATE], budget: { max_turns: 1 } },
+    });
+
+    // Act
+    const out = await superviseTest(t);
+
+    // Assert
+    expect(out).toMatchObject({ status: 'expired', exitCode: 3 });
+    expect(out.reason).toMatch(/max_turns/);
+    expect((await t.run.store.readState()).spend.turns).toBeGreaterThanOrEqual(1);
+    const report = await readFile(t.run.store.file('REPORT.md'), 'utf8');
+    expect(report).toMatch(/expired/);
+    expect(report).toMatch(/Budget:.*turns of 1/);
+  });
+
+  it('every model out of quota: stops with expired after max_provider_wait instead of waiting for ever', async () => {
     // Arrange: the planner works; then every worker call fails as if quotas were gone.
     const plan = planner([{ id: 'M1', title: 'First', tasks: [fileTask('M1.T01')] }]);
     const t = await startTestRun({
@@ -373,7 +395,7 @@ describe('M2: stuck handling, budget and judge', () => {
     const out = await superviseTest(t);
 
     // Assert
-    expect(out.status).toBe('budget-stop');
+    expect(out.status).toBe('expired');
     expect(out.reason).toMatch(/no model could take a call for 2h.*omnexx resume/);
     const events = await readEvents(t.run.store.eventsPath);
     expect(types(events, 'provider.give_up')).toHaveLength(1);
@@ -393,7 +415,7 @@ describe('M2: stuck handling, budget and judge', () => {
     const out = await superviseTest(t, []);
 
     // Assert
-    expect(out).toMatchObject({ status: 'needs-human' });
+    expect(out).toMatchObject({ status: 'blocked' });
     expect(out.reason).toMatch(/never called a tool.*may not support tool calling/);
     const events = await readEvents(t.run.store.eventsPath);
     expect(types(events, 'planner.retry').length).toBeGreaterThan(0);
@@ -419,7 +441,7 @@ describe('M2: stuck handling, budget and judge', () => {
     expect(types(events, 'ladder.rung').map((e) => e.rung)).not.toContain('stop_and_ask');
   });
 
-  it('impossible-task: 3 rejections ask for a different approach, 3 more escalate to the strong model, 3 more ask the planner to split it (it cannot), then it parks; nothing runnable → needs-human (exit 2) and a push', async () => {
+  it('impossible-task: 3 rejections ask for a different approach, 3 more escalate to the strong model, 3 more ask the planner to split it (it cannot), then it parks; nothing runnable → blocked (exit 2) and a push', async () => {
     const plan = impossiblePlan();
     const worker = impossibleWorker;
     const t = await startTestRun({
@@ -429,7 +451,7 @@ describe('M2: stuck handling, budget and judge', () => {
     });
     const pushes: NotifyPayload[] = [];
     const out = await superviseTest(t, pushes);
-    expect(out).toMatchObject({ status: 'needs-human', exitCode: 2 });
+    expect(out).toMatchObject({ status: 'blocked', exitCode: 2 });
     const events = await readEvents(t.run.store.eventsPath);
     expect(types(events, 'rollback')).toHaveLength(9);
     expect(types(events, 'ladder.rung').map((e) => e.rung)).toEqual([
@@ -587,7 +609,7 @@ describe('M2: stuck handling, budget and judge', () => {
       },
     });
     const first = await superviseTest(t);
-    expect(first).toMatchObject({ status: 'budget-stop', exitCode: 3 });
+    expect(first).toMatchObject({ status: 'expired', exitCode: 3 });
     const s1 = await t.run.store.readState();
     expect(s1.spend.usd).toBeLessThanOrEqual(0.04);
     expect((await git(t.run.worktree, ['rev-parse', 'HEAD'])).stdout).toBe(s1.lastGreen);
@@ -642,7 +664,7 @@ describe('M2: stuck handling, budget and judge', () => {
       expect(final && getNode(final, id).consecutiveRejections).toBe(0);
   });
 
-  it('wrap-up reserve: no new task starts in the reserve window; report written, lastGreen clean', async () => {
+  it('wrap-up reserve: the run lands (no hard stop at the reserve); report written, lastGreen clean', async () => {
     const plan = planner([
       {
         id: 'M1',
@@ -665,16 +687,13 @@ describe('M2: stuck handling, budget and judge', () => {
       },
     };
     const out = await superviseTest(t);
-    expect(out.status).toBe('budget-stop');
-    expect(out.reason).toMatch(/wrap-up reserve/);
+    expect(out.status).toBe('expired');
     const events = await readEvents(t.run.store.eventsPath);
-    const starts = types(events, 'cycle.start');
-    const wrap = events.findIndex((e) => e.type === 'phase' && e.phase === 'wrapup');
-    expect(wrap).toBeGreaterThan(-1);
-    expect(events.slice(wrap).some((e) => e.type === 'cycle.start')).toBe(false);
-    expect(starts.length).toBeLessThan(3);
-    expect(types(events, 'final.verify')).toHaveLength(1);
-    expect(await readFile(t.run.store.file('REPORT.md'), 'utf8')).toContain('wrap-up reserve');
+    // Phase 3: entering the reserve switches to landing instead of stopping.
+    expect(types(events, 'landing.start').length).toBeGreaterThan(0);
+    const landing = events.findIndex((e) => e.type === 'phase' && e.phase === 'landing');
+    expect(landing).toBeGreaterThan(-1);
+    expect(await readFile(t.run.store.file('REPORT.md'), 'utf8')).toBeTruthy();
     expect(await isClean(t.run.worktree)).toBe(true);
   });
 

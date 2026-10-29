@@ -4,9 +4,11 @@ import type { ResolvedModel } from '../providers/pricing.js';
 import type { Judge } from '../judge/types.js';
 import { ACTION_HINT, ACTION_ROLE, type RouteAction } from './actions.js';
 import { describe, listCandidates, unfit, type Candidate, type Needs } from './candidates.js';
+import { rankCandidatesForStage, stageForAction, STAGE_POLICIES, type TaskStage } from './stage.js';
 
 export interface RouteContext {
   action: RouteAction;
+  stage?: TaskStage;
   needs?: Needs;
   /** Compact, redacted facts for the judge: task title, attempts, last failure, budget left… */
   facts?: Record<string, unknown>;
@@ -16,6 +18,7 @@ export interface RouteContext {
 
 export interface RouteDecision {
   action: RouteAction;
+  stage?: TaskStage;
   /** First entry is the pick; the rest is the role chain as failover. */
   chain: ResolvedModel[];
   by: 'pin' | 'judge' | 'rules';
@@ -72,6 +75,7 @@ export class ModelRouter {
   }
 
   private async decide(ctx: RouteContext, start: number): Promise<RouteDecision> {
+    const stage = ctx.stage ?? stageForAction(ctx.action);
     const roleChain = ctx.escalate
       ? escalationChain(this.deps.roleChains)
       : this.deps.roleChains[ACTION_ROLE[ctx.action]];
@@ -82,6 +86,7 @@ export class ModelRouter {
       extra: Partial<RouteDecision> = {},
     ): RouteDecision => ({
       action: ctx.action,
+      stage,
       chain: pick ? [pick, ...roleChain.filter((m) => !same(m, pick))] : roleChain,
       by,
       ms: elapsed(),
@@ -98,13 +103,23 @@ export class ModelRouter {
     const fit = this.candidates.filter(
       (c) => !unfit(c, needs) && !this.deps.modelExhausted?.(`${c.model.provider}:${c.model.id}`),
     );
-    // Rules: keep the role chain, but skip models that can't do the action when others can.
+    const rankedFit = rankCandidatesForStage(fit, stage);
+
+    // Rules: keep the role chain, prioritizing models matching the stage tier
     const ruleChain = (): RouteDecision => {
       const usable = roleChain.filter((m) => fit.some((c) => same(c.model, m)));
       let fallback = roleChain;
-      if (usable.length) fallback = usable;
-      else if (fit.length) fallback = fit.map((c) => c.model);
-      return { action: ctx.action, chain: fallback, by: 'rules', ms: elapsed() };
+      if (usable.length) {
+        const topRanked = rankedFit[0]?.model;
+        if (topRanked && usable.some((m) => same(m, topRanked))) {
+          fallback = [topRanked, ...usable.filter((m) => !same(m, topRanked))];
+        } else {
+          fallback = usable;
+        }
+      } else if (rankedFit.length) {
+        fallback = rankedFit.map((c) => c.model);
+      }
+      return { action: ctx.action, stage, chain: fallback, by: 'rules', ms: elapsed() };
     };
 
     // Escalation is deterministic: the judge could hand the task back to the model it was stuck on.
@@ -112,11 +127,14 @@ export class ModelRouter {
       return ruleChain();
     if (this.deps.judge.enabled && !this.deps.judge.enabled('route')) return ruleChain();
 
+    const stagePolicy = STAGE_POLICIES[stage];
     const options = fit.map((c) => c.ref);
     const result = await this.deps.judge.ask(
       'route',
       {
         action: ctx.action,
+        stage,
+        stagePolicy: stagePolicy.description,
         about: ACTION_HINT[ctx.action],
         ...ctx.facts,
         models: fit.map(describe),
@@ -125,7 +143,7 @@ export class ModelRouter {
         {
           id: 'model',
           type: 'choice',
-          prompt: `Which model should handle this action? Prefer the cheapest and fastest model that will very likely succeed at "${ACTION_HINT[ctx.action]}"; pick a stronger model for hard reasoning or after repeated failures.`,
+          prompt: `Which model should handle this action? Stage "${stage}" recommends: ${stagePolicy.description}. Prefer the cheapest and fastest model that will very likely succeed at "${ACTION_HINT[ctx.action]}"; pick a stronger model for hard reasoning or after repeated failures.`,
           options,
         },
       ],
