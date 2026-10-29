@@ -181,7 +181,11 @@ export function pinPrefix(system: readonly SystemBlock[]): SystemBlock[] {
     if (i === stable.length - 1) next.cacheBreakpoint = true;
     return next;
   });
-  return [...pinned, ...vol];
+  // Volatile blocks never carry a breakpoint: they change every turn, so caching
+  // one would buy a cache write per turn and nothing else. A stale breakpoint
+  // (e.g. from a builder that put it on the last block overall) is stripped here.
+  const tail: SystemBlock[] = vol.map((b) => ({ text: b.text, volatile: true }));
+  return [...pinned, ...tail];
 }
 
 /**
