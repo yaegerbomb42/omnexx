@@ -962,7 +962,10 @@ export async function runAgentLoop(
                 deps.events.emit('time.reminder', {
                   tool: call.name,
                   elapsed_s: Math.round((deps.clock.now() - toolStart) / 1000),
-                  remaining_s: Math.max(0, Math.round((deps.deadlineMs! - deps.clock.now()) / 1000)),
+                  remaining_s: Math.max(
+                    0,
+                    Math.round((deps.deadlineMs! - deps.clock.now()) / 1000),
+                  ),
                 });
               }, 60_000)
             : undefined;

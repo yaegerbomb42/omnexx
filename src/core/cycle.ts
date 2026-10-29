@@ -461,7 +461,9 @@ export async function stepAct(run: Run): Promise<void> {
         `Elapsed ${fmt(elapsedMs)} of ${run.config.budget.max_hours}h`,
         `${fmt(remainingMs)} left`,
         counts ? `${counts.done} of ${counts.tasks} tasks done` : '',
-        run.lastCycleModelMs ? `last cycle: ${fmt(run.lastCycleModelMs)} model, ${fmt(run.lastCycleToolMs)} tools` : '',
+        run.lastCycleModelMs
+          ? `last cycle: ${fmt(run.lastCycleModelMs)} model, ${fmt(run.lastCycleToolMs)} tools`
+          : '',
         `pace: ${pace}`,
       ].filter(Boolean);
       return `# Clock\n\n${parts.join(' · ')}`;
