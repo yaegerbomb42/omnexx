@@ -432,7 +432,8 @@ export async function stepAct(run: Run): Promise<void> {
     subagents: run.config.context.subagents,
     hasHistory: hasRecallableHistory,
     autoApprove: run.config.policy.auto_approve,
-    lazyTools: run.config.context.lazy_tools,
+    // The legacy `more_tools` deferral only applies in full mode; lazy discovery replaces it.
+    lazyTools: run.config.tools.discovery !== 'lazy' && run.config.context.lazy_tools,
   };
   const isLazyMode = run.config.tools.discovery === 'lazy';
 

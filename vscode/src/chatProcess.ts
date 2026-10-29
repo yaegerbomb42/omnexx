@@ -79,7 +79,7 @@ export class ChatProcess implements vscode.Disposable {
     // A Windows .cmd shim only runs through a shell; the only argument is a fixed word.
     const child = spawn(e.command, [...e.prefix, 'chat-server'], {
       cwd: this.cwd,
-      env: e.env,
+      env: lazyToolDiscovery() ? e.env : { ...e.env, OMNEXX_TOOL_DISCOVERY: 'full' },
       shell: e.shell,
       windowsHide: true,
       // A detached child leads its own process group, so we can kill its whole tree with
@@ -252,4 +252,9 @@ export class ChatProcess implements vscode.Disposable {
     this.stop();
     this.emitter.dispose();
   }
+}
+
+/** `omnexx.lazyToolDiscovery` (default on). Off forces `[tools] discovery = "full"` for chats. */
+function lazyToolDiscovery(): boolean {
+  return vscode.workspace.getConfiguration('omnexx').get<boolean>('lazyToolDiscovery') ?? true;
 }

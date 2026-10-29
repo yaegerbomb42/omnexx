@@ -298,6 +298,29 @@
   filter: grayscale(1);
 }
 
+.soon-switch.live {
+  cursor: pointer;
+  opacity: 1;
+}
+
+.soon-switch.live input {
+  cursor: pointer;
+}
+
+.soon-switch.live input:checked + span {
+  background: var(--vscode-button-background, var(--accent));
+}
+
+.soon-switch.live input:checked + span::after {
+  left: 18px;
+  background: var(--vscode-button-foreground, #fff);
+}
+
+.soon-switch.live input:focus-visible + span {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
 .sec-head {
   display: flex;
   align-items: center;

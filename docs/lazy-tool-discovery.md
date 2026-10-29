@@ -4,7 +4,7 @@ An optional mode that saves prompt tokens by sending only a compact tool index u
 
 ## Overview
 
-By default, Omnexx sends the full JSON schema for every tool to the provider on every request. **Lazy tool discovery** changes this behavior:
+**Lazy tool discovery is on by default.** Instead of sending the full JSON schema for every tool on every request (`discovery = "full"`), Omnexx:
 
 - **Full mode (default)**: All tool definitions sent every request (byte-identical to current behavior)
 - **Lazy mode**: Only a compact index of tool groups is sent; full definitions are loaded on demand
@@ -15,20 +15,20 @@ By default, Omnexx sends the full JSON schema for every tool to the provider on 
 
 ```toml
 [tools]
-discovery = "lazy"  # "full" (default) | "lazy"
+discovery = "lazy"  # "lazy" (default) | "full"
 max_loaded_groups = 10  # optional LRU cap
 ```
 
 ### Environment Variable
 
 ```bash
-OMNEXX_TOOL_DISCOVERY=lazy omnexx run "your goal"
+OMNEXX_TOOL_DISCOVERY=full omnexx run "your goal"
 ```
 
 ### CLI Flag
 
 ```bash
-omnexx run "your goal" --tool-discovery lazy
+omnexx run "your goal" --tool-discovery full   # opt out of the lazy default
 ```
 
 ## How It Works
@@ -177,7 +177,7 @@ Emitted when a tool's group is auto-loaded:
 
 - **All providers**: Works with Anthropic and OpenAI-compatible providers since filtering happens at the shared registry layer
 - **Context compaction**: Loaded state persists on the Run object and survives context compaction
-- **Default behavior**: When `discovery = "full"` (default), behavior is byte-identical to pre-lazy mode
+- **Opt-out**: with `discovery = "full"` (or `--tool-discovery full`, or the VS Code "Lazy tool discovery" switch off), behavior is byte-identical to pre-lazy mode
 
 ## Best Practices
 
