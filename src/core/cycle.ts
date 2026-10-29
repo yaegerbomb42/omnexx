@@ -523,7 +523,8 @@ export async function stepAct(run: Run): Promise<void> {
       run.paused = p;
     },
     signal: run.signal,
-    deadlineMs: run.deadlineMs,
+    // Absolute deadline on run.clock: the loop compares it against clock.now().
+    deadlineMs: run.clock.now() + Math.max(0, run.deadlineMs - run.elapsedMs()),
     calibrationFile: tokenCalibrationFile(run.deps.paths),
     parallelTasks: run.config.context.subagent_parallel,
     watch: new InCycleWatch(
