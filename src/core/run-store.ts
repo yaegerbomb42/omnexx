@@ -25,11 +25,22 @@ export const PHASES = [
 ] as const;
 export type Phase = (typeof PHASES)[number];
 
+/**
+ * Run lifecycle states. The canonical terminal states are finished (goal met),
+ * blocked (needs a human decision), expired (a budget ran out), stuck (a loop
+ * was detected) and failed (an unexpected error). The older names
+ * needs-human, budget-stop and error are kept so state.json files written
+ * before the rename still parse; new runs never produce them.
+ */
 export const RUN_STATUS = [
   'planned',
   'running',
   'paused',
   'finished',
+  'blocked',
+  'expired',
+  'stuck',
+  'failed',
   'needs-human',
   'budget-stop',
   'user-stop',
@@ -39,6 +50,10 @@ export type RunStatus = (typeof RUN_STATUS)[number];
 export const TERMINAL: readonly RunStatus[] = [
   'planned',
   'finished',
+  'blocked',
+  'expired',
+  'stuck',
+  'failed',
   'needs-human',
   'budget-stop',
   'user-stop',

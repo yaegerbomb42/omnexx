@@ -38,7 +38,7 @@ describe('real processes: detach, heartbeat, pause/resume', () => {
       60_000,
       'run to end',
     );
-    expect(state.status).toBe('budget-stop');
+    expect(state.status).toBe('expired');
     expect(state.acceptedCommits).toBe(0);
     // The supervisor writes REPORT.md after the status; let it exit before temp dirs are removed.
     await waitFor(

@@ -16,7 +16,8 @@ is checked. Later milestones widen and polish it.
 
 ## Beyond mode
 
-When every milestone is done and its checks pass, a normal agent stops. Omnexx asks the planner
+When every milestone is done and its checks pass, the run stops — unless you asked for
+improvement rounds (`run --beyond N`, or `[beyond] max_rounds` in config). Then Omnexx asks the planner
 for an improvement round instead, ranked against a fixed rubric: correctness hardening, test
 coverage, security, performance, developer experience, accessibility/UX, observability, and
 refactors that remove real risk. Every improvement task must **add or tighten a check** (a test,
@@ -32,9 +33,9 @@ The run marks itself complete when:
 ```toml
 [beyond]
 enabled = true          # default
-max_rounds = 3          # default
+max_rounds = 0          # default; opt in per run with `run --beyond N`
 min_budget_left = 0.2   # default; never below twice budget.wrapup_reserve
 ```
 
-The feed shows it: `✓ intent …`, `· beyond goal met; planning improvement round 1/3`,
+With `--beyond 3`, the feed shows it: `✓ intent …`, `· beyond goal met; planning improvement round 1/3`,
 `✓ beyond round 1: 4 new nodes`, and finally `· beyond round 2: nothing worth doing; wrapping up`.
