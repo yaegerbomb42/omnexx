@@ -37,7 +37,6 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
-- **2026-10-28 (single agent), branch `feat/run-budget-terminal-states`:** per-run budget with first-class terminal states (`finished`/`blocked`/`expired`/`stuck`/`failed`; old names kept so old state files still parse). `--hours` accepts durations (`30m`, `1h30m`) for normal runs; new `[budget] max_turns` + `--max-turns`. Expiry ends the run cleanly at a cycle boundary, persists state, writes REPORT.md with a `Budget:` line, and is resumable; idle timeout unchanged (15 min → `blocked`). Also formatted two pre-existing unformatted files (`docs/DEPLOYMENT_AND_INFRA.md`, `OVERNIGHT_REPORT.md`) so the PR lane's whole-tree `format:check` passes; content untouched. Gates green: lint, typecheck, format:check, 57/57 affected tests (budget, run-flags, ntfy, supervisor, autonomous, process).
 - **2026-10-28 (single agent), branch `feat/beyond-opt-in`:** beyond rounds are now
   opt-in: `[beyond] max_rounds` defaults to 0 (was 3), so a plain run stops when the
   goal is met; `run --beyond N` opts into N rounds for that run (flag validated 0–20,

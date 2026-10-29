@@ -22,12 +22,8 @@ describe('formatMilestoneRecap', () => {
     const lines = recap.split('\n');
 
     expect(lines).toHaveLength(3);
-    expect(lines[0]).toBe(
-      'Milestone M1 complete [a1b2c3d]: added token cache pinning to Anthropic provider',
-    );
-    expect(lines[1]).toBe(
-      '- Changed: src/providers/anthropic.ts, test/unit/providers/anthropic.test.ts',
-    );
+    expect(lines[0]).toBe('Milestone M1 complete [a1b2c3d]: added token cache pinning to Anthropic provider');
+    expect(lines[1]).toBe('- Changed: src/providers/anthropic.ts, test/unit/providers/anthropic.test.ts');
     expect(lines[2]).toBe('- Verified via: npm test -- -t "cache prefix"');
   });
 
@@ -113,10 +109,7 @@ describe('foldMilestoneCheckpoint', () => {
           {
             type: 'tool_result',
             toolUseId: `call_${i}`,
-            content:
-              `Verbose test trace output line 1\nVerbose test trace output line 2\nStack trace: Error at Turn ${i} in file.ts:100\n`.repeat(
-                15,
-              ),
+            content: `Verbose test trace output line 1\nVerbose test trace output line 2\nStack trace: Error at Turn ${i} in file.ts:100\n`.repeat(15),
           },
         ],
       });
@@ -148,9 +141,7 @@ describe('foldMilestoneCheckpoint', () => {
     expect(recapBlock?.type).toBe('text');
     if (recapBlock?.type === 'text') {
       expect(recapBlock.text).toContain('[CHECKPOINT FOLD]');
-      expect(recapBlock.text).toContain(
-        'Milestone M1 complete [c0ffeec]: implemented authentication middleware',
-      );
+      expect(recapBlock.text).toContain('Milestone M1 complete [c0ffeec]: implemented authentication middleware');
       expect(recapBlock.text).toContain('- Changed: src/auth.ts, test/auth.test.ts');
       expect(recapBlock.text).toContain('- Verified via: npm test -- -t "auth"');
     }

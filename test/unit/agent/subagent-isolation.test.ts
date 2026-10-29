@@ -245,9 +245,7 @@ describe('Subagent Isolation & Research Sandbox', () => {
 
       const formatted = formatSubagentResult(res);
       expect(formatted).toContain('Auth token validation is missing expiration check.');
-      expect(formatted).toContain(
-        'Key Files:\n- src/auth/token.ts:50\n- src/middleware/auth.ts:22',
-      );
+      expect(formatted).toContain('Key Files:\n- src/auth/token.ts:50\n- src/middleware/auth.ts:22');
       expect(formatted).toContain('Confidence: 90%');
     });
 

@@ -35,10 +35,7 @@ export function normalizeErrorSignature(errorContent: string): string {
     .trim();
 }
 
-export function hashErrorSignature(
-  errorContent: string,
-  contextKey = '',
-): { hash: string; signature: string } {
+export function hashErrorSignature(errorContent: string, contextKey = ''): { hash: string; signature: string } {
   const signature = normalizeErrorSignature(errorContent);
   const hash = createHash('sha256')
     .update(`${contextKey}::${signature}`)
@@ -89,7 +86,9 @@ export class DoomLoopRatchet {
   }
 
   recordFileModified(filePath: string): void {
-    const rel = isAbsolute(filePath) ? relative(this.worktree, filePath) : filePath;
+    const rel = isAbsolute(filePath)
+      ? relative(this.worktree, filePath)
+      : filePath;
     this.dirtyFiles.add(rel);
   }
 
@@ -182,9 +181,7 @@ export class DoomLoopRatchet {
     for (const f of files) {
       const abs = resolve(this.worktree, f);
       try {
-        const diff = await git(this.worktree, ['status', '--porcelain', '--', f], {
-          allowFailure: true,
-        });
+        const diff = await git(this.worktree, ['status', '--porcelain', '--', f], { allowFailure: true });
         if (diff.stdout.startsWith('??')) {
           await rm(abs, { force: true });
         }

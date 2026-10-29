@@ -32,8 +32,8 @@
 ## 5. Session History & Log
 
 - **2026-10-28 (Session Init)**: Cloned `yaegerbomb42/omnexx` repository into `/Users/yaeger/Desktop/omnexx`. Initialized `WHY.md` institutional knowledge base. Working tree is clean on `origin/main`.
-  <<<<<<< HEAD
-  <<<<<<< HEAD
+<<<<<<< HEAD
+<<<<<<< HEAD
 - **2026-10-28 (Release v0.21.1 / Extension 0.17.1)**:
   - Prepared release for VS Code Marketplace overhaul: bumped root `package.json` to `0.21.1` and `vscode/package.json` to `0.17.1`.
   - Replaced low-quality cropped snippet screenshot with high-fidelity visual assets ([`panel.png`](file:///Users/yaeger/Desktop/omnexx/vscode/media/panel.png), [`model-picker.png`](file:///Users/yaeger/Desktop/omnexx/vscode/media/model-picker.png), and [`demo.gif`](file:///Users/yaeger/Desktop/omnexx/vscode/media/demo.gif)).
@@ -42,15 +42,13 @@
   - Resolved duplicate assignment in `src/cli/program.ts` and duplicate import in `src/core/supervisor.ts`.
   - Updated [CHANGELOG.md](file:///Users/yaeger/Desktop/omnexx/CHANGELOG.md).
   - All unit tests, typechecks, ESLint, and Prettier checks passing.
-    <<<<<<< HEAD
-    <<<<<<< HEAD
-    <<<<<<< HEAD
-    \=======
-
-> > > > > > > origin/feat/subagent-research-sandbox
-> > > > > > > \=======
-> > > > > > > origin/feat/acceptance-contract-gate
-
+<<<<<<< HEAD
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> origin/feat/subagent-research-sandbox
+=======
+>>>>>>> origin/feat/acceptance-contract-gate
 - **2026-10-28 (Task 1: Prompt Cache Pinning & Dynamic State Quarantine)**:
   - Enforced `pinPrefix(req.system)` in Anthropic wire payload generation (`src/providers/anthropic.ts`).
   - Placed ephemeral dynamic session state (`ctx.volatilePrompt`) at the user prompt suffix.

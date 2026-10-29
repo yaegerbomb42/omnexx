@@ -60,29 +60,14 @@ export function extractFilesTouched(messages: readonly Message[]): string[] {
 /**
  * Extracts the last successful verification/test command from tool_use blocks.
  */
-export function extractVerificationCommand(
-  messages: readonly Message[],
-  fallback = 'tests passed',
-): string {
+export function extractVerificationCommand(messages: readonly Message[], fallback = 'tests passed'): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (!m) continue;
     for (const b of m.content) {
-      if (
-        b.type === 'tool_use' &&
-        b.name === 'bash' &&
-        typeof b.input === 'object' &&
-        b.input !== null
-      ) {
+      if (b.type === 'tool_use' && b.name === 'bash' && typeof b.input === 'object' && b.input !== null) {
         const cmd = (b.input as Record<string, unknown>).command;
-        if (
-          typeof cmd === 'string' &&
-          (cmd.includes('test') ||
-            cmd.includes('check') ||
-            cmd.includes('verify') ||
-            cmd.includes('vitest') ||
-            cmd.includes('jest'))
-        ) {
+        if (typeof cmd === 'string' && (cmd.includes('test') || cmd.includes('check') || cmd.includes('verify') || cmd.includes('vitest') || cmd.includes('jest'))) {
           return cmd;
         }
       }

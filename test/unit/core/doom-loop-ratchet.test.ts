@@ -11,10 +11,8 @@ import { tempRepo } from '../../support/tmp.js';
 
 describe('normalizeErrorSignature & hashErrorSignature', () => {
   it('normalizes line numbers, durations, hex hashes, and timestamps', () => {
-    const error1 =
-      'Error in file.ts:42:15 at 0x7fff89ab after 150ms [2026-10-28T14:00:00Z]: cannot find name';
-    const error2 =
-      'Error in file.ts:99:10 at 0x1234abcd after 2.5s [2026-10-28T14:05:00Z]: cannot find name';
+    const error1 = 'Error in file.ts:42:15 at 0x7fff89ab after 150ms [2026-10-28T14:00:00Z]: cannot find name';
+    const error2 = 'Error in file.ts:99:10 at 0x1234abcd after 2.5s [2026-10-28T14:05:00Z]: cannot find name';
 
     expect(normalizeErrorSignature(error1)).toBe(normalizeErrorSignature(error2));
 
@@ -91,11 +89,7 @@ describe('DoomLoopRatchet - zero partial work rollback ratchet', () => {
     expect(ratchet.dirtyFileCount).toBe(1);
 
     // Strike 1: verification fails
-    const strike1 = await ratchet.recordVerificationResult(
-      'npm test',
-      true,
-      'Assertion failed: expected 1 got 999',
-    );
+    const strike1 = await ratchet.recordVerificationResult('npm test', true, 'Assertion failed: expected 1 got 999');
     expect(strike1.action).toBe('nudge');
     expect(strike1.reason).toBe('verification_failed_strike_1');
     expect(strike1.message).toContain('Strike 1/2');
@@ -104,11 +98,7 @@ describe('DoomLoopRatchet - zero partial work rollback ratchet', () => {
     expect(await readFile(testFile, 'utf8')).toContain('999'); // Still modified
 
     // Strike 2: verification fails again -> rollback ratchet fires!
-    const strike2 = await ratchet.recordVerificationResult(
-      'npm test',
-      true,
-      'Assertion failed: expected 1 got 999',
-    );
+    const strike2 = await ratchet.recordVerificationResult('npm test', true, 'Assertion failed: expected 1 got 999');
     expect(strike2.action).toBe('rollback');
     expect(strike2.reason).toBe('verification_failed_strike_2');
     expect(strike2.message).toContain('Zero partial work rollback ratchet enforced');

@@ -206,7 +206,9 @@ export function helperRunner(
     // Build the bounded structured result.
     const answer = result.finalText.trim();
     const findings =
-      answer.length > RESULT_MAX_CHARS ? `${answer.slice(0, RESULT_MAX_CHARS - 1)}…` : answer;
+      answer.length > RESULT_MAX_CHARS
+        ? `${answer.slice(0, RESULT_MAX_CHARS - 1)}…`
+        : answer;
     const seenFiles = new Set<string>();
     const files: string[] = [];
     const filePattern =

@@ -48,6 +48,7 @@ export function agentCatalog(local: readonly AgentCard[], remote: readonly strin
   return lines.join('\n');
 }
 
+
 export function agentTool(
   local: readonly AgentCard[],
   remote: Readonly<Record<string, Remote>>,

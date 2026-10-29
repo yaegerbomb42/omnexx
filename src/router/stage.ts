@@ -17,16 +17,14 @@ export const STAGE_POLICIES: Record<TaskStage, StagePolicy> = {
     tier: 'fast-low-cost',
     preferredRole: 'cheap',
     targetQuality: 'low',
-    description:
-      'Fast / Low-Cost for grepping, listing directories, reading ASTs (Gemini Flash, Claude Haiku, Qwen 2.5 14B)',
+    description: 'Fast / Low-Cost for grepping, listing directories, reading ASTs (Gemini Flash, Claude Haiku, Qwen 2.5 14B)',
   },
   architecture: {
     stage: 'architecture',
     tier: 'high-reasoning',
     preferredRole: 'planner',
     targetQuality: 'high',
-    description:
-      'High-Reasoning for designing patches, complex refactoring (Claude Sonnet 3.7 / Opus, DeepSeek-R1, GPT-4o)',
+    description: 'High-Reasoning for designing patches, complex refactoring (Claude Sonnet 3.7 / Opus, DeepSeek-R1, GPT-4o)',
   },
   verification: {
     stage: 'verification',
@@ -81,8 +79,7 @@ export function rankCandidatesForStage(
 
   list.sort((a, b) => {
     if (policy.tier === 'high-reasoning') {
-      const qScore = (c: Candidate): number =>
-        c.quality === 'high' ? 3 : c.quality === 'mid' ? 2 : 1;
+      const qScore = (c: Candidate): number => (c.quality === 'high' ? 3 : c.quality === 'mid' ? 2 : 1);
       return qScore(b) - qScore(a);
     }
     // fast-low-cost tier: prefer fast speed, then cheap role, then low quality
