@@ -958,6 +958,7 @@ class Supervisor {
         kind: 'beyond',
         round,
         ...scope,
+        remainingMinutes: Math.max(1, Math.round((r.deadlineMs - r.elapsedMs()) / 60_000)),
         ...(findings.length ? { evidence: evidenceText(findings) } : {}),
       });
     } catch (err) {
@@ -982,7 +983,7 @@ class Supervisor {
     const auto = r.config.autonomous.enabled;
     if (!auto && (!cfg.enabled || r.state.beyondRounds >= cfg.max_rounds)) return false;
     // Autonomous runs use the clock to the end; only the wrap-up reserve is kept back.
-    const minLeft = r.config.budget.wrapup_reserve * 2;
+    const minLeft = r.config.budget.wrapup_reserve;
     if (r.budgetLeftFraction() >= (auto ? minLeft : Math.max(cfg.min_budget_left, minLeft)))
       return true;
     r.events.emit('beyond.skip', { reason: 'budget', left: r.budgetLeftFraction() });
