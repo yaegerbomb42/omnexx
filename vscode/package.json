@@ -2,7 +2,7 @@
   "name": "omnexx",
   "displayName": "omnexx",
   "description": "Autonomous coding agent for VS Code. Plan, code, test, and run unattended in your codebase with zero-config local Ollama or cloud models.",
-  "version": "0.17.1",
+  "version": "0.22.0",
   "publisher": "yaegerbomb42",
   "license": "MIT",
   "private": true,

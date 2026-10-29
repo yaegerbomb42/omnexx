@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.22.0
+
+Extension 0.22.0 (extension now versioned with the CLI).
+
+- **Lazy tool discovery on by default** (#378, #358): a compact tool index is sent and full
+  definitions load on demand via `request_tools`. Opt out with `[tools] discovery = "full"`,
+  `--tool-discovery full`, or the VS Code "Lazy tool discovery" switch.
+- **Time-aware runs** (#359, #361, #362, #363, #365, #366, #372): `time.report` telemetry, a
+  volatile `# Clock` prompt block, time-budget enforcement at the action boundary, landing instead
+  of stopping, per-task estimates with overrun/replan signals, `max_cycles` scaling with
+  `max_hours`, and beyond rounds that use the remaining budget.
+- **Context:** evolved `pruneSuperseded` (−14% train / −23% held-out tokens, #374), milestone
+  compactor (#376), stable-prefix cache refinement (#380), cache prefix pinning (#357).
+- **Reliability:** anti-doom-loop ratchet (#375), acceptance contract gate (#373), dynamic
+  phase-based router (#377), run budget terminal states (#370), beyond rounds opt-in (#369),
+  read-only subagent sandbox (#368), quieter command output (#367), outline end-lines (#360).
+- **VS Code:** tabbed settings page (#364), UI polish (#381), grouped color-coded model picker
+  (#354), model chip opens Settings (#353).
+- Static review fixes (#352).
+
 ## 0.21.1
 
 Extension 0.17.1.
