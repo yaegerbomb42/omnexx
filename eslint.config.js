@@ -16,6 +16,8 @@ export default tseslint.config(
       'bench/suites/*/*/hidden/**',
       'bench/suites/*/lib/**',
       'bench/results/**',
+      // Generated evolution candidates (raw LLM output, kept for the record).
+      'bench/evolve-prune/candidates/**',
       'test/.build/**',
       'eslint.config.js',
       'vscode/build.mjs',

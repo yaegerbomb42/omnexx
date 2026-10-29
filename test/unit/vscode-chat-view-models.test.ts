@@ -165,6 +165,8 @@ describe('chat footer: one status line, one Stop button', () => {
     (provider as unknown as { resolveWebviewView: (v: unknown) => void }).resolveWebviewView(view);
     expect(html).toContain('id="statusline"');
     expect(html).toContain('id="model"');
+    // The chip opens the settings page on its model list, not the small popover.
+    expect(html).toContain('data-action="settingsModels"');
     expect(html).toContain('id="status-tokens"');
     expect(html).toContain('id="status-step"');
     expect(html).toContain('id="status-ctx"');

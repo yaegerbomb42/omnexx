@@ -602,8 +602,8 @@ function drawControls(s: State): void {
     : 'Pick a model';
   const spent = s.usage ? formatUsd(s.usage.usd) : null;
   modelBtn.title = s.model
-    ? `Model: ${s.model}${s.routing ? ` · using your ranked list as ${s.routing}` : ''}${spent ? ` · session spend ${spent}` : ''}. Click to switch or add a provider.`
-    : 'Pick a model';
+    ? `Model: ${s.model}${s.routing ? ` · using your ranked list as ${s.routing}` : ''}${spent ? ` · session spend ${spent}` : ''}. Click to see your models in Settings.`
+    : 'Pick a model in Settings';
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode]'))
     b.setAttribute('aria-pressed', String(b.dataset.mode === s.mode));
   const approval = el('approval', HTMLButtonElement);
@@ -894,6 +894,11 @@ function runAction(action: string, target: Element | null): void {
     const chip = target?.closest<HTMLElement>('[data-action]') ?? el('model', HTMLElement);
     if (modelPicker.isOpen()) modelPicker.close();
     else modelPicker.open(chip, post);
+  } else if (action === 'settingsModels') {
+    modelPicker.close();
+    contextPage.close();
+    inspector.close();
+    settings.open(post, 'models');
   } else if (action === 'inspect') {
     settings.close();
     contextPage.close();
@@ -957,6 +962,11 @@ settings.useFoldStore({
   set: (folded) => {
     const prev = vscode.getState();
     vscode.setState({ ...(typeof prev === 'object' && prev ? prev : {}), folded });
+  },
+  getTab: () => (vscode.getState() as { tab?: unknown } | undefined)?.tab,
+  setTab: (tab) => {
+    const prev = vscode.getState();
+    vscode.setState({ ...(typeof prev === 'object' && prev ? prev : {}), tab });
   },
 });
 settings.wire(post);

@@ -78,4 +78,43 @@ describe('pruneSuperseded: dead weight out, without a model', () => {
     ];
     expect(pruneSuperseded(msgs).pruned).toBe(0);
   });
+
+  it('stubs an identical earlier grep/glob but keeps distinct patterns or options', () => {
+    const msgs = [
+      { role: 'user', content: [{ type: 'text', text: 'go' }] } as Message,
+      ...step('grep', { pattern: 'foo', path: 'src' }, big('g1')),
+      ...step('grep', { pattern: 'foo', path: 'src', ignoreCase: true }, big('g-i')),
+      ...step('grep', { pattern: 'bar', path: 'src' }, big('g-bar')),
+      ...step('grep', { pattern: 'foo', path: 'src' }, big('g2')),
+    ];
+    const out = results(pruneSuperseded(msgs).messages);
+    expect(out[0]).toMatch(/^\[superseded by omnexx:/);
+    expect(out.slice(1).map((o) => o.split('\n')[0])).toEqual(['g-i', 'g-bar', 'g2']);
+  });
+
+  it('treats whitespace-only command differences as a rerun', () => {
+    const msgs = [
+      { role: 'user', content: [{ type: 'text', text: 'go' }] } as Message,
+      ...step('bash', { command: 'npx  eslint src' }, big('errs'), true),
+      ...step('bash', { command: 'npx eslint src ' }, big('clean')),
+    ];
+    const out = results(pruneSuperseded(msgs).messages);
+    expect(out[0]).toMatch(/failed here and passed later/);
+    expect(out[1]).toMatch(/^clean/);
+  });
+
+  it('stubs a pre-edit read only once the file is read again after the edit', () => {
+    const msgs = [
+      { role: 'user', content: [{ type: 'text', text: 'go' }] } as Message,
+      ...step('read', { path: 'src/d.ts' }, big('only copy')),
+      ...step('edit', { path: 'src/d.ts' }, 'ok'),
+      ...step('read', { path: 'src/e.ts' }, big('e before')),
+      ...step('edit', { path: 'src/e.ts' }, 'ok'),
+      ...step('read', { path: 'src/e.ts', start: 1, end: 5 }, big('e after')),
+    ];
+    const out = results(pruneSuperseded(msgs).messages);
+    expect(out[0]).toMatch(/^only copy/);
+    expect(out[2]).toMatch(/was edited and read again later/);
+    expect(out[4]).toMatch(/^e after/);
+  });
 });

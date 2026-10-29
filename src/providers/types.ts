@@ -21,9 +21,13 @@ export interface SystemBlock {
   /** Put a cache breakpoint after this block. */
   cacheBreakpoint?: boolean;
   /**
-   * Changes between runs or cycles (goal, notes, codemap). Chat Completions templates render
-   * tools after the system message, so a provider without explicit breakpoints moves these
-   * blocks into the first user message to keep system + tools a byte-stable cached prefix.
+   * Changes every turn (the clock block: elapsed time, budget left, pace). Blocks
+   * that change rarely — goal, notes, codemap — are NOT volatile: a change costs
+   * one turn's cache miss from that block onward, then the new prefix re-caches.
+   * Marking them volatile would reprocess them on every turn instead. Chat
+   * Completions templates render tools after the system message, so a provider
+   * without explicit breakpoints moves these blocks into the first user message
+   * to keep system + tools a byte-stable cached prefix.
    */
   volatile?: boolean;
 }

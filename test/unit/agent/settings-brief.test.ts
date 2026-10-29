@@ -47,12 +47,12 @@ const inputs = {
 const levels = { turnEffort: 5, contextLevel: 3, maxTokens: 4_096 };
 
 describe('the agent settings brief in the cycle prompt', () => {
-  it('adds a volatile block after the goal; the static prompt stays first', () => {
+  it('adds a stable block after the goal; the static prompt stays first', () => {
     const brief = agentBrief({ ...levels, taskEffort: 1, time: '5m' });
     const ctx = buildCycleContext({ ...inputs, brief });
     expect(ctx.labels).toEqual(['system', 'goal', 'settings', 'notes']);
     expect(ctx.system[0]).toEqual({ text: 'SYSTEM' });
-    expect(ctx.system[2]?.volatile).toBe(true);
+    expect(ctx.system[2]?.volatile).toBeUndefined();
     expect(ctx.system[2]?.text).toMatch(/Effort per task: 1\/10 \(quick MVP/);
     expect(ctx.system[2]?.text).toMatch(/about 5m/);
   });
@@ -70,10 +70,11 @@ describe('the agent settings brief in the cycle prompt', () => {
 });
 
 describe('the verified facts block in the cycle prompt', () => {
-  it('is a volatile block after the settings, before the lessons', () => {
+  it('is a stable block after the settings, before the lessons', () => {
     const facts = '# Verified facts about this repo\n- [F1] test: tests pass with `npm test`';
     const ctx = buildCycleContext({ ...inputs, facts });
     expect(ctx.labels).toEqual(['system', 'goal', 'facts', 'notes']);
-    expect(ctx.system[2]).toMatchObject({ text: facts, volatile: true });
+    expect(ctx.system[2]).toMatchObject({ text: facts });
+    expect(ctx.system[2]?.volatile).toBeUndefined();
   });
 });

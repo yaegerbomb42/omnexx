@@ -37,6 +37,20 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-10-28 (single agent), uncommitted, on the clone's main checkout:** context value per token + cache reuse. (1) Stable-prefix refinement: only the clock block is volatile now — codemap/goal/settings/facts/notes were all marked volatile, shrinking the cached stable segment to just the system prompt; the breakpoint now sits on the last stable block, `pinPrefix` strips stale breakpoints from volatile blocks, and the frozen-prefix digest ignores volatile blocks. (2) Slot 7 tail-clamp: over-long living state now drops the oldest entries instead of the newest running-context entries. Gates green: tsc, lint, format, 57/57 affected tests (7 new).
+
+- **2026-10-28 (single agent), branch `feat/beyond-opt-in`:** beyond rounds are now
+  opt-in: `[beyond] max_rounds` defaults to 0 (was 3), so a plain run stops when the
+  goal is met; `run --beyond N` opts into N rounds for that run (flag validated 0–20,
+  mapped onto `[beyond]` in `flagsToConfig`). The finish reason now states the phase
+  explicitly: `(goal only)` with 0 rounds, `(goal plus N improvement rounds)` otherwise.
+  Autonomous mode (`run --for`) and the SWE-bench preset keep their existing beyond
+  behavior. `docs/beyond.md` updated (default, opt-in, `--beyond`). Also formatted two
+  pre-existing unformatted files (`docs/DEPLOYMENT_AND_INFRA.md`,
+  `OVERNIGHT_REPORT.md`) so the PR lane's whole-tree `format:check` passes; content
+  untouched. Gates green: lint, typecheck, format:check, 43/43 affected tests
+  (run-flags, config load, beyond, autonomous).
+
 - **2026-10-22 (single agent), branch `feat/dual-execution-modes`:** dual execution modes —
   a work-domain axis (`[execution] domain = "swe" | "general"`, `src/config/work-mode.ts`)
   separate from the posture (`mode`). Default `swe` is byte-identical behavior. `general`

@@ -86,4 +86,18 @@ describe('intent and beyond mode', () => {
     expect(out.reason).not.toMatch(/improvement/);
     expect((await t.run.store.readState()).acceptedCommits).toBe(1);
   });
+
+  it('runs no improvement rounds by default', async () => {
+    const t = await startTestRun({
+      repo: await makeRepo(),
+      provider: new ScriptedProvider(scenario(beyondPlanner(), fileWorker)),
+      config: { gates: [GATE] },
+    });
+    const out = await supervise(t.run.deps, t.run.state.runId, opts);
+    expect(out).toMatchObject({ status: 'finished' });
+    expect(out.reason).toMatch(/goal only/);
+    const state = await t.run.store.readState();
+    expect(state.beyondRounds).toBe(0);
+    expect(state.acceptedCommits).toBe(1);
+  });
 });

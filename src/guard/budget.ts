@@ -111,10 +111,12 @@ export interface RunLimits {
   spentUsd: number;
   elapsedMs: number;
   cycles: number;
+  /** Worker + planner turns spent so far (state.spend.turns). */
+  turns: number;
 }
 
 export interface RunLimitHit {
-  kind: 'max_usd' | 'max_hours' | 'max_cycles';
+  kind: 'max_usd' | 'max_hours' | 'max_cycles' | 'max_turns';
   detail: string;
 }
 
@@ -130,15 +132,18 @@ export function runLimitHit(budget: OmnexxConfig['budget'], r: RunLimits): RunLi
   }
   if (r.cycles >= budget.max_cycles)
     return { kind: 'max_cycles', detail: `${r.cycles} of ${budget.max_cycles} cycles` };
+  if (budget.max_turns !== undefined && r.turns >= budget.max_turns)
+    return { kind: 'max_turns', detail: `${r.turns} of ${budget.max_turns} turns` };
   return undefined;
 }
 
-/** Fraction of the tightest of USD / time / cycles already used. */
+/** Fraction of the tightest of USD / time / cycles / turns already used. */
 export function budgetFraction(budget: OmnexxConfig['budget'], r: RunLimits): number {
   return Math.max(
     r.spentUsd / budget.max_usd,
     r.elapsedMs / (budget.max_hours * 3_600_000),
     r.cycles / budget.max_cycles,
+    budget.max_turns !== undefined ? r.turns / budget.max_turns : 0,
   );
 }
 
