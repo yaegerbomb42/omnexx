@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AgentRunner } from './base.ts';
 import { meterMetrics, type Meter } from '../meter-metrics.ts';
-import { efficiency, readRunEvents } from '../efficiency.ts';
+import { efficiency, readRunEvents, timeMetrics } from '../efficiency.ts';
 import { providerOutageMs } from '../outage.ts';
 import type { AgentRunOutput, BenchmarkResult, TaskDef } from '../types.ts';
 
@@ -116,10 +116,12 @@ export class OmnexxRunner extends AgentRunner {
     const events = await readRunEvents(`${workDir}.run`);
     const outage = providerOutageMs(events);
     const eff = efficiency(events, { start, end: start + wall_ms });
+    const tm = timeMetrics(events, wall_ms);
     return {
       ...metrics,
       ...(outage ? { provider_outage_ms: outage } : {}),
       ...(eff ? { efficiency: eff } : {}),
+      ...(tm ?? {}),
       interventions: timedOut ? 1 : 0,
       resultDir: state.worktree,
     };

@@ -29,6 +29,8 @@ describe('config precedence', () => {
     });
     expect(config.judge.kind).toBe('none');
     expect(config.workers.max_concurrent).toBe(1);
+    expect(config.beyond.enabled).toBe(true);
+    expect(config.beyond.max_rounds).toBe(0);
   });
 
   it('flags > env > project > user > defaults', async () => {

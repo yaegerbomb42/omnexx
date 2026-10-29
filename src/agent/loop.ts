@@ -54,6 +54,7 @@ import {
 } from './rolling-memory.js';
 import { turnRequest } from './context.js';
 import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
+import type { DoomLoopRatchet } from '../core/doom-loop-ratchet.js';
 import { todoItemsOf, todoNudge, todoTool, type TodoItem } from '../tools/todo.js';
 
 /** Thrown inside the retry loop when a pre-flight check refuses the call; ends the cycle, never retried. */
@@ -280,6 +281,8 @@ export interface LoopDeps {
    * The loop loads it once and writes the EMA after each turn that reports prompt tokens.
    */
   calibrationFile?: string;
+  /** Anti-doom-loop ratchet tracking repeated tool failures and enforcing rollback on broken verifications. */
+  doomLoopRatchet?: DoomLoopRatchet;
 }
 
 /** Uncalibrated size of the prompt the provider will see, and that size scaled by the model's ratio. */
@@ -955,13 +958,22 @@ export async function runAgentLoop(
           isError = true;
         } else {
           // Phase 2 enforcement: never let a tool ask for more time than the run has left.
-          const timeoutKeys = ['timeout', 'timeoutMs', 'timeout_ms', 'waitMs', 'wait_ms', 'duration', 'durationMs', 'maxMs'];
+          const timeoutKeys = [
+            'timeout',
+            'timeoutMs',
+            'timeout_ms',
+            'waitMs',
+            'wait_ms',
+            'duration',
+            'durationMs',
+            'maxMs',
+          ];
           let refused = false;
           let hint = '';
           if (deps.deadlineMs) {
             const remainingMs = Math.max(0, deps.deadlineMs - deps.clock.now());
             for (const k of timeoutKeys) {
-              const v = (parsed.data as Record<string, unknown>)?.[k];
+              const v = (parsed.data as Record<string, unknown>)[k];
               if (typeof v === 'number' && v > remainingMs) {
                 refused = true;
                 hint = `${Math.round(remainingMs / 1000)}s left, but ${k}=${v}ms; use a smaller timeout or split the work`;
@@ -977,16 +989,17 @@ export async function runAgentLoop(
             content = `refused: ${hint}`;
             isError = true;
           } else {
-            const reminder = deps.deadlineMs
+            const deadlineMs = deps.deadlineMs;
+            const reminder = deadlineMs
               ? setInterval(() => {
                   deps.events.emit('time.reminder', {
                     tool: call.name,
                     elapsed_s: Math.round((deps.clock.now() - toolStart) / 1000),
-                    remaining_s: Math.max(0, Math.round((deps.deadlineMs! - deps.clock.now()) / 1000)),
+                    remaining_s: Math.max(0, Math.round((deadlineMs - deps.clock.now()) / 1000)),
                   });
                 }, 60_000)
               : undefined;
-            if (reminder) reminder.unref?.();
+            if (reminder) reminder.unref();
             const out = await tool.run(parsed.data, deps.toolCtx);
             if (reminder) clearInterval(reminder);
             content = out.content;
@@ -1016,6 +1029,60 @@ export async function runAgentLoop(
         bytes: content.length,
         ms: deps.clock.now() - toolStart,
       });
+      if (deps.doomLoopRatchet) {
+        if (
+          [
+            'write_file',
+            'str_replace',
+            'multi_edit',
+            'replace_lines',
+            'apply_patch',
+            'patch',
+          ].includes(call.name) &&
+          !isError
+        ) {
+          const path = (call.input as { path?: unknown }).path;
+          if (typeof path === 'string') deps.doomLoopRatchet.recordFileModified(path);
+        }
+        if (isError) {
+          const intervention = await deps.doomLoopRatchet.recordToolFailure(
+            call.name,
+            JSON.stringify(call.input).slice(0, 80),
+            content,
+          );
+          if (intervention.action !== 'none' && intervention.message) {
+            ratchetInterventions.push(intervention.message);
+          }
+        } else {
+          deps.doomLoopRatchet.recordToolSuccess();
+          if (call.name === 'bash') {
+            const cmd = (call.input as { command?: unknown }).command;
+            if (typeof cmd === 'string') {
+              const intervention = await deps.doomLoopRatchet.recordVerificationResult(
+                cmd,
+                false,
+                content,
+              );
+              if (intervention.action !== 'none' && intervention.message) {
+                ratchetInterventions.push(intervention.message);
+              }
+            }
+          }
+        }
+        if (call.name === 'bash' && isError) {
+          const cmd = (call.input as { command?: unknown }).command;
+          if (typeof cmd === 'string') {
+            const intervention = await deps.doomLoopRatchet.recordVerificationResult(
+              cmd,
+              true,
+              content,
+            );
+            if (intervention.action !== 'none' && intervention.message) {
+              ratchetInterventions.push(intervention.message);
+            }
+          }
+        }
+      }
       return {
         type: 'tool_result',
         toolUseId: call.id,
@@ -1024,6 +1091,7 @@ export async function runAgentLoop(
       };
     };
     const results: ContentBlock[] = [];
+    const ratchetInterventions: string[] = [];
     // A turn of only `task` calls fans out: read-only helpers can't conflict with each other.
     // Otherwise runs of consecutive concurrency-safe calls (reads, searches) go out together;
     // every other call runs alone, in order, so writes and commands never interleave.
@@ -1047,6 +1115,11 @@ export async function runAgentLoop(
     if (steer.length) {
       results.push({ type: 'text', text: steeringText(steer) });
       deps.events.emit('steer.applied', { count: steer.length, turn: turns });
+    }
+    if (ratchetInterventions.length) {
+      for (const msg of ratchetInterventions) {
+        results.push({ type: 'text', text: msg });
+      }
     }
     messages.push({ role: 'user', content: results });
     // Weaker models keep calling tools after the job is done; don't pay for that.

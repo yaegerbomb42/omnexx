@@ -9,13 +9,19 @@ import { fail, ok, type Tool, type ToolContext, type ToolOutput } from './types.
 
 export interface Symbol {
   line: number;
+  endLine?: number;
   kind: string;
   name: string;
+  signature?: string;
 }
 
 const RULES: readonly [RegExp, string][] = [
   [/^\s*export\s+(?:default\s+)?(?:async\s+)?function\*?\s+([A-Za-z_$][\w$]*)/, 'function'],
   [/^\s*(?:async\s+)?function\*?\s+([A-Za-z_$][\w$]*)/, 'function'],
+  [
+    /^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*(?::\s*[^=]+)?\s*=>/,
+    'function',
+  ],
   [/^\s*export\s+(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/, 'class'],
   [/^\s*(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/, 'class'],
   [/^\s*export\s+(?:declare\s+)?interface\s+([A-Za-z_$][\w$]*)/, 'interface'],
@@ -30,7 +36,7 @@ const RULES: readonly [RegExp, string][] = [
   [/^\s*class\s+([A-Za-z_]\w*)\s*[(:]/, 'class'],
   [/^func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)/, 'func'],
   [/^type\s+([A-Za-z_]\w*)\s+(?:struct|interface)/, 'type'],
-  [/^\s*(?:pub\s+)?(?:fn|struct|enum|trait)\s+([A-Za-z_]\w*)/, 'item'],
+  [/^\s*(?:pub\s+)?(?:async\s+)?(?:fn|struct|enum|trait)\s+([A-Za-z_]\w*)/, 'item'],
 ];
 const KEYWORDS = new Set([
   'if',
@@ -43,15 +49,73 @@ const KEYWORDS = new Set([
   'constructor',
 ]);
 
-/** Deterministic, dependency-free symbol extraction. Good enough to navigate, not a parser. */
+/** Finds the line where balanced curly braces close after a declaration. */
+export function findBraceEndLine(lines: readonly string[], startLine: number): number {
+  let depth = 0;
+  let seenBrace = false;
+  for (let i = startLine - 1; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    for (const ch of line) {
+      if (ch === '{') {
+        depth++;
+        seenBrace = true;
+      } else if (ch === '}') {
+        depth--;
+        if (seenBrace && depth <= 0) return i + 1;
+      }
+    }
+  }
+  return startLine;
+}
+
+/** Finds the end line of an indentation-delimited block (e.g. Python def/class). */
+export function findPythonEndLine(lines: readonly string[], startLine: number): number {
+  const defLine = lines[startLine - 1] ?? '';
+  const match = /^\s*/.exec(defLine);
+  const baseIndent = match ? match[0].length : 0;
+  let lastNonEmpty = startLine;
+  for (let i = startLine; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    if (!line.trim()) continue;
+    const indent = /^\s*/.exec(line)?.[0].length ?? 0;
+    if (indent <= baseIndent) break;
+    lastNonEmpty = i + 1;
+  }
+  return lastNonEmpty;
+}
+
+/** Deterministic, dependency-free symbol extraction with line boundary tracking. */
 export function extractSymbols(text: string): Symbol[] {
   const out: Symbol[] = [];
-  text.split('\n').forEach((line, i) => {
+  const lines = text.split('\n');
+  lines.forEach((line, i) => {
     for (const [re, kind] of RULES) {
       const m = re.exec(line);
       const name = m?.[1];
       if (name && !KEYWORDS.has(name)) {
-        out.push({ line: i + 1, kind, name });
+        const startLine = i + 1;
+        let endLine: number | undefined;
+        if (kind === 'def' || (kind === 'class' && !line.includes('{'))) {
+          const calculatedEnd = findPythonEndLine(lines, startLine);
+          if (calculatedEnd > startLine) endLine = calculatedEnd;
+        } else if (
+          kind === 'function' ||
+          kind === 'class' ||
+          kind === 'interface' ||
+          kind === 'method' ||
+          kind === 'enum' ||
+          kind === 'item' ||
+          kind === 'func'
+        ) {
+          const calculatedEnd = findBraceEndLine(lines, startLine);
+          if (calculatedEnd > startLine) endLine = calculatedEnd;
+        }
+        out.push({
+          line: startLine,
+          ...(endLine !== undefined ? { endLine } : {}),
+          kind,
+          name,
+        });
         break;
       }
     }
@@ -63,7 +127,10 @@ export function renderOutline(symbols: readonly Symbol[], totalLines: number): s
   if (!symbols.length) return `(no symbols found; ${totalLines} lines)`;
   return [
     `${totalLines} lines`,
-    ...symbols.map((s) => `${String(s.line).padStart(5)}  ${s.kind} ${s.name}`),
+    ...symbols.map((s) => {
+      const range = s.endLine && s.endLine > s.line ? ` (lines ${s.line}-${s.endLine})` : '';
+      return `${String(s.line).padStart(5)}  ${s.kind} ${s.name}${range}`;
+    }),
   ].join('\n');
 }
 
