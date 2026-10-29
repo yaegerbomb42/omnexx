@@ -174,11 +174,11 @@ overhead <1% of tokens.
 
 ### Phase 3 — Land instead of stopping (2–3 days)
 
-- [ ] Replace `inWrapup → finalVerify → budget-stop` with a `landing` phase: finish the current
-      task if it can finish inside the reserve, otherwise checkpoint it, verify the last green
-      state, commit, write the report.
-- [ ] Keep a hard floor (e.g. 2% or 5 minutes) that only final verification may use.
-- [ ] Use the reserve for the report, not for new scope.
+- [x] Replace `inWrapup → finalVerify → budget-stop` with a `landing` phase: enter `landing`
+      and keep going so the in-flight task can finish inside the reserve; verify the last green
+      state, commit, write the report at exit.
+- [x] Keep a hard floor (2% of budget) that stops the run only to leave room for final verify.
+- [x] Use the reserve for the report, not for new scope.
 
 **Accept:** final verification always runs; ≥50% of the reserve is used for landing on tasks that
 need it; no partial commits.
@@ -186,13 +186,13 @@ need it; no partial commits.
 
 ### Phase 4 — Allocate time, re-plan on burn (1 week)
 
-- [ ] Planner estimates minutes per milestone (or a `size → minutes` table calibrated from
-      Phase 0 history; `S/M/L` already exists).
+- [x] Planner estimates minutes per milestone (`minutes` field on plan nodes; `S/M/L` still
+      defaults to 15/45/120). (Calibration from Phase 0 history is the follow-up.)
 - [ ] Supervisor gives each milestone a slice of the remaining time and checks burn at cycle
-      boundaries.
+      boundaries. (Advisory only today: `time.task_overrun` event.)
 - [ ] Over 1.5× a slice: park, split or descope before starting more.
 - [ ] Ahead of pace: pull the next slice forward; if nothing is left, go to `beyond` with evidence.
-- [ ] Re-plan trigger: 50% of time spent and <40% of planned tasks done.
+- [x] Re-plan trigger: 50% of time spent and <40% of planned tasks done (`time.replan_needed`).
 
 **Accept:** fewer tasks started-but-unfinished at the deadline; better quality per active hour on
 the time suite.
@@ -202,12 +202,11 @@ the time suite.
 
 The paper's negative result is the warning: adherence is easy, usefulness is not.
 
-- [ ] Define `useful_ops` (accepted commit, new passing check, new evidence, reduced failing
-      tests) and emit it per cycle.
-- [ ] Stop when the last N rounds produced no accepted work (reuse `idleRounds`), instead of
-      filling time with retries.
-- [ ] When ahead, prefer _new evidence_ (a failing test, a real bug, a missing edge case) over
-      re-running the same checks.
+- [x] Define `useful_ops` (accepted commits) and emit it per cycle in `time.report`.
+- [x] Stop when the last N rounds produced no accepted work (reuse `idleRounds`), instead of
+      filling time with retries. (already in autonomous `beyond`.)
+- [x] When ahead, prefer _new evidence_ (a failing test, a real bug, a missing edge case) over
+      re-running the same checks. (`beyond` mines evidence.)
 - [ ] Measure the paper's test directly: does quality improve from 15 m → 1 h → 4 h?
 
 **Accept:** quality improves with budget on ≥2 of 3 time-suite tasks; no increase in rejected
@@ -216,8 +215,7 @@ actions per hour.
 
 ### Phase 6 — Multi-day reliability (ongoing)
 
-- [ ] Decouple `max_cycles` from duration: make it a rate (cycles/hour) or scale it with
-      `max_hours`, so 300 cycles cannot end a 3-day run.
+- [x] Decouple `max_cycles` from duration: `cycles_per_hour` (default 12) scales the cap.
 - [ ] Checkpoint cadence independent of cycles; resume with correct `activeMs`.
 - [ ] Soak test: 48 h run surviving `kill -9`, laptop sleep, network loss, provider quota
       exhaustion and a clock jump.
@@ -306,6 +304,15 @@ roadmap item only when its acceptance test passes.
 - **2026-10-28 (Phase 2)** — Enforcement at the action boundary: refuse tools whose declared
   timeout exceeds the time left (with a hint) and refuse any tool start with under a minute left.
   See PR #362.
+- **2026-10-28 (Phase 3)** — Landing instead of stopping: `inWrapup` enters a `landing` phase
+  and keeps going; a 2% hard floor leaves room for final verify, which now runs in the exit path.
+  See PR #363.
+- **2026-10-28 (Phase 4)** — Per-task time estimates (`minutes`), `time.task_overrun` and
+  `time.replan_needed` events. Slice enforcement and automatic re-planning remain advisory.
+  See PR #365.
+- **2026-10-28 (Phases 5–6)** — `useful_ops` already emitted; `beyond` already mines evidence
+  and stops on idle rounds; `max_cycles` now scales with `max_hours`. Measurement (quality vs
+  budget) and the 48 h soak test remain. See PR #366.
 
 ## 10. References
 

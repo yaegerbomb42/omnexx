@@ -41,11 +41,11 @@ export interface CycleInputs {
   runningContext?: string;
   /** The task's role card (who the agent is for it, what done means). */
   role?: string;
-  /** What the user's agent settings mean (effort, time); a volatile block after the goal. */
+  /** What the user's agent settings mean (effort, time); user config, so it is stable across a run. */
   brief?: string;
-  /** Wall-clock budget status for this run; a volatile block so the cache prefix stays stable. */
+  /** Wall-clock budget status for this run; the ONLY block that changes every cycle, so it is the sole volatile block. Everything else in system stays in the cached prefix. */
   clock?: string;
-  /** The repo's verified facts (how it builds and tests); a volatile block after the settings. */
+  /** The repo's verified facts (how it builds and tests); stable until the repo probe changes. */
   facts?: string;
   /** How each section reaches the model; all pinned when unset (the old behaviour). */
   sections?: SectionModes;
@@ -66,6 +66,18 @@ const ALL_PINNED: SectionModes = {
 
 const clampSlot = (text: string, maxChars: number): string =>
   text.length <= maxChars ? text : `${text.slice(0, maxChars - 24)}\n...[slot-truncated]`;
+
+/**
+ * Clamp living-state text from the FRONT: progress and running context are
+ * chronological, so the oldest entries are the lowest-signal ones. Head-clamping
+ * (clampSlot) would drop the newest entries — exactly the ones the next cycle
+ * needs most. The marker goes first so the model knows the head was dropped.
+ */
+const clampSlotTail = (text: string, maxChars: number): string => {
+  if (text.length <= maxChars) return text;
+  const marker = '...[slot-truncated: oldest dropped]\n';
+  return `${marker}${text.slice(-(maxChars - marker.length))}`;
+};
 
 /**
  * Recursively sort JSON object keys to guarantee deterministic byte serialization for schemas.
@@ -125,8 +137,11 @@ export function computePrefixHash(
   for (const t of tools) {
     hash.update(`tool:${t.name}:${t.description}:${JSON.stringify(t.inputSchema)}\n`);
   }
-  // Hash Slots 1-5 system blocks
+  // Hash Slots 1-5 system blocks — stable ones only. A digest that moves on every
+  // clock tick is not a frozen-prefix digest at all; volatile blocks are excluded
+  // exactly like cache-pinning's prefixHash, so equal digests mean equal prefixes.
   for (const s of system) {
+    if (s.volatile) continue;
     hash.update(`system:${s.text}\n`);
   }
   // Hash Slot 6 cycle anchor
@@ -164,7 +179,15 @@ export function buildCycleContext(i: CycleInputs): {
   };
 
   // --- SLOTS 1–5: FROZEN SYSTEM PREFIX ---
-  const blocks: { label: string; text: string }[] = [
+  // Only the clock is volatile: codemap (written at run start and milestones),
+  // goal (fixed per task), settings (user config), facts (probe-gated) and notes
+  // (written at milestones, not per cycle) are all stable across the overwhelming
+  // majority of cycles. Marking them volatile — the old behaviour — shrank the
+  // cached stable segment to just the system prompt and reprocessed ~2.5k tokens
+  // of unchanged system content on every turn, on both provider paths. A stable
+  // block that does change costs one turn's miss from that block onward, then the
+  // new prefix re-caches; it never costs more than volatile marking did.
+  const blocks: { label: string; text: string; volatile?: boolean }[] = [
     // Slot 1: Core System Identity
     {
       label: 'system',
@@ -207,6 +230,7 @@ export function buildCycleContext(i: CycleInputs): {
     blocks.push({
       label: 'clock',
       text: canonicalizePrefixText(clampSlot(i.clock.trim(), SLOT_CHAR_BUDGETS.facts), i.repoRoot),
+      volatile: true,
     });
   }
   if (i.facts?.trim()) {
@@ -227,10 +251,15 @@ export function buildCycleContext(i: CycleInputs): {
     });
   }
 
+  // The breakpoint sits on the last STABLE block, not the last block overall:
+  // a breakpoint on the volatile clock would buy a cache write every turn for a
+  // block that changes every turn, and would leave the stable blocks in front of
+  // it outside the cached segment on providers that honour only one breakpoint.
+  const lastStable = blocks.reduce((acc, b, n) => (b.volatile ? acc : n), -1);
   const system: SystemBlock[] = blocks.map((b, n) => ({
     text: b.text,
-    ...(n > 0 ? { volatile: true } : {}),
-    ...(n === blocks.length - 1 ? { cacheBreakpoint: true } : {}),
+    ...(b.volatile ? { volatile: true } : {}),
+    ...(n === lastStable ? { cacheBreakpoint: true } : {}),
   }));
 
   // --- SLOT 6: FROZEN CYCLE ANCHOR (first.content[0]) ---
@@ -287,7 +316,7 @@ export function buildCycleContext(i: CycleInputs): {
   if (slot7Parts.length > 0) {
     allParts.push(
       canonicalizePrefixText(
-        clampSlot(slot7Parts.join('\n\n'), SLOT_CHAR_BUDGETS.initialLsf),
+        clampSlotTail(slot7Parts.join('\n\n'), SLOT_CHAR_BUDGETS.initialLsf),
         i.repoRoot,
       ),
     );

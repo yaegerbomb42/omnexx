@@ -340,6 +340,16 @@ class Supervisor {
     await stepVerify(r);
     await this.finishCycle();
     const elapsedMs = r.elapsedMs();
+    const task = getNode(r.requirePlan(), taskId);
+    const estimateMin =
+      task.minutes ?? ({ S: 15, M: 45, L: 120 } as Record<string, number>)[task.size] ?? 45;
+    if (elapsedMs > estimateMin * 1.5 * 60_000) {
+      r.events.emit('time.task_overrun', {
+        task: taskId,
+        elapsed_s: Math.round(elapsedMs / 1000),
+        estimate_min: estimateMin,
+      });
+    }
     r.events.emit('time.report', {
       elapsed_s: Math.round(elapsedMs / 1000),
       remaining_s: Math.max(0, Math.round((r.deadlineMs - elapsedMs) / 1000)),
@@ -659,7 +669,12 @@ class Supervisor {
       cycles: r.state.cycle,
       turns: r.state.spend.turns,
     };
-    const hit = runLimitHit(r.config.budget, limits);
+    // max_cycles scales with max_hours (cycles_per_hour), so a long run is not cut short by cycles.
+    const effectiveMaxCycles = Math.max(
+      r.config.budget.max_cycles,
+      Math.ceil(r.config.budget.max_hours * r.config.budget.cycles_per_hour),
+    );
+    const hit = runLimitHit({ ...r.config.budget, max_cycles: effectiveMaxCycles }, limits);
     if (hit) {
       r.events.emit('budget.stop', { kind: hit.kind, detail: hit.detail });
       return { status: 'expired', reason: `${hit.kind} reached (${hit.detail})` };
@@ -683,6 +698,16 @@ class Supervisor {
     if (r.state.phase === 'landing' && r.budgetLeftFraction() < 0.02) {
       r.events.emit('landing.floor', { left: r.budgetLeftFraction() });
       return { status: 'expired', reason: 'landing floor reached (reserve kept for verify)' };
+    }
+    if (r.plan) {
+      const c = planCounts(r.plan);
+      if (c.tasks > 0 && c.done / c.tasks < 0.4 && r.budgetLeftFraction() <= 0.5) {
+        r.events.emit('time.replan_needed', {
+          done: c.done,
+          total: c.tasks,
+          left: r.budgetLeftFraction(),
+        });
+      }
     }
     const goal = await r.store.readGoal();
     if (goal.hash !== r.state.goalHash) {
@@ -938,6 +963,7 @@ class Supervisor {
         kind: 'beyond',
         round,
         ...scope,
+        remainingMinutes: Math.max(1, Math.round((r.deadlineMs - r.elapsedMs()) / 60_000)),
         ...(findings.length ? { evidence: evidenceText(findings) } : {}),
       });
     } catch (err) {
@@ -962,7 +988,7 @@ class Supervisor {
     const auto = r.config.autonomous.enabled;
     if (!auto && (!cfg.enabled || r.state.beyondRounds >= cfg.max_rounds)) return false;
     // Autonomous runs use the clock to the end; only the wrap-up reserve is kept back.
-    const minLeft = r.config.budget.wrapup_reserve * 2;
+    const minLeft = r.config.budget.wrapup_reserve;
     if (r.budgetLeftFraction() >= (auto ? minLeft : Math.max(cfg.min_budget_left, minLeft)))
       return true;
     r.events.emit('beyond.skip', { reason: 'budget', left: r.budgetLeftFraction() });
