@@ -41,7 +41,8 @@ export interface RegistrySnapshot {
 
 export interface RegistryLoadResult {
   snapshot: RegistrySnapshot;
-  from: 'live' | 'cache' | 'bundled';
+  /** `none` = no cache, network, or bundled snapshot was found (likely a packaging bug). */
+  from: 'live' | 'cache' | 'bundled' | 'none';
   entries: Omit<CatalogEntry, 'tokens'>[];
 }
 
@@ -329,9 +330,9 @@ export async function loadRegistry(opts?: {
       rawCount: 0,
       latestCount: 0,
       servers: [],
-      note: 'No registry data available',
+      note: 'No registry data available (bundled snapshot missing — packaging bug?)',
     },
-    from: 'bundled',
+    from: 'none',
     entries: [],
   };
 }
