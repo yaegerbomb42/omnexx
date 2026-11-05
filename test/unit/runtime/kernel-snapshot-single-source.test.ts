@@ -15,3 +15,11 @@ describe('bug #14: one committed registry snapshot', () => {
     ).toBe(true);
   });
 });
+
+describe('bug #40: tsup alone ships the snapshot', () => {
+  it('tsup config copies the snapshot into dist/data on success', () => {
+    const cfg = readFileSync(join(root, 'tsup.config.ts'), 'utf8');
+    expect(cfg).toMatch(/onSuccess/);
+    expect(cfg).toMatch(/dist\/data/);
+  });
+});

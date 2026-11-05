@@ -22,7 +22,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsup && node scripts/copy-kernel-data.mjs",
+    "build": "tsup",
     "typecheck": "tsc --noEmit && tsc --noEmit -p vscode/src/webview",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
