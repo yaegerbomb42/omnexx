@@ -21,7 +21,12 @@ import {
   allocationSimilarities,
   multiSampleAllocations,
 } from './ollamaRouter.js';
-import { installSuggestion, loadRegistry, type RegistryServerRecord } from './registry.js';
+import {
+  installSuggestion,
+  loadRegistry,
+  skillInstallHint,
+  type RegistryServerRecord,
+} from './registry.js';
 import { TelemetryMonitor, classifyToolError, type ToolObservation } from './telemetry.js';
 import type { ModelProfileHints, TelemetrySnapshot, TurnAllocation } from './types.js';
 import { isMutatingTool, isNoOpToolInput } from './types.js';
@@ -207,7 +212,7 @@ export class AdaptiveRuntimeKernel {
           const slug = id.slice('registry:skill:'.length);
           return (
             `Skill "${entry.name}" (${slug}) is listed on SkillMD but not installed locally. ` +
-            `Install with: npx skillmds@latest add ${slug}  — then remount. ` +
+            `${skillInstallHint(entry.name)} — then remount. ` +
             `Omnexx will not auto-install or run untrusted skill code.`
           );
         }

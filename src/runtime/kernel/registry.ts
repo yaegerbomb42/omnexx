@@ -348,13 +348,24 @@ export function toCatalogEntries(snap: RegistrySnapshot): Omit<CatalogEntry, 'to
 }
 
 /** Human-readable install suggestion — never executes untrusted code. */
+/** The real CLI entry point for adding a registry MCP server (see `omnexx mcp add --help`). */
+export function mcpAddCommand(server: string): string {
+  const short = server.split('/').pop() ?? server;
+  return `omnexx mcp add ${short} --pick ${server}`;
+}
+
+/** The real CLI entry points for skills (`omnexx skills search` / `omnexx skills add <path|url>`). */
+export function skillInstallHint(name: string): string {
+  return `Find it with \`omnexx skills search ${name}\`, then \`omnexx skills add <path|url>\``;
+}
+
 export function installSuggestion(rec: RegistryServerRecord): string {
   const lines = [
     `Capability "${rec.id}" is in the official MCP Registry but is NOT installed locally.`,
     `Server: ${rec.server}${rec.version ? `@${rec.version}` : ''}`,
     rec.description ? `About: ${rec.description}` : '',
     'Omnexx will not download or run it automatically.',
-    'To enable it, add it to your Omnexx MCP config (or run `omnexx mcp add` / the VS Code MCP gallery), then remount.',
+    `To enable it, run \`${mcpAddCommand(rec.server)}\` (or add it in the VS Code MCP gallery), then remount.`,
   ];
   if (rec.install?.identifier) {
     lines.push(

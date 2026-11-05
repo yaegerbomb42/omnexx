@@ -428,7 +428,7 @@ export function createCatalogTools(
       if (!installed) {
         const suggestion =
           options.suggestInstall?.(input.id, entry) ??
-          `Capability "${input.id}" is not installed locally. Add it via Omnexx MCP config / \`omnexx mcp add\` before mounting. Omnexx will not auto-install or run untrusted code.`;
+          `Capability "${input.id}" is not installed locally. Add it with \`omnexx mcp add <name>\` (or your Omnexx MCP config) before mounting. Omnexx will not auto-install or run untrusted code.`;
         return fail(suggestion);
       }
 
