@@ -259,7 +259,11 @@ function chatServerEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...base };
   if (!lazyToolDiscovery()) env.OMNEXX_TOOL_DISCOVERY = 'full';
   const cfg = vscode.workspace.getConfiguration('omnexx');
-  if (cfg.get<boolean>('kernel.enabled') === true) {
+  const kernelEnabled = cfg.get<boolean>('kernel.enabled');
+  if (kernelEnabled === false) {
+    env.OMNEXX_KERNEL_ENABLED = '0';
+  } else {
+    // Default on: surface the flag so project toml cannot silently disable VS Code chats.
     env.OMNEXX_KERNEL_ENABLED = '1';
     const url = cfg.get<string>('kernel.ollamaUrl')?.trim();
     if (url) env.OMNEXX_KERNEL_OLLAMA_URL = url;

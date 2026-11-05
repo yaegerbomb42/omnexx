@@ -1,8 +1,8 @@
 /**
- * Omnexx Adaptive Runtime Kernel — opt-in hybrid control plane.
+ * Omnexx Adaptive Runtime Kernel — hybrid control plane (on by default).
  *
- * Deterministic telemetry + local Ollama meta-router. Wire through
- * `createKernelIfEnabled` and `LoopDeps.kernel`; disabled by default.
+ * Deterministic telemetry + local Ollama meta-router with heuristic/TF-IDF fallback.
+ * Wire through `createKernelIfEnabled` and `LoopDeps.kernel`; set `[kernel] enabled = false` to opt out.
  */
 export {
   AdaptiveRuntimeKernel,
@@ -12,11 +12,16 @@ export {
 } from './kernel.js';
 export { TelemetryMonitor, classifyToolError } from './telemetry.js';
 export { StateCheckpointer, pathsFromToolInput } from './checkpoint.js';
+export { MemoryVfs } from './vfs.js';
+export { runMcts, scoreBranch } from './mcts.js';
+export { ContextGarbageCollector, compactAsync } from './contextGc.js';
 export {
   CapabilityIndex,
   LocalMetaRouter,
   parseAllocationJson,
   heuristicAllocate,
+  multiSampleAllocations,
+  allocationSimilarities,
 } from './ollamaRouter.js';
 export {
   turnAllocationSchema,
@@ -30,3 +35,25 @@ export {
   type CheckpointRecord,
   type ModelProfileHints,
 } from './types.js';
+
+export {
+  CapabilityCatalog,
+  createCatalogTools,
+  syntheticCatalog,
+  type CatalogEntry,
+} from './catalog.js';
+export {
+  loadRegistry,
+  fetchLiveRegistry,
+  installSuggestion,
+  MCP_REGISTRY_URL,
+  type RegistrySnapshot,
+  type RegistryServerRecord,
+} from './registry.js';
+export {
+  discoverLocalMcpServers,
+  discoverLocalSkills,
+  searchSkillMd,
+  type DiscoveredLocal,
+} from './discover.js';
+

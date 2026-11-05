@@ -10,9 +10,8 @@ export interface OllamaClientOptions {
   baseUrl: string;
   chatModel: string;
   embedModel: string;
-  /** fetch implementation (injectable for tests). */
   fetchImpl?: typeof fetch | undefined;
-  /** Request timeout in ms (default 2s — SLM should answer in <150ms when warm). */
+  /** Request timeout in ms (default 150 — fail fast when Ollama is absent). */
   timeoutMs?: number | undefined;
 }
 
@@ -45,6 +44,7 @@ export class CapabilityIndex {
   private entries: CapabilityEntry[] = [];
   private idf = new Map<string, number>();
   private embedReady = false;
+  private ollamaUp: boolean | undefined;
   private readonly opts: Required<Pick<OllamaClientOptions, 'baseUrl' | 'embedModel'>> & {
     fetchImpl: typeof fetch;
     timeoutMs: number;
@@ -55,7 +55,7 @@ export class CapabilityIndex {
       baseUrl: options.baseUrl.replace(/\/$/, ''),
       embedModel: options.embedModel,
       fetchImpl: options.fetchImpl ?? fetch,
-      timeoutMs: options.timeoutMs ?? 2_000,
+      timeoutMs: options.timeoutMs ?? 150,
     };
   }
 
@@ -67,7 +67,38 @@ export class CapabilityIndex {
     return this.embedReady;
   }
 
-  /** Index MCP tool schemas and skill headers. Replaces any previous index. */
+  get ollamaAvailable(): boolean {
+    return this.ollamaUp === true;
+  }
+
+  markOffline(): void {
+    this.ollamaUp = false;
+    this.embedReady = false;
+  }
+
+  async probe(): Promise<boolean> {
+    if (this.ollamaUp !== undefined) return this.ollamaUp;
+    const ctrl = new AbortController();
+    const timer = setTimeout(
+      () => {
+        ctrl.abort();
+      },
+      Math.min(80, this.opts.timeoutMs),
+    );
+    try {
+      const res = await this.opts.fetchImpl(`${this.opts.baseUrl}/api/tags`, {
+        method: 'GET',
+        signal: ctrl.signal,
+      });
+      this.ollamaUp = res.ok;
+    } catch {
+      this.ollamaUp = false;
+    } finally {
+      clearTimeout(timer);
+    }
+    return this.ollamaUp === true;
+  }
+
   async index(
     tools: readonly { name: string; description: string }[],
     skills: readonly { name: string; description: string; triggerConditions?: string }[],
@@ -98,19 +129,25 @@ export class CapabilityIndex {
 
     this.rebuildIdf(next);
     this.embedReady = false;
-    try {
-      for (const e of next) {
-        const emb = await this.embed(`${e.name}\n${e.description}\n${e.triggerConditions ?? ''}`);
-        if (emb) e.embedding = emb;
+    if (await this.probe()) {
+      try {
+        for (const e of next.slice(0, 24)) {
+          const emb = await this.embed(`${e.name}\n${e.description}\n${e.triggerConditions ?? ''}`);
+          if (emb) e.embedding = emb;
+          else {
+            this.ollamaUp = false;
+            break;
+          }
+        }
+        this.embedReady = next.some((e) => (e.embedding?.length ?? 0) > 0);
+      } catch {
+        this.ollamaUp = false;
+        this.embedReady = false;
       }
-      this.embedReady = next.some((e) => e.embedding && e.embedding.length > 0);
-    } catch {
-      this.embedReady = false;
     }
     this.entries = next;
   }
 
-  /** Top-K capabilities for a query (vector when available, else TF-IDF). */
   async search(query: string, k = 10): Promise<CapabilityEntry[]> {
     if (this.entries.length === 0) return [];
     if (this.embedReady) {
@@ -126,7 +163,6 @@ export class CapabilityIndex {
     return this.tfidfSearch(query, k);
   }
 
-  /** Pure keyword search — used by tests and as the offline path. */
   tfidfSearch(query: string, k = 10): CapabilityEntry[] {
     const qTokens = tokenize(query);
     if (qTokens.length === 0) return this.entries.slice(0, k);
@@ -148,6 +184,7 @@ export class CapabilityIndex {
   }
 
   private async embed(text: string): Promise<number[] | undefined> {
+    if (this.ollamaUp === false) return undefined;
     const ctrl = new AbortController();
     const timer = setTimeout(() => {
       ctrl.abort();
@@ -193,10 +230,6 @@ export interface LocalMetaRouterOptions extends OllamaClientOptions {
   index: CapabilityIndex;
 }
 
-/**
- * Local SLM decision engine. Ollama chat with keep_alive:-1, temperature:0, JSON schema.
- * Deterministic heuristic fallback when Ollama is unreachable.
- */
 export class LocalMetaRouter {
   private readonly opts: {
     baseUrl: string;
@@ -212,7 +245,7 @@ export class LocalMetaRouter {
       baseUrl: options.baseUrl.replace(/\/$/, ''),
       chatModel: options.chatModel,
       fetchImpl: options.fetchImpl ?? fetch,
-      timeoutMs: options.timeoutMs ?? 2_000,
+      timeoutMs: options.timeoutMs ?? 150,
     };
   }
 
@@ -220,11 +253,13 @@ export class LocalMetaRouter {
     const top = req.candidates.length
       ? req.candidates
       : await this.index.search(`${req.objective}\n${req.stateDelta}`, 10);
-    try {
-      const fromSlm = await this.askSlm(req, top);
-      if (fromSlm) return clampAllocation(fromSlm, req, top);
-    } catch {
-      // fall through
+    if (this.index.ollamaAvailable || (await this.index.probe())) {
+      try {
+        const fromSlm = await this.askSlm(req, top);
+        if (fromSlm) return clampAllocation(fromSlm, req, top);
+      } catch {
+        this.index.markOffline();
+      }
     }
     return heuristicAllocate(req, top);
   }
@@ -283,7 +318,6 @@ export class LocalMetaRouter {
   }
 }
 
-/** Parse and zod-validate a TurnAllocation from model JSON (tolerant of fences). */
 export function parseAllocationJson(raw: string): TurnAllocation | undefined {
   const stripped = raw
     .replace(/^```(?:json)?\s*/i, '')
@@ -306,7 +340,6 @@ export function parseAllocationJson(raw: string): TurnAllocation | undefined {
   return result.success ? result.data : undefined;
 }
 
-/** Deterministic fallback when Ollama is down or returns invalid JSON. */
 export function heuristicAllocate(
   req: AllocateRequest,
   top: readonly CapabilityEntry[],
@@ -320,7 +353,7 @@ export function heuristicAllocate(
   } else if (F >= 3 || U >= 0.7) {
     tier = 2;
     reasoningMode = 'mcts';
-  } else if (F >= 1 || U >= 0.4) {
+  } else if (F >= 1.5 || U >= 0.75) {
     tier = 1;
     reasoningMode = 'reflexion';
   } else if (/plan|design|architect|refactor/i.test(req.objective)) {
@@ -383,7 +416,6 @@ function clampAllocation(
   const mountedSkills = alloc.mountedSkills
     .filter((s) => allowedSkills.size === 0 || allowedSkills.has(s))
     .slice(0, 8);
-  // If the SLM invented tool names we don't have, fall back to the top vector matches.
   const tools =
     mountedTools.length > 0
       ? mountedTools
@@ -392,4 +424,56 @@ function clampAllocation(
           .slice(0, maxTools)
           .map((c) => c.id);
   return { ...alloc, mountedTools: tools, mountedSkills };
+}
+
+export function multiSampleAllocations(
+  req: AllocateRequest,
+  top: readonly CapabilityEntry[],
+  samples = 3,
+): TurnAllocation[] {
+  const out: TurnAllocation[] = [];
+  for (let i = 0; i < samples; i++) {
+    const friction = Math.max(0, req.telemetry.frictionScore + (i - 1) * 0.75);
+    const pressure = Math.min(2, Math.max(0, req.telemetry.contextPressure + (i - 1) * 0.05));
+    const uncertainty = Math.min(
+      1,
+      Math.max(0, req.telemetry.epistemicUncertainty + (i - 1) * 0.1),
+    );
+    const rotated = [...top.slice(i), ...top.slice(0, i)];
+    out.push(
+      heuristicAllocate(
+        {
+          ...req,
+          telemetry: {
+            ...req.telemetry,
+            frictionScore: friction,
+            contextPressure: pressure,
+            epistemicUncertainty: uncertainty,
+          },
+          candidates: rotated,
+        },
+        rotated,
+      ),
+    );
+  }
+  return out;
+}
+
+export function allocationSimilarities(samples: readonly TurnAllocation[]): number[] {
+  const sims: number[] = [];
+  for (let i = 0; i < samples.length; i++) {
+    for (let j = i + 1; j < samples.length; j++) {
+      const a = new Set(samples[i]!.mountedTools);
+      const b = new Set(samples[j]!.mountedTools);
+      if (a.size === 0 && b.size === 0) {
+        sims.push(samples[i]!.reasoningMode === samples[j]!.reasoningMode ? 1 : 0);
+        continue;
+      }
+      let inter = 0;
+      for (const t of a) if (b.has(t)) inter++;
+      const union = a.size + b.size - inter;
+      sims.push(union === 0 ? 0 : inter / union);
+    }
+  }
+  return sims;
 }

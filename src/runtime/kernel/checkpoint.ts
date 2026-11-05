@@ -1,12 +1,15 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, relative, resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join, relative, resolve } from 'node:path';
 import { git } from '../../git/git.js';
 import { isMutatingTool, rollbackConstraint, type CheckpointRecord } from './types.js';
+import { MemoryVfs } from './vfs.js';
 
 export interface CheckpointOptions {
   worktree: string;
   /** Soft cap on checkpoints kept in memory (oldest dropped). */
   maxCheckpoints?: number | undefined;
+  /** Optional shared VFS (created automatically when omitted). */
+  vfs?: MemoryVfs | undefined;
 }
 
 export interface RollbackResult {
@@ -16,21 +19,26 @@ export interface RollbackResult {
   pruneAfter: number;
   nodeId: string;
   filesRestored: string[];
+  /** True when the snapshot came from the in-memory VFS rather than git status. */
+  usedVfs: boolean;
 }
 
 /**
- * Deterministic DAG checkpointer. Snapshots dirty working-tree files + HEAD before
- * mutating tools, restores them on rollback, and supplies the one-line kernel constraint.
+ * Deterministic DAG checkpointer. Prefers git dirty-file discovery; when git is
+ * unavailable or reports nothing, falls back to the in-memory VFS of touched paths.
  */
 export class StateCheckpointer {
   private readonly worktree: string;
   private readonly maxCheckpoints: number;
-  private readonly byNode = new Map<string, CheckpointRecord>();
+  readonly vfs: MemoryVfs;
+  private readonly byNode = new Map<string, CheckpointRecord & { usedVfs: boolean }>();
   private order: string[] = [];
+  private gitAvailable: boolean | undefined;
 
   constructor(options: CheckpointOptions) {
     this.worktree = resolve(options.worktree);
     this.maxCheckpoints = options.maxCheckpoints ?? 32;
+    this.vfs = options.vfs ?? new MemoryVfs(this.worktree);
   }
 
   get size(): number {
@@ -45,36 +53,56 @@ export class StateCheckpointer {
     return this.byNode.get(nodeId);
   }
 
-  /** Whether this tool call should be preceded by a snapshot. */
   shouldSnapshot(toolName: string): boolean {
     return isMutatingTool(toolName);
   }
 
-  /**
-   * Snapshot HEAD + contents of dirty paths (and optional explicit paths from the tool input).
-   * Uses `git status --porcelain` when available; falls back to the explicit path list.
-   */
+  /** Record a path the agent touched so non-git rollbacks still work. */
+  async notePath(path: string): Promise<void> {
+    await this.vfs.ingest(path);
+  }
+
   async snapshot(
     nodeId: string,
     conversationLength: number,
     extraPaths: readonly string[] = [],
-  ): Promise<CheckpointRecord> {
+  ): Promise<CheckpointRecord & { usedVfs: boolean }> {
+    await this.vfs.ingestMany(extraPaths);
     const headSha = await this.headSha();
     const dirty = await this.dirtyPaths();
+    let usedVfs = false;
     const paths = new Set<string>([
       ...dirty,
       ...extraPaths.map((p) => this.rel(p)).filter(Boolean),
     ]);
+
+    // Non-git / empty-status fallback: snapshot everything the VFS has seen.
+    if (paths.size === 0 || headSha === 'NOGIT') {
+      usedVfs = true;
+      for (const k of this.vfs.keys()) paths.add(k);
+      for (const p of extraPaths) {
+        const r = this.rel(p);
+        if (r) paths.add(r);
+      }
+    }
+
     const files: Record<string, string> = {};
     for (const rel of paths) {
       files[rel] = await this.readRel(rel);
+      this.vfs.touch(rel, files[rel] === '' ? null : files[rel]!);
     }
-    const record: CheckpointRecord = {
+    // Always merge current VFS snapshot so previously touched-but-clean files are covered.
+    if (usedVfs) {
+      Object.assign(files, this.vfs.snapshot());
+    }
+
+    const record = {
       nodeId,
       headSha,
       files,
       createdAt: Date.now(),
       conversationLength,
+      usedVfs,
     };
     this.byNode.set(nodeId, record);
     this.order = this.order.filter((id) => id !== nodeId);
@@ -86,9 +114,6 @@ export class StateCheckpointer {
     return record;
   }
 
-  /**
-   * Restore filesystem to the checkpoint, prune conversation after it, inject constraint.
-   */
   async rollbackToCheckpoint(nodeId: string, negativeConstraint: string): Promise<RollbackResult> {
     const record = this.byNode.get(nodeId);
     if (!record) {
@@ -98,22 +123,13 @@ export class StateCheckpointer {
         pruneAfter: 0,
         nodeId,
         filesRestored: [],
+        usedVfs: false,
       };
     }
 
-    const restored: string[] = [];
-    for (const [rel, content] of Object.entries(record.files)) {
-      const abs = join(this.worktree, rel);
-      if (content === '') {
-        await rm(abs, { force: true }).catch(() => undefined);
-      } else {
-        await mkdir(dirname(abs), { recursive: true });
-        await writeFile(abs, content, 'utf8');
-      }
-      restored.push(rel);
-    }
+    const restored = await this.vfs.restore(record.files);
+    // Also write via direct FS for paths the VFS restore already handled — restore() covers disk.
 
-    // Drop this node and every checkpoint taken after it (failed branch).
     const idx = this.order.indexOf(nodeId);
     if (idx >= 0) {
       for (const id of this.order.slice(idx)) this.byNode.delete(id);
@@ -126,6 +142,7 @@ export class StateCheckpointer {
       pruneAfter: record.conversationLength,
       nodeId,
       filesRestored: restored,
+      usedVfs: record.usedVfs,
     };
   }
 
@@ -145,17 +162,23 @@ export class StateCheckpointer {
   }
 
   private async headSha(): Promise<string> {
+    if (this.gitAvailable === false) return 'NOGIT';
     const r = await git(this.worktree, ['rev-parse', 'HEAD'], { allowFailure: true });
+    this.gitAvailable = r.exitCode === 0;
     return r.exitCode === 0 ? r.stdout.trim() : 'NOGIT';
   }
 
   private async dirtyPaths(): Promise<string[]> {
+    if (this.gitAvailable === false) return [];
     const r = await git(this.worktree, ['status', '--porcelain', '-uall'], { allowFailure: true });
-    if (r.exitCode !== 0) return [];
+    if (r.exitCode !== 0) {
+      this.gitAvailable = false;
+      return [];
+    }
+    this.gitAvailable = true;
     const out: string[] = [];
     for (const line of r.stdout.split('\n')) {
       if (!line) continue;
-      // "XY path" or "XY orig -> path" for renames
       const pathPart = line.slice(3);
       const arrow = pathPart.lastIndexOf(' -> ');
       const raw = arrow >= 0 ? pathPart.slice(arrow + 4) : pathPart;
@@ -166,7 +189,6 @@ export class StateCheckpointer {
   }
 }
 
-/** Paths mentioned in a mutating tool's input, for targeted snapshots. */
 export function pathsFromToolInput(input: unknown): string[] {
   if (!input || typeof input !== 'object') return [];
   const o = input as Record<string, unknown>;

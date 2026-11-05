@@ -68,6 +68,11 @@ const ENV_MAP: readonly (readonly [string, readonly string[], EnvKind])[] = [
   ['OMNEXX_KERNEL_ENABLED', ['kernel', 'enabled'], 'boolean'],
   ['OMNEXX_KERNEL_OLLAMA_URL', ['kernel', 'ollama_url'], 'string'],
   ['OMNEXX_KERNEL_OLLAMA_MODEL', ['kernel', 'ollama_model'], 'string'],
+  ['OMNEXX_KERNEL_MAX_MOUNTED', ['kernel', 'max_mounted'], 'number'],
+  ['OMNEXX_KERNEL_RESELECT_EVERY', ['kernel', 'reselect_every'], 'number'],
+  ['OMNEXX_KERNEL_REGISTRY', ['kernel', 'registry'], 'boolean'],
+  ['OMNEXX_KERNEL_LOCAL_DISCOVERY', ['kernel', 'local_discovery'], 'boolean'],
+  ['OMNEXX_KERNEL_PUBLIC_SKILLS', ['kernel', 'public_skills'], 'boolean'],
 ];
 
 export const ENV_VARS = ENV_MAP.map(([name]) => name);

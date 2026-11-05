@@ -318,8 +318,8 @@
         },
         "omnexx.kernel.enabled": {
           "type": "boolean",
-          "default": false,
-          "description": "Enable the Adaptive Runtime Kernel: per-turn role/tool allocation via local Ollama + deterministic telemetry. Off by default (zero behavior change)."
+          "default": true,
+          "description": "Adaptive Runtime Kernel (on by default): per-turn role/tool allocation via local Ollama + deterministic telemetry, with heuristic fallback when Ollama is absent. Turn off to disable."
         },
         "omnexx.kernel.ollamaUrl": {
           "type": "string",

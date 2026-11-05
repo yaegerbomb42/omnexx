@@ -506,14 +506,26 @@ export async function runAgentLoop(
         objective: deps.kernelObjective ?? deps.rolling?.goal ?? '',
         allTools: [...byName.values()],
         defaultMaxTokens: deps.maxTokens,
+        messages,
       });
       byName = new Map(plan.tools.map((t) => [t.name, t]));
       liveCtx = { ...liveCtx, tools: plan.tools.map(toolSpec) };
       turnMaxTokens = plan.maxTokens;
-      messages.push({
-        role: 'user',
-        content: [{ type: 'text', text: plan.systemHint }],
-      });
+      if (plan.compactedMessages) {
+        messages = plan.compactedMessages;
+        deps.toolCtx.reads?.clear();
+        deps.events.emit('kernel.gc', {
+          turn: turns + 1,
+          messages: messages.length,
+        });
+      }
+      // Quiet by default: only surface a kernel hint when deliberative (tier>=2) or GC ran.
+      if (plan.allocation.tier >= 2 || plan.compactedMessages) {
+        messages.push({
+          role: 'user',
+          content: [{ type: 'text', text: plan.systemHint }],
+        });
+      }
       deps.events.emit('kernel.allocate', {
         turn: turns + 1,
         tier: plan.allocation.tier,
@@ -521,6 +533,7 @@ export async function runAgentLoop(
         tools: plan.allocation.mountedTools,
         friction: plan.telemetry.frictionScore,
         pressure: plan.telemetry.contextPressure,
+        ...(plan.mctsSelectedId ? { mcts: plan.mctsSelectedId } : {}),
       });
     }
     let signal = await deps.control();
