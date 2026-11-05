@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ok, fail, type Tool } from '../../tools/types.js';
 import type { CapabilityEntry } from './types.js';
+import { CapabilityRetriever, type RetrievalDoc } from './retrieval.js';
 
 /** How long unverified remote (SkillMD) search hits stay in the catalog. */
 export const REMOTE_SKILL_TTL_MS = 30 * 60 * 1000;
@@ -19,6 +20,13 @@ export interface CatalogEntry {
   /** Pre-tokenized text for TF-IDF. */
   tokens: string[];
   embedding?: number[] | undefined;
+}
+
+export interface CatalogSearchOptions {
+  /** Low-weight context terms (recent tool errors, state delta). */
+  context?: string | undefined;
+  /** Additive per-id prior (co-usage, stickiness). */
+  bonus?: ((id: string) => number) | undefined;
 }
 
 export interface CatalogSelectOptions {
@@ -45,12 +53,6 @@ function tokenize(text: string): string[] {
     .filter((t) => t.length > 1);
 }
 
-function termFreq(tokens: string[]): Map<string, number> {
-  const m = new Map<string, number>();
-  for (const t of tokens) m.set(t, (m.get(t) ?? 0) + 1);
-  return m;
-}
-
 /**
  * Scalable capability registry: holds thousands of MCP tool / skill *headers*
  * without putting their schemas in the model context. Selection is System-1
@@ -60,7 +62,9 @@ export class CapabilityCatalog {
   private entries = new Map<string, CatalogEntry>();
   /** Expiry (epoch ms) for ephemeral entries such as unverified remote SkillMD hits. */
   private expiry = new Map<string, number>();
-  private idf = new Map<string, number>();
+  private readonly retriever = new CapabilityRetriever();
+  private retrieverDirty = true;
+  private isInstalled: (id: string) => boolean = (id) => id.startsWith('local:');
   private mounted = new Map<string, CatalogEntry>();
   private lru: string[] = [];
   private turnsSinceSelect = 0;
@@ -88,6 +92,11 @@ export class CapabilityCatalog {
 
   isMounted(id: string): boolean {
     return this.mounted.has(id);
+  }
+
+  /** All entries (headers only), insertion order. */
+  allEntries(): readonly CatalogEntry[] {
+    return [...this.entries.values()];
   }
 
   get(id: string): CatalogEntry | undefined {
@@ -162,23 +171,38 @@ export class CapabilityCatalog {
    * Rank the whole catalog for `query` (TF-IDF; uses embeddings when present).
    * Returns top-K ids — does not change the mount set.
    */
-  search(query: string, k = 10): CatalogEntry[] {
+  search(query: string, k = 10, opts: CatalogSearchOptions = {}): CatalogEntry[] {
     this.pruneExpired();
-    const qTokens = tokenize(query);
-    if (qTokens.length === 0) return [...this.entries.values()].slice(0, k);
-    const qtf = termFreq(qTokens);
-    const qEmbed = averageEmbedding(
-      [...this.entries.values()].filter((e) => e.embedding).slice(0, 1),
-    );
-    return [...this.entries.values()]
-      .map((e) => {
-        let score = tfidfScore(qtf, e.tokens, this.idf);
-        if (qEmbed && e.embedding) score += 2 * cosine(qEmbed, e.embedding);
-        return { e, score };
+    if (!query.trim()) return [...this.entries.values()].slice(0, k);
+    return this.rankEntries(query, k, opts).map((r) => r.entry);
+  }
+
+  /** Ranked search with scores (field-weighted BM25 + expansion + installed-first priors). */
+  rankEntries(
+    query: string,
+    k = 10,
+    opts: CatalogSearchOptions = {},
+  ): { entry: CatalogEntry; score: number }[] {
+    if (this.retrieverDirty) {
+      this.retriever.build([...this.entries.values()]);
+      this.retrieverDirty = false;
+    }
+    const isInstalled = this.isInstalled;
+    return this.retriever
+      .rank(query, k, {
+        isInstalled: (d) => isInstalled(d.id),
+        ...(opts.context ? { context: opts.context } : {}),
+        ...(opts.bonus ? { bonus: (d: RetrievalDoc) => opts.bonus?.(d.id) ?? 0 } : {}),
       })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, k)
-      .map((x) => x.e);
+      .flatMap((r) => {
+        const entry = this.entries.get(r.doc.id);
+        return entry ? [{ entry, score: r.score }] : [];
+      });
+  }
+
+  /** Decide which ids count as installed for installed-first ranking (default: `local:*`). */
+  setInstalledPredicate(fn: (id: string) => boolean): void {
+    this.isInstalled = fn;
   }
 
   /**
@@ -276,56 +300,9 @@ export class CapabilityCatalog {
   }
 
   private rebuildIdf(): void {
-    const df = new Map<string, number>();
-    for (const e of this.entries.values()) {
-      for (const t of new Set(e.tokens)) df.set(t, (df.get(t) ?? 0) + 1);
-    }
-    const N = Math.max(1, this.entries.size);
-    this.idf = new Map([...df.entries()].map(([t, d]) => [t, Math.log((N + 1) / (d + 1)) + 1]));
+    // Index rebuild is lazy (next search) so bursts of upserts stay cheap on 50k+ catalogs.
+    this.retrieverDirty = true;
   }
-}
-
-function tfidfScore(
-  qtf: Map<string, number>,
-  docTokens: string[],
-  idf: Map<string, number>,
-): number {
-  const dtf = termFreq(docTokens);
-  let score = 0;
-  for (const [t, qf] of qtf) {
-    const df = dtf.get(t);
-    if (!df) continue;
-    score += qf * df * (idf.get(t) ?? 1);
-  }
-  return score;
-}
-
-function cosine(a: number[], b: number[]): number {
-  if (a.length !== b.length || a.length === 0) return 0;
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    const x = a[i] ?? 0;
-    const y = b[i] ?? 0;
-    dot += x * y;
-    na += x * x;
-    nb += y * y;
-  }
-  if (na === 0 || nb === 0) return 0;
-  return dot / (Math.sqrt(na) * Math.sqrt(nb));
-}
-
-function averageEmbedding(entries: CatalogEntry[]): number[] | undefined {
-  const withEmb = entries.filter((e) => e.embedding && e.embedding.length);
-  if (!withEmb.length) return undefined;
-  const dim = withEmb[0]!.embedding!.length;
-  const out = new Array<number>(dim).fill(0);
-  for (const e of withEmb) {
-    for (let i = 0; i < dim; i++) out[i]! += e.embedding![i] ?? 0;
-  }
-  for (let i = 0; i < dim; i++) out[i]! /= withEmb.length;
-  return out;
 }
 
 const searchSchema = z.strictObject({

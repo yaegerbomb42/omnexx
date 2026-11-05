@@ -177,6 +177,43 @@ export function dedupeToolsByName(tools: readonly Tool[]): { tools: Tool[]; coll
   return { tools: out, collisions: [...collisions] };
 }
 
+/**
+ * Merge local entries with registry rows: a registry server that mirrors a locally
+ * configured MCP server is dropped (no twin entries), and its description enriches the
+ * local entry — local configs rarely carry text, so without this the installed server is
+ * nearly unfindable by task wording.
+ */
+export function mergeLocalWithRegistry(
+  local: readonly Omit<CatalogEntry, 'tokens'>[],
+  registry: readonly Omit<CatalogEntry, 'tokens'>[],
+  identifierOf: (id: string) => string | undefined = () => undefined,
+): Omit<CatalogEntry, 'tokens'>[] {
+  const localMcp = local.filter((e) => e.id.startsWith('local:mcp:'));
+  const names = localMcp.map((e) => e.id.slice('local:mcp:'.length));
+  const twinText = new Map<string, { text: string; official: boolean }>();
+  const out: Omit<CatalogEntry, 'tokens'>[] = [];
+  for (const e of registry) {
+    const server = e.server ?? e.name;
+    if (!registryMirrorsLocal(server, identifierOf(e.id), names)) {
+      out.push(e);
+      continue;
+    }
+    const key = normalizeMcpServerName(server);
+    const ns = server.split('/')[0]?.toLowerCase() ?? '';
+    const owner = names.find((n) => normalizeMcpServerName(n) === key) ?? names[0] ?? '';
+    const official = ns.includes(normalizeMcpServerName(owner));
+    const prev = twinText.get(owner);
+    if (e.description && (!prev || (official && !prev.official)))
+      twinText.set(owner, { text: e.description, official });
+  }
+  const enriched = local.map((e) => {
+    if (!e.id.startsWith('local:mcp:')) return e;
+    const twin = twinText.get(e.id.slice('local:mcp:'.length));
+    return twin ? { ...e, description: `${e.description}. ${twin.text}`.slice(0, 600) } : e;
+  });
+  return [...enriched, ...out];
+}
+
 /** Default max ms the first turn waits on the lazy catalog warm. */
 export const DEFAULT_WARM_TIMEOUT_MS = 5_000;
 
@@ -476,17 +513,15 @@ ${entry.description}`;
       });
       for (const s of reg.snapshot.servers) this.registryById.set(s.id, s);
       // Registry entries are searchable but NOT installed unless a local mirror exists.
-      const localMcpNames = [...this.localInstalled]
-        .filter((id) => id.startsWith('local:mcp:'))
-        .map((id) => id.slice('local:mcp:'.length));
-      for (const e of reg.entries) {
-        const rec = this.registryById.get(e.id);
-        if (registryMirrorsLocal(e.server ?? e.name, rec?.install?.identifier, localMcpNames)) {
-          // Already have a local install of that server — skip duplicate registry row.
-          continue;
-        }
-        catalogEntries.push(e);
-      }
+      catalogEntries.splice(
+        0,
+        catalogEntries.length,
+        ...mergeLocalWithRegistry(
+          catalogEntries,
+          reg.entries,
+          (id) => this.registryById.get(id)?.install?.identifier,
+        ),
+      );
     }
 
     this.catalog.load(catalogEntries);

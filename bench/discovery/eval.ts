@@ -8,7 +8,8 @@ import { gunzipSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CapabilityCatalog, type CatalogEntry } from '../../src/runtime/kernel/catalog.js';
-import { registryMirrorsLocal } from '../../src/runtime/kernel/kernel.js';
+import { CapabilityRetriever } from '../../src/runtime/kernel/retrieval.js';
+import { mergeLocalWithRegistry } from '../../src/runtime/kernel/kernel.js';
 import { toCatalogEntries, type RegistrySnapshot } from '../../src/runtime/kernel/registry.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -53,14 +54,13 @@ export function buildCatalog(snapshotPath = snapPath): {
       server: name,
     });
   const byId = new Map(snap.servers.map((s) => [s.id, s]));
-  for (const e of toCatalogEntries(snap)) {
-    const rec = byId.get(e.id);
-    if (registryMirrorsLocal(e.server ?? e.name, rec?.install?.identifier, spec.local.mcp))
-      continue;
-    entries.push(e);
-  }
+  const merged = mergeLocalWithRegistry(
+    entries,
+    toCatalogEntries(snap),
+    (id) => byId.get(id)?.install?.identifier,
+  );
   const catalog = new CapabilityCatalog();
-  catalog.load(entries);
+  catalog.load(merged);
   return { catalog, loadMs: performance.now() - t0 };
 }
 
@@ -146,8 +146,19 @@ export async function evaluate(catalog: CapabilityCatalog, rank: Ranker, k = 10)
   };
 }
 
+let retriever: CapabilityRetriever | undefined;
 const rankers: Record<string, Ranker> = {
   search: (c, q, k) => c.search(q, k),
+  bm25: (c, q, k) => {
+    if (!retriever) {
+      retriever = new CapabilityRetriever();
+      retriever.build(c.allEntries());
+    }
+    return retriever
+      .rank(q, k, { isInstalled: (d) => d.id.startsWith('local:') })
+      .map((r) => c.get(r.doc.id))
+      .filter((e): e is CatalogEntry => e !== undefined);
+  },
 };
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
