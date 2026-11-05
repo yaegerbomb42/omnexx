@@ -35,6 +35,8 @@ export interface RegistrySnapshot {
   latestCount: number;
   note?: string;
   servers: RegistryServerRecord[];
+  /** Live pagination stopped early on the time budget (partial snapshot). */
+  truncated?: boolean;
 }
 
 export interface RegistryLoadResult {
@@ -44,6 +46,15 @@ export interface RegistryLoadResult {
 }
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Total budget for one live registry pagination (all pages, not per request).
+ * A slow registry must never hold a caller hostage.
+ */
+export const LIVE_REGISTRY_TIMEOUT_MS = 15_000;
+
+/** Per-request ceiling for a single registry page. */
+const PAGE_TIMEOUT_MS = 30_000;
 
 function cachePath(env: NodeJS.ProcessEnv = process.env): string {
   const home = env.OMNEXX_CONFIG_HOME || env.XDG_CONFIG_HOME || join(homedir(), '.config');
@@ -81,21 +92,45 @@ async function writeGzipJson(path: string, snap: RegistrySnapshot): Promise<void
 
 /** Paginate the live official MCP Registry; keep latest per server name. */
 export async function fetchLiveRegistry(
-  opts: { limit?: number; fetchImpl?: typeof fetch; maxPages?: number } = {},
+  opts: {
+    limit?: number;
+    fetchImpl?: typeof fetch;
+    maxPages?: number;
+    /** Total budget for the whole pagination (ms). 0 = unbounded (per-page limit only). */
+    timeoutMs?: number;
+  } = {},
 ): Promise<RegistrySnapshot> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const pageSize = opts.limit ?? 100;
   const maxPages = opts.maxPages ?? 250;
+  const budget = opts.timeoutMs ?? LIVE_REGISTRY_TIMEOUT_MS;
+  const deadline = budget > 0 ? Date.now() + budget : undefined;
   let cursor: string | undefined;
+  let truncated = false;
   const raw: unknown[] = [];
   for (let page = 0; page < maxPages; page++) {
+    const remaining = deadline === undefined ? PAGE_TIMEOUT_MS : deadline - Date.now();
+    if (remaining <= 0) {
+      truncated = true;
+      break;
+    }
     const url = new URL(MCP_REGISTRY_URL);
     url.searchParams.set('limit', String(pageSize));
     if (cursor) url.searchParams.set('cursor', cursor);
-    const res = await fetchImpl(url, {
-      headers: { accept: 'application/json', 'user-agent': 'omnexx-kernel/1.0' },
-      signal: AbortSignal.timeout(30_000),
-    });
+    let res: Response;
+    try {
+      res = await fetchImpl(url, {
+        headers: { accept: 'application/json', 'user-agent': 'omnexx-kernel/1.0' },
+        signal: AbortSignal.timeout(Math.max(1, Math.min(PAGE_TIMEOUT_MS, remaining))),
+      });
+    } catch (err) {
+      // Ran out of budget mid-request: keep the pages we already have.
+      if (deadline !== undefined && Date.now() >= deadline) {
+        truncated = true;
+        break;
+      }
+      throw err;
+    }
     if (!res.ok) throw new Error(`MCP registry HTTP ${res.status}`);
     const body = (await res.json()) as {
       servers?: unknown[];
@@ -167,15 +202,12 @@ export async function fetchLiveRegistry(
     latestCount: servers.length,
     note: 'Live fetch from official MCP Registry (latest per server name).',
     servers,
+    ...(truncated ? { truncated: true } : {}),
   };
 }
 
-
 /** Union live refresh with a floor snapshot so a bounded fetch never shrinks the catalog. */
-export function mergeWithFloor(
-  live: RegistrySnapshot,
-  floor: RegistrySnapshot,
-): RegistrySnapshot {
+export function mergeWithFloor(live: RegistrySnapshot, floor: RegistrySnapshot): RegistrySnapshot {
   const map = new Map<string, RegistryServerRecord>();
   for (const s of floor.servers) map.set(s.server, s);
   for (const s of live.servers) map.set(s.server, s); // live wins on conflict
@@ -188,7 +220,7 @@ export function mergeWithFloor(
     latestCount: servers.length,
     note: shrunk
       ? `Live refresh (${live.latestCount}) merged with bundled/cache floor (${floor.latestCount}) so the catalog never shrinks.`
-      : live.note ?? 'Live fetch from official MCP Registry (latest per server name).',
+      : (live.note ?? 'Live fetch from official MCP Registry (latest per server name).'),
     servers,
   };
 }
@@ -212,6 +244,8 @@ export async function loadRegistry(opts?: {
   /** Skip live network (tests / offline). */
   offline?: boolean;
   moduleUrl?: string;
+  /** Total budget for the live pagination (ms). 0 = unbounded. */
+  timeoutMs?: number;
 }): Promise<RegistryLoadResult> {
   const env = opts?.env ?? process.env;
   const cache = cachePath(env);
@@ -233,7 +267,9 @@ export async function loadRegistry(opts?: {
       let snap = await fetchLiveRegistry({
         ...(opts?.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
         maxPages: 80, // bounded refresh; floor merge restores the rest
+        ...(opts?.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
       });
+      const truncated = snap.truncated === true;
       const bundled = await readBundledSnapshot(opts?.moduleUrl ?? import.meta.url);
       let cachedFloor: RegistrySnapshot | undefined;
       try {
@@ -242,16 +278,15 @@ export async function loadRegistry(opts?: {
       } catch {
         // no cache
       }
-      const floorCandidates = [bundled, cachedFloor].filter(
-        (s): s is RegistrySnapshot => Boolean(s?.servers?.length),
+      const floorCandidates = [bundled, cachedFloor].filter((s): s is RegistrySnapshot =>
+        Boolean(s?.servers?.length),
       );
       if (floorCandidates.length) {
-        const floor = floorCandidates.reduce((a, b) =>
-          a.latestCount >= b.latestCount ? a : b,
-        );
+        const floor = floorCandidates.reduce((a, b) => (a.latestCount >= b.latestCount ? a : b));
         snap = mergeWithFloor(snap, floor);
       }
-      await writeGzipJson(cache, snap).catch(() => undefined);
+      // A truncated refresh is not a full snapshot: don't pin it as the fresh cache.
+      if (!truncated) await writeGzipJson(cache, snap).catch(() => undefined);
       return { snapshot: snap, from: 'live', entries: toCatalogEntries(snap) };
     } catch {
       // fall through

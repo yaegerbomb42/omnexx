@@ -1,10 +1,6 @@
 import type { Message } from '../../providers/types.js';
 import type { Tool } from '../../tools/types.js';
-import {
-  CapabilityCatalog,
-  createCatalogTools,
-  type CatalogEntry,
-} from './catalog.js';
+import { CapabilityCatalog, createCatalogTools, type CatalogEntry } from './catalog.js';
 import { StateCheckpointer, pathsFromToolInput } from './checkpoint.js';
 import { ContextGarbageCollector, compactAsync } from './contextGc.js';
 import { discoverLocalMcpServers, discoverLocalSkills, searchSkillMd } from './discover.js';
@@ -20,11 +16,7 @@ import {
   allocationSimilarities,
   multiSampleAllocations,
 } from './ollamaRouter.js';
-import {
-  installSuggestion,
-  loadRegistry,
-  type RegistryServerRecord,
-} from './registry.js';
+import { installSuggestion, loadRegistry, type RegistryServerRecord } from './registry.js';
 import { TelemetryMonitor, classifyToolError, type ToolObservation } from './telemetry.js';
 import type { ModelProfileHints, TelemetrySnapshot, TurnAllocation } from './types.js';
 import { isMutatingTool } from './types.js';
@@ -48,6 +40,11 @@ export interface KernelConfig {
   offlineRegistry?: boolean | undefined;
   /** Enrich search_capabilities with SkillMD public index (default true). */
   publicSkills?: boolean | undefined;
+  /**
+   * Max ms the loop waits for the lazy first-turn warm (default 5000, 0 = wait forever).
+   * The warm keeps running in the background past the budget, so the catalog still lands.
+   */
+  warmTimeoutMs?: number | undefined;
   /** Lazy-connect MCP servers + page skill bodies when catalog mounts them. */
   mcpRuntime?: CapabilityRuntime | undefined;
   env?: NodeJS.ProcessEnv | undefined;
@@ -65,6 +62,8 @@ export interface TurnPlan {
   mctsSelectedId?: string | undefined;
   /** Catalog capabilities currently mounted (ids). */
   mountedCapabilities?: string[] | undefined;
+  /** The lazy warm outran its budget; the turn ran without the full catalog. */
+  warmTimedOut?: boolean | undefined;
 }
 
 export interface KernelToolEvent {
@@ -80,6 +79,9 @@ export interface KernelToolEvent {
  * Adaptive Runtime Kernel. Default-on; degrades to pure heuristics within ~80ms when
  * Ollama is absent so a normal run is never blocked.
  */
+/** Default max ms the first turn waits on the lazy catalog warm. */
+export const DEFAULT_WARM_TIMEOUT_MS = 5_000;
+
 export class AdaptiveRuntimeKernel {
   readonly telemetry: TelemetryMonitor;
   readonly checkpointer: StateCheckpointer;
@@ -102,6 +104,8 @@ export class AdaptiveRuntimeKernel {
   private currentTaskKey = '';
   private profile: ModelProfileHints;
   private warmed = false;
+  /** In-flight warm, shared so one registry fetch serves every caller. */
+  private warmInFlight: Promise<void> | undefined;
 
   constructor(config: KernelConfig) {
     this.config = config;
@@ -182,7 +186,11 @@ export class AdaptiveRuntimeKernel {
    */
   async activateLiveMount(entry: CatalogEntry): Promise<string | undefined> {
     const runtime = this.config.mcpRuntime;
-    if (entry.kind === 'mcp' || entry.id.startsWith('local:mcp:') || entry.id.startsWith('registry:mcp:')) {
+    if (
+      entry.kind === 'mcp' ||
+      entry.id.startsWith('local:mcp:') ||
+      entry.id.startsWith('registry:mcp:')
+    ) {
       const server = mcpServerKeyFromCatalogId(entry.id, entry.server);
       if (!server) return 'No MCP server key on catalog entry.';
       if (!runtime?.loadMcpServerTools) {
@@ -192,9 +200,7 @@ export class AdaptiveRuntimeKernel {
         );
       }
       if (runtime.hasMcpServer && !runtime.hasMcpServer(server)) {
-        throw new Error(
-          `MCP server "${server}" is not configured locally (cannot lazy-connect).`,
-        );
+        throw new Error(`MCP server "${server}" is not configured locally (cannot lazy-connect).`);
       }
       const tools = await runtime.loadMcpServerTools(server);
       this.liveMcpTools.set(server, [...tools]);
@@ -227,13 +233,18 @@ export class AdaptiveRuntimeKernel {
       const skillName = skillNameFromCatalogId(entry.id, entry.name);
       if (!skillName) return undefined;
       if (!runtime?.loadSkillBody) {
-        this.pagedSkills.set(entry.id, `# Skill: ${entry.name}
+        this.pagedSkills.set(
+          entry.id,
+          `# Skill: ${entry.name}
 
-${entry.description}`);
+${entry.description}`,
+        );
         return 'Skill description paged into context (no skill loader).';
       }
       const body = await runtime.loadSkillBody(skillName);
-      const page = body ?? `# Skill: ${entry.name}
+      const page =
+        body ??
+        `# Skill: ${entry.name}
 
 ${entry.description}`;
       this.pagedSkills.set(entry.id, page);
@@ -290,11 +301,26 @@ ${entry.description}`;
   /**
    * Index native tools/skills AND the real capability catalog (MCP Registry + local
    * MCP configs + on-disk skills). Registry fetch is bounded and falls back to the
-   * bundled snapshot offline.
+   * bundled snapshot offline. Concurrent callers share one warm.
    */
   async warm(
     tools: readonly { name: string; description: string }[],
     skills: readonly { name: string; description: string; triggerConditions?: string }[] = [],
+  ): Promise<void> {
+    const inFlight = this.warmInFlight;
+    if (inFlight) return inFlight;
+    const run = this.runWarm(tools, skills);
+    this.warmInFlight = run;
+    try {
+      await run;
+    } finally {
+      if (this.warmInFlight === run) this.warmInFlight = undefined;
+    }
+  }
+
+  private async runWarm(
+    tools: readonly { name: string; description: string }[],
+    skills: readonly { name: string; description: string; triggerConditions?: string }[],
   ): Promise<void> {
     await this.index.index(tools, skills);
 
@@ -363,6 +389,35 @@ ${entry.description}`;
     this.warmed = true;
   }
 
+  /**
+   * Wait for the warm, but never longer than the budget. Returns false when the
+   * budget expires first (the warm keeps running in the background).
+   */
+  private async awaitWarmBudget(warm: Promise<void>): Promise<boolean> {
+    const budget = this.config.warmTimeoutMs ?? DEFAULT_WARM_TIMEOUT_MS;
+    if (!Number.isFinite(budget) || budget <= 0) {
+      await warm;
+      return true;
+    }
+    type Outcome = { status: 'ok' } | { status: 'error'; error: unknown } | { status: 'timeout' };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<Outcome>((resolve) => {
+      timer = setTimeout(() => {
+        resolve({ status: 'timeout' });
+      }, budget);
+    });
+    const outcome = await Promise.race<Outcome>([
+      warm.then(
+        (): Outcome => ({ status: 'ok' }),
+        (error: unknown): Outcome => ({ status: 'error', error }),
+      ),
+      timeout,
+    ]);
+    if (timer) clearTimeout(timer);
+    if (outcome.status === 'error') throw outcome.error;
+    return outcome.status === 'ok';
+  }
+
   async planTurn(args: {
     objective: string;
     stateDelta?: string | undefined;
@@ -378,16 +433,21 @@ ${entry.description}`;
     const query = `${args.objective}\n${args.stateDelta ?? ''}`;
 
     // Dynamic capability loading — re-select mounted MCP/skills from the large catalog.
+    let warmTimedOut = false;
     if (!this.warmed) {
-      await this.warm(
+      const warm = this.warm(
         args.allTools.map((t) => ({ name: t.name, description: t.description })),
       );
+      // A slow registry must not stall the first model call: wait at most the warm
+      // budget, then let the warm finish in the background (catalog lands next turn).
+      warmTimedOut = !(await this.awaitWarmBudget(warm));
     }
     const taskKey = args.objective.slice(0, 160);
     const newTask = taskKey !== this.currentTaskKey && taskKey.length > 0;
     if (newTask) this.currentTaskKey = taskKey;
     const telSnapEarly = this.telemetry.snapshot();
-    const needsInitialSelect = this.catalog.mountedCount === 0 && (newTask || this.turnCounter <= 1);
+    const needsInitialSelect =
+      this.catalog.mountedCount === 0 && (newTask || this.turnCounter <= 1);
     if (
       this.catalog.size > 0 &&
       (needsInitialSelect ||
@@ -522,6 +582,7 @@ ${entry.description}`;
       telemetry,
       ...(compactedMessages ? { compactedMessages } : {}),
       ...(mctsSelectedId ? { mctsSelectedId } : {}),
+      ...(warmTimedOut ? { warmTimedOut: true } : {}),
     };
   }
 
