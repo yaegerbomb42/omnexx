@@ -511,6 +511,7 @@ export async function runAgentLoop(
         defaultMaxTokens: deps.maxTokens,
         messages,
         ...(deps.kernelSkills ? { skills: deps.kernelSkills } : {}),
+        turn: turns + 1,
       });
       byName = new Map(plan.tools.map((t) => [t.name, t]));
       liveCtx = { ...liveCtx, tools: plan.tools.map(toolSpec) };

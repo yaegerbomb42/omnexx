@@ -76,6 +76,8 @@ export interface TurnPlan {
   mctsSelectedId?: string | undefined;
   /** Catalog capabilities currently mounted (ids). */
   mountedCapabilities?: string[] | undefined;
+  /** Turn index this plan was made for (same number the loop puts on its events). */
+  turn: number;
   /** Tool names offered by more than one source this turn (first one kept). */
   toolNameCollisions?: string[] | undefined;
   /** Caller tools removed by the tier>=2 filter this turn (empty when nothing was dropped). */
@@ -531,8 +533,10 @@ ${entry.description}`;
     /** In-memory skills known to the caller; indexed alongside on-disk skills on warm. */
     skills?:
       readonly { name: string; description: string; triggerConditions?: string }[] | undefined;
+    /** Caller's turn index (1-based); keeps kernel + loop event turn numbers identical. */
+    turn?: number | undefined;
   }): Promise<TurnPlan> {
-    this.turnCounter += 1;
+    this.turnCounter = args.turn ?? this.turnCounter + 1;
     this.telemetry.beginTurn(this.turnCounter);
     if (args.promptTokens !== undefined) this.telemetry.setPromptTokens(args.promptTokens);
 
@@ -703,6 +707,7 @@ ${entry.description}`;
       ...(compactedMessages ? { compactedMessages } : {}),
       ...(mctsSelectedId ? { mctsSelectedId } : {}),
       ...(warmTimedOut ? { warmTimedOut: true } : {}),
+      turn: this.turnCounter,
       ...(dropped.length ? { droppedTools: dropped } : {}),
       ...(collisions.length ? { toolNameCollisions: collisions } : {}),
     };
