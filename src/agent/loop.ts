@@ -57,6 +57,7 @@ import { turnRequest } from './context.js';
 import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
 import type { DoomLoopRatchet } from '../core/doom-loop-ratchet.js';
 import type { AdaptiveRuntimeKernel } from '../runtime/kernel/index.js';
+import { toolStateProgress } from '../runtime/kernel/telemetry.js';
 import { toolSpec } from '../tools/registry.js';
 import { todoItemsOf, todoNudge, todoTool, type TodoItem } from '../tools/todo.js';
 
@@ -1173,7 +1174,11 @@ export async function runAgentLoop(
         }
       }
       if (deps.kernel) {
-        const progress = !isError && call.name !== 'read' && call.name !== 'search' ? 1 : 0;
+        const progress = toolStateProgress({
+          name: call.name,
+          readOnly: byName.get(call.name)?.readOnly,
+          isError,
+        });
         const rolled = await deps.kernel.afterTool(
           {
             tool: call.name,
