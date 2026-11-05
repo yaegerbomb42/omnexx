@@ -565,7 +565,9 @@ ${entry.description}`;
         candidates,
         options: { branchFactor: allocation.mctsBranchFactor ?? 3 },
       });
-      allocation = { ...mcts.best, tier: 2, reasoningMode: 'mcts' };
+      // Never downgrade: a tier-3 seed that entered via reasoningMode 'mcts' keeps tier 3 (GC).
+      const tier = Math.max(2, allocation.tier) as 2 | 3;
+      allocation = { ...mcts.best, tier, reasoningMode: 'mcts' };
       if (!allocation.mctsBranchFactor)
         allocation.mctsBranchFactor = mcts.best.mctsBranchFactor ?? 3;
       mctsSelectedId = mcts.selectedId;
