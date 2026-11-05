@@ -1,4 +1,16 @@
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { estimateTokens, foldPaysOff } from './cache-epoch.js';
+import { DenseIndex } from './dense.js';
+import {
+  GeneralAgentOptimizer,
+  decideCadence,
+  lexicalDrift,
+  type CadenceDecision,
+  type Phase,
+  type TaskClass,
+} from './optimizer.js';
 import type { Message } from '../../providers/types.js';
 import type { Tool } from '../../tools/types.js';
 import { CapabilityCatalog, createCatalogTools, type CatalogEntry } from './catalog.js';
@@ -63,6 +75,17 @@ export interface KernelConfig {
   /** Lazy-connect MCP servers + page skill bodies when catalog mounts them. */
   mcpRuntime?: CapabilityRuntime | undefined;
   env?: NodeJS.ProcessEnv | undefined;
+  /**
+   * Bandit persistence file; default `<worktree>/.omnexx/kernel-bandit.json` when that
+   * `.omnexx` dir exists. `false` keeps it in memory only.
+   */
+  banditPath?: string | false | undefined;
+  /**
+   * Dense embedding cache (int8 gz from bench/discovery/embed-all.ts). When present the live
+   * kernel fuses BM25 with cached embeddings; default `~/.omnexx/kernel-dense.json.gz`.
+   * `false` disables hybrid ranking.
+   */
+  denseCachePath?: string | false | undefined;
 }
 
 export interface TurnPlan {
@@ -77,6 +100,19 @@ export interface TurnPlan {
   mctsSelectedId?: string | undefined;
   /** Catalog capabilities currently mounted (ids). */
   mountedCapabilities?: string[] | undefined;
+  /** General-agent optimizer state for this turn. */
+  phase?: Phase | undefined;
+  taskClass?: TaskClass | undefined;
+  /** VoI/KV-cache cadence decision and its reason. */
+  cadence?: CadenceDecision | undefined;
+  /** Mounted capability id -> one-line reason it was chosen. */
+  whyMounted?: Record<string, string> | undefined;
+  /** Catalog header tokens vs what is actually mounted (selective-mount savings). */
+  mountSavings?: { catalogTokens: number; mountedTokens: number } | undefined;
+  /** Ranking used for the last (re)selection. */
+  rankMode?: 'bm25' | 'hybrid' | undefined;
+  /** Short per-turn phase nudge (rides in the terminal directive, never the system). */
+  phaseNudge?: string | undefined;
   /** Turn index this plan was made for (same number the loop puts on its events). */
   turn: number;
   /** Tool names offered by more than one source this turn (first one kept). */
@@ -242,6 +278,14 @@ export class AdaptiveRuntimeKernel {
   private warmed = false;
   /** Last failing tool output; expands the next capability query. */
   private lastToolError = '';
+  readonly optimizer: GeneralAgentOptimizer;
+  /** Live hybrid ranking (only when a warm embedding cache exists). */
+  private dense: DenseIndex | undefined;
+  private denseReady = false;
+  private readonly queryVecs = new Map<string, Float32Array>();
+  private rankMode: 'bm25' | 'hybrid' = 'bm25';
+  private whyMounted: Record<string, string> = {};
+  private banditUpdates = 0;
   /** Turns a fold is amortized over (cache-economy gate for voluntary GC). */
   expectedRemainingTurns = 8;
   /** SkillMD lookups memoized per query (TTL) so retries don't re-hit the network. */
@@ -274,7 +318,68 @@ export class AdaptiveRuntimeKernel {
     };
     this.index = new CapabilityIndex(ollama);
     this.router = new LocalMetaRouter({ ...ollama, index: this.index });
+    const omnexxDir = join(config.worktree, '.omnexx');
+    const banditPath =
+      config.banditPath === false
+        ? undefined
+        : (config.banditPath ??
+          (existsSync(omnexxDir) ? join(omnexxDir, 'kernel-bandit.json') : undefined));
+    this.optimizer = new GeneralAgentOptimizer({ banditPath });
+    this.catalog.setPriorBonus((id) =>
+      this.optimizer.bandit.bonus(this.optimizer.profile.intent, id),
+    );
+    const densePath =
+      config.denseCachePath === false
+        ? undefined
+        : (config.denseCachePath ?? join(homedir(), '.omnexx', 'kernel-dense.json.gz'));
+    if (densePath && existsSync(densePath)) {
+      this.dense = new DenseIndex({
+        ollamaUrl: config.ollamaUrl,
+        model: config.embedModel,
+        cachePath: densePath,
+        timeoutMs: 3_000,
+        ...(config.fetchImpl ? { fetchImpl: config.fetchImpl } : {}),
+      });
+      // Background load; until it lands (and a query vector is cached) ranking stays BM25.
+      void this.dense
+        .load()
+        .then((n) => {
+          this.denseReady = n > 0;
+        })
+        .catch(() => undefined);
+    }
     this.rebuildCatalogTools();
+  }
+
+  /**
+   * Ranked candidates for a selection: hybrid when the dense cache is warm and this query
+   * is already embedded; otherwise BM25 now, with the query embedded in the background for
+   * the next reselect. Never awaits an embedding.
+   */
+  private rankForSelect(query: string, k: number, context?: string) {
+    const opts = context ? { context } : {};
+    const dense = this.dense;
+    if (!dense || !this.denseReady) {
+      this.rankMode = 'bm25';
+      return this.catalog.rankEntries(query, k, opts);
+    }
+    const qKey = (context ? `${query}\n${context}` : query).slice(0, 2_000);
+    const qv = this.queryVecs.get(qKey);
+    if (qv) {
+      this.rankMode = 'hybrid';
+      return this.catalog.rankHybridCached(query, k, dense, qv, opts);
+    }
+    void dense
+      .embedQuery(qKey)
+      .then((v) => {
+        if (v) {
+          if (this.queryVecs.size > 64) this.queryVecs.clear();
+          this.queryVecs.set(qKey, v);
+        }
+      })
+      .catch(() => undefined);
+    this.rankMode = 'bm25';
+    return this.catalog.rankEntries(query, k, opts);
   }
 
   private rebuildCatalogTools(): void {
@@ -599,29 +704,74 @@ ${entry.description}`;
     }
     const taskKey = args.objective.slice(0, 160);
     const newTask = taskKey !== this.currentTaskKey && taskKey.length > 0;
-    if (newTask) this.currentTaskKey = taskKey;
+    if (newTask) {
+      this.currentTaskKey = taskKey;
+      this.optimizer.startTask(args.objective);
+      this.optimizer.bandit.save();
+    }
+    const opt = this.optimizer;
+    const { phase, shifted } = opt.beginTurn();
     const telSnapEarly = this.telemetry.snapshot();
     const needsInitialSelect =
       this.catalog.mountedCount === 0 && (newTask || this.turnCounter <= 1);
-    if (
+    const drift = this.catalog.lastSelectQuery()
+      ? lexicalDrift(query, this.catalog.lastSelectQuery())
+      : 1;
+    const cadence = decideCadence({
+      newTask: newTask || needsInitialSelect,
+      phaseShift: shifted && (phase === 'act' || phase === 'verify'),
+      drift,
+      toolMiss: Boolean(this.lastToolError),
+      frictionScore: telSnapEarly.frictionScore,
+      agentRequested: opt.agentRequested,
+      prefixTokens: estimateTokens(args.messages ?? []),
+      directiveTokens: 600,
+      expectedRemainingTurns: this.expectedRemainingTurns,
+      needsVerify: phase === 'verify' && opt.phases.needsVerify,
+      gcFreeTokens: 0,
+      taskClass: opt.profile.taskClass,
+    });
+    opt.lastCadence = cadence;
+    opt.agentRequested = false;
+    // The periodic tick still runs (it also ages the select clock) but only re-selects when
+    // the objective actually moved; otherwise the mount set stays sticky (cache-friendly).
+    const periodic =
       this.catalog.size > 0 &&
-      (needsInitialSelect ||
-        this.catalog.shouldReselect({
-          everyNTurns: this.config.reselectEvery ?? 4,
-          frictionScore: telSnapEarly.frictionScore,
-          newTask,
-        }))
-    ) {
-      this.catalog.select({
+      this.catalog.shouldReselect({
+        everyNTurns: this.config.reselectEvery ?? 4,
+        frictionScore: telSnapEarly.frictionScore,
+        newTask,
+      });
+    const reselect =
+      needsInitialSelect ||
+      cadence.action === 'reselect_append_only' ||
+      cadence.action === 'rebake_epoch' ||
+      (periodic && (newTask || telSnapEarly.frictionScore >= 2 || drift > 0.2));
+    if (this.catalog.size > 0 && reselect) {
+      const maxMounted =
+        opt.profile.taskClass === 'trivial'
+          ? Math.min(resolveMaxMounted(this.config), opt.profile.topK)
+          : resolveMaxMounted(this.config);
+      const ctx = this.lastToolError || undefined;
+      const sel = this.catalog.select({
         query,
         // Query expansion from what just went wrong (e.g. "401 from the Jira API").
-        ...(this.lastToolError ? { context: this.lastToolError } : {}),
-        maxMounted: resolveMaxMounted(this.config),
+        ...(ctx ? { context: ctx } : {}),
+        maxMounted,
+        ranked: this.rankForSelect(query, Math.max(maxMounted * 4, 32), ctx),
         pin: this.catalog
           .getMountedIds()
           .filter((id) => id.startsWith('local:tool:'))
           .slice(0, 4),
       });
+      const why: Record<string, string> = {};
+      for (const e of sel.mounted) {
+        const prior = opt.bandit.bonus(opt.profile.intent, e.id);
+        why[e.id] = sel.added.includes(e.id)
+          ? `${this.rankMode} match for "${args.objective.slice(0, 40)}" (${cadence.reason})${prior > 0 ? ' + learned prior' : ''}`
+          : (this.whyMounted[e.id] ?? 'kept (sticky)');
+      }
+      this.whyMounted = why;
     }
     await this.syncLiveMounts();
 
@@ -677,6 +827,17 @@ ${entry.description}`;
       if (!allocation.mctsBranchFactor)
         allocation.mctsBranchFactor = mcts.best.mctsBranchFactor ?? 3;
       mctsSelectedId = mcts.selectedId;
+    }
+
+    // Optimizer: deliberative tasks under friction (or an escalate decision) get the
+    // deliberative tier (checkpoint + MCTS); trivial tasks only get a tighter mount budget.
+    const tc = this.optimizer.profile.taskClass;
+    if (
+      allocation.tier < 2 &&
+      (cadence.action === 'escalate_mode' ||
+        (tc === 'deliberative' && telemetryBefore.frictionScore >= 2))
+    ) {
+      allocation = { ...allocation, tier: 2 };
     }
 
     // Tier-3 / pressure: run context GC (sync fingerprint path; optional async follow-up).
@@ -755,11 +916,41 @@ ${entry.description}`;
       ...liveInjected,
     ]);
 
+    // Selective-mount savings: what mounting every installed capability would cost in
+    // Slot 0 vs what is mounted now (schema+description estimate).
+    const headerTokens = (e: { description: string; inputSchema?: unknown }) =>
+      estimateTokens(e.description) + (e.inputSchema ? estimateTokens(e.inputSchema) : 40);
+    const installedAll = this.catalog
+      .allEntries()
+      .filter((e) => e.id.startsWith('local:') || this.localInstalled.has(e.id));
+    const mountSavings = {
+      catalogTokens: installedAll.reduce((n, e) => n + headerTokens(e), 0),
+      mountedTokens: mergedTools.reduce((n, t) => n + headerTokens(t), 0),
+    };
+    const phaseNow = this.optimizer.phases.phase;
+    const phaseNudge =
+      phaseNow === 'orient' &&
+      this.optimizer.profile.taskClass !== 'trivial' &&
+      this.turnCounter <= 1
+        ? '[kernel:phase orient] Batch independent read/search/manage_capabilities calls in ONE turn before editing.'
+        : phaseNow === 'verify'
+          ? '[kernel:phase verify] You changed files: run the real checks (tests/typecheck/build/lint) before finishing. echo/ls/cat do not count as verification.'
+          : undefined;
     return {
       allocation,
+      phase: phaseNow,
+      taskClass: this.optimizer.profile.taskClass,
+      cadence,
+      whyMounted: { ...this.whyMounted },
+      mountSavings,
+      rankMode: this.rankMode,
+      ...(phaseNudge ? { phaseNudge } : {}),
       tools: mergedTools,
       maxTokens,
-      systemHint: formatSystemHint(allocation, mctsSelectedId, this.pagedSkills),
+      systemHint: `${formatSystemHint(allocation, mctsSelectedId, this.pagedSkills)}`.replace(
+        /^\[kernel\] /,
+        `[kernel] phase=${phaseNow} class=${this.optimizer.profile.taskClass} cadence=${cadence.action}(${cadence.reason}) `,
+      ),
       telemetry,
       ...(compactedMessages ? { compactedMessages } : {}),
       ...(mctsSelectedId ? { mctsSelectedId } : {}),
@@ -825,6 +1016,24 @@ ${entry.description}`;
 
   /** Co-usage prior + error context for the next re-selection. */
   private noteCapabilityOutcome(event: KernelToolEvent): void {
+    const used: string[] = [];
+    for (const id of this.catalog.getMountedIds()) {
+      const entry = this.catalog.get(id);
+      const key = mcpServerKeyFromCatalogId(id, entry?.server);
+      if (
+        id === `local:tool:${event.tool}` ||
+        (key !== undefined && event.tool.startsWith(`mcp__${key}__`))
+      )
+        used.push(id);
+    }
+    this.optimizer.observeTool({
+      tool: event.tool,
+      input: event.input,
+      isError: event.isError,
+      usedCapabilities: used,
+      progress: event.stateProgress ?? (event.isError ? 0 : 0.5),
+    });
+    if (used.length && ++this.banditUpdates % 10 === 0) this.optimizer.bandit.save();
     if (event.isError) {
       this.lastToolError = `${event.tool}: ${event.content.slice(0, 200)}`;
       return;

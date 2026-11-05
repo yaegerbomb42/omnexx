@@ -91,6 +91,7 @@ const TOOL_ALIASES: Record<string, string> = {
   glob: 'outline',
   list: 'outline',
   grep: 'search',
+  list_capabilities: 'manage_capabilities',
   ripgrep: 'search',
   search_files: 'search',
   search_code: 'search',
@@ -552,6 +553,7 @@ export async function runAgentLoop(
       turnDirective = [
         plan.allocation.tier >= 2 || plan.compactedMessages ? plan.systemHint.trim() : undefined,
         capabilityDirective(ep.extra),
+        plan.phaseNudge,
       ]
         .filter((x): x is string => Boolean(x))
         .join('\n\n');
@@ -563,6 +565,13 @@ export async function runAgentLoop(
         friction: plan.telemetry.frictionScore,
         pressure: plan.telemetry.contextPressure,
         ...(plan.mctsSelectedId ? { mcts: plan.mctsSelectedId } : {}),
+        ...(plan.phase ? { phase: plan.phase, taskClass: plan.taskClass } : {}),
+        ...(plan.cadence
+          ? { cadence: plan.cadence.action, reason: plan.cadence.reason, epoch: ep.epoch }
+          : {}),
+        ...(plan.rankMode ? { rank: plan.rankMode } : {}),
+        ...(plan.whyMounted ? { why: plan.whyMounted } : {}),
+        ...(plan.mountSavings ? { mountSavings: plan.mountSavings } : {}),
         ...(plan.droppedTools?.length ? { dropped: plan.droppedTools } : {}),
         ...(plan.toolNameCollisions?.length ? { collisions: plan.toolNameCollisions } : {}),
       });

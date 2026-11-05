@@ -81,6 +81,7 @@ export class CapabilityCatalog {
   private retrieverDirty = true;
   private readonly uses = new Map<string, number>();
   private isInstalled: (id: string) => boolean = (id) => id.startsWith('local:');
+  private priorBonus: ((id: string) => number) | undefined;
   private mounted = new Map<string, CatalogEntry>();
   private lru: string[] = [];
   private turnsSinceSelect = 0;
@@ -261,6 +262,49 @@ export class CapabilityCatalog {
     return out.slice(0, k);
   }
 
+  /**
+   * Non-blocking hybrid: fuse BM25 with an already-embedded query vector, using only
+   * vectors already in the dense index (never embeds on the hot path).
+   */
+  rankHybridCached(
+    query: string,
+    k: number,
+    dense: DenseIndex,
+    qv: Float32Array,
+    opts: CatalogSearchOptions & { candidates?: number; denseWeight?: number } = {},
+  ): { entry: CatalogEntry; score: number }[] {
+    const lexical = this.rankEntries(query, opts.candidates ?? 100, opts);
+    const cands = new Map<string, { entry: CatalogEntry; lex: number; tier: number }>();
+    for (const r of lexical) {
+      const tier = r.score >= INSTALLED_NAMED_TIER ? INSTALLED_NAMED_TIER : 0;
+      cands.set(r.entry.id, { entry: r.entry, lex: r.score - tier, tier });
+    }
+    if (dense.size >= this.entries.size * 0.9) {
+      for (const h of dense.search(qv, 50)) {
+        const entry = this.entries.get(h.id);
+        if (entry && !cands.has(h.id)) cands.set(h.id, { entry, lex: 0, tier: 0 });
+      }
+    }
+    const maxLex = Math.max(1e-9, ...[...cands.values()].map((c) => c.lex));
+    const w = opts.denseWeight ?? 0.5;
+    const out = [...cands.values()].map((c) => {
+      const v = dense.get(c.entry.id);
+      // Missing vector: lexical only (re-weighted so it is not penalized).
+      let score = v
+        ? (1 - w) * (c.lex / maxLex) + w * Math.max(0, (dot(qv, v) - 0.35) / 0.65)
+        : c.lex / maxLex;
+      if (this.isInstalled(c.entry.id) && c.entry.kind !== 'tool') score *= 1.15;
+      return { entry: c.entry, score: score + c.tier };
+    });
+    out.sort((a, b) => b.score - a.score);
+    return out.slice(0, k);
+  }
+
+  /** Learned prior (e.g. bandit) applied multiplicatively in chooseMountSet: 1 + bonus. */
+  setPriorBonus(fn: ((id: string) => number) | undefined): void {
+    this.priorBonus = fn;
+  }
+
   /** Decide which ids count as installed for installed-first ranking (default: `local:*`). */
   setInstalledPredicate(fn: (id: string) => boolean): void {
     this.isInstalled = fn;
@@ -329,6 +373,8 @@ export class CapabilityCatalog {
         const uses = this.uses.get(r.entry.id) ?? 0;
         if (uses) base *= 1 + 0.15 * Math.log1p(uses);
         if (this.mounted.has(r.entry.id)) base *= 1 + MOUNT_STICKINESS;
+        const prior = this.priorBonus?.(r.entry.id) ?? 0;
+        if (prior) base *= Math.max(0.5, 1 + prior);
         return { entry: r.entry, base, tier };
       })
       .sort((a, b) => b.tier + b.base - (a.tier + a.base));
@@ -437,6 +483,21 @@ const searchSchema = z.strictObject({
 
 const mountSchema = z.strictObject({
   id: z.string().describe('Capability id from search_capabilities results'),
+});
+
+const manageSchema = z.strictObject({
+  actions: z
+    .array(
+      z.strictObject({
+        action: z.enum(['search', 'mount', 'unmount', 'list']),
+        query: z.string().optional(),
+        ids: z.array(z.string()).optional(),
+        kind: z.enum(['all', 'mcp', 'tool', 'skill']).optional(),
+        limit: z.number().int().min(1).max(25).optional(),
+      }),
+    )
+    .min(1)
+    .max(12),
 });
 
 export interface CatalogToolsOptions {
@@ -567,7 +628,97 @@ export function createCatalogTools(
     },
   };
 
-  return [searchTool, mountTool];
+  const manageTool: Tool<typeof manageSchema> = {
+    name: MANAGE_CAPABILITIES,
+    description:
+      'Manage tools, MCP servers and skills in ONE call. Batch several actions: ' +
+      '{action:"search",query,kind?,limit?} finds capabilities in the catalog (official MCP Registry + local MCP + skills); ' +
+      '{action:"mount",ids} loads installed ones (registry-only servers return an install suggestion; nothing is downloaded); ' +
+      '{action:"unmount",ids} frees slots; {action:"list"} shows what is mounted. ' +
+      'Newly mounted tools are listed under [kernel:mounted_capabilities]; run them by name or via call_capability.',
+    schema: manageSchema,
+    readOnly: false,
+    // Accept a single action object as well as {actions:[...]} or a bare array.
+    normalize: (raw) => {
+      if (Array.isArray(raw)) return { actions: raw };
+      if (raw && typeof raw === 'object' && 'action' in raw) return { actions: [raw] };
+      if (raw === undefined || (raw && typeof raw === 'object' && Object.keys(raw).length === 0))
+        return { actions: [{ action: 'list' }] };
+      return raw;
+    },
+    async run(input, ctx) {
+      const out: string[] = [];
+      let anyError = false;
+      for (const [i, a] of input.actions.entries()) {
+        const tag = `#${String(i + 1)} ${a.action}`;
+        if (a.action === 'search') {
+          if (!a.query?.trim()) {
+            anyError = true;
+            out.push(`${tag}: query is required`);
+            continue;
+          }
+          const limit = a.limit ?? 8;
+          const r = await searchTool.run(
+            { query: a.query, limit: kindOf(a.kind) ? 25 : limit },
+            ctx,
+          );
+          if (kindOf(a.kind)) {
+            const parsed = JSON.parse(r.content) as { results: { kind: string }[] };
+            const results = parsed.results.filter((x) => x.kind === kindOf(a.kind)).slice(0, limit);
+            out.push(`${tag}: ${JSON.stringify({ count: results.length, results })}`);
+          } else out.push(`${tag}: ${r.content.replace(/\n\s*/g, ' ')}`);
+        } else if (a.action === 'mount' || a.action === 'unmount') {
+          if (!a.ids?.length) {
+            anyError = true;
+            out.push(`${tag}: ids are required`);
+            continue;
+          }
+          for (const id of a.ids) {
+            if (a.action === 'mount') {
+              const r = await mountTool.run({ id }, ctx);
+              if (r.isError) anyError = true;
+              out.push(`${tag} ${id}: ${r.isError ? 'FAILED ' : ''}${r.content}`);
+            } else {
+              const okUnmount = catalog.unmount(id);
+              if (okUnmount && options.onUnmount) {
+                try {
+                  await options.onUnmount(id);
+                } catch {
+                  // best-effort
+                }
+              }
+              out.push(`${tag} ${id}: ${okUnmount ? 'unmounted' : 'was not mounted'}`);
+            }
+          }
+        } else {
+          const ids = catalog.getMountedIds();
+          const k = kindOf(a.kind);
+          const rows = ids
+            .map((id) => catalog.get(id))
+            .filter((e): e is CatalogEntry => Boolean(e) && (!k || e?.kind === k))
+            .map((e) => `${e.id} (${e.kind}) — ${e.description.slice(0, 80)}`);
+          out.push(`${tag}: ${rows.length ? rows.join('; ') : 'nothing mounted'}`);
+        }
+      }
+      // Partial failures are reported inline; only an all-failed batch is an error.
+      const content = out.join('\n');
+      return anyError && out.every((l) => /required|FAILED/.test(l)) ? fail(content) : ok(content);
+    },
+  };
+
+  return [manageTool, searchTool, mountTool];
+}
+
+export const MANAGE_CAPABILITIES = 'manage_capabilities';
+/** Legacy meta-tools: still executable (byName) but kept out of the Slot-0 tool prefix. */
+export const LEGACY_CATALOG_TOOLS: ReadonlySet<string> = new Set([
+  'search_capabilities',
+  'mount_capability',
+]);
+
+function kindOf(kind: string | undefined): CatalogEntry['kind'] | undefined {
+  if (!kind || kind === 'all') return undefined;
+  return kind as CatalogEntry['kind'];
 }
 
 /** Build synthetic catalog entries for tests / benches. */

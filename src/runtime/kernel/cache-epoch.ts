@@ -17,6 +17,7 @@ import type { ToolSpec } from '../../providers/types.js';
 import type { Tool } from '../../tools/types.js';
 import { fail } from '../../tools/types.js';
 import { toolSpec } from '../../tools/registry.js';
+import { LEGACY_CATALOG_TOOLS } from './catalog.js';
 
 export const CALL_CAPABILITY = 'call_capability';
 /** Billing multipliers relative to uncached input (Anthropic 5m TTL). */
@@ -143,7 +144,9 @@ export class ToolEpoch {
   plan(i: EpochInput): EpochPlan {
     this.current = new Map(i.mounted.map((t) => [t.name, t]));
     const frozenNames = new Set(this.frozen?.map((s) => s.name) ?? []);
-    let extraTools = i.mounted.filter((t) => !frozenNames.has(t.name));
+    // Legacy catalog meta-tools stay callable but never enter (or bust) Slot 0.
+    const prefixable = i.mounted.filter((t) => !LEGACY_CATALOG_TOOLS.has(t.name));
+    let extraTools = prefixable.filter((t) => !frozenNames.has(t.name));
     let rebaked = false;
     const extraTokens = estimateTokens(extraTools.map((t) => toolSpec(t)));
     const shouldBake =
@@ -169,7 +172,7 @@ export class ToolEpoch {
           suffixTokensToBust: (i.suffixTokens ?? 0) + extraTokens,
         }));
     if (shouldBake) {
-      const tools = [...i.mounted.filter((t) => t.name !== CALL_CAPABILITY), this.proxy];
+      const tools = [...prefixable.filter((t) => t.name !== CALL_CAPABILITY), this.proxy];
       this.frozen = tools.map(toolSpec).sort((a, b) => a.name.localeCompare(b.name));
       this.frozenTools = new Map(tools.map((t) => [t.name, t]));
       this.epochNo += 1;

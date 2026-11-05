@@ -140,3 +140,16 @@ describe('prompt-cache epochs', () => {
     ).toBe(true);
   });
 });
+
+describe('legacy catalog meta-tools', () => {
+  it('stay executable but out of Slot 0', () => {
+    const ep = new ToolEpoch();
+    const p = ep.plan({ mounted: [...core, mk('search_capabilities'), mk('mount_capability')] });
+    const names = p.specs.map((s) => s.name);
+    expect(names).toContain('manage_capabilities');
+    expect(names).toContain(CALL_CAPABILITY);
+    expect(names).not.toContain('search_capabilities');
+    expect(p.byName.has('search_capabilities')).toBe(true);
+    expect(p.byName.has('mount_capability')).toBe(true);
+  });
+});
