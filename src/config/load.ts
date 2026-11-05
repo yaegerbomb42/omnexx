@@ -123,8 +123,15 @@ export function envLayer(env: NodeJS.ProcessEnv): Plain {
           `unset ${name} or fix it`,
         );
       }
+      if (name === 'OMNEXX_KERNEL_MAX_MOUNTED' && (!Number.isInteger(value) || (value as number) < 1)) {
+        throw new ConfigError(
+          `${name}: expected a positive integer, got "${raw}"`,
+          `unset ${name} or fix it`,
+        );
+      }
     } else if (kind === 'boolean') {
-      value = raw === '1' || raw.toLowerCase() === 'true';
+      const lower = raw.trim().toLowerCase();
+      value = lower === '1' || lower === 'true' || lower === 'yes' || lower === 'on';
     }
     setPath(data, path, value);
   }

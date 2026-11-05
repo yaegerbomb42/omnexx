@@ -190,13 +190,15 @@ export async function discoverLocalSkills(opts: {
         const { data, body } = parseFrontmatter(text);
         const name =
           typeof data.name === 'string' && data.name.trim() ? data.name.trim() : ent.name;
+        // `||` kept from #386: an empty first line falls back to the default description.
         const description =
           typeof data.description === 'string' && data.description.trim()
             ? data.description.trim()
-            : (body
+            : body
                 .split('\n')
                 .find((l) => l.trim())
-                ?.trim() ?? `Skill ${name}`);
+                // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+                ?.trim() || `Skill ${name}`;
         const id = `local:skill:${name}`;
         if (seen.has(id)) continue;
         seen.add(id);

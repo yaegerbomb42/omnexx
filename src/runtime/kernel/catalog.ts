@@ -453,6 +453,7 @@ export class CapabilityCatalog {
     newTask: boolean;
     force?: boolean | undefined;
   }): boolean {
+    if (this.entries.size === 0) return false;
     this.turnsSinceSelect += 1;
     if (args.force || args.newTask) return true;
     if (args.frictionScore >= 2) return true;
@@ -554,8 +555,7 @@ export function createCatalogTools(
         }
       }
       const hits = catalog.search(input.query, input.limit).map((e) => {
-        const installed =
-          options.isInstalled?.(e.id, e) ?? (e.id.startsWith('local:') || Boolean(e.inputSchema));
+        const installed = options.isInstalled?.(e.id, e) ?? e.id.startsWith('local:');
         return {
           id: e.id,
           kind: e.kind,
@@ -583,9 +583,7 @@ export function createCatalogTools(
       const entry = catalog.get(input.id);
       if (!entry) return fail(`Unknown capability id "${input.id}". Search first.`);
 
-      const installed =
-        options.isInstalled?.(input.id, entry) ??
-        (input.id.startsWith('local:') || Boolean(entry.inputSchema));
+      const installed = options.isInstalled?.(input.id, entry) ?? input.id.startsWith('local:');
 
       if (!installed) {
         const suggestion =

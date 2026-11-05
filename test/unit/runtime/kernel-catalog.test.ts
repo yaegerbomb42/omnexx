@@ -152,7 +152,7 @@ describe('local discovery (real configs)', () => {
         },
       }),
     );
-    const found = await discoverLocalMcpServers({ repoRoot: root, env: process.env });
+    const found = await discoverLocalMcpServers({ repoRoot: root, env: { ...process.env, HOME: root } });
     expect(found.entries.map((e) => e.name).sort()).toEqual(['custom_db', 'filesystem']);
     expect(found.entries.every((e) => e.id.startsWith('local:mcp:'))).toBe(true);
     expect(found.sources.some((s) => s.includes('mcp.json'))).toBe(true);

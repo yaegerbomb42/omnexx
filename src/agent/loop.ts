@@ -75,6 +75,40 @@ class BudgetStopSignal extends Error {
   }
 }
 
+function buildToolMap(
+  tools: readonly Tool[],
+  warnDuplicate?: (name: string) => void,
+): Map<string, Tool> {
+  const map = new Map<string, Tool>();
+  for (const t of tools) {
+    if (map.has(t.name) && warnDuplicate) {
+      warnDuplicate(t.name);
+    }
+    map.set(t.name, t);
+  }
+  return map;
+}
+
+function resolveKernelObjective(deps: LoopDeps, messages: readonly Message[]): string {
+  if (deps.kernelObjective && deps.kernelObjective.trim().length > 0) {
+    return deps.kernelObjective.trim();
+  }
+  if (deps.rolling?.goal && deps.rolling.goal.trim().length > 0) {
+    return deps.rolling.goal.trim();
+  }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg && msg.role === 'user' && Array.isArray(msg.content)) {
+      const textBlock = msg.content.find(
+        (b): b is Extract<ContentBlock, { type: 'text' }> =>
+          b.type === 'text' && Boolean(b.text?.trim()),
+      );
+      if (textBlock?.text?.trim()) return textBlock.text.trim();
+    }
+  }
+  return 'general task';
+}
+
 /**
  * Tool names models invent for tools that exist under another name (DeepSeek called
  * print_tree and list_files in its first real run). They run the real tool instead of failing.
@@ -497,8 +531,11 @@ export async function runAgentLoop(
   let changedSomething = false;
   // Mutable copy of ctx so we can refresh tools each turn when refreshTools is provided.
   let liveCtx = ctx;
+  const warnDup = (name: string) => {
+    deps.events.emit('tool.duplicate', { name });
+  };
   // byName must be rebuilt when tools change.
-  let byName = new Map(deps.tools.map((t) => [t.name, t]));
+  let byName = buildToolMap(deps.tools, warnDup);
   let turnMaxTokens = deps.maxTokens;
   // Kernel: the full tool pool it allocates from (byName narrows to the mounted set).
   let kernelPool: Tool[] = [...deps.tools];
@@ -509,15 +546,15 @@ export async function runAgentLoop(
     // Refresh tools at the start of each turn if refreshTools is provided (lazy mode).
     if (deps.refreshTools) {
       const { tools: freshTools, specs: freshSpecs } = deps.refreshTools();
-      byName = new Map(freshTools.map((t) => [t.name, t]));
+      byName = buildToolMap(freshTools, warnDup);
       kernelPool = [...freshTools];
       liveCtx = { ...liveCtx, tools: freshSpecs };
     }
     turnMaxTokens = deps.maxTokens;
-    // Opt-in Adaptive Runtime Kernel: allocate tools/roles/budget for this turn.
+    // Adaptive Runtime Kernel (on by default): allocate tools/roles/budget for this turn.
     if (deps.kernel) {
       const plan = await deps.kernel.planTurn({
-        objective: deps.kernelObjective ?? deps.rolling?.goal ?? '',
+        objective: resolveKernelObjective(deps, messages),
         allTools: kernelPool,
         defaultMaxTokens: deps.maxTokens,
         messages,
@@ -530,7 +567,7 @@ export async function runAgentLoop(
         deps.toolCtx.reads?.clear();
         pendingFold = true;
         deps.events.emit('kernel.gc', {
-          turn: turns + 1,
+          turn: turns,
           messages: messages.length,
         });
       }
@@ -548,7 +585,7 @@ export async function runAgentLoop(
       byName = ep.byName;
       liveCtx = { ...liveCtx, system: ctx.system, tools: ep.specs };
       if (ep.rebaked && ep.epoch > 1)
-        deps.events.emit('kernel.epoch', { turn: turns + 1, epoch: ep.epoch });
+        deps.events.emit('kernel.epoch', { turn: turns, epoch: ep.epoch });
       // Quiet by default: a kernel hint only when deliberative (tier>=2) or GC ran.
       turnDirective = [
         plan.allocation.tier >= 2 || plan.compactedMessages ? plan.systemHint.trim() : undefined,
@@ -558,7 +595,7 @@ export async function runAgentLoop(
         .filter((x): x is string => Boolean(x))
         .join('\n\n');
       deps.events.emit('kernel.allocate', {
-        turn: turns + 1,
+        turn: turns,
         tier: plan.allocation.tier,
         mode: plan.allocation.reasoningMode,
         tools: plan.allocation.mountedTools,
@@ -1151,6 +1188,7 @@ export async function runAgentLoop(
           }
         }
       }
+      const rawToolOutput = content;
       content = deps.toolCtx.redactor.text(content);
       if (deps.deadlineMs && !isError) {
         const toolMs = deps.clock.now() - toolStart;
@@ -1235,7 +1273,7 @@ export async function runAgentLoop(
             tool: call.name,
             input: call.input,
             isError,
-            content,
+            content: rawToolOutput,
             ...(progress ? { stateProgress: progress } : {}),
           },
           messages,

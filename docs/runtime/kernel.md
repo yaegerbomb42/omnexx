@@ -49,7 +49,6 @@ local_discovery = true
 public_skills = true
 ```
 
-
 ## Degradation
 
 With no Ollama installed the kernel still runs: one failed probe marks the instance offline, warm/index use TF-IDF only, allocate uses heuristics, MCTS/GC/checkpoints are pure local CPU. A normal turn's kernel overhead stays well under ~5ms after the first probe.
