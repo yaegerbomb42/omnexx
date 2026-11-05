@@ -325,6 +325,10 @@ export interface CatalogToolsOptions {
     query: string,
     limit: number,
   ) => Promise<readonly Omit<CatalogEntry, 'tokens'>[]>;
+  /** After a successful catalog mount — lazy-connect MCP / page skill body. */
+  onMount?: (entry: CatalogEntry) => Promise<string | undefined>;
+  /** After a capability leaves the mount set (explicit unmount or LRU eviction). */
+  onUnmount?: (id: string) => Promise<void>;
 }
 
 /**
@@ -382,9 +386,9 @@ export function createCatalogTools(
       'instead of downloading or running anything.',
     schema: mountSchema,
     readOnly: false,
-    run(input) {
+    async run(input) {
       const entry = catalog.get(input.id);
-      if (!entry) return Promise.resolve(fail(`Unknown capability id "${input.id}". Search first.`));
+      if (!entry) return fail(`Unknown capability id "${input.id}". Search first.`);
 
       const installed =
         options.isInstalled?.(input.id, entry) ??
@@ -394,17 +398,40 @@ export function createCatalogTools(
         const suggestion =
           options.suggestInstall?.(input.id, entry) ??
           `Capability "${input.id}" is not installed locally. Add it via Omnexx MCP config / \`omnexx mcp add\` before mounting. Omnexx will not auto-install or run untrusted code.`;
-        return Promise.resolve(fail(suggestion));
+        return fail(suggestion);
       }
 
+      const previously = new Set(catalog.getMountedIds());
       const e = catalog.mount(input.id, maxMounted);
-      if (!e) return Promise.resolve(fail(`Could not mount "${input.id}".`));
+      if (!e) return fail(`Could not mount "${input.id}".`);
+
+      if (options.onUnmount) {
+        for (const id of previously) {
+          if (!catalog.isMounted(id)) {
+            try {
+              await options.onUnmount(id);
+            } catch {
+              // best-effort
+            }
+          }
+        }
+      }
+
+      let extra = '';
+      if (options.onMount) {
+        try {
+          const msg = await options.onMount(e);
+          if (msg) extra = `\n${msg}`;
+        } catch (err) {
+          catalog.unmount(input.id);
+          const m = err instanceof Error ? err.message : String(err);
+          return fail(`Mount of ${input.id} failed during live load: ${m}`);
+        }
+      }
       const schema = e.inputSchema ? `\nSchema: ${JSON.stringify(e.inputSchema)}` : '';
-      return Promise.resolve(
-        ok(
-          `Mounted ${e.id} (${e.kind}: ${e.name}). ${e.description}${schema}\n` +
-            `Currently mounted: ${catalog.getMountedIds().join(', ')}`,
-        ),
+      return ok(
+        `Mounted ${e.id} (${e.kind}: ${e.name}). ${e.description}${schema}${extra}\n` +
+          `Currently mounted: ${catalog.getMountedIds().join(', ')}`,
       );
     },
   };

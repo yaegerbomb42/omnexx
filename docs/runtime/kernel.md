@@ -37,7 +37,8 @@ The kernel indexes thousands of capabilities and mounts only a small working set
 2. **Local MCP configs** — Omnexx `[mcp].servers`, project `.mcp.json`, Claude Desktop, Cursor, and VS Code `mcp.json` when present. Tool schemas are fetched lazily on mount, not at index time.
 3. **Real skills** — Omnexx skill dirs plus `SKILL.md` trees under `~/.claude/skills`, `~/.cursor/skills`, and project `.cursor/skills`. Optional enrichment via the real [SkillMD](https://skillmd.com/) public search API (`api.skillmd.com`); Omnexx never invents a fake skills index.
 4. **Meta-tools** — `search_capabilities` / `mount_capability`. Selecting a not-yet-installed `registry:*` id returns an **install suggestion** only; Omnexx will not auto-install or run untrusted code.
-5. **Synthetic 2k bench** — `syntheticCatalog(2000)` remains for perf tests; production warm uses real sources.
+5. **Live injection** — mounting an installed `local:mcp:*` server lazy-connects it, lists tools, and injects `mcp__server__tool` entries into the model-visible tool list for subsequent turns; unmount removes them. Mounted skills are paged into the `[kernel:skills]` system hint.
+6. **Synthetic 2k bench** — `syntheticCatalog(2000)` remains for perf tests; production warm uses real sources.
 
 ```toml
 [kernel]

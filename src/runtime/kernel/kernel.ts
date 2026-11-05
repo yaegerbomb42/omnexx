@@ -8,6 +8,11 @@ import {
 import { StateCheckpointer, pathsFromToolInput } from './checkpoint.js';
 import { ContextGarbageCollector, compactAsync } from './contextGc.js';
 import { discoverLocalMcpServers, discoverLocalSkills, searchSkillMd } from './discover.js';
+import {
+  mcpServerKeyFromCatalogId,
+  skillNameFromCatalogId,
+  type CapabilityRuntime,
+} from './liveMount.js';
 import { runMcts } from './mcts.js';
 import {
   CapabilityIndex,
@@ -43,6 +48,8 @@ export interface KernelConfig {
   offlineRegistry?: boolean | undefined;
   /** Enrich search_capabilities with SkillMD public index (default true). */
   publicSkills?: boolean | undefined;
+  /** Lazy-connect MCP servers + page skill bodies when catalog mounts them. */
+  mcpRuntime?: CapabilityRuntime | undefined;
   env?: NodeJS.ProcessEnv | undefined;
 }
 
@@ -85,6 +92,10 @@ export class AdaptiveRuntimeKernel {
   private readonly registryById = new Map<string, RegistryServerRecord>();
   private readonly localInstalled = new Set<string>();
   private catalogTools: Tool[] = [];
+  /** Live Tools injected for currently mounted MCP servers (key = server name). */
+  private liveMcpTools = new Map<string, Tool[]>();
+  /** Skill bodies paged into context for currently mounted skills (key = catalog id). */
+  private pagedSkills = new Map<string, string>();
   private lastAllocation: TurnAllocation | undefined;
   private lastCheckpointId: string | undefined;
   private turnCounter = 0;
@@ -142,7 +153,138 @@ export class AdaptiveRuntimeKernel {
                 ...(this.config.fetchImpl ? { fetchImpl: this.config.fetchImpl } : {}),
               }),
           }),
+      onMount: (entry) => this.activateLiveMount(entry),
+      onUnmount: async (id) => {
+        await this.dropLiveMount(id);
+      },
     });
+  }
+
+  /** Tools currently injected from live-mounted MCP servers. */
+  getLiveMcpTools(): readonly Tool[] {
+    return [...this.liveMcpTools.values()].flat();
+  }
+
+  /** Skill pages currently in context. */
+  getPagedSkills(): ReadonlyMap<string, string> {
+    return this.pagedSkills;
+  }
+
+  /** Wire or replace the MCP/skill runtime used for live mounts (call after tool sources load). */
+  attachMcpRuntime(runtime: CapabilityRuntime): void {
+    (this.config as { mcpRuntime?: CapabilityRuntime }).mcpRuntime = runtime;
+    this.rebuildCatalogTools();
+  }
+
+  /**
+   * Lazy-connect an MCP server (or page a skill body) for a mounted catalog entry.
+   * Returns a short status string for the mount_capability tool result.
+   */
+  async activateLiveMount(entry: CatalogEntry): Promise<string | undefined> {
+    const runtime = this.config.mcpRuntime;
+    if (entry.kind === 'mcp' || entry.id.startsWith('local:mcp:') || entry.id.startsWith('registry:mcp:')) {
+      const server = mcpServerKeyFromCatalogId(entry.id, entry.server);
+      if (!server) return 'No MCP server key on catalog entry.';
+      if (!runtime?.loadMcpServerTools) {
+        return (
+          `Catalog mounted ${entry.id}, but no MCP runtime is wired — configure the server in Omnexx ` +
+          `and pass mcpRuntime so tools can be injected.`
+        );
+      }
+      if (runtime.hasMcpServer && !runtime.hasMcpServer(server)) {
+        throw new Error(
+          `MCP server "${server}" is not configured locally (cannot lazy-connect).`,
+        );
+      }
+      const tools = await runtime.loadMcpServerTools(server);
+      this.liveMcpTools.set(server, [...tools]);
+      // Attach first tool schema onto the catalog header for search display.
+      const first = tools[0];
+      if (first) {
+        this.catalog.upsert([
+          {
+            id: entry.id,
+            kind: entry.kind,
+            name: entry.name,
+            description: entry.description,
+            server,
+            inputSchema: {
+              type: 'object',
+              properties: {
+                note: {
+                  type: 'string',
+                  description: `Live tools: ${tools.map((t) => t.name).join(', ')}`,
+                },
+              },
+            },
+          },
+        ]);
+      }
+      return `Live MCP tools injected (${tools.length}): ${tools.map((t) => t.name).join(', ') || '(none)'}`;
+    }
+
+    if (entry.kind === 'skill' || entry.id.includes(':skill:')) {
+      const skillName = skillNameFromCatalogId(entry.id, entry.name);
+      if (!skillName) return undefined;
+      if (!runtime?.loadSkillBody) {
+        this.pagedSkills.set(entry.id, `# Skill: ${entry.name}
+
+${entry.description}`);
+        return 'Skill description paged into context (no skill loader).';
+      }
+      const body = await runtime.loadSkillBody(skillName);
+      const page = body ?? `# Skill: ${entry.name}
+
+${entry.description}`;
+      this.pagedSkills.set(entry.id, page);
+      return `Skill "${skillName}" paged into context (${page.length} chars).`;
+    }
+    return undefined;
+  }
+
+  async dropLiveMount(id: string): Promise<void> {
+    const entry = this.catalog.get(id);
+    const server = mcpServerKeyFromCatalogId(id, entry?.server);
+    if (server) this.liveMcpTools.delete(server);
+    this.pagedSkills.delete(id);
+  }
+
+  /** Ensure live tools/skills match the catalog mount set (after select / reselect). */
+  async syncLiveMounts(): Promise<void> {
+    const mounted = this.catalog.getMounted();
+    const wantedServers = new Set<string>();
+    const wantedSkillIds = new Set<string>();
+
+    for (const e of mounted) {
+      if (e.kind === 'mcp' || e.id.startsWith('local:mcp:') || e.id.startsWith('registry:mcp:')) {
+        const server = mcpServerKeyFromCatalogId(e.id, e.server);
+        if (!server) continue;
+        wantedServers.add(server);
+        if (!this.liveMcpTools.has(server)) {
+          try {
+            await this.activateLiveMount(e);
+          } catch {
+            // leave unmounted live; model still has catalog header
+          }
+        }
+      } else if (e.kind === 'skill' || e.id.includes(':skill:')) {
+        wantedSkillIds.add(e.id);
+        if (!this.pagedSkills.has(e.id)) {
+          try {
+            await this.activateLiveMount(e);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+
+    for (const server of [...this.liveMcpTools.keys()]) {
+      if (!wantedServers.has(server)) this.liveMcpTools.delete(server);
+    }
+    for (const id of [...this.pagedSkills.keys()]) {
+      if (!wantedSkillIds.has(id)) this.pagedSkills.delete(id);
+    }
   }
 
   /**
@@ -245,13 +387,15 @@ export class AdaptiveRuntimeKernel {
     const newTask = taskKey !== this.currentTaskKey && taskKey.length > 0;
     if (newTask) this.currentTaskKey = taskKey;
     const telSnapEarly = this.telemetry.snapshot();
+    const needsInitialSelect = this.catalog.mountedCount === 0 && (newTask || this.turnCounter <= 1);
     if (
       this.catalog.size > 0 &&
-      this.catalog.shouldReselect({
-        everyNTurns: this.config.reselectEvery ?? 4,
-        frictionScore: telSnapEarly.frictionScore,
-        newTask,
-      })
+      (needsInitialSelect ||
+        this.catalog.shouldReselect({
+          everyNTurns: this.config.reselectEvery ?? 4,
+          frictionScore: telSnapEarly.frictionScore,
+          newTask,
+        }))
     ) {
       this.catalog.select({
         query,
@@ -262,6 +406,7 @@ export class AdaptiveRuntimeKernel {
           .slice(0, 4),
       });
     }
+    await this.syncLiveMounts();
 
     const candidates =
       this.catalog.size > 0
@@ -356,21 +501,24 @@ export class AdaptiveRuntimeKernel {
     this.lastAllocation = allocation;
     const telemetry = this.telemetry.snapshot();
 
-    // Always expose search_capabilities / mount_capability when the catalog is live.
-    const catalogNames = new Set(this.catalogTools.map((t) => t.name));
-    const mergedTools =
-      this.catalogTools.length > 0
-        ? [
-            ...this.catalogTools,
-            ...filtered.filter((t) => !catalogNames.has(t.name)),
-          ]
-        : filtered;
+    // Native/filtered tools first (stable unknown-tool messages), then meta-tools,
+    // then live-injected MCP tools from mounted catalog capabilities.
+    const liveInjected = this.getLiveMcpTools();
+    const reserved = new Set([
+      ...this.catalogTools.map((t) => t.name),
+      ...liveInjected.map((t) => t.name),
+    ]);
+    const mergedTools = [
+      ...filtered.filter((t) => !reserved.has(t.name)),
+      ...this.catalogTools,
+      ...liveInjected,
+    ];
 
     return {
       allocation,
       tools: mergedTools,
       maxTokens,
-      systemHint: formatSystemHint(allocation, mctsSelectedId),
+      systemHint: formatSystemHint(allocation, mctsSelectedId, this.pagedSkills),
       telemetry,
       ...(compactedMessages ? { compactedMessages } : {}),
       ...(mctsSelectedId ? { mctsSelectedId } : {}),
@@ -434,7 +582,11 @@ export class AdaptiveRuntimeKernel {
   }
 }
 
-function formatSystemHint(a: TurnAllocation, mctsId?: string): string {
+function formatSystemHint(
+  a: TurnAllocation,
+  mctsId?: string,
+  pagedSkills?: ReadonlyMap<string, string>,
+): string {
   const roles = a.activeRoles.join('+');
   const bits = [
     `[kernel] tier=${a.tier}`,
@@ -446,7 +598,14 @@ function formatSystemHint(a: TurnAllocation, mctsId?: string): string {
   if (mctsId) bits.push(`mcts_pick=${mctsId}`);
   if (a.mountedSkills.length) bits.push(`skills=${a.mountedSkills.join(',')}`);
   if (a.allowCodeModeBatching) bits.push('batch=on');
-  return bits.join(' ');
+  let hint = bits.join(' ');
+  if (pagedSkills && pagedSkills.size > 0) {
+    const pages = [...pagedSkills.entries()]
+      .map(([id, body]) => `--- mounted skill ${id} ---\n${body}`)
+      .join('\n\n');
+    hint += `\n\n[kernel:skills]\n${pages}`;
+  }
+  return hint;
 }
 
 function summarizeInput(input: unknown): string {

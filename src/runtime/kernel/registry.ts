@@ -170,6 +170,41 @@ export async function fetchLiveRegistry(
   };
 }
 
+
+/** Union live refresh with a floor snapshot so a bounded fetch never shrinks the catalog. */
+export function mergeWithFloor(
+  live: RegistrySnapshot,
+  floor: RegistrySnapshot,
+): RegistrySnapshot {
+  const map = new Map<string, RegistryServerRecord>();
+  for (const s of floor.servers) map.set(s.server, s);
+  for (const s of live.servers) map.set(s.server, s); // live wins on conflict
+  const servers = [...map.values()].sort((a, b) => a.server.localeCompare(b.server));
+  const shrunk = live.latestCount < floor.latestCount;
+  return {
+    source: live.source,
+    fetchedAt: live.fetchedAt,
+    rawCount: Math.max(live.rawCount, floor.rawCount),
+    latestCount: servers.length,
+    note: shrunk
+      ? `Live refresh (${live.latestCount}) merged with bundled/cache floor (${floor.latestCount}) so the catalog never shrinks.`
+      : live.note ?? 'Live fetch from official MCP Registry (latest per server name).',
+    servers,
+  };
+}
+
+async function readBundledSnapshot(moduleUrl: string): Promise<RegistrySnapshot | undefined> {
+  for (const path of bundledCandidates(moduleUrl)) {
+    try {
+      const snap = await readGzipJson(path);
+      if (snap.servers?.length) return snap;
+    } catch {
+      // try next
+    }
+  }
+  return undefined;
+}
+
 /** Load registry: prefer fresh cache, else live refresh, else bundled snapshot. */
 export async function loadRegistry(opts?: {
   env?: NodeJS.ProcessEnv;
@@ -192,13 +227,30 @@ export async function loadRegistry(opts?: {
     // miss
   }
 
-  // 2. Live refresh (unless offline)
+  // 2. Live refresh (unless offline) — never shrink below bundled/cache floor (#19).
   if (!opts?.offline) {
     try {
-      const snap = await fetchLiveRegistry({
+      let snap = await fetchLiveRegistry({
         ...(opts?.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
-        maxPages: 80, // bounded refresh; bundled snapshot covers the rest offline
+        maxPages: 80, // bounded refresh; floor merge restores the rest
       });
+      const bundled = await readBundledSnapshot(opts?.moduleUrl ?? import.meta.url);
+      let cachedFloor: RegistrySnapshot | undefined;
+      try {
+        const cached = await readGzipJson(cache);
+        if (cached.servers?.length) cachedFloor = cached;
+      } catch {
+        // no cache
+      }
+      const floorCandidates = [bundled, cachedFloor].filter(
+        (s): s is RegistrySnapshot => Boolean(s?.servers?.length),
+      );
+      if (floorCandidates.length) {
+        const floor = floorCandidates.reduce((a, b) =>
+          a.latestCount >= b.latestCount ? a : b,
+        );
+        snap = mergeWithFloor(snap, floor);
+      }
       await writeGzipJson(cache, snap).catch(() => undefined);
       return { snapshot: snap, from: 'live', entries: toCatalogEntries(snap) };
     } catch {

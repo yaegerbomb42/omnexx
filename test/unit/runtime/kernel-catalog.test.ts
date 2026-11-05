@@ -112,7 +112,11 @@ describe('createCatalogTools install gate', () => {
 
 describe('MCP Registry (real)', () => {
   it('loads bundled snapshot offline with thousands of real servers', async () => {
-    const result = await loadRegistry({ offline: true });
+    const result = await loadRegistry({
+      offline: true,
+      // Force miss on user cache so we exercise the committed snapshot path.
+      env: { ...process.env, OMNEXX_CONFIG_HOME: '/tmp/omnexx-no-cache-' + String(process.pid) },
+    });
     expect(result.from).toBe('bundled');
     expect(result.snapshot.servers.length).toBeGreaterThan(1000);
     expect(result.snapshot.source).toMatch(/mcp|registry/i);

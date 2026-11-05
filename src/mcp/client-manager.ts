@@ -245,7 +245,45 @@ export class McpClientManager {
     return this.connectServer(name, instance);
   }
 
-  async listTools(): Promise<McpToolInfo[]> {
+  /**
+   * Lazy-connect one server and return its tools (does not require warming every server).
+   * Invalidates the all-server toolCache so a later listTools() sees fresh data.
+   */
+  async listServerTools(serverName: string): Promise<McpToolInfo[]> {
+    const instance = this.servers.get(serverName);
+    if (!instance) {
+      throw new Error(`Unknown MCP server: ${serverName}`);
+    }
+    const client = await this.connectServer(serverName, instance);
+    const result = await client.listTools();
+    const allowedGlobs = instance.config.allow_tools;
+    const tools: McpToolInfo[] = [];
+    for (const tool of result.tools) {
+      if (allowedGlobs.length > 0 && !matchesAny(tool.name, allowedGlobs)) continue;
+      tools.push({
+        serverName,
+        name: tool.name,
+        description: tool.description ?? '',
+        inputSchema: (tool.inputSchema ?? { type: 'object', properties: {} }) as Record<
+          string,
+          unknown
+        >,
+      });
+    }
+    this.toolCache = null; // stale after per-server connect
+    return tools;
+  }
+
+  /** True when this manager knows a server config by name. */
+  hasServer(serverName: string): boolean {
+    return this.servers.has(serverName);
+  }
+
+  serverNames(): string[] {
+    return [...this.servers.keys()];
+  }
+
+    async listTools(): Promise<McpToolInfo[]> {
     if (this.toolCache) return this.toolCache;
 
     const allTools: McpToolInfo[] = [];
