@@ -315,6 +315,21 @@
           "type": "boolean",
           "default": false,
           "description": "Start chats in auto-approve mode: omnexx goes ahead without asking before guarded actions (hard-blocked commands stay blocked)."
+        },
+        "omnexx.kernel.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable the Adaptive Runtime Kernel: per-turn role/tool allocation via local Ollama + deterministic telemetry. Off by default (zero behavior change)."
+        },
+        "omnexx.kernel.ollamaUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:11434",
+          "description": "Ollama base URL used by the Adaptive Runtime Kernel meta-router."
+        },
+        "omnexx.kernel.ollamaModel": {
+          "type": "string",
+          "default": "qwen2.5:3b",
+          "description": "Local Ollama chat model for the Adaptive Runtime Kernel (kept warm with keep_alive: -1)."
         }
       }
     },

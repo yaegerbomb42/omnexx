@@ -12,6 +12,7 @@ export { beyond } from './beyond.js';
 export { browser } from './browser.js';
 export { execution } from './execution.js';
 export { hooks } from './hooks.js';
+export { kernel } from './kernel.js';
 export { mcp } from './mcp.js';
 export { plan } from './plan.js';
 export { review } from './review.js';

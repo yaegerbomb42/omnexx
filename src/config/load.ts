@@ -65,6 +65,9 @@ const ENV_MAP: readonly (readonly [string, readonly string[], EnvKind])[] = [
   ['OMNEXX_NTFY_SERVER', ['notify', 'ntfy', 'server'], 'string'],
   ['OMNEXX_NTFY_TOPIC', ['notify', 'ntfy', 'topic'], 'string'],
   ['OMNEXX_TOOL_DISCOVERY', ['tools', 'discovery'], 'string'],
+  ['OMNEXX_KERNEL_ENABLED', ['kernel', 'enabled'], 'boolean'],
+  ['OMNEXX_KERNEL_OLLAMA_URL', ['kernel', 'ollama_url'], 'string'],
+  ['OMNEXX_KERNEL_OLLAMA_MODEL', ['kernel', 'ollama_model'], 'string'],
 ];
 
 export const ENV_VARS = ENV_MAP.map(([name]) => name);

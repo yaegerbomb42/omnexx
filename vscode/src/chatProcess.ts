@@ -79,7 +79,7 @@ export class ChatProcess implements vscode.Disposable {
     // A Windows .cmd shim only runs through a shell; the only argument is a fixed word.
     const child = spawn(e.command, [...e.prefix, 'chat-server'], {
       cwd: this.cwd,
-      env: lazyToolDiscovery() ? e.env : { ...e.env, OMNEXX_TOOL_DISCOVERY: 'full' },
+      env: chatServerEnv(e.env),
       shell: e.shell,
       windowsHide: true,
       // A detached child leads its own process group, so we can kill its whole tree with
@@ -252,6 +252,21 @@ export class ChatProcess implements vscode.Disposable {
     this.stop();
     this.emitter.dispose();
   }
+}
+
+/** Merge VS Code Omnexx settings into the chat-server environment. */
+function chatServerEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base };
+  if (!lazyToolDiscovery()) env.OMNEXX_TOOL_DISCOVERY = 'full';
+  const cfg = vscode.workspace.getConfiguration('omnexx');
+  if (cfg.get<boolean>('kernel.enabled') === true) {
+    env.OMNEXX_KERNEL_ENABLED = '1';
+    const url = cfg.get<string>('kernel.ollamaUrl')?.trim();
+    if (url) env.OMNEXX_KERNEL_OLLAMA_URL = url;
+    const model = cfg.get<string>('kernel.ollamaModel')?.trim();
+    if (model) env.OMNEXX_KERNEL_OLLAMA_MODEL = model;
+  }
+  return env;
 }
 
 /** `omnexx.lazyToolDiscovery` (default on). Off forces `[tools] discovery = "full"` for chats. */
