@@ -416,9 +416,14 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
     );
   }
   const codemapText = await readTextOr(run.store.file('codemap.json'), '');
-  const codemap = codemapText
-    ? renderCodemap(JSON.parse(codemapText) as Codemap, run.config.context.repo_map_max_tokens)
-    : '# Codebase map\n(not built)';
+  let codemap = '# Codebase map\n(not built)';
+  if (codemapText) {
+    try {
+      codemap = renderCodemap(JSON.parse(codemapText) as Codemap, run.config.context.repo_map_max_tokens);
+    } catch {
+      codemap = '# Codebase map\n(not built)';
+    }
+  }
   const notes = renderNotes(await run.store.readNotes());
   const baseline = mode.kind === 'initial' ? await baselineBlock(run) : '';
   let n = 0;

@@ -152,7 +152,7 @@ describe('local discovery (real configs)', () => {
         },
       }),
     );
-    const found = await discoverLocalMcpServers({ repoRoot: root, env: process.env });
+    const found = await discoverLocalMcpServers({ repoRoot: root, env: { ...process.env, HOME: root } });
     expect(found.entries.map((e) => e.name).sort()).toEqual(['custom_db', 'filesystem']);
     expect(found.entries.every((e) => e.id.startsWith('local:mcp:'))).toBe(true);
     expect(found.sources.some((s) => s.includes('mcp.json'))).toBe(true);
@@ -166,7 +166,10 @@ describe('local discovery (real configs)', () => {
       join(skillDir, 'SKILL.md'),
       `---\nname: demo-skill\ndescription: Demo skill for catalog discovery tests\n---\n\n# Demo\nDo the demo thing.\n`,
     );
-    const found = await discoverLocalSkills({ repoRoot: root, env: { ...process.env, HOME: root } });
+    const found = await discoverLocalSkills({
+      repoRoot: root,
+      env: { ...process.env, HOME: root },
+    });
     expect(found.entries.some((e) => e.name === 'demo-skill')).toBe(true);
     expect(found.entries.find((e) => e.name === 'demo-skill')?.kind).toBe('skill');
   });

@@ -134,7 +134,14 @@ export class SemanticIndex {
   /** Bring the index up to date; returns how many files were (re)embedded. */
   async refresh(): Promise<{ embedded: number; files: number }> {
     const raw = await readTextOr(this.file, '');
-    let idx: IndexFile = raw ? (JSON.parse(raw) as IndexFile) : { model: this.ep.model, files: {} };
+    let idx: IndexFile = { model: this.ep.model, files: {} };
+    if (raw) {
+      try {
+        idx = JSON.parse(raw) as IndexFile;
+      } catch {
+        idx = { model: this.ep.model, files: {} };
+      }
+    }
     if (idx.model !== this.ep.model) idx = { model: this.ep.model, files: {} };
     const paths = (await trackedFiles(this.root))
       .filter((p) => isCode(p) && !isSecretPath(p))
@@ -174,7 +181,12 @@ export class SemanticIndex {
   async search(query: string, limit: number): Promise<SearchHit[]> {
     const raw = await readTextOr(this.file, '');
     if (!raw) return [];
-    const idx = JSON.parse(raw) as IndexFile;
+    let idx: IndexFile;
+    try {
+      idx = JSON.parse(raw) as IndexFile;
+    } catch {
+      return [];
+    }
     const [qv] = await embed(this.ep, [query]);
     if (!qv) return [];
     const q = new Float32Array(qv);

@@ -330,6 +330,23 @@
           "type": "string",
           "default": "qwen2.5:3b",
           "description": "Local Ollama chat model for the Adaptive Runtime Kernel (kept warm with keep_alive: -1)."
+        },
+        "omnexx.kernel.maxMounted": {
+          "type": "integer",
+          "default": 8,
+          "minimum": 1,
+          "maximum": 32,
+          "description": "Maximum number of dynamic tools and skills mounted into the active set per turn."
+        },
+        "omnexx.kernel.registry": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable official MCP registry discovery in the Adaptive Runtime Kernel."
+        },
+        "omnexx.kernel.publicSkills": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable public skills catalog indexing in the Adaptive Runtime Kernel."
         }
       }
     },

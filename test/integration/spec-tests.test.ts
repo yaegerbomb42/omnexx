@@ -188,9 +188,9 @@ describe('spec-first acceptance tests before finishing', () => {
     expect(of('spec_tests.failed_open')).toHaveLength(1);
   });
 
-  it('is off by default, and costs nothing in auto mode for a small goal', async () => {
+  it('can be turned off, and costs nothing in auto mode for a small goal', async () => {
     const off = provider(fileWorker, () => []);
-    const r1 = await runWith(off, { review: { spec_tests: undefined } });
+    const r1 = await runWith(off, { review: { spec_tests: 'off' } });
     expect(r1.out.status).toBe('finished');
     const small = provider(fileWorker, () => []);
     const r2 = await runWith(
