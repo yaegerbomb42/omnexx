@@ -301,6 +301,8 @@ export interface LoopDeps {
   kernel?: AdaptiveRuntimeKernel;
   /** Goal text the kernel uses for allocation; falls back to rolling.goal when unset. */
   kernelObjective?: string;
+  /** In-memory skills to index into the kernel catalog on its first warm. */
+  kernelSkills?: readonly { name: string; description: string; triggerConditions?: string }[];
 }
 
 /** Uncalibrated size of the prompt the provider will see, and that size scaled by the model's ratio. */
@@ -507,6 +509,7 @@ export async function runAgentLoop(
         allTools: [...byName.values()],
         defaultMaxTokens: deps.maxTokens,
         messages,
+        ...(deps.kernelSkills ? { skills: deps.kernelSkills } : {}),
       });
       byName = new Map(plan.tools.map((t) => [t.name, t]));
       liveCtx = { ...liveCtx, tools: plan.tools.map(toolSpec) };

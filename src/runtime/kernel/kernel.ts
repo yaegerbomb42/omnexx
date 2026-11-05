@@ -455,6 +455,9 @@ ${entry.description}`;
     promptTokens?: number | undefined;
     defaultMaxTokens: number;
     messages?: readonly Message[] | undefined;
+    /** In-memory skills known to the caller; indexed alongside on-disk skills on warm. */
+    skills?:
+      readonly { name: string; description: string; triggerConditions?: string }[] | undefined;
   }): Promise<TurnPlan> {
     this.turnCounter += 1;
     this.telemetry.beginTurn(this.turnCounter);
@@ -467,6 +470,7 @@ ${entry.description}`;
     if (!this.warmed) {
       const warm = this.warm(
         args.allTools.map((t) => ({ name: t.name, description: t.description })),
+        args.skills ?? [],
       );
       // A slow registry must not stall the first model call: wait at most the warm
       // budget, then let the warm finish in the background (catalog lands next turn).
