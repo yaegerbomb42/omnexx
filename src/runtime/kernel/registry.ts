@@ -61,21 +61,28 @@ function cachePath(env: NodeJS.ProcessEnv = process.env): string {
   return join(home, 'omnexx', 'cache', 'mcp-registry-snapshot.json.gz');
 }
 
-function bundledCandidates(moduleUrl = import.meta.url): string[] {
-  const here = dirname(fileURLToPath(moduleUrl));
+export function bundledCandidates(moduleUrl = import.meta.url): string[] {
   const snap = 'mcp-registry-snapshot.json.gz';
-  return [
-    // Next to this module (src/runtime/kernel/data or dist/.../data after copy)
-    join(here, 'data', snap),
-    join(here, '..', 'data', snap),
-    join(here, '..', '..', 'data', snap),
-    join(here, '..', '..', '..', 'data', snap),
-    // Dev / package layouts
-    join(here, '..', '..', '..', 'src', 'runtime', 'kernel', 'data', snap),
-    join(process.cwd(), 'src', 'runtime', 'kernel', 'data', snap),
-    join(process.cwd(), 'dist', 'data', snap),
-    join(process.cwd(), 'data', snap),
-  ];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (p: string) => {
+    if (!seen.has(p)) {
+      seen.add(p);
+      out.push(p);
+    }
+  };
+  // Walk up from this module (works for src/, dist/ chunks and global installs regardless
+  // of cwd) and probe each known layout at every ancestor.
+  let dir = dirname(fileURLToPath(moduleUrl));
+  for (let depth = 0; depth < 6; depth++) {
+    add(join(dir, 'data', snap));
+    add(join(dir, 'dist', 'data', snap));
+    add(join(dir, 'src', 'runtime', 'kernel', 'data', snap));
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return out;
 }
 
 async function readGzipJson(path: string): Promise<RegistrySnapshot> {
@@ -225,7 +232,9 @@ export function mergeWithFloor(live: RegistrySnapshot, floor: RegistrySnapshot):
   };
 }
 
-async function readBundledSnapshot(moduleUrl: string): Promise<RegistrySnapshot | undefined> {
+export async function readBundledSnapshot(
+  moduleUrl: string,
+): Promise<RegistrySnapshot | undefined> {
   for (const path of bundledCandidates(moduleUrl)) {
     try {
       const snap = await readGzipJson(path);
