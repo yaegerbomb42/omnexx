@@ -142,6 +142,21 @@ export function resolveMaxMounted(config: {
   return config.maxMounted ?? config.maxMountedTools ?? 8;
 }
 
+/** Latest user-authored text (ignores tool results), trimmed to a query-sized objective. */
+export function objectiveFromMessages(messages: readonly Message[] | undefined): string {
+  if (!messages) return '';
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m?.role !== 'user') continue;
+    const text = m.content
+      .map((b) => (b.type === 'text' ? b.text : ''))
+      .join(' ')
+      .trim();
+    if (text) return text.slice(0, 200);
+  }
+  return '';
+}
+
 /** Default max ms the first turn waits on the lazy catalog warm. */
 export const DEFAULT_WARM_TIMEOUT_MS = 5_000;
 
@@ -503,6 +518,10 @@ ${entry.description}`;
     this.telemetry.beginTurn(this.turnCounter);
     if (args.promptTokens !== undefined) this.telemetry.setPromptTokens(args.promptTokens);
 
+    // An empty objective (no goal configured) would starve catalog queries and freeze
+    // new-task detection — fall back to the latest real user text.
+    const objective = args.objective.trim() || objectiveFromMessages(args.messages);
+    args = { ...args, objective };
     const query = `${args.objective}\n${args.stateDelta ?? ''}`;
 
     // Dynamic capability loading — re-select mounted MCP/skills from the large catalog.
