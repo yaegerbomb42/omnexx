@@ -19,7 +19,7 @@ import {
 import { installSuggestion, loadRegistry, type RegistryServerRecord } from './registry.js';
 import { TelemetryMonitor, classifyToolError, type ToolObservation } from './telemetry.js';
 import type { ModelProfileHints, TelemetrySnapshot, TurnAllocation } from './types.js';
-import { isMutatingTool } from './types.js';
+import { isMutatingTool, isNoOpToolInput } from './types.js';
 import { MemoryVfs } from './vfs.js';
 
 export interface KernelConfig {
@@ -646,7 +646,7 @@ ${entry.description}`;
     input: unknown,
     conversationLength: number,
   ): Promise<string | undefined> {
-    if (!isMutatingTool(toolName)) return undefined;
+    if (!isMutatingTool(toolName) || isNoOpToolInput(input)) return undefined;
     const paths = pathsFromToolInput(input);
     await this.vfs.ingestMany(paths);
     const nodeId = `t${this.turnCounter}-${toolName}-${conversationLength}`;

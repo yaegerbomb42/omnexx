@@ -115,3 +115,15 @@ export function isMutatingTool(name: string): boolean {
 export function rollbackConstraint(nodeId: string, reason: string, attemptHint: string): string {
   return `[KERNEL ROLLBACK]: Branch ${nodeId} failed due to ${reason}. Constraint: Do not repeat ${nodeId}; attempt ${attemptHint}.`;
 }
+
+/**
+ * True when a tool input carries nothing that could mutate state (missing, `{}`,
+ * or only empty strings/arrays). Checkpointing such calls just burns a snapshot.
+ */
+export function isNoOpToolInput(input: unknown): boolean {
+  if (input === undefined || input === null) return true;
+  if (typeof input === 'string') return input.trim() === '';
+  if (Array.isArray(input)) return input.every(isNoOpToolInput);
+  if (typeof input === 'object') return Object.values(input).every(isNoOpToolInput);
+  return false;
+}
