@@ -15,3 +15,4 @@ src/.*_bak/
 # Generated evolution candidates; only best.ts.txt (raw region, not compiled) is kept.
 bench/evolve-prune/candidates/*
 !bench/evolve-prune/candidates/best.ts.txt
+/data/
