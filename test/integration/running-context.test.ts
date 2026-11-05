@@ -47,8 +47,10 @@ describe('running context', () => {
     expect((await runOneCycle(t.run, 'M1.T01')).verdict).toBe('reject');
     const second = provider.requests.length;
     expect((await runOneCycle(t.run, 'M1.T01')).verdict).toBe('accept');
-    const first = provider.requests[second]?.messages[0]?.content[0];
-    const text = first?.type === 'text' ? first.text : '';
+    // Slot 6 and Slot 7 are separate text blocks of the first message.
+    const text = (provider.requests[second]?.messages[0]?.content ?? [])
+      .map((b) => (b.type === 'text' ? b.text : ''))
+      .join('\n\n');
     expect(text).toMatch(/# Your running context for M1\.T01/);
     expect(text).toMatch(/### dead_end[\s\S]*the bug is in src\/math\.js/);
     expect(text).toMatch(/### checkpoint · cycle 1[\s\S]*Rejected: no changes/);

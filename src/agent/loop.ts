@@ -54,11 +54,15 @@ import {
   DEFAULT_KEEP_TURNS,
 } from './rolling-memory.js';
 import { turnRequest } from './context.js';
+import {
+  ToolEpoch,
+  capabilityDirective,
+  estimateTokens as estimateJsonTokens,
+} from '../runtime/kernel/cache-epoch.js';
 import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
 import type { DoomLoopRatchet } from '../core/doom-loop-ratchet.js';
 import type { AdaptiveRuntimeKernel } from '../runtime/kernel/index.js';
 import { toolStateProgress } from '../runtime/kernel/telemetry.js';
-import { toolSpec } from '../tools/registry.js';
 import { todoItemsOf, todoNudge, todoTool, type TodoItem } from '../tools/todo.js';
 
 /** Thrown inside the retry loop when a pre-flight check refuses the call; ends the cycle, never retried. */
@@ -495,11 +499,17 @@ export async function runAgentLoop(
   // byName must be rebuilt when tools change.
   let byName = new Map(deps.tools.map((t) => [t.name, t]));
   let turnMaxTokens = deps.maxTokens;
+  // Kernel: the full tool pool it allocates from (byName narrows to the mounted set).
+  let kernelPool: Tool[] = [...deps.tools];
+  const toolEpoch = new ToolEpoch();
+  let pendingFold = false;
+  let turnDirective = '';
   for (;;) {
     // Refresh tools at the start of each turn if refreshTools is provided (lazy mode).
     if (deps.refreshTools) {
       const { tools: freshTools, specs: freshSpecs } = deps.refreshTools();
       byName = new Map(freshTools.map((t) => [t.name, t]));
+      kernelPool = [...freshTools];
       liveCtx = { ...liveCtx, tools: freshSpecs };
     }
     turnMaxTokens = deps.maxTokens;
@@ -507,33 +517,44 @@ export async function runAgentLoop(
     if (deps.kernel) {
       const plan = await deps.kernel.planTurn({
         objective: deps.kernelObjective ?? deps.rolling?.goal ?? '',
-        allTools: [...byName.values()],
+        allTools: kernelPool,
         defaultMaxTokens: deps.maxTokens,
         messages,
         ...(deps.kernelSkills ? { skills: deps.kernelSkills } : {}),
         turn: turns + 1,
       });
-      byName = new Map(plan.tools.map((t) => [t.name, t]));
-      liveCtx = { ...liveCtx, tools: plan.tools.map(toolSpec) };
       turnMaxTokens = plan.maxTokens;
       if (plan.compactedMessages) {
         messages = plan.compactedMessages;
         deps.toolCtx.reads?.clear();
+        pendingFold = true;
         deps.events.emit('kernel.gc', {
           turn: turns + 1,
           messages: messages.length,
         });
       }
-      // Quiet by default: only surface a kernel hint when deliberative (tier>=2) or GC ran.
-      // Delivered as a volatile per-turn SYSTEM block (never a fake user turn), and only
-      // for this turn: the base system is restored first so hints don't accumulate.
-      liveCtx = {
-        ...liveCtx,
-        system: withKernelHint(
-          ctx.system,
-          plan.allocation.tier >= 2 || plan.compactedMessages ? plan.systemHint : undefined,
-        ),
-      };
+      // Prompt cache: req.tools and req.system stay byte-identical within an epoch. Newly
+      // mounted capabilities go into the per-turn terminal directive (after the cached last
+      // message) and run by name or via call_capability; tools re-bake only at a fold.
+      const ep = toolEpoch.plan({
+        mounted: plan.tools,
+        fold: pendingFold,
+        suffixTokens: estimateJsonTokens(ctx.system) + estimateJsonTokens(messages),
+        foldBustTokens: estimateJsonTokens(ctx.system) + estimateJsonTokens(messages.slice(0, 1)),
+        expectedRemainingTurns: Math.max(1, deps.budget.max_turns_per_cycle - turns),
+      });
+      pendingFold = false;
+      byName = ep.byName;
+      liveCtx = { ...liveCtx, system: ctx.system, tools: ep.specs };
+      if (ep.rebaked && ep.epoch > 1)
+        deps.events.emit('kernel.epoch', { turn: turns + 1, epoch: ep.epoch });
+      // Quiet by default: a kernel hint only when deliberative (tier>=2) or GC ran.
+      turnDirective = [
+        plan.allocation.tier >= 2 || plan.compactedMessages ? plan.systemHint.trim() : undefined,
+        capabilityDirective(ep.extra),
+      ]
+        .filter((x): x is string => Boolean(x))
+        .join('\n\n');
       deps.events.emit('kernel.allocate', {
         turn: turns + 1,
         tier: plan.allocation.tier,
@@ -578,6 +599,7 @@ export async function runAgentLoop(
         if (condensed) {
           messages = condensed.messages;
           lastCondenseTurn = turns;
+          pendingFold = true;
           // Earlier read results are gone from the context now; let `read` return them again.
           deps.toolCtx.reads?.clear();
           rolling.onNote?.(condensed.note, turns);
@@ -658,7 +680,14 @@ export async function runAgentLoop(
               // The provider is up: send the real request once more, cooling or not.
               try {
                 const req = {
-                  ...turnRequest(liveCtx, messages, m.id, turnMaxTokens, deps.cacheKey),
+                  ...turnRequest(
+                    liveCtx,
+                    messages,
+                    m.id,
+                    turnMaxTokens,
+                    deps.cacheKey,
+                    turnDirective ? { terminalDirective: turnDirective } : undefined,
+                  ),
                   route: m.provider,
                   ...(deps.signal ? { signal: deps.signal } : {}),
                 };
@@ -724,8 +753,15 @@ export async function runAgentLoop(
               turnMaxTokens,
               deps.cacheKey,
               isTerminalTurn
-                ? { toolChoice: 'none', terminalDirective: '[harness:terminal_step]' }
-                : undefined,
+                ? {
+                    toolChoice: 'none',
+                    terminalDirective: [turnDirective, '[harness:terminal_step]']
+                      .filter(Boolean)
+                      .join('\n\n'),
+                  }
+                : turnDirective
+                  ? { terminalDirective: turnDirective }
+                  : undefined,
             );
             const quote = pricedPrompt(tokenRatios, m, req);
             const estimate = quote.estimate;
@@ -1267,7 +1303,10 @@ export async function runAgentLoop(
   }
 }
 
-/** Base system blocks plus (optionally) this turn's kernel hint as a volatile system block. */
+/**
+ * @deprecated The kernel hint now rides in the turn's terminal directive (after the cached
+ * last message) so req.system stays byte-stable. Kept for callers outside the loop.
+ */
 export function withKernelHint(
   base: readonly SystemBlock[],
   hint: string | undefined,

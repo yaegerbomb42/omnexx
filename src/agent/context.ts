@@ -321,7 +321,9 @@ export function buildCycleContext(i: CycleInputs): {
       ),
     );
   }
-  const firstContent: Message['content'] = [{ type: 'text', text: allParts.join('\n\n') }];
+  // Slot 6 (stable task frame) and Slot 7 (living state seed) as separate blocks so Slot 7
+  // edits never perturb Slot 6 bytes.
+  const firstContent: Message['content'] = allParts.map((text) => ({ type: 'text', text }));
   const canonicalTools = canonicalizeTools(i.tools, i.repoRoot);
   const prefixHash = computePrefixHash(canonicalTools, system, slot6Text);
 

@@ -1,3 +1,4 @@
+import { estimateTokens, foldPaysOff } from './cache-epoch.js';
 import type { Message } from '../../providers/types.js';
 import type { Tool } from '../../tools/types.js';
 import { CapabilityCatalog, createCatalogTools, type CatalogEntry } from './catalog.js';
@@ -241,6 +242,8 @@ export class AdaptiveRuntimeKernel {
   private warmed = false;
   /** Last failing tool output; expands the next capability query. */
   private lastToolError = '';
+  /** Turns a fold is amortized over (cache-economy gate for voluntary GC). */
+  expectedRemainingTurns = 8;
   /** SkillMD lookups memoized per query (TTL) so retries don't re-hit the network. */
   private readonly publicSkillSearch = cachedSearch((query: string, limit: number) =>
     searchSkillMd(query, {
@@ -687,7 +690,22 @@ ${entry.description}`;
         keepRecent: 4,
         targetTokens: Math.floor(this.profile.maxWindow * this.profile.attentionCeiling * 0.5),
       });
-      if (result.removed > 0) {
+      // Cache economy: a voluntary (tier-3) fold must pay for rewriting the cached suffix it
+      // invalidates; real window pressure always folds.
+      const firstDiff = (() => {
+        const n = Math.min(args.messages.length, result.messages.length);
+        for (let i = 0; i < n; i++)
+          if (JSON.stringify(args.messages[i]) !== JSON.stringify(result.messages[i])) return i;
+        return n;
+      })();
+      const pays =
+        this.telemetry.needsCompaction() ||
+        foldPaysOff({
+          freedTokens: Math.max(0, estimateTokens(args.messages) - estimateTokens(result.messages)),
+          expectedRemainingTurns: this.expectedRemainingTurns,
+          suffixTokensToBust: estimateTokens(result.messages.slice(firstDiff)),
+        });
+      if (result.removed > 0 && pays) {
         compactedMessages = result.messages;
         allocation = {
           ...allocation,

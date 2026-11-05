@@ -41,7 +41,8 @@
     "test:affected": "vitest run --project unit --project integration --project chaos --changed origin/main --passWithNoTests",
     "test:related": "vitest related --run --passWithNoTests",
     "test:fast": "vitest run --project unit --changed origin/main --passWithNoTests",
-    "test:shard": "vitest run --project unit --project integration --project chaos"
+    "test:shard": "vitest run --project unit --project integration --project chaos",
+    "bench:cache": "npx -y tsx bench/discovery/cache-sim.ts"
   },
   "keywords": [
     "agent",

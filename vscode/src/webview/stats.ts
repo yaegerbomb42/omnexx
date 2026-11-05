@@ -8,6 +8,7 @@
  */
 import {
   cacheHitPercent,
+  cacheSaved,
   contextPercent,
   escapeHtml,
   formatTokens,
@@ -63,7 +64,13 @@ const skeleton = `<div class="ls-skeleton" aria-hidden="true">
 export function liveStatsHtml(s: StatsInput = last): string {
   const u = s.usage;
   const rows: string[] = [];
-  if (u) rows.push(barRow('Cache Hit', `${String(cacheHitPercent(u))}%`, cacheHitPercent(u)));
+  if (u) {
+    rows.push(barRow('Cache Hit', `${String(cacheHitPercent(u))}%`, cacheHitPercent(u)));
+    const saved = cacheSaved(u);
+    rows.push(
+      `<div class="ls-row"><span class="ls-label">Cache Saved</span><span class="ls-value">${escapeHtml(formatTokens(saved.tokens))} tok · ${escapeHtml(formatUsd(saved.usd))}</span></div>`,
+    );
+  }
   const rate = successRate(u);
   if (rate !== null) rows.push(barRow('Success Rate', `${String(rate)}%`, rate));
   if (s.context && s.context.limit > 0) {
@@ -112,6 +119,7 @@ export function telemetryHtml(s: StatsInput = last): string {
     tps !== null ? cell('Tokens/sec', `${formatTokens(tps)}/s avg`) : '',
     cell('Est. cost', formatUsd(u.usd)),
     cell('Cache hit', `${String(cacheHitPercent(u))}%`),
+    cell('Cache saved', formatUsd(cacheSaved(u).usd)),
   ].filter((c) => c !== '');
   return cells.join('<span class="t-div" aria-hidden="true"></span>');
 }
