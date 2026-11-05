@@ -45,6 +45,8 @@ export interface KernelConfig {
    * The warm keeps running in the background past the budget, so the catalog still lands.
    */
   warmTimeoutMs?: number | undefined;
+  /** Extra tool names never filtered out at tier>=2 (e.g. a project's primary MCP editor). */
+  essentialTools?: readonly string[] | undefined;
   /** Lazy-connect MCP servers + page skill bodies when catalog mounts them. */
   mcpRuntime?: CapabilityRuntime | undefined;
   env?: NodeJS.ProcessEnv | undefined;
@@ -104,6 +106,19 @@ export function registryMirrorsLocal(
   keys.delete('');
   return localNames.some((l) => l === registryServer || keys.has(normalizeMcpServerName(l)));
 }
+
+/** Navigation + editing tools always kept when a deliberative tier narrows the tool set. */
+export const DEFAULT_ESSENTIAL_TOOLS: readonly string[] = [
+  'read',
+  'search',
+  'outline',
+  'bash',
+  'str_replace',
+  'write_file',
+  'multi_edit',
+  'apply_patch',
+  'edit',
+];
 
 /** Default max ms the first turn waits on the lazy catalog warm. */
 export const DEFAULT_WARM_TIMEOUT_MS = 5_000;
@@ -579,7 +594,7 @@ ${entry.description}`;
 
     // Tier 0 fast-path: expose every tool (zero behavior change vs pre-kernel). Higher
     // tiers JIT-mount a subset plus a small essential set so the model can still navigate.
-    const essential = new Set(['read', 'search', 'outline', 'bash', 'str_replace', 'write_file']);
+    const essential = new Set([...DEFAULT_ESSENTIAL_TOOLS, ...(this.config.essentialTools ?? [])]);
     const mounted = new Set(allocation.mountedTools);
     const filtered =
       allocation.tier < 2 || mounted.size === 0
