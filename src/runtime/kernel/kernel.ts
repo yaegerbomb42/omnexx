@@ -64,6 +64,8 @@ export interface TurnPlan {
   mctsSelectedId?: string | undefined;
   /** Catalog capabilities currently mounted (ids). */
   mountedCapabilities?: string[] | undefined;
+  /** Caller tools removed by the tier>=2 filter this turn (empty when nothing was dropped). */
+  droppedTools?: string[] | undefined;
   /** The lazy warm outran its budget; the turn ran without the full catalog. */
   warmTimedOut?: boolean | undefined;
 }
@@ -601,6 +603,9 @@ ${entry.description}`;
         ? args.allTools
         : args.allTools.filter((t) => mounted.has(t.name) || essential.has(t.name));
 
+    const keptNames = new Set(filtered.map((t) => t.name));
+    const dropped = args.allTools.filter((t) => !keptNames.has(t.name)).map((t) => t.name);
+
     // Tier 0/1 must not shrink the caller's max_tokens — that alone changed chat/cycle
     // behavior under default-on. Deliberative tiers may throttle.
     const maxTokens =
@@ -632,6 +637,7 @@ ${entry.description}`;
       ...(compactedMessages ? { compactedMessages } : {}),
       ...(mctsSelectedId ? { mctsSelectedId } : {}),
       ...(warmTimedOut ? { warmTimedOut: true } : {}),
+      ...(dropped.length ? { droppedTools: dropped } : {}),
     };
   }
 

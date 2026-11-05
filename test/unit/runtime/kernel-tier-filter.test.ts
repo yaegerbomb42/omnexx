@@ -38,3 +38,12 @@ describe('bug #6: tier>=2 filter keeps editing tools', () => {
     expect(plan.tools.map((t) => t.name)).toContain('mcp__acme__edit');
   });
 });
+
+describe('bug #5: tools dropped by the kernel filter are reported', () => {
+  it('lists dropped tool names on the plan', async () => {
+    const k = offlineKernel();
+    forceTier3(k, ['read']);
+    const plan = await k.planTurn({ objective: 'edit', allTools: tools, defaultMaxTokens: 1000 });
+    expect(plan.droppedTools).toEqual(['mcp__acme__edit', 'deploy']);
+  });
+});
