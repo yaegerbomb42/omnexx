@@ -30,7 +30,9 @@ export interface KernelConfig {
   attentionCeiling: number;
   worktree: string;
   maxWindow: number;
+  /** @deprecated alias of `maxMounted` (used only when `maxMounted` is unset). */
   maxMountedTools?: number | undefined;
+  /** Single cap for mounted catalog capabilities AND router-mounted tools (`[kernel] max_mounted`). */
   maxMounted?: number | undefined;
   reselectEvery?: number | undefined;
   registry?: boolean | undefined;
@@ -122,6 +124,14 @@ export const DEFAULT_ESSENTIAL_TOOLS: readonly string[] = [
   'edit',
 ];
 
+/** One resolved mount cap for both the catalog and the router (`maxMounted` wins). */
+export function resolveMaxMounted(config: {
+  maxMounted?: number | undefined;
+  maxMountedTools?: number | undefined;
+}): number {
+  return config.maxMounted ?? config.maxMountedTools ?? 8;
+}
+
 /** Default max ms the first turn waits on the lazy catalog warm. */
 export const DEFAULT_WARM_TIMEOUT_MS = 5_000;
 
@@ -155,7 +165,7 @@ export class AdaptiveRuntimeKernel {
     this.profile = {
       maxWindow: config.maxWindow,
       attentionCeiling: config.attentionCeiling,
-      maxMountedTools: config.maxMountedTools ?? config.maxMounted ?? 8,
+      maxMountedTools: resolveMaxMounted(config),
     };
     this.telemetry = new TelemetryMonitor(this.profile);
     this.vfs = new MemoryVfs(config.worktree);
@@ -174,7 +184,7 @@ export class AdaptiveRuntimeKernel {
   }
 
   private rebuildCatalogTools(): void {
-    const maxMounted = this.config.maxMounted ?? 8;
+    const maxMounted = resolveMaxMounted(this.config);
     this.catalogTools = createCatalogTools(this.catalog, {
       maxMounted,
       isInstalled: (id) => this.localInstalled.has(id) || id.startsWith('local:'),
@@ -510,7 +520,7 @@ ${entry.description}`;
     ) {
       this.catalog.select({
         query,
-        maxMounted: this.config.maxMounted ?? 8,
+        maxMounted: resolveMaxMounted(this.config),
         pin: this.catalog
           .getMountedIds()
           .filter((id) => id.startsWith('local:tool:'))
