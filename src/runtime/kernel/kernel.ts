@@ -553,15 +553,15 @@ ${entry.description}`;
     let allocation = await this.router.allocate(baseReq);
 
     const samples = multiSampleAllocations(baseReq, candidates, 3);
+    // Applied only after this turn's plan is fixed (see below) — no same-turn bleed.
     const sims = allocationSimilarities(samples);
-    if (sims.length) this.telemetry.observeDivergence(sims);
 
     let mctsSelectedId: string | undefined;
     if (allocation.tier === 2 || allocation.reasoningMode === 'mcts') {
       const mcts = runMcts({
         seed: allocation,
         objective: args.objective,
-        telemetry: this.telemetry.snapshot(),
+        telemetry: telemetryBefore,
         candidates,
         options: { branchFactor: allocation.mctsBranchFactor ?? 3 },
       });
@@ -614,6 +614,8 @@ ${entry.description}`;
         : args.defaultMaxTokens;
     this.lastAllocation = allocation;
     const telemetry = this.telemetry.snapshot();
+    // Divergence informs the *next* turn only.
+    if (sims.length) this.telemetry.observeDivergence(sims);
 
     // Native/filtered tools first (stable unknown-tool messages), then meta-tools,
     // then live-injected MCP tools from mounted catalog capabilities.
