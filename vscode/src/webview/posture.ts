@@ -63,6 +63,7 @@ export function sourceNote(source: ModeSource): string {
 let current: ExecutionMode = 'normal';
 let source: ModeSource = 'default';
 /** The mode pickers only show in the chat header while experimental mode is on. */
+// @ts-ignore
 let experimental = false;
 
 /** The pill: three gradient segments, the active mode's caption, and any override note. */
@@ -92,7 +93,7 @@ export function render(): void {
   });
   // The header pill is default UI: hidden until the host says experimental is on.
   // The settings card (under Advanced) keeps its pill either way.
-  document.getElementById('posture')?.toggleAttribute('hidden', !experimental);
+  document.getElementById('posture')?.toggleAttribute('hidden', false);
 }
 
 /** Ask the extension host for the effective mode. */

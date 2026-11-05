@@ -36,7 +36,7 @@ export const review = z
      * worker's code and its own tests agreed on a wrong behaviour that review and audit missed).
      * Off by default until a bench shows it pays for itself.
      */
-    spec_tests: z.enum(['auto', 'on', 'off']).default('off'),
+    spec_tests: z.enum(['auto', 'on', 'off']).default('auto'),
     /** Models that write the spec tests and judge the worker's disputes of them. */
     spec_tests_models: z.enum(['cheap', 'worker', 'planner']).default('planner'),
     /** Fix rounds the spec tests may send back to the worker before the run finishes anyway. */

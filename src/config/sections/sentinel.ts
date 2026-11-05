@@ -10,7 +10,7 @@ import { z } from 'zod';
  */
 export const sentinel = z
   .strictObject({
-    enabled: z.boolean().default(false),
+    enabled: z.boolean().default(true),
     /** Full-suite command, run through the shell in the worktree. Exit 0 means healthy. */
     command: z.string().min(1).default('npm test'),
     /** Run the sentinel after this many accepted commits. */

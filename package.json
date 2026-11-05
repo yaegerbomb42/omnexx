@@ -1,6 +1,6 @@
 {
   "name": "omnexx",
-  "version": "0.22.0",
+  "version": "0.24.0",
   "description": "Set a goal, walk away, come back to commits. One coding agent that runs for days, checks every step against your tests, and commits only what passes.",
   "license": "MIT",
   "author": "James Yaeger",
@@ -15,6 +15,7 @@
   },
   "files": [
     "dist",
+    "data",
     "README.md",
     "LICENSE"
   ],
@@ -22,7 +23,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/copy-kernel-data.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p vscode/src/webview",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",

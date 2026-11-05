@@ -30,7 +30,7 @@ describe('package.json', () => {
       ].sort(),
     );
     expect(pkg.bin).toEqual({ omnexx: 'dist/cli.js' });
-    expect(pkg.files.sort()).toEqual(['LICENSE', 'README.md', 'dist']);
+    expect(pkg.files.sort()).toEqual(['LICENSE', 'README.md', 'data', 'dist']);
     expect(pkg.engines.node).toBe('>=22');
     expect(pkg.type).toBe('module');
   });
