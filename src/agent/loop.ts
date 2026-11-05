@@ -542,6 +542,7 @@ export async function runAgentLoop(
         pressure: plan.telemetry.contextPressure,
         ...(plan.mctsSelectedId ? { mcts: plan.mctsSelectedId } : {}),
         ...(plan.droppedTools?.length ? { dropped: plan.droppedTools } : {}),
+        ...(plan.toolNameCollisions?.length ? { collisions: plan.toolNameCollisions } : {}),
       });
     }
     let signal = await deps.control();

@@ -76,6 +76,8 @@ export interface TurnPlan {
   mctsSelectedId?: string | undefined;
   /** Catalog capabilities currently mounted (ids). */
   mountedCapabilities?: string[] | undefined;
+  /** Tool names offered by more than one source this turn (first one kept). */
+  toolNameCollisions?: string[] | undefined;
   /** Caller tools removed by the tier>=2 filter this turn (empty when nothing was dropped). */
   droppedTools?: string[] | undefined;
   /** The lazy warm outran its budget; the turn ran without the full catalog. */
@@ -155,6 +157,22 @@ export function objectiveFromMessages(messages: readonly Message[] | undefined):
     if (text) return text.slice(0, 200);
   }
   return '';
+}
+
+/** Keep the first tool per name; return the names that collided. */
+export function dedupeToolsByName(tools: readonly Tool[]): { tools: Tool[]; collisions: string[] } {
+  const seen = new Set<string>();
+  const collisions = new Set<string>();
+  const out: Tool[] = [];
+  for (const t of tools) {
+    if (seen.has(t.name)) {
+      collisions.add(t.name);
+      continue;
+    }
+    seen.add(t.name);
+    out.push(t);
+  }
+  return { tools: out, collisions: [...collisions] };
 }
 
 /** Default max ms the first turn waits on the lazy catalog warm. */
@@ -668,11 +686,13 @@ ${entry.description}`;
       ...this.catalogTools.map((t) => t.name),
       ...liveInjected.map((t) => t.name),
     ]);
-    const mergedTools = [
+    // Deduplicate by name (meta-tools win over live MCP tools) and report every collision
+    // instead of letting a later Map() rebuild silently keep the last writer.
+    const { tools: mergedTools, collisions } = dedupeToolsByName([
       ...filtered.filter((t) => !reserved.has(t.name)),
       ...this.catalogTools,
       ...liveInjected,
-    ];
+    ]);
 
     return {
       allocation,
@@ -684,6 +704,7 @@ ${entry.description}`;
       ...(mctsSelectedId ? { mctsSelectedId } : {}),
       ...(warmTimedOut ? { warmTimedOut: true } : {}),
       ...(dropped.length ? { droppedTools: dropped } : {}),
+      ...(collisions.length ? { toolNameCollisions: collisions } : {}),
     };
   }
 
