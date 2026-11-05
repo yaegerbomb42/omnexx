@@ -1,0 +1,188 @@
+{
+  "note": "Discovery eval. Each task lists capability groups it needs; an entry satisfies a group when its name/server tail tokens contain any of the group's keywords (or its id is listed). Local env simulates a typical dev machine.",
+  "local": {
+    "mcp": ["github", "filesystem", "postgres", "playwright"],
+    "skills": [
+      ["pdf", "Extract text and tables from PDF files, fill PDF forms"],
+      ["docx", "Create and edit Word .docx documents"],
+      ["xlsx", "Read and write Excel spreadsheets with formulas"],
+      ["release-notes", "Draft release notes and changelogs from git history"],
+      ["frontend-design", "Build polished web UI components and pages"]
+    ],
+    "tools": [
+      ["read", "Read a file from the workspace"],
+      ["bash", "Run a shell command"],
+      ["search", "Search the codebase with ripgrep"],
+      ["write_file", "Write a file"],
+      ["str_replace", "Edit a file by replacing text"],
+      ["web_fetch", "Fetch a URL and return its text"]
+    ]
+  },
+  "tasks": [
+    {
+      "q": "Open a pull request on GitHub with this fix and request review from the team",
+      "groups": [["github"]],
+      "installed": "local:mcp:github"
+    },
+    {
+      "q": "List the open issues labeled bug in our GitHub repository",
+      "groups": [["github"]],
+      "installed": "local:mcp:github"
+    },
+    {
+      "q": "Query the users table in our Postgres database and count signups from last week",
+      "groups": [["postgres", "postgresql"]],
+      "installed": "local:mcp:postgres"
+    },
+    {
+      "q": "Run an end-to-end browser test that logs in and checks the dashboard renders",
+      "groups": [["playwright", "puppeteer", "browser"]],
+      "installed": "local:mcp:playwright"
+    },
+    {
+      "q": "Post a message to the #deploys Slack channel saying the release is out",
+      "groups": [["slack"]]
+    },
+    {
+      "q": "Create a Linear ticket for the flaky checkout test and assign it to me",
+      "groups": [["linear"]]
+    },
+    {
+      "q": "File a Jira issue in the PAY project describing the refund bug",
+      "groups": [["jira", "atlassian"]]
+    },
+    {
+      "q": "Pull the latest unresolved Sentry errors for the web app and summarize the top stack traces",
+      "groups": [["sentry"]]
+    },
+    {
+      "q": "Look at the latest Sentry crash and open a GitHub issue for it",
+      "groups": [["sentry"], ["github"]],
+      "installed": "local:mcp:github"
+    },
+    {
+      "q": "Export the Figma frame for the new onboarding screen and implement it in React",
+      "groups": [["figma"]]
+    },
+    {
+      "q": "Add a page to our Notion engineering wiki documenting the deploy process",
+      "groups": [["notion"]]
+    },
+    {
+      "q": "Refund the last Stripe charge for customer cus_123 and check their subscription status",
+      "groups": [["stripe"]]
+    },
+    {
+      "q": "Check why the pods in the payments namespace keep crash looping in Kubernetes",
+      "groups": [["kubernetes", "k8s", "kubectl"]]
+    },
+    {
+      "q": "Build and run the Docker container locally and show me the logs",
+      "groups": [["docker"]]
+    },
+    {
+      "q": "Search the web for the latest Node.js LTS release notes",
+      "groups": [["search", "brave", "tavily", "exa", "perplexity", "serper", "google"]]
+    },
+    {
+      "q": "Read my unread Gmail messages from today and draft replies",
+      "groups": [["gmail", "email", "mail"]]
+    },
+    {
+      "q": "Find a free 30 minute slot on my Google Calendar next Tuesday and book a meeting",
+      "groups": [["calendar", "gcal"]]
+    },
+    { "q": "Upload the build artifacts to an S3 bucket", "groups": [["s3", "aws"]] },
+    { "q": "Get the current weather forecast for Chicago", "groups": [["weather", "forecast"]] },
+    {
+      "q": "Extract the tables from this PDF invoice into a spreadsheet",
+      "groups": [["pdf"], ["xlsx", "excel", "spreadsheet", "sheets"]],
+      "installed": "local:skill:pdf"
+    },
+    {
+      "q": "Write the quarterly report as a Word document",
+      "groups": [["docx", "word"]],
+      "installed": "local:skill:docx"
+    },
+    {
+      "q": "Draft release notes for v2.3 from the git log",
+      "groups": [["release-notes", "changelog", "release"]],
+      "installed": "local:skill:release-notes"
+    },
+    {
+      "q": "Find recent arXiv papers on retrieval augmented generation",
+      "groups": [["arxiv", "papers", "scholar", "semantic"]]
+    },
+    {
+      "q": "Get the transcript of this YouTube video and summarize it",
+      "groups": [["youtube", "transcript"]]
+    },
+    { "q": "Run this SQL against the local SQLite database file", "groups": [["sqlite"]] },
+    { "q": "Find documents in MongoDB where status is pending", "groups": [["mongodb", "mongo"]] },
+    { "q": "Check cache hit rate and keys in Redis", "groups": [["redis"]] },
+    { "q": "Create a new Supabase table and row level security policy", "groups": [["supabase"]] },
+    { "q": "Deploy the preview to Vercel and give me the URL", "groups": [["vercel"]] },
+    {
+      "q": "Purge the Cloudflare cache for our domain and check DNS records",
+      "groups": [["cloudflare"]]
+    },
+    {
+      "q": "Plan the Terraform change for the new VPC and show the diff",
+      "groups": [["terraform"]]
+    },
+    { "q": "Show the Grafana dashboard panels for API latency", "groups": [["grafana"]] },
+    { "q": "Check Datadog monitors that are alerting right now", "groups": [["datadog"]] },
+    { "q": "Acknowledge the PagerDuty incident and add a note", "groups": [["pagerduty"]] },
+    { "q": "Send an SMS to the on-call engineer with Twilio", "groups": [["twilio", "sms"]] },
+    { "q": "Update the HubSpot deal stage for Acme Corp", "groups": [["hubspot"]] },
+    { "q": "Query Salesforce for opportunities closing this month", "groups": [["salesforce"]] },
+    { "q": "Add a row to the Airtable base tracking content ideas", "groups": [["airtable"]] },
+    { "q": "Move the Trello card for the landing page to Done", "groups": [["trello"]] },
+    { "q": "Create an Asana task for the design review", "groups": [["asana"]] },
+    {
+      "q": "Update the Confluence page with the new API docs",
+      "groups": [["confluence", "atlassian"]]
+    },
+    { "q": "Post the release announcement in our Discord server", "groups": [["discord"]] },
+    { "q": "List products with low inventory in our Shopify store", "groups": [["shopify"]] },
+    { "q": "Find the shared contract file in Google Drive", "groups": [["drive", "gdrive"]] },
+    { "q": "Search my Obsidian vault notes for the project kickoff", "groups": [["obsidian"]] },
+    { "q": "Add these items to my Todoist inbox", "groups": [["todoist"]] },
+    {
+      "q": "Run a BigQuery query on the events dataset for daily active users",
+      "groups": [["bigquery"]]
+    },
+    { "q": "Query Snowflake for revenue by region", "groups": [["snowflake"]] },
+    {
+      "q": "Search the Elasticsearch logs index for 500 errors in the last hour",
+      "groups": [["elasticsearch", "elastic", "opensearch"]]
+    },
+    {
+      "q": "Get directions and travel time between two addresses with Google Maps",
+      "groups": [["maps", "directions"]]
+    },
+    {
+      "q": "Read the config files in the project directory and list them",
+      "groups": [["filesystem", "read", "files"]],
+      "installed": "local:mcp:filesystem"
+    },
+    {
+      "q": "Fetch the contents of https://example.com/docs and summarize",
+      "groups": [["fetch", "web_fetch", "scrape", "crawl"]],
+      "installed": "local:tool:web_fetch"
+    },
+    {
+      "q": "Build a polished landing page component with a hero section",
+      "groups": [["frontend-design", "frontend", "ui"]],
+      "installed": "local:skill:frontend-design"
+    },
+    {
+      "q": "Generate an image of a cyberpunk cat for the blog header",
+      "groups": [["image", "dalle", "flux", "replicate", "stable", "midjourney", "imagen"]]
+    },
+    {
+      "q": "Translate the README into Spanish with DeepL",
+      "groups": [["deepl", "translate", "translation"]]
+    }
+  ]
+}
