@@ -79,6 +79,32 @@ export interface KernelToolEvent {
  * Adaptive Runtime Kernel. Default-on; degrades to pure heuristics within ~80ms when
  * Ollama is absent so a normal run is never blocked.
  */
+/** Normalize an MCP server name to a comparable short key (`io.github.x/server-filesystem` → `filesystem`). */
+export function normalizeMcpServerName(name: string): string {
+  const last = name.toLowerCase().split(/[/:]/).pop() ?? '';
+  return last
+    .replace(/^@/, '')
+    .replace(/^(mcp[-_]server[-_]|server[-_]|mcp[-_])/, '')
+    .replace(/([-_]mcp[-_]server|[-_]server|[-_]mcp)$/, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * True when a registry server is (very likely) the same server as a locally configured one.
+ * Registry names are namespaced (`owner/pkg`) while local config keys are short (`filesystem`).
+ */
+export function registryMirrorsLocal(
+  registryServer: string,
+  installIdentifier: string | undefined,
+  localNames: readonly string[],
+): boolean {
+  if (localNames.length === 0) return false;
+  const keys = new Set([normalizeMcpServerName(registryServer)]);
+  if (installIdentifier) keys.add(normalizeMcpServerName(installIdentifier));
+  keys.delete('');
+  return localNames.some((l) => l === registryServer || keys.has(normalizeMcpServerName(l)));
+}
+
 /** Default max ms the first turn waits on the lazy catalog warm. */
 export const DEFAULT_WARM_TIMEOUT_MS = 5_000;
 
@@ -375,9 +401,13 @@ ${entry.description}`;
       });
       for (const s of reg.snapshot.servers) this.registryById.set(s.id, s);
       // Registry entries are searchable but NOT installed unless a local mirror exists.
+      const localMcpNames = [...this.localInstalled]
+        .filter((id) => id.startsWith('local:mcp:'))
+        .map((id) => id.slice('local:mcp:'.length));
       for (const e of reg.entries) {
-        if (this.localInstalled.has(`local:mcp:${e.server}`)) {
-          // Already have a local install under that server name — skip duplicate registry row.
+        const rec = this.registryById.get(e.id);
+        if (registryMirrorsLocal(e.server ?? e.name, rec?.install?.identifier, localMcpNames)) {
+          // Already have a local install of that server — skip duplicate registry row.
           continue;
         }
         catalogEntries.push(e);
