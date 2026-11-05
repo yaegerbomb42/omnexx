@@ -47,6 +47,20 @@ export function hashErrorSignature(
   return { hash, signature };
 }
 
+/** Check whether a shell command is an actual test/verification command. */
+export function isVerificationCommand(command: string): boolean {
+  const cmd = command.trim().toLowerCase();
+  // Strip common leading runners (npm run, pnpm, yarn, etc.)
+  const core = cmd
+    .replace(/^(npm|pnpm|yarn|bun)\s+(run\s+)?/, '')
+    .replace(/^npx\s+(-y\s+)?/, '');
+  return (
+    /\b(test|check|verify|lint|typecheck|tsc|validate)\b/.test(core) ||
+    /\b(vitest|jest|mocha|pytest|cargo\s+test|go\s+test|deno\s+test)\b/.test(cmd) ||
+    /\b(make\s+(test|check)|gradle\s+test|mvn\s+test)\b/.test(cmd)
+  );
+}
+
 /**
  * Breaks the doom loop by:
  * 1. Tracking consecutive identical tool failures and intercepting after 2 strikes.
@@ -135,6 +149,10 @@ export class DoomLoopRatchet {
     isFailure: boolean,
     output: string,
   ): Promise<DoomLoopIntervention> {
+    if (!isVerificationCommand(command)) {
+      return { action: 'none' };
+    }
+
     if (!isFailure) {
       this.verificationStrikes = 0;
       return { action: 'none' };

@@ -105,7 +105,15 @@ async function generalView(env: ScopeEnv): Promise<string> {
 
 async function repoView(env: ScopeEnv): Promise<string> {
   const raw = await readTextOr(env.store.file('codemap.json'), '');
-  const parsed = raw ? codemapSchema.safeParse(JSON.parse(raw)) : undefined;
+  let parsedJson: unknown = undefined;
+  if (raw) {
+    try {
+      parsedJson = JSON.parse(raw);
+    } catch {
+      parsedJson = undefined;
+    }
+  }
+  const parsed = parsedJson ? codemapSchema.safeParse(parsedJson) : undefined;
   if (parsed?.success) return renderCodemap(parsed.data, SCOPE_MAX_TOKENS.repo * (1 - NOTES_SHARE));
   const files = await git(env.repoRoot, ['ls-files'], { allowFailure: true });
   return `## Tracked files\n${files.stdout}`;

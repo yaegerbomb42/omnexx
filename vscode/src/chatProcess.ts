@@ -269,6 +269,18 @@ function chatServerEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     if (url) env.OMNEXX_KERNEL_OLLAMA_URL = url;
     const model = cfg.get<string>('kernel.ollamaModel')?.trim();
     if (model) env.OMNEXX_KERNEL_OLLAMA_MODEL = model;
+    const maxMounted = cfg.get<number>('kernel.maxMounted');
+    if (typeof maxMounted === 'number' && Number.isInteger(maxMounted) && maxMounted > 0) {
+      env.OMNEXX_KERNEL_MAX_MOUNTED = String(maxMounted);
+    }
+    const registry = cfg.get<boolean>('kernel.registry');
+    if (registry !== undefined) {
+      env.OMNEXX_KERNEL_REGISTRY = registry ? '1' : '0';
+    }
+    const publicSkills = cfg.get<boolean>('kernel.publicSkills');
+    if (publicSkills !== undefined) {
+      env.OMNEXX_KERNEL_PUBLIC_SKILLS = publicSkills ? '1' : '0';
+    }
   }
   return env;
 }

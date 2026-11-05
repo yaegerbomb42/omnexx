@@ -283,7 +283,7 @@ export class McpClientManager {
     return [...this.servers.keys()];
   }
 
-    async listTools(): Promise<McpToolInfo[]> {
+  async listTools(): Promise<McpToolInfo[]> {
     if (this.toolCache) return this.toolCache;
 
     const allTools: McpToolInfo[] = [];

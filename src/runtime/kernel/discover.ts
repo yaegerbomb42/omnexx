@@ -71,7 +71,9 @@ export async function discoverLocalMcpServers(opts: {
 
   for (const [name, cfg] of Object.entries(opts.omnexxServers ?? {})) {
     const desc =
-      cfg && typeof cfg === 'object' && typeof (cfg as { description?: unknown }).description === 'string'
+      cfg &&
+      typeof cfg === 'object' &&
+      typeof (cfg as { description?: unknown }).description === 'string'
         ? (cfg as { description: string }).description
         : `Omnexx-configured MCP server`;
     add(name, desc, 'omnexx-config');
@@ -100,7 +102,15 @@ export async function discoverLocalMcpServers(opts: {
     },
     { path: join(home, '.cursor', 'mcp.json'), source: 'cursor-user' },
     {
-      path: join(home, 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage', 'mcp.json'),
+      path: join(
+        home,
+        'Library',
+        'Application Support',
+        'Cursor',
+        'User',
+        'globalStorage',
+        'mcp.json',
+      ),
       source: 'cursor-globalStorage',
     },
     { path: join(home, '.vscode', 'mcp.json'), source: 'vscode-user' },
@@ -181,7 +191,10 @@ export async function discoverLocalSkills(opts: {
         const description =
           typeof data.description === 'string' && data.description.trim()
             ? data.description.trim()
-            : body.split('\n').find((l) => l.trim())?.trim() || `Skill ${name}`;
+            : body
+                .split('\n')
+                .find((l) => l.trim())
+                ?.trim() || `Skill ${name}`;
         const id = `local:skill:${name}`;
         if (seen.has(id)) continue;
         seen.add(id);

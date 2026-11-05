@@ -2904,7 +2904,10 @@ textarea::placeholder {
    ========================================================================== */
 
 /* Reduce jarring borders & visual clutter across cards */
-.card, .posture-card, .model-row, .step-item {
+.card,
+.posture-card,
+.model-row,
+.step-item {
   border: 1px solid var(--vscode-editorWidget-border, rgba(255, 255, 255, 0.08)) !important;
   background: var(--vscode-editor-background, rgba(0, 0, 0, 0.2)) !important;
   box-shadow: none !important;
@@ -2921,7 +2924,9 @@ textarea::placeholder {
   border-radius: var(--radius-md) !important;
   background: var(--vscode-input-background, #1e1e1e) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
-  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
 }
 
 .input-wrap:focus-within {
@@ -2930,17 +2935,23 @@ textarea::placeholder {
 }
 
 /* Pure minimalist buttons */
-.btn-icon, .btn-ghost, .btn-secondary {
+.btn-icon,
+.btn-ghost,
+.btn-secondary {
   border-radius: var(--radius-sm);
-  transition: opacity 120ms ease, background 120ms ease;
+  transition:
+    opacity 120ms ease,
+    background 120ms ease;
 }
 
-.btn-icon:hover, .btn-ghost:hover {
+.btn-icon:hover,
+.btn-ghost:hover {
   background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.08));
 }
 
 /* Eliminate excessive glowing / pulse noise for clean focus */
-.pulse-glow, .badge-glow {
+.pulse-glow,
+.badge-glow {
   box-shadow: none !important;
   animation: none !important;
 }

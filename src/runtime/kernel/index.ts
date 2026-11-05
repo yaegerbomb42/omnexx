@@ -56,10 +56,5 @@ export {
   searchSkillMd,
   type DiscoveredLocal,
 } from './discover.js';
-export {
-  mcpCapabilityRuntime,
-  toolsFromMcpInfos,
-  type CapabilityRuntime,
-} from './liveMount.js';
+export { mcpCapabilityRuntime, toolsFromMcpInfos, type CapabilityRuntime } from './liveMount.js';
 export { mergeWithFloor } from './registry.js';
-
