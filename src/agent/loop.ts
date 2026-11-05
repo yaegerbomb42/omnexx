@@ -524,12 +524,15 @@ export async function runAgentLoop(
         });
       }
       // Quiet by default: only surface a kernel hint when deliberative (tier>=2) or GC ran.
-      if (plan.allocation.tier >= 2 || plan.compactedMessages) {
-        messages.push({
-          role: 'user',
-          content: [{ type: 'text', text: plan.systemHint }],
-        });
-      }
+      // Delivered as a volatile per-turn SYSTEM block (never a fake user turn), and only
+      // for this turn: the base system is restored first so hints don't accumulate.
+      liveCtx = {
+        ...liveCtx,
+        system: withKernelHint(
+          ctx.system,
+          plan.allocation.tier >= 2 || plan.compactedMessages ? plan.systemHint : undefined,
+        ),
+      };
       deps.events.emit('kernel.allocate', {
         turn: turns + 1,
         tier: plan.allocation.tier,
@@ -1260,4 +1263,12 @@ export async function runAgentLoop(
       return { ...end('stuck'), stuck: finding };
     }
   }
+}
+
+/** Base system blocks plus (optionally) this turn's kernel hint as a volatile system block. */
+export function withKernelHint(
+  base: readonly SystemBlock[],
+  hint: string | undefined,
+): SystemBlock[] {
+  return hint?.trim() ? [...base, { text: hint, volatile: true }] : [...base];
 }
