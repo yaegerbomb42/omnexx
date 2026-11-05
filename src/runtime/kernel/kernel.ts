@@ -239,6 +239,8 @@ export class AdaptiveRuntimeKernel {
   private currentTaskKey = '';
   private profile: ModelProfileHints;
   private warmed = false;
+  /** Last failing tool output; expands the next capability query. */
+  private lastToolError = '';
   /** SkillMD lookups memoized per query (TTL) so retries don't re-hit the network. */
   private readonly publicSkillSearch = cachedSearch((query: string, limit: number) =>
     searchSkillMd(query, {
@@ -609,6 +611,8 @@ ${entry.description}`;
     ) {
       this.catalog.select({
         query,
+        // Query expansion from what just went wrong (e.g. "401 from the Jira API").
+        ...(this.lastToolError ? { context: this.lastToolError } : {}),
         maxMounted: resolveMaxMounted(this.config),
         pin: this.catalog
           .getMountedIds()
@@ -778,6 +782,7 @@ ${entry.description}`;
       ...(event.stateProgress !== undefined ? { stateProgress: event.stateProgress } : {}),
     };
     this.telemetry.observeTool(obs);
+    this.noteCapabilityOutcome(event);
 
     if (!this.telemetry.shouldRollback() || !this.lastCheckpointId) return undefined;
 
@@ -798,6 +803,24 @@ ${entry.description}`;
         ? messages.slice(0, result.pruneAfter)
         : messages;
     return { messages: pruned, constraint: result.constraint };
+  }
+
+  /** Co-usage prior + error context for the next re-selection. */
+  private noteCapabilityOutcome(event: KernelToolEvent): void {
+    if (event.isError) {
+      this.lastToolError = `${event.tool}: ${event.content.slice(0, 200)}`;
+      return;
+    }
+    this.lastToolError = '';
+    for (const id of this.catalog.getMountedIds()) {
+      const entry = this.catalog.get(id);
+      const key = mcpServerKeyFromCatalogId(id, entry?.server);
+      const used =
+        id === `local:tool:${event.tool}` ||
+        (key !== undefined && event.tool.startsWith(`mcp__${key}__`)) ||
+        (entry?.kind === 'skill' && event.tool === 'mount_capability');
+      if (used) this.catalog.recordUse(id);
+    }
   }
 
   get allocation(): TurnAllocation | undefined {

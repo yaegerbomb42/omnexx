@@ -172,6 +172,7 @@ export class CapabilityRetriever {
   private avgLen = 1;
   private nameTokens: Set<string>[] = [];
   private nsTokens: Set<string>[] = [];
+  private nameDf = new Map<string, number>();
   private readonly synonyms: Readonly<Record<string, readonly string[]>>;
 
   constructor(synonyms: Readonly<Record<string, readonly string[]>> = DEFAULT_SYNONYMS) {
@@ -192,12 +193,14 @@ export class CapabilityRetriever {
     this.docLen = [];
     this.nameTokens = [];
     this.nsTokens = [];
+    this.nameDf.clear();
     let total = 0;
     for (let i = 0; i < this.docs.length; i++) {
       const d = this.docs[i] as RetrievalDoc;
       const nameToks = tokenizeText(`${d.name} ${serverTail(d)}`);
       const descToks = tokenizeText(`${d.description} ${d.triggerConditions ?? ''}`);
       this.nameTokens.push(new Set(nameToks));
+      for (const t of new Set(nameToks)) this.nameDf.set(t, (this.nameDf.get(t) ?? 0) + 1);
       this.nsTokens.push(new Set(tokenizeText(serverNamespace(d))));
       const tf = new Map<string, number>();
       for (const t of new Set(nameToks)) tf.set(t, (tf.get(t) ?? 0) + NAME_W);
@@ -216,6 +219,15 @@ export class CapabilityRetriever {
       total += len;
     }
     this.avgLen = this.docs.length ? total / this.docs.length : 1;
+  }
+
+  /**
+   * True when `term` names a specific product (rare as a capability *name* token, e.g.
+   * "slack", "sentry") rather than a generic word ("message", "test", "file").
+   */
+  isProductTerm(term: string): boolean {
+    const df = this.nameDf.get(term) ?? 0;
+    return df > 0 && df <= Math.max(5, this.docs.length * 0.001);
   }
 
   /** Query terms with weights: original 1.0, synonym expansions 0.6, context 0.35. */

@@ -1,0 +1,76 @@
+{
+  "note": "Held-out discovery tasks written AFTER the BM25/expansion tuning, to check generalization. Same local env as tasks.json.",
+  "tasks": [
+    {
+      "q": "Comment on PR #42 asking the author to add tests",
+      "groups": [["github"]],
+      "installed": "local:mcp:github"
+    },
+    {
+      "q": "What migrations have been applied to the production database? We use PostgreSQL",
+      "groups": [["postgres", "postgresql"]],
+      "installed": "local:mcp:postgres"
+    },
+    {
+      "q": "Take a screenshot of the staging site homepage in a headless browser",
+      "groups": [["playwright", "puppeteer", "browser", "screenshot"]],
+      "installed": "local:mcp:playwright"
+    },
+    { "q": "DM Sarah on Slack that the build is green", "groups": [["slack"]] },
+    {
+      "q": "Which Linear issues are in the current cycle for the mobile team?",
+      "groups": [["linear"]]
+    },
+    { "q": "Summarize yesterday's error spikes in Sentry", "groups": [["sentry"]] },
+    {
+      "q": "Scale the api deployment to 5 replicas on the cluster",
+      "groups": [["kubernetes", "k8s", "kubectl"]]
+    },
+    { "q": "Show me last month's MRR from Stripe", "groups": [["stripe"]] },
+    {
+      "q": "Turn this markdown into a nicely formatted Word file",
+      "groups": [["docx", "word"]],
+      "installed": "local:skill:docx"
+    },
+    {
+      "q": "Fill out the PDF application form with my details",
+      "groups": [["pdf"]],
+      "installed": "local:skill:pdf"
+    },
+    {
+      "q": "Add a formula column to the budget spreadsheet",
+      "groups": [["xlsx", "excel", "spreadsheet", "sheets"]],
+      "installed": "local:skill:xlsx"
+    },
+    { "q": "Find the Notion doc about our hiring process", "groups": [["notion"]] },
+    {
+      "q": "Reply to the latest email from my landlord",
+      "groups": [["gmail", "email", "mail", "outlook"]]
+    },
+    { "q": "Schedule a 1:1 with Alex for Friday afternoon", "groups": [["calendar", "gcal"]] },
+    { "q": "Is it going to rain in Seattle tomorrow?", "groups": [["weather", "forecast"]] },
+    { "q": "Grab the design tokens from our Figma file", "groups": [["figma"]] },
+    { "q": "Move the Jira ticket PAY-123 to In Review", "groups": [["jira", "atlassian"]] },
+    { "q": "Show me the slowest queries in MongoDB", "groups": [["mongodb", "mongo"]] },
+    { "q": "Flush the Redis session keys for user 42", "groups": [["redis"]] },
+    { "q": "Roll back the last Vercel production deployment", "groups": [["vercel"]] },
+    { "q": "Who is on call this week in PagerDuty?", "groups": [["pagerduty"]] },
+    {
+      "q": "Search Hacker News and the web for reactions to the launch",
+      "groups": [
+        ["search", "brave", "tavily", "exa", "perplexity", "serper", "google", "hackernews", "hn"]
+      ]
+    },
+    {
+      "q": "List all files larger than 10MB in this project",
+      "groups": [["filesystem", "files"]],
+      "installed": "local:mcp:filesystem"
+    },
+    { "q": "Create a Shopify discount code for Black Friday", "groups": [["shopify"]] },
+    {
+      "q": "Write the changelog entry for this release",
+      "groups": [["release-notes", "changelog", "release"]],
+      "installed": "local:skill:release-notes"
+    }
+  ]
+}

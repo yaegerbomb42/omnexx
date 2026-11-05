@@ -1,7 +1,13 @@
 import { z } from 'zod';
 import { ok, fail, type Tool } from '../../tools/types.js';
 import type { CapabilityEntry } from './types.js';
-import { CapabilityRetriever, type RetrievalDoc } from './retrieval.js';
+import { DenseIndex, denseDocText, dot } from './dense.js';
+import {
+  CapabilityRetriever,
+  INSTALLED_NAMED_TIER,
+  tokenizeText,
+  type RetrievalDoc,
+} from './retrieval.js';
 
 /** How long unverified remote (SkillMD) search hits stay in the catalog. */
 export const REMOTE_SKILL_TTL_MS = 30 * 60 * 1000;
@@ -29,7 +35,16 @@ export interface CatalogSearchOptions {
   bonus?: ((id: string) => number) | undefined;
 }
 
-export interface CatalogSelectOptions {
+/** Already-mounted capabilities get this relative bonus when re-selecting (hysteresis). */
+export const MOUNT_STICKINESS = 0.5;
+/** Uninstalled candidates scoring below this fraction of the best one are not mounted. */
+export const MOUNT_MIN_RELATIVE_SCORE = 0.6;
+/** Lower bar for a candidate that brings a new specific product named in the task. */
+export const MOUNT_NEW_PRODUCT_RELATIVE_SCORE = 0.4;
+
+export interface CatalogSelectOptions extends CatalogSearchOptions {
+  /** Pre-ranked candidates (e.g. hybrid retrieval); default: BM25 rankEntries. */
+  ranked?: readonly { entry: CatalogEntry; score: number }[] | undefined;
   query: string;
   /** Max capabilities to keep mounted (default 8). */
   maxMounted?: number | undefined;
@@ -64,6 +79,7 @@ export class CapabilityCatalog {
   private expiry = new Map<string, number>();
   private readonly retriever = new CapabilityRetriever();
   private retrieverDirty = true;
+  private readonly uses = new Map<string, number>();
   private isInstalled: (id: string) => boolean = (id) => id.startsWith('local:');
   private mounted = new Map<string, CatalogEntry>();
   private lru: string[] = [];
@@ -200,6 +216,51 @@ export class CapabilityCatalog {
       });
   }
 
+  /**
+   * Hybrid retrieval: BM25 candidates (+ dense candidates when the full catalog is
+   * embedded), fused with cosine similarity from local embeddings. Falls back to plain
+   * BM25 when the dense index is unavailable.
+   */
+  async rankHybrid(
+    query: string,
+    k: number,
+    dense: DenseIndex | undefined,
+    opts: CatalogSearchOptions & { candidates?: number; denseWeight?: number } = {},
+  ): Promise<{ entry: CatalogEntry; score: number }[]> {
+    const pool = opts.candidates ?? 100;
+    const lexical = this.rankEntries(query, pool, opts);
+    if (!dense?.available) return lexical.slice(0, k);
+    const qv = await dense.embedQuery(opts.context ? `${query}\n${opts.context}` : query);
+    if (!qv) return lexical.slice(0, k);
+    const cands = new Map<string, { entry: CatalogEntry; lex: number; tier: number }>();
+    for (const r of lexical) {
+      const tier = r.score >= INSTALLED_NAMED_TIER ? INSTALLED_NAMED_TIER : 0;
+      cands.set(r.entry.id, { entry: r.entry, lex: r.score - tier, tier });
+    }
+    // Full dense index → dense-only candidates BM25 never surfaced.
+    if (dense.size >= this.entries.size * 0.9) {
+      for (const h of dense.search(qv, 50)) {
+        const entry = this.entries.get(h.id);
+        if (entry && !cands.has(h.id)) cands.set(h.id, { entry, lex: 0, tier: 0 });
+      }
+    }
+    await dense.ensure(
+      [...cands.values()].map((c) => ({ id: c.entry.id, text: denseDocText(c.entry) })),
+    );
+    const maxLex = Math.max(1e-9, ...[...cands.values()].map((c) => c.lex));
+    const w = opts.denseWeight ?? 0.5;
+    const installed = this.isInstalled;
+    const out = [...cands.values()].map((c) => {
+      const v = dense.get(c.entry.id);
+      const cos = v ? dot(qv, v) : 0;
+      let score = (1 - w) * (c.lex / maxLex) + w * Math.max(0, (cos - 0.35) / 0.65);
+      if (installed(c.entry.id) && c.entry.kind !== 'tool') score *= 1.15;
+      return { entry: c.entry, score: score + c.tier };
+    });
+    out.sort((a, b) => b.score - a.score);
+    return out.slice(0, k);
+  }
+
   /** Decide which ids count as installed for installed-first ranking (default: `local:*`). */
   setInstalledPredicate(fn: (id: string) => boolean): void {
     this.isInstalled = fn;
@@ -212,16 +273,8 @@ export class CapabilityCatalog {
   select(opts: CatalogSelectOptions): CatalogSelectResult {
     const t0 = Date.now();
     const maxMounted = opts.maxMounted ?? 8;
-    const ranked = this.search(opts.query, Math.max(maxMounted * 3, 24));
-    const nextIds: string[] = [];
-    for (const id of opts.pin ?? []) {
-      if (this.entries.has(id) && !nextIds.includes(id)) nextIds.push(id);
-    }
-    for (const e of ranked) {
-      if (nextIds.length >= maxMounted) break;
-      if (!nextIds.includes(e.id)) nextIds.push(e.id);
-    }
-
+    const ranked = opts.ranked ?? this.rankEntries(opts.query, Math.max(maxMounted * 4, 32), opts);
+    const nextIds = this.chooseMountSet(opts.query, ranked, maxMounted, opts.pin ?? []);
     const prev = new Set(this.mounted.keys());
     const next = new Set(nextIds);
     const added: string[] = [];
@@ -253,6 +306,76 @@ export class CapabilityCatalog {
     this.turnsSinceSelect = 0;
     this.lastQuery = opts.query;
     return { mounted: this.getMounted().slice(), added, removed, ms: Date.now() - t0 };
+  }
+
+  /**
+   * Turn a ranked list into a mount set:
+   * - relative score cutoff (don't fill slots with junk just because they exist)
+   * - one uninstalled registry server per product named in the query (no 5× github-*)
+   * - stickiness: already-mounted capabilities get a bonus (hysteresis, less thrash)
+   * - co-usage prior: capabilities the agent actually used get a small boost
+   */
+  chooseMountSet(
+    query: string,
+    ranked: readonly { entry: CatalogEntry; score: number }[],
+    maxMounted: number,
+    pin: readonly string[] = [],
+  ): string[] {
+    const tierOf = (sc: number) => (sc >= INSTALLED_NAMED_TIER ? INSTALLED_NAMED_TIER : 0);
+    const rescored = ranked
+      .map((r) => {
+        const tier = tierOf(r.score);
+        let base = r.score - tier;
+        const uses = this.uses.get(r.entry.id) ?? 0;
+        if (uses) base *= 1 + 0.15 * Math.log1p(uses);
+        if (this.mounted.has(r.entry.id)) base *= 1 + MOUNT_STICKINESS;
+        return { entry: r.entry, base, tier };
+      })
+      .sort((a, b) => b.tier + b.base - (a.tier + a.base));
+    const top = rescored.find((r) => r.tier === 0)?.base ?? rescored[0]?.base ?? 0;
+    if (this.retrieverDirty) {
+      this.retriever.build([...this.entries.values()]);
+      this.retrieverDirty = false;
+    }
+    const qTokens = tokenizeText(query);
+    const productTerms = new Set(qTokens.filter((t) => this.retriever.isProductTerm(t)));
+    const products = new Set<string>();
+    const nextIds: string[] = [];
+    for (const id of pin) if (this.entries.has(id) && !nextIds.includes(id)) nextIds.push(id);
+    for (const r of rescored) {
+      if (nextIds.length >= maxMounted) break;
+      if (nextIds.includes(r.entry.id)) continue;
+      const names = new Set(
+        tokenizeText(`${r.entry.name} ${(r.entry.server ?? '').split('/').pop() ?? ''}`),
+      );
+      const product = qTokens.find((t) => names.has(t));
+      // A candidate bringing a not-yet-covered product named by the task (multi-tool
+      // tasks: "Sentry crash -> GitHub issue") gets a much lower bar than generic matches.
+      const bar =
+        product && productTerms.has(product) && !products.has(product)
+          ? MOUNT_NEW_PRODUCT_RELATIVE_SCORE * top
+          : MOUNT_MIN_RELATIVE_SCORE * top;
+      if (r.tier === 0 && nextIds.length > 0 && r.base < bar) {
+        // Generic tail reached: stop unless a named product is still uncovered.
+        if ([...productTerms].every((t) => products.has(t))) break;
+        continue;
+      }
+      if (!this.isInstalled(r.entry.id)) {
+        if (product) {
+          if (products.has(product)) continue;
+          products.add(product);
+        }
+      } else {
+        for (const t of qTokens) if (tokenizeText(r.entry.name).includes(t)) products.add(t);
+      }
+      nextIds.push(r.entry.id);
+    }
+    return nextIds;
+  }
+
+  /** Record that the agent actually used a mounted capability (co-usage prior). */
+  recordUse(id: string): void {
+    this.uses.set(id, (this.uses.get(id) ?? 0) + 1);
   }
 
   /** Explicitly mount one capability (from search_capabilities). Evicts LRU if over cap. */

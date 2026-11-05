@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CapabilityCatalog, type CatalogEntry } from '../../src/runtime/kernel/catalog.js';
 import { CapabilityRetriever } from '../../src/runtime/kernel/retrieval.js';
+import { DenseIndex } from '../../src/runtime/kernel/dense.js';
 import { mergeLocalWithRegistry } from '../../src/runtime/kernel/kernel.js';
 import { toCatalogEntries, type RegistrySnapshot } from '../../src/runtime/kernel/registry.js';
 
@@ -31,6 +32,11 @@ const spec = JSON.parse(readFileSync(join(here, 'tasks.json'), 'utf8')) as {
   local: { mcp: string[]; skills: [string, string][]; tools: [string, string][] };
   tasks: Task[];
 };
+if (args.includes('--heldout')) {
+  spec.tasks = (
+    JSON.parse(readFileSync(join(here, 'heldout.json'), 'utf8')) as { tasks: Task[] }
+  ).tasks;
+}
 
 export function buildCatalog(snapshotPath = snapPath): {
   catalog: CapabilityCatalog;
@@ -147,8 +153,77 @@ export async function evaluate(catalog: CapabilityCatalog, rank: Ranker, k = 10)
 }
 
 let retriever: CapabilityRetriever | undefined;
+const denseWeight = Number(arg('--dense-weight') ?? 0.5);
+const denseRerank = new DenseIndex({ cachePath: '/home/box/models/dense-rerank-cache.json.gz' });
+const denseFull = new DenseIndex({ cachePath: '/home/box/models/dense-cache.json.gz' });
+/**
+ * Mount-set quality: what the kernel would actually put in context (maxMounted slots),
+ * plus churn across a 4-turn session per task (same goal, drifting wording + an error).
+ */
+export async function evaluateSelect(
+  makeCatalog: () => CapabilityCatalog,
+  maxMounted = 6,
+  mode: 'topk' | 'select' = 'select',
+) {
+  let groups = 0;
+  let covered = 0;
+  let relevantMounted = 0;
+  let mountedTotal = 0;
+  let churn = 0;
+  const catalog = makeCatalog();
+  for (const t of spec.tasks) {
+    for (const id of catalog.getMountedIds()) catalog.unmount(id);
+    const turns = [
+      t.q,
+      `${t.q}\nprogress: first step done`,
+      `${t.q}\nlast tool error: request failed with 401 unauthorized`,
+      `${t.q}\ncontinue`,
+    ];
+    let first: string[] = [];
+    for (const [i, q] of turns.entries()) {
+      const ids =
+        mode === 'topk'
+          ? catalog.search(q, maxMounted).map((e) => e.id)
+          : catalog.select({ query: q, maxMounted }).mounted.map((e) => e.id);
+      if (mode === 'topk') {
+        for (const id of catalog.getMountedIds()) catalog.unmount(id);
+        for (const id of ids) catalog.mount(id, maxMounted);
+      }
+      if (i === 0) {
+        first = ids;
+        const mounted = ids.map((id) => catalog.get(id)).filter((e): e is CatalogEntry => !!e);
+        mountedTotal += mounted.length;
+        for (const g of t.groups) {
+          groups++;
+          if (mounted.some((e) => relevant(e, g) || e.id === t.installed)) covered++;
+        }
+        // Distinct groups served: duplicate servers for the same product are waste.
+        relevantMounted += t.groups.filter((g) =>
+          mounted.some((e) => relevant(e, g) || e.id === t.installed),
+        ).length;
+      } else {
+        churn += ids.filter((id) => !first.includes(id)).length;
+        first = ids;
+      }
+    }
+  }
+  const n = spec.tasks.length;
+  return {
+    mode,
+    maxMounted,
+    coverage: +(covered / groups).toFixed(3),
+    slotEfficiency: +(relevantMounted / Math.max(1, mountedTotal)).toFixed(3),
+    avgMounted: +(mountedTotal / n).toFixed(2),
+    churnPerTurn: +(churn / (n * 3)).toFixed(2),
+  };
+}
+
 const rankers: Record<string, Ranker> = {
   search: (c, q, k) => c.search(q, k),
+  'hybrid-rerank': async (c, q, k) =>
+    (await c.rankHybrid(q, k, denseRerank, { denseWeight })).map((r) => r.entry),
+  'hybrid-full': async (c, q, k) =>
+    (await c.rankHybrid(q, k, denseFull, { denseWeight })).map((r) => r.entry),
   bm25: (c, q, k) => {
     if (!retriever) {
       retriever = new CapabilityRetriever();
@@ -162,8 +237,15 @@ const rankers: Record<string, Ranker> = {
 };
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  if (args.includes('--select')) {
+    const mode = (arg('--select-mode') ?? 'select') as 'topk' | 'select';
+    console.log(JSON.stringify(await evaluateSelect(() => buildCatalog().catalog, 6, mode)));
+    process.exit(0);
+  }
   const name = arg('--ranker') ?? 'search';
   const { catalog, loadMs } = buildCatalog();
+  if (name === 'hybrid-full') await denseFull.load();
+  if (name === 'hybrid-rerank') await denseRerank.load();
   const ranker = rankers[name];
   if (!ranker) throw new Error(`unknown ranker ${name}`);
   const r = await evaluate(catalog, ranker);
@@ -176,5 +258,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       ...summary,
     }),
   );
+  await denseRerank.save();
   if (args.includes('--misses')) for (const m of misses) console.log('  miss:', m);
 }
