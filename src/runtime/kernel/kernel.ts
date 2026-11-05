@@ -3,7 +3,12 @@ import type { Tool } from '../../tools/types.js';
 import { CapabilityCatalog, createCatalogTools, type CatalogEntry } from './catalog.js';
 import { StateCheckpointer, pathsFromToolInput } from './checkpoint.js';
 import { ContextGarbageCollector, compactAsync } from './contextGc.js';
-import { discoverLocalMcpServers, discoverLocalSkills, searchSkillMd } from './discover.js';
+import {
+  cachedSearch,
+  discoverLocalMcpServers,
+  discoverLocalSkills,
+  searchSkillMd,
+} from './discover.js';
 import {
   mcpServerKeyFromCatalogId,
   skillNameFromCatalogId,
@@ -157,6 +162,13 @@ export class AdaptiveRuntimeKernel {
   private currentTaskKey = '';
   private profile: ModelProfileHints;
   private warmed = false;
+  /** SkillMD lookups memoized per query (TTL) so retries don't re-hit the network. */
+  private readonly publicSkillSearch = cachedSearch((query: string, limit: number) =>
+    searchSkillMd(query, {
+      limit,
+      ...(this.config.fetchImpl ? { fetchImpl: this.config.fetchImpl } : {}),
+    }),
+  );
   /** In-flight warm, shared so one registry fetch serves every caller. */
   private warmInFlight: Promise<void> | undefined;
 
@@ -204,11 +216,7 @@ export class AdaptiveRuntimeKernel {
       ...(this.config.publicSkills === false
         ? {}
         : {
-            publicSkillSearch: (query: string, limit: number) =>
-              searchSkillMd(query, {
-                limit,
-                ...(this.config.fetchImpl ? { fetchImpl: this.config.fetchImpl } : {}),
-              }),
+            publicSkillSearch: this.publicSkillSearch,
           }),
       onMount: (entry) => this.activateLiveMount(entry),
       onUnmount: async (id) => {

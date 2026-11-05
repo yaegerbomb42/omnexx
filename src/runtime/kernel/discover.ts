@@ -71,7 +71,9 @@ export async function discoverLocalMcpServers(opts: {
 
   for (const [name, cfg] of Object.entries(opts.omnexxServers ?? {})) {
     const desc =
-      cfg && typeof cfg === 'object' && typeof (cfg as { description?: unknown }).description === 'string'
+      cfg &&
+      typeof cfg === 'object' &&
+      typeof (cfg as { description?: unknown }).description === 'string'
         ? (cfg as { description: string }).description
         : `Omnexx-configured MCP server`;
     add(name, desc, 'omnexx-config');
@@ -100,7 +102,15 @@ export async function discoverLocalMcpServers(opts: {
     },
     { path: join(home, '.cursor', 'mcp.json'), source: 'cursor-user' },
     {
-      path: join(home, 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage', 'mcp.json'),
+      path: join(
+        home,
+        'Library',
+        'Application Support',
+        'Cursor',
+        'User',
+        'globalStorage',
+        'mcp.json',
+      ),
       source: 'cursor-globalStorage',
     },
     { path: join(home, '.vscode', 'mcp.json'), source: 'vscode-user' },
@@ -181,7 +191,10 @@ export async function discoverLocalSkills(opts: {
         const description =
           typeof data.description === 'string' && data.description.trim()
             ? data.description.trim()
-            : body.split('\n').find((l) => l.trim())?.trim() || `Skill ${name}`;
+            : body
+                .split('\n')
+                .find((l) => l.trim())
+                ?.trim() || `Skill ${name}`;
         const id = `local:skill:${name}`;
         if (seen.has(id)) continue;
         seen.add(id);
@@ -260,4 +273,34 @@ export async function searchSkillMd(
   } catch {
     return [];
   }
+}
+
+/**
+ * Memoize a remote search by normalized query (TTL) and share in-flight requests, so a
+ * model retry storm on `search_capabilities` cannot amplify traffic to a public index.
+ */
+export function cachedSearch<T>(
+  fn: (query: string, limit: number) => Promise<T[]>,
+  opts: { ttlMs?: number; maxEntries?: number; now?: () => number } = {},
+): (query: string, limit: number) => Promise<T[]> {
+  const ttl = opts.ttlMs ?? 10 * 60 * 1000;
+  const maxEntries = opts.maxEntries ?? 200;
+  const now = opts.now ?? Date.now;
+  const cache = new Map<string, { at: number; value: Promise<T[]> }>();
+  return (query, limit) => {
+    const key = `${limit}:${query.trim().toLowerCase().replace(/\s+/g, ' ')}`;
+    const hit = cache.get(key);
+    if (hit && now() - hit.at < ttl) return hit.value;
+    const value = fn(query, limit).catch((err: unknown) => {
+      cache.delete(key); // don't pin failures
+      throw err;
+    });
+    cache.set(key, { at: now(), value });
+    while (cache.size > maxEntries) {
+      const oldest = cache.keys().next().value;
+      if (oldest === undefined) break;
+      cache.delete(oldest);
+    }
+    return value;
+  };
 }
