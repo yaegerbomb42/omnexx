@@ -56,6 +56,8 @@ import {
 import { turnRequest } from './context.js';
 import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
 import type { DoomLoopRatchet } from '../core/doom-loop-ratchet.js';
+import type { AdaptiveRuntimeKernel } from '../runtime/kernel/index.js';
+import { toolSpec } from '../tools/registry.js';
 import { todoItemsOf, todoNudge, todoTool, type TodoItem } from '../tools/todo.js';
 
 /** Thrown inside the retry loop when a pre-flight check refuses the call; ends the cycle, never retried. */
@@ -292,6 +294,15 @@ export interface LoopDeps {
   refreshTools?: () => { tools: readonly Tool[]; specs: ToolSpec[] };
   /** Anti-doom-loop ratchet tracking repeated tool failures and enforcing rollback on broken verifications. */
   doomLoopRatchet?: DoomLoopRatchet;
+  /**
+   * Opt-in Adaptive Runtime Kernel. When set, each turn allocates roles/tools/budgets and
+   * mutating tools are checkpointed. Omit (default) for zero behavior change.
+   */
+  kernel?: AdaptiveRuntimeKernel;
+  /** Goal text the kernel uses for allocation; falls back to rolling.goal when unset. */
+  kernelObjective?: string;
+  /** In-memory skills to index into the kernel catalog on its first warm. */
+  kernelSkills?: readonly { name: string; description: string; triggerConditions?: string }[];
 }
 
 /** Uncalibrated size of the prompt the provider will see, and that size scaled by the model's ratio. */
@@ -482,12 +493,52 @@ export async function runAgentLoop(
   let liveCtx = ctx;
   // byName must be rebuilt when tools change.
   let byName = new Map(deps.tools.map((t) => [t.name, t]));
+  let turnMaxTokens = deps.maxTokens;
   for (;;) {
     // Refresh tools at the start of each turn if refreshTools is provided (lazy mode).
     if (deps.refreshTools) {
       const { tools: freshTools, specs: freshSpecs } = deps.refreshTools();
       byName = new Map(freshTools.map((t) => [t.name, t]));
       liveCtx = { ...liveCtx, tools: freshSpecs };
+    }
+    turnMaxTokens = deps.maxTokens;
+    // Opt-in Adaptive Runtime Kernel: allocate tools/roles/budget for this turn.
+    if (deps.kernel) {
+      const plan = await deps.kernel.planTurn({
+        objective: deps.kernelObjective ?? deps.rolling?.goal ?? '',
+        allTools: [...byName.values()],
+        defaultMaxTokens: deps.maxTokens,
+        messages,
+        ...(deps.kernelSkills ? { skills: deps.kernelSkills } : {}),
+      });
+      byName = new Map(plan.tools.map((t) => [t.name, t]));
+      liveCtx = { ...liveCtx, tools: plan.tools.map(toolSpec) };
+      turnMaxTokens = plan.maxTokens;
+      if (plan.compactedMessages) {
+        messages = plan.compactedMessages;
+        deps.toolCtx.reads?.clear();
+        deps.events.emit('kernel.gc', {
+          turn: turns + 1,
+          messages: messages.length,
+        });
+      }
+      // Quiet by default: only surface a kernel hint when deliberative (tier>=2) or GC ran.
+      if (plan.allocation.tier >= 2 || plan.compactedMessages) {
+        messages.push({
+          role: 'user',
+          content: [{ type: 'text', text: plan.systemHint }],
+        });
+      }
+      deps.events.emit('kernel.allocate', {
+        turn: turns + 1,
+        tier: plan.allocation.tier,
+        mode: plan.allocation.reasoningMode,
+        tools: plan.allocation.mountedTools,
+        friction: plan.telemetry.frictionScore,
+        pressure: plan.telemetry.contextPressure,
+        ...(plan.mctsSelectedId ? { mcts: plan.mctsSelectedId } : {}),
+        ...(plan.droppedTools?.length ? { dropped: plan.droppedTools } : {}),
+      });
     }
     let signal = await deps.control();
     if (signal === 'pause') {
@@ -601,7 +652,7 @@ export async function runAgentLoop(
               // The provider is up: send the real request once more, cooling or not.
               try {
                 const req = {
-                  ...turnRequest(liveCtx, messages, m.id, deps.maxTokens, deps.cacheKey),
+                  ...turnRequest(liveCtx, messages, m.id, turnMaxTokens, deps.cacheKey),
                   route: m.provider,
                   ...(deps.signal ? { signal: deps.signal } : {}),
                 };
@@ -664,7 +715,7 @@ export async function runAgentLoop(
               liveCtx,
               messages,
               m.id,
-              deps.maxTokens,
+              turnMaxTokens,
               deps.cacheKey,
               isTerminalTurn
                 ? { toolChoice: 'none', terminalDirective: '[harness:terminal_step]' }
@@ -678,7 +729,7 @@ export async function runAgentLoop(
               ...(deps.spentTodayUsd ? { spentTodayUsd: deps.spentTodayUsd() } : {}),
               cycle: { turns, tokens: cycleTokens },
               estimatedInputTokens: estimate,
-              maxOutputTokens: deps.maxTokens,
+              maxOutputTokens: turnMaxTokens,
               price: m.price,
             });
             if (!pf.ok) throw new BudgetStopSignal(pf.stop, pf.detail);
@@ -689,7 +740,7 @@ export async function runAgentLoop(
                 ? deps.taskBudget?.check({
                     taskId,
                     promptTokens: estimate,
-                    maxOutputTokens: deps.maxTokens,
+                    maxOutputTokens: turnMaxTokens,
                     price: m.price,
                   })
                 : undefined;
@@ -1035,6 +1086,9 @@ export async function runAgentLoop(
                 }, 60_000)
               : undefined;
             if (reminder) reminder.unref();
+            if (deps.kernel) {
+              await deps.kernel.beforeMutatingTool(call.name, parsed.data, messages.length);
+            }
             const out = await tool.run(parsed.data, deps.toolCtx);
             if (reminder) clearInterval(reminder);
             content = out.content;
@@ -1118,6 +1172,23 @@ export async function runAgentLoop(
           }
         }
       }
+      if (deps.kernel) {
+        const progress = !isError && call.name !== 'read' && call.name !== 'search' ? 1 : 0;
+        const rolled = await deps.kernel.afterTool(
+          {
+            tool: call.name,
+            input: call.input,
+            isError,
+            content,
+            ...(progress ? { stateProgress: progress } : {}),
+          },
+          messages,
+        );
+        if (rolled?.constraint) {
+          messages = rolled.messages;
+          kernelConstraints.push(rolled.constraint);
+        }
+      }
       return {
         type: 'tool_result',
         toolUseId: call.id,
@@ -1127,6 +1198,7 @@ export async function runAgentLoop(
     };
     const results: ContentBlock[] = [];
     const ratchetInterventions: string[] = [];
+    const kernelConstraints: string[] = [];
     // A turn of only `task` calls fans out: read-only helpers can't conflict with each other.
     // Otherwise runs of consecutive concurrency-safe calls (reads, searches) go out together;
     // every other call runs alone, in order, so writes and commands never interleave.
@@ -1153,6 +1225,11 @@ export async function runAgentLoop(
     }
     if (ratchetInterventions.length) {
       for (const msg of ratchetInterventions) {
+        results.push({ type: 'text', text: msg });
+      }
+    }
+    if (kernelConstraints.length) {
+      for (const msg of kernelConstraints) {
         results.push({ type: 'text', text: msg });
       }
     }

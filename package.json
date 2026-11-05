@@ -15,6 +15,7 @@
   },
   "files": [
     "dist",
+    "data",
     "README.md",
     "LICENSE"
   ],
@@ -22,7 +23,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/copy-kernel-data.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p vscode/src/webview",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",

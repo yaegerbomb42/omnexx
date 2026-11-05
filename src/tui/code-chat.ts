@@ -11,6 +11,9 @@ import { buildCodemap, renderCodemap } from '../agent/codemap.js';
 import { capChatHistory, trimChatHistory } from '../agent/chat-context.js';
 import { contextTokens, transcriptFor } from '../agent/compaction.js';
 import { runAgentLoop, type LoopDeps } from '../agent/loop.js';
+import { createKernelIfEnabled, mcpCapabilityRuntime } from '../runtime/kernel/index.js';
+import { getActiveMcpManager } from '../tools/extra/mcp.js';
+import { knownWindow } from '../providers/context-windows.js';
 import type { CliIO } from '../cli/io.js';
 import { resolveRunDeps } from '../cli/run-deps.js';
 import type { OmnexxConfig } from '../config/schema.js';
@@ -781,6 +784,19 @@ export class CodeChat {
     const abort = new AbortController();
     this.abort = abort;
     try {
+      const primary = this.models[0];
+      const modelRef = primary ? `${primary.provider}:${primary.id}` : '';
+      const maxWindow = (modelRef ? knownWindow(modelRef) : undefined) ?? 200_000;
+      const kernel = createKernelIfEnabled(this.config, this.ctx.jail.root, maxWindow);
+      if (kernel) {
+        const mgr = getActiveMcpManager();
+        if (mgr) {
+          kernel.attachMcpRuntime(
+            mcpCapabilityRuntime(mgr, { repoRoot: this.ctx.jail.root, env: process.env }),
+          );
+        }
+        void kernel.warm(tools.map((t) => ({ name: t.name, description: t.description })));
+      }
       const deps: LoopDeps = {
         provider: this.provider,
         models: this.models,
@@ -814,6 +830,7 @@ export class CodeChat {
           () => this.editOps - editsBefore,
         ),
         watchMode: 'nudge',
+        ...(kernel ? { kernel, kernelObjective: text.split('\n')[0]?.slice(0, 200) ?? '' } : {}),
         maxTokens: this.config.providers.anthropic.max_tokens,
         clock: realClock,
         events: this.events,

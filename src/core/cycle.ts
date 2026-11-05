@@ -54,6 +54,9 @@ import { runGatesWithFlakyCheck, type FlakyFinding } from '../verify/flaky.js';
 import { runGates, toBaseline } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
 import { DoomLoopRatchet } from './doom-loop-ratchet.js';
+import { createKernelIfEnabled, mcpCapabilityRuntime } from '../runtime/kernel/index.js';
+import { getActiveMcpManager } from '../tools/extra/mcp.js';
+import { knownWindow } from '../providers/context-windows.js';
 import { readTextOr, writeFileAtomic } from './atomic.js';
 import { applyRemember, keepNewestNotes, renderNotes } from './notes.js';
 import { refreshCodemap } from './milestones.js';
@@ -527,6 +530,24 @@ export async function stepAct(run: Run): Promise<void> {
       savedTokens: Math.max(0, omittedTokens),
     });
   }
+  const primaryModel = route.chain[0];
+  const modelRef = primaryModel ? `${primaryModel.provider}:${primaryModel.id}` : '';
+  const profileRef = primaryModel ? `${primaryModel.provider}:${primaryModel.alias}` : '';
+  const maxWindow =
+    (modelRef ? knownWindow(modelRef) : undefined) ??
+    run.config.models.profiles[profileRef]?.context ??
+    200_000;
+  const kernel = createKernelIfEnabled(run.config, run.worktree, maxWindow);
+  if (kernel) {
+    const mgr = getActiveMcpManager();
+    if (mgr) {
+      kernel.attachMcpRuntime(
+        mcpCapabilityRuntime(mgr, { repoRoot: run.worktree, env: process.env }),
+      );
+    }
+    void kernel.warm(tools.map((t) => ({ name: t.name, description: t.description })));
+  }
+
   const deps = (models: readonly ResolvedModel[]): LoopDeps => {
     const base: LoopDeps = {
       provider: run.deps.provider,
@@ -586,6 +607,12 @@ export async function stepAct(run: Run): Promise<void> {
         cleanSha: run.state.lastGreen,
         events: run.events,
       }),
+      ...(kernel
+        ? {
+            kernel,
+            kernelObjective: `${task.id}: ${task.title}`,
+          }
+        : {}),
       compaction: {
         settings: {
           clearAt: run.config.context.clear_tool_results_at,
