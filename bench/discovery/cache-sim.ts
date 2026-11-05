@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/require-await, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-deprecated */
+/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/require-await, @typescript-eslint/no-deprecated */
 /**
  * 4-policy prompt-cache benchmark: replays one 40-turn kernel chat (MCP capabilities mounted
  * and unmounted mid-chat, tier>=2 hints, three GC opportunities (one 3 turns before the end)) through the real turnRequest +
@@ -7,7 +7,6 @@
  *
  *   npx -y tsx bench/discovery/cache-sim.ts
  */
-import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { turnRequest } from '../../src/agent/context.js';
 import { withKernelHint } from '../../src/agent/loop.js';
@@ -19,6 +18,7 @@ import {
   estimateTokens,
   foldPaysOff,
 } from '../../src/runtime/kernel/cache-epoch.js';
+import { PrefixCache } from './prefix-cache.js';
 import { toolSpec } from '../../src/tools/registry.js';
 import type { Tool } from '../../src/tools/types.js';
 
@@ -100,7 +100,7 @@ const tok = (v: unknown) => estimateTokens(v);
 
 /** Anthropic-like prefix cache: chained block hashes; breakpoints write, any cached position reads. */
 function simulate(policy: 'naive' | 'frozen-tools' | 'frozen+directive' | 'full') {
-  const store = new Set<string>();
+  const cache = new PrefixCache();
   let messages: Message[] = [first];
   const ep = new ToolEpoch();
   let billed = 0;
@@ -158,38 +158,11 @@ function simulate(policy: 'naive' | 'frozen-tools' | 'frozen+directive' | 'full'
         directive.length ? { terminalDirective: directive.join('\n\n') } : undefined,
       ),
     );
-    // Linearize wire blocks in prefix order.
-    const blocks: { v: unknown; bp: boolean }[] = [
-      ...params.tools.map((x) => ({ v: x, bp: 'cache_control' in x })),
-      ...(params.system as object[]).map((x) => ({ v: x, bp: 'cache_control' in x })),
-      ...params.messages.flatMap((m) =>
-        (m.content as object[]).map((c) => ({ v: { r: m.role, c }, bp: 'cache_control' in c })),
-      ),
-    ];
-    let h = '';
-    let pos = 0;
-    let hitTok = 0;
-    let lastBpTok = 0;
-    const bpHashes: string[] = [];
-    for (const b of blocks) {
-      const clean = JSON.stringify(b.v, (k, x) => (k === 'cache_control' ? undefined : x));
-      h = createHash('sha1')
-        .update(h + clean)
-        .digest('hex');
-      pos += tok(clean);
-      if (store.has(h)) hitTok = pos;
-      if (b.bp) {
-        lastBpTok = pos;
-        bpHashes.push(h);
-      }
-    }
-    for (const x of bpHashes) store.add(x);
-    const write = Math.max(0, lastBpTok - hitTok);
-    const unc = pos - hitTok - write;
-    billed += hitTok * 0.1 + write * 1.25 + unc;
-    uncachedBaseline += pos;
-    read += hitTok;
-    totalIn += pos;
+    const b = cache.bill(params);
+    billed += b.billed;
+    uncachedBaseline += b.total;
+    read += b.read;
+    totalIn += b.total;
     messages = [...messages, ...turnMsgs(t)];
   }
   return {

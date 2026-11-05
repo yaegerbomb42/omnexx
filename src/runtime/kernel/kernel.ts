@@ -501,11 +501,12 @@ ${entry.description}`;
     return undefined;
   }
 
-  async dropLiveMount(id: string): Promise<void> {
+  dropLiveMount(id: string): Promise<void> {
     const entry = this.catalog.get(id);
     const server = mcpServerKeyFromCatalogId(id, entry?.server);
     if (server) this.liveMcpTools.delete(server);
     this.pagedSkills.delete(id);
+    return Promise.resolve();
   }
 
   /** Ensure live tools/skills match the catalog mount set (after select / reselect). */
@@ -778,7 +779,7 @@ ${entry.description}`;
     const candidates =
       this.catalog.size > 0
         ? this.catalog.search(query, 10).map((e) => ({
-            kind: (e.kind === 'skill' ? 'skill' : 'tool') as 'tool' | 'skill',
+            kind: e.kind === 'skill' ? ('skill' as const) : ('tool' as const),
             id: e.id,
             name: e.name,
             description: e.description,
@@ -824,8 +825,7 @@ ${entry.description}`;
       // Never downgrade: a tier-3 seed that entered via reasoningMode 'mcts' keeps tier 3 (GC).
       const tier = Math.max(2, allocation.tier) as 2 | 3;
       allocation = { ...mcts.best, tier, reasoningMode: 'mcts' };
-      if (!allocation.mctsBranchFactor)
-        allocation.mctsBranchFactor = mcts.best.mctsBranchFactor ?? 3;
+      allocation.mctsBranchFactor ??= mcts.best.mctsBranchFactor ?? 3;
       mctsSelectedId = mcts.selectedId;
     }
 
@@ -928,14 +928,11 @@ ${entry.description}`;
       mountedTokens: mergedTools.reduce((n, t) => n + headerTokens(t), 0),
     };
     const phaseNow = this.optimizer.phases.phase;
+    // Only the verify phase nudges (orient batching is in the system prompt already).
     const phaseNudge =
-      phaseNow === 'orient' &&
-      this.optimizer.profile.taskClass !== 'trivial' &&
-      this.turnCounter <= 1
-        ? '[kernel:phase orient] Batch independent read/search/manage_capabilities calls in ONE turn before editing.'
-        : phaseNow === 'verify'
-          ? '[kernel:phase verify] You changed files: run the real checks (tests/typecheck/build/lint) before finishing. echo/ls/cat do not count as verification.'
-          : undefined;
+      phaseNow === 'verify'
+        ? '[kernel:phase verify] You changed files: run the real checks (tests/typecheck/build/lint) before finishing. echo/ls/cat do not count as verification.'
+        : undefined;
     return {
       allocation,
       phase: phaseNow,
@@ -947,7 +944,7 @@ ${entry.description}`;
       ...(phaseNudge ? { phaseNudge } : {}),
       tools: mergedTools,
       maxTokens,
-      systemHint: `${formatSystemHint(allocation, mctsSelectedId, this.pagedSkills)}`.replace(
+      systemHint: formatSystemHint(allocation, mctsSelectedId, this.pagedSkills).replace(
         /^\[kernel\] /,
         `[kernel] phase=${phaseNow} class=${this.optimizer.profile.taskClass} cadence=${cadence.action}(${cadence.reason}) `,
       ),
@@ -1112,8 +1109,6 @@ export function createKernelIfEnabled(
   const k = config.kernel;
   // Default-on: missing section still enables via schema defaults; explicit false opts out.
   if (k?.enabled === false) return undefined;
-  const enabled = k?.enabled ?? true;
-  if (!enabled) return undefined;
   return new AdaptiveRuntimeKernel({
     enabled: true,
     ollamaUrl: k?.ollama_url ?? 'http://127.0.0.1:11434',

@@ -160,6 +160,7 @@ const denseFull = new DenseIndex({ cachePath: '/home/box/models/dense-cache.json
  * Mount-set quality: what the kernel would actually put in context (maxMounted slots),
  * plus churn across a 4-turn session per task (same goal, drifting wording + an error).
  */
+// eslint-disable-next-line @typescript-eslint/require-await -- async API kept for callers
 export async function evaluateSelect(
   makeCatalog: () => CapabilityCatalog,
   maxMounted = 6,

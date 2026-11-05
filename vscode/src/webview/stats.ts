@@ -15,6 +15,7 @@ import {
   formatUsd,
   type Usage,
 } from './render.js';
+import { kernelObserveHtml, type KernelSnapshot } from './kernelObserve.js';
 
 export interface StatsInput {
   usage: (Usage & { startedAt: number | null }) | null;
@@ -133,6 +134,7 @@ function paint(id: string, html: string): void {
 export function refresh(): void {
   paint('token-budget', tokenBudgetHtml());
   paint('live-stats', liveStatsHtml());
+  if (lastKernel) updateKernel(lastKernel, last.usage);
   const strip = document.getElementById('crew-telemetry');
   if (strip) {
     const html = telemetryHtml();
@@ -145,4 +147,18 @@ export function refresh(): void {
 export function update(s: StatsInput): void {
   last = { usage: s.usage, context: s.context };
   refresh();
+}
+
+/** Paint every observe-only Kernel card on the page (chat panel + Settings → Agent). */
+let lastKernel: KernelSnapshot | null | undefined;
+
+export function updateKernel(k: KernelSnapshot | null | undefined, u?: Usage | null): void {
+  lastKernel = k;
+  const html = kernelObserveHtml(k, u);
+  for (const id of ['kernel-observe', 'kernel-observe-settings']) {
+    const node = document.getElementById(id);
+    if (!node) continue;
+    if (node.innerHTML !== html) node.innerHTML = html;
+    node.hidden = html === '';
+  }
 }

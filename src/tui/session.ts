@@ -1,3 +1,4 @@
+import type { KernelObserveSnapshot } from '../runtime/kernel/observe.js';
 import {
   contextTransform,
   parseContextCommand,
@@ -1109,6 +1110,11 @@ export class Session {
   /** True while a chat turn is running (the agent is working on a message). */
   get chatBusy(): boolean {
     return this.code?.busy ?? false;
+  }
+
+  /** Observe-only kernel snapshot for the open chat (null until the kernel allocates). */
+  get chatKernel(): KernelObserveSnapshot | null {
+    return this.code?.kernelSnapshot ?? null;
   }
 
   /** Token, tool and turn totals for the open chat (runs have their own `telemetry`). */

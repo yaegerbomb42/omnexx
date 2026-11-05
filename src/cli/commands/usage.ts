@@ -68,7 +68,9 @@ function stepsSection(io: CliIO, report: UsageReport): void {
     );
 }
 
-async function latestRunDir(p: ReturnType<typeof resolvePaths>): Promise<string | undefined> {
+export async function latestRunDir(
+  p: ReturnType<typeof resolvePaths>,
+): Promise<string | undefined> {
   const base = runsDir(p);
   let entries: string[];
   try {

@@ -106,7 +106,7 @@ export class StateCheckpointer {
         continue;
       }
       files[rel] = await this.readRel(rel);
-      this.vfs.touch(rel, files[rel] === '' ? null : files[rel]!);
+      this.vfs.touch(rel, files[rel] === '' ? null : files[rel]);
     }
     // Always merge current VFS snapshot so previously touched-but-clean files are covered.
     if (usedVfs) {

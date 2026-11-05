@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { ok, fail, type Tool } from '../../tools/types.js';
 import type { CapabilityEntry } from './types.js';
-import { DenseIndex, denseDocText, dot } from './dense.js';
+import type { DenseIndex } from './dense.js';
+import { denseDocText, dot } from './dense.js';
 import {
   CapabilityRetriever,
   INSTALLED_NAMED_TIER,
@@ -757,8 +758,8 @@ export function syntheticCatalog(
   ];
   const out: Omit<CatalogEntry, 'tokens'>[] = [];
   for (let i = 0; i < count; i++) {
-    const domain = domains[i % domains.length]!;
-    const verb = verbs[i % verbs.length]!;
+    const domain = domains[i % domains.length] ?? 'misc';
+    const verb = verbs[i % verbs.length] ?? 'get';
     const name = `${verb}_${domain}_${i}`;
     out.push({
       id: `${prefix}:${domain}:${name}`,

@@ -164,12 +164,9 @@ describe('kernel live MCP mount injection (#1)', () => {
 
     // Call the live tool end-to-end
     const echo = plan2.tools.find((t) => t.name === 'mcp__fake__echo')!;
-    const result = await echo.run(
-      { message: 'kernel-live' },
-      {
-        redactor: { text: (s: string) => s },
-      } as never,
-    );
+    const result = await echo.run({ message: 'kernel-live' }, {
+      redactor: { text: (s: string) => s },
+    } as never);
     expect(result.isError).toBeFalsy();
     expect(result.content).toBe('ECHO: kernel-live');
 

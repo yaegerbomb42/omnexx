@@ -60,6 +60,8 @@ export const LIVE_REGISTRY_TIMEOUT_MS = 15_000;
 const PAGE_TIMEOUT_MS = 30_000;
 
 function cachePath(env: NodeJS.ProcessEnv = process.env): string {
+  // `||` on purpose: an empty env var must fall back too.
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
   const home = env.OMNEXX_CONFIG_HOME || env.XDG_CONFIG_HOME || join(homedir(), '.config');
   return join(home, 'omnexx', 'cache', 'mcp-registry-snapshot.json.gz');
 }
@@ -118,7 +120,9 @@ async function readGzipJson(path: string): Promise<RegistrySnapshot> {
   try {
     json = gunzipSync(buf).toString('utf8');
   } catch (err) {
-    throw new Error(`registry snapshot: corrupt gzip (${(err as Error).message})`);
+    throw new Error(`registry snapshot: corrupt gzip (${(err as Error).message})`, {
+      cause: err,
+    });
   }
   return validateRegistrySnapshot(JSON.parse(json));
 }
@@ -231,7 +235,12 @@ export async function fetchLiveRegistry(
     const rec: RegistryServerRecord = {
       id: `registry:mcp:${name}`,
       kind: 'mcp',
-      name: typeof srv.title === 'string' ? srv.title : name.split('/').pop() || name,
+      name:
+        typeof srv.title === 'string'
+          ? srv.title
+          : // `||`: a trailing slash yields '' and must fall back to the full name.
+            // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+            name.split('/').pop() || name,
       description: typeof srv.description === 'string' ? srv.description.slice(0, 500) : '',
       server: name,
       version: typeof srv.version === 'string' ? srv.version : undefined,
@@ -284,7 +293,7 @@ export async function readBundledSnapshot(
   for (const path of bundledCandidates(moduleUrl)) {
     try {
       const snap = await readGzipJson(path);
-      if (snap.servers?.length) return snap;
+      if (snap.servers.length) return snap;
     } catch {
       // try next
     }
@@ -330,12 +339,12 @@ export async function loadRegistry(opts?: {
       let cachedFloor: RegistrySnapshot | undefined;
       try {
         const cached = await readGzipJson(cache);
-        if (cached.servers?.length) cachedFloor = cached;
+        if (cached.servers.length) cachedFloor = cached;
       } catch {
         // no cache
       }
       const floorCandidates = [bundled, cachedFloor].filter((s): s is RegistrySnapshot =>
-        Boolean(s?.servers?.length),
+        Boolean(s?.servers.length),
       );
       if (floorCandidates.length) {
         const floor = floorCandidates.reduce((a, b) => (a.latestCount >= b.latestCount ? a : b));

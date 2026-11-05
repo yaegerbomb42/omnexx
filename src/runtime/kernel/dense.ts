@@ -97,8 +97,7 @@ export class DenseIndex {
       });
       if (!res.ok) throw new Error(`ollama embed HTTP ${res.status}`);
       const body = (await res.json()) as { embeddings?: number[][] };
-      if (!body.embeddings || body.embeddings.length !== texts.length)
-        throw new Error('bad embed reply');
+      if (body.embeddings?.length !== texts.length) throw new Error('bad embed reply');
       return body.embeddings.map(normalize);
     } catch {
       this.down = true; // fail closed to BM25-only for the rest of the session

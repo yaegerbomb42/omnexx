@@ -1884,13 +1884,17 @@ kbd {
 
 .set-chip.active {
   opacity: 1;
-  border-color: color-mix(in srgb, var(--sec, var(--vscode-focusBorder)) 40%, transparent) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--sec, var(--vscode-focusBorder)) 40%,
+    transparent
+  ) !important;
   background: color-mix(in srgb, var(--sec, var(--vscode-focusBorder)) 12%, transparent) !important;
 }
 
 /* Form fields & inputs */
-.settings input[type="text"],
-.settings input[type="password"],
+.settings input[type='text'],
+.settings input[type='password'],
 .settings select {
   border-radius: var(--radius-sm) !important;
   border: 1px solid var(--vscode-input-border, rgba(255, 255, 255, 0.12)) !important;
@@ -1903,9 +1907,127 @@ kbd {
 }
 
 /* Simplify settings cards */
-.settings-section, .settings-group, .mcp-card, .provider-card {
+.settings-section,
+.settings-group,
+.mcp-card,
+.provider-card {
   border: 1px solid var(--vscode-editorWidget-border, rgba(255, 255, 255, 0.08)) !important;
   background: var(--vscode-editor-background, rgba(0, 0, 0, 0.15)) !important;
   border-radius: var(--radius-md) !important;
   box-shadow: none !important;
+}
+
+/* Observe-only Kernel card: phase pill, active capabilities, cadence, savings. */
+.kernel-observe {
+  margin: 8px 0;
+}
+.ko-card {
+  border: 1px solid var(--bento-border, color-mix(in srgb, var(--fg, #ccc) 12%, transparent));
+  border-radius: var(--radius-lg, 14px);
+  background: var(--bento-bg, color-mix(in srgb, var(--bg, #111) 88%, transparent));
+  box-shadow: var(--bento-shadow, none);
+  backdrop-filter: blur(14px);
+  padding: 10px 12px;
+  display: grid;
+  gap: 7px;
+  font-size: var(--fs-sm, 12px);
+  animation: ko-in 0.25s ease;
+}
+@keyframes ko-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.ko-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.ko-title {
+  font-weight: 600;
+}
+.ko-meta,
+.ko-dim {
+  color: var(--muted, #888);
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: var(--fs-xs, 11px);
+}
+.ko-phases {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.ko-phase {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--fs-xs, 11px);
+  color: var(--muted, #888);
+  background: color-mix(in srgb, var(--fg, #ccc) 6%, transparent);
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+.ko-phase.on {
+  color: var(--fg, #fff);
+  background: var(--accent-soft, color-mix(in srgb, #8b5cf6 18%, transparent));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #8b5cf6) 45%, transparent);
+}
+.ko-caps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+.ko-caps li {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+}
+.ko-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted, #888);
+}
+.ko-cap {
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  white-space: nowrap;
+}
+.ko-why {
+  color: var(--muted, #888);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ko-empty {
+  color: var(--muted, #888);
+}
+.ko-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ko-label {
+  color: var(--muted, #888);
+}
+.ko-value {
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  text-align: right;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ko-card {
+    animation: none;
+  }
+  .ko-phase {
+    transition: none;
+  }
 }

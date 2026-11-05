@@ -124,6 +124,8 @@ export async function discoverLocalMcpServers(opts: {
   }
 
   // Omnexx user config.toml [mcp.servers]
+  // `||` on purpose: an empty env var must fall back too.
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
   const configHome = env.OMNEXX_CONFIG_HOME || env.XDG_CONFIG_HOME || join(home, '.config');
   const userToml = join(configHome, 'omnexx', 'config.toml');
   if (await exists(userToml)) {
@@ -191,10 +193,10 @@ export async function discoverLocalSkills(opts: {
         const description =
           typeof data.description === 'string' && data.description.trim()
             ? data.description.trim()
-            : body
+            : (body
                 .split('\n')
                 .find((l) => l.trim())
-                ?.trim() || `Skill ${name}`;
+                ?.trim() ?? `Skill ${name}`);
         const id = `local:skill:${name}`;
         if (seen.has(id)) continue;
         seen.add(id);
@@ -210,7 +212,7 @@ export async function discoverLocalSkills(opts: {
                 ? data.triggerConditions
                 : undefined,
         });
-        if (!sources.includes(String(source))) sources.push(String(source));
+        if (!sources.includes(source)) sources.push(source);
       } catch {
         // skip unreadable skill
       }

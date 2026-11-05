@@ -96,7 +96,7 @@ export class CapabilityIndex {
     } finally {
       clearTimeout(timer);
     }
-    return this.ollamaUp === true;
+    return this.ollamaUp;
   }
 
   async index(
@@ -461,12 +461,12 @@ export function multiSampleAllocations(
 
 export function allocationSimilarities(samples: readonly TurnAllocation[]): number[] {
   const sims: number[] = [];
-  for (let i = 0; i < samples.length; i++) {
-    for (let j = i + 1; j < samples.length; j++) {
-      const a = new Set(samples[i]!.mountedTools);
-      const b = new Set(samples[j]!.mountedTools);
+  for (const [i, si] of samples.entries()) {
+    for (const sj of samples.slice(i + 1)) {
+      const a = new Set(si.mountedTools);
+      const b = new Set(sj.mountedTools);
       if (a.size === 0 && b.size === 0) {
-        sims.push(samples[i]!.reasoningMode === samples[j]!.reasoningMode ? 1 : 0);
+        sims.push(si.reasoningMode === sj.reasoningMode ? 1 : 0);
         continue;
       }
       let inter = 0;

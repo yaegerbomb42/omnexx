@@ -62,8 +62,7 @@ export function runMcts(args: {
     const totalVisits = branches.reduce((s, b) => s + b.visits, 0);
     let bestIdx = 0;
     let bestUcb = -Infinity;
-    for (let i = 0; i < branches.length; i++) {
-      const b = branches[i]!;
+    for (const [i, b] of branches.entries()) {
       const ucb =
         b.score / b.visits + exploration * Math.sqrt(Math.log(totalVisits + 1) / b.visits);
       if (ucb > bestUcb) {
@@ -71,7 +70,8 @@ export function runMcts(args: {
         bestIdx = i;
       }
     }
-    const chosen = branches[bestIdx]!;
+    const chosen = branches[bestIdx];
+    if (!chosen) break;
     // Rescore with a small deterministic jitter keyed by visit count (stable across runs).
     const jittered = scoreBranch(
       chosen.allocation,
@@ -83,7 +83,7 @@ export function runMcts(args: {
     chosen.visits += 1;
   }
 
-  let winner = branches[0]!;
+  let winner = branches[0] as (typeof branches)[number];
   for (const b of branches) {
     const avg = b.score / b.visits;
     const winAvg = winner.score / winner.visits;

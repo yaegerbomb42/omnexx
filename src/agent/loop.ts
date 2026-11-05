@@ -572,6 +572,7 @@ export async function runAgentLoop(
         ...(plan.rankMode ? { rank: plan.rankMode } : {}),
         ...(plan.whyMounted ? { why: plan.whyMounted } : {}),
         ...(plan.mountSavings ? { mountSavings: plan.mountSavings } : {}),
+        priors: deps.kernel.optimizer.bandit.top(3),
         ...(plan.droppedTools?.length ? { dropped: plan.droppedTools } : {}),
         ...(plan.toolNameCollisions?.length ? { collisions: plan.toolNameCollisions } : {}),
       });

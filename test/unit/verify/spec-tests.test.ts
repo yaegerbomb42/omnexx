@@ -102,10 +102,10 @@ describe('parseSuite', () => {
 });
 
 describe('defaults', () => {
-  it('is off unless asked for, with one fix round of at most 3 cycles', () => {
+  it("defaults to 'auto' (power features on by default, #385), one fix round of at most 3 cycles", () => {
     const review = configSchema.parse({}).review;
     expect(review).toMatchObject({
-      spec_tests: 'off',
+      spec_tests: 'auto',
       spec_tests_max_rounds: 1,
       spec_tests_max_cycles: 3,
     });

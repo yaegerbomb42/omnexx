@@ -27,3 +27,17 @@ avg mounted 6→4.6 / 6→4.4 · churn/turn 2.05→1.08 / 2.35→1.31
 | frozen tools                            | 170,242       | 0.456      | 68.8%     |
 | frozen tools + hints in directive       | 99,835        | 0.267      | 85.2%     |
 | full (+ cache-gated GC / epoch re-bake) | 97,982        | 0.255      | 86.3%     |
+
+## General-agent optimizer (npm run bench:optimizer)
+
+5 archetypes (trivial Q&A, multi-step repo feature, external MCP workflow, high-friction
+bugfix, mid-task pivot) over the real catalog and wire format; billed = 0.1x read, 1.25x write.
+Turns-to-verified includes modeled discovery-miss turns and an unverified-finish re-entry
+(2 turns; the kernel pays 1 nudged verification turn instead).
+
+| policy                             | recall | raw prompt | billed tok-eq | cache hit | route ms/turn | turns to verified |
+| ---------------------------------- | ------ | ---------- | ------------- | --------- | ------------- | ----------------- |
+| A static all-mounted               | 0.917  | 383,396    | 121,988       | 81.0%     | 14.1          | 38                |
+| B naive every-turn reselect        | 0.917  | 276,274    | 118,483       | 71.4%     | 7.7           | 38                |
+| C fixed per-task                   | 0.833  | 274,019    | 97,060        | 77.9%     | 0.8           | 39                |
+| D VoI + phase + UCB + cache epochs | 0.917  | 275,344    | 81,656        | 82.7%     | 1.8           | 36                |

@@ -435,7 +435,7 @@ ${sec('add', addFormHtml(), 'add')}`,
 )}
 ${panel(
   'agent',
-  `${sec('agent', `<div id="agent-box">${agentCard.html()}</div><div id="token-budget">${stats.tokenBudgetHtml()}</div><div id="live-stats">${stats.liveStatsHtml()}</div>`)}
+  `${sec('agent', `<div id="agent-box">${agentCard.html()}</div><div id="token-budget">${stats.tokenBudgetHtml()}</div><div id="live-stats">${stats.liveStatsHtml()}</div><div id="kernel-observe-settings" class="kernel-observe" hidden></div>`)}
 ${sec('models', `<div id="roles-box">${roles.html()}</div>`)}
 ${sec('approvals', approvalsHtml())}
 ${layout.cardHtml('Work modes', 'How much autonomy a run has and what kind of work it does.', workModesHtml())}`,

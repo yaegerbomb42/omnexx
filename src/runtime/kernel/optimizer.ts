@@ -89,7 +89,7 @@ export function isRealVerification(tool: string, input: unknown): boolean {
   if (tool !== 'bash' && tool !== 'shell' && tool !== 'run') return false;
   const cmd =
     input && typeof input === 'object' && 'command' in input
-      ? String((input as { command: unknown }).command)
+      ? String(input.command)
       : typeof input === 'string'
         ? input
         : '';

@@ -69,14 +69,14 @@ export function mcpCapabilityRuntime(
 
 /** Extract MCP server key from a catalog id like `local:mcp:fake` or `registry:mcp:owner/pkg`. */
 export function mcpServerKeyFromCatalogId(id: string, serverField?: string): string | undefined {
-  if (serverField && serverField.trim()) return serverField.trim();
+  if (serverField?.trim()) return serverField.trim();
   if (id.startsWith('local:mcp:')) return id.slice('local:mcp:'.length);
   if (id.startsWith('registry:mcp:')) return id.slice('registry:mcp:'.length);
   return undefined;
 }
 
 export function skillNameFromCatalogId(id: string, nameField?: string): string | undefined {
-  if (nameField && nameField.trim()) return nameField.trim();
+  if (nameField?.trim()) return nameField.trim();
   if (id.startsWith('local:skill:')) return id.slice('local:skill:'.length);
   if (id.startsWith('registry:skill:')) {
     const slug = id.slice('registry:skill:'.length);
