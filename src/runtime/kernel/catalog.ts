@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { ok, fail, type Tool } from '../../tools/types.js';
 import type { CapabilityEntry } from './types.js';
 
+/** How long unverified remote (SkillMD) search hits stay in the catalog. */
+export const REMOTE_SKILL_TTL_MS = 30 * 60 * 1000;
+
 export interface CatalogEntry {
   /** Stable id, e.g. `mcp:github:create_issue` or `skill:testing`. */
   id: string;
@@ -55,6 +58,8 @@ function termFreq(tokens: string[]): Map<string, number> {
  */
 export class CapabilityCatalog {
   private entries = new Map<string, CatalogEntry>();
+  /** Expiry (epoch ms) for ephemeral entries such as unverified remote SkillMD hits. */
+  private expiry = new Map<string, number>();
   private idf = new Map<string, number>();
   private mounted = new Map<string, CatalogEntry>();
   private lru: string[] = [];
@@ -92,6 +97,7 @@ export class CapabilityCatalog {
   /** Replace the catalog contents (headers only). O(n) rebuild of IDF. */
   load(entries: readonly Omit<CatalogEntry, 'tokens'>[]): void {
     this.entries.clear();
+    this.expiry.clear();
     for (const e of entries) {
       const text = `${e.name} ${e.description} ${e.triggerConditions ?? ''} ${e.server ?? ''}`;
       this.entries.set(e.id, { ...e, tokens: tokenize(text) });
@@ -107,12 +113,36 @@ export class CapabilityCatalog {
   }
 
   /** Merge additional entries without clearing (for incremental MCP discovery). */
-  upsert(entries: readonly Omit<CatalogEntry, 'tokens'>[]): void {
+  upsert(
+    entries: readonly Omit<CatalogEntry, 'tokens'>[],
+    opts: { ttlMs?: number; now?: number } = {},
+  ): void {
+    const now = opts.now ?? Date.now();
     for (const e of entries) {
       const text = `${e.name} ${e.description} ${e.triggerConditions ?? ''} ${e.server ?? ''}`;
+      const existed = this.entries.has(e.id);
       this.entries.set(e.id, { ...e, tokens: tokenize(text) });
+      if (opts.ttlMs !== undefined) {
+        // Never demote a permanent entry to ephemeral.
+        if (!existed || this.expiry.has(e.id)) this.expiry.set(e.id, now + opts.ttlMs);
+      } else {
+        this.expiry.delete(e.id);
+      }
     }
     this.rebuildIdf();
+  }
+
+  /** Evict expired ephemeral entries (mounted ones are kept until unmounted). */
+  pruneExpired(now = Date.now()): number {
+    let removed = 0;
+    for (const [id, at] of this.expiry) {
+      if (at > now || this.mounted.has(id)) continue;
+      this.expiry.delete(id);
+      this.entries.delete(id);
+      removed++;
+    }
+    if (removed) this.rebuildIdf();
+    return removed;
   }
 
   /** Convert to CapabilityEntry shape used by the meta-router. */
@@ -133,6 +163,7 @@ export class CapabilityCatalog {
    * Returns top-K ids — does not change the mount set.
    */
   search(query: string, k = 10): CatalogEntry[] {
+    this.pruneExpired();
     const qTokens = tokenize(query);
     if (qTokens.length === 0) return [...this.entries.values()].slice(0, k);
     const qtf = termFreq(qTokens);
@@ -354,15 +385,15 @@ export function createCatalogTools(
       if (options.publicSkillSearch) {
         try {
           const remote = await options.publicSkillSearch(input.query, input.limit);
-          if (remote.length > 0) catalog.upsert([...remote]);
+          // Unverified remote hits are ephemeral: evicted after the TTL unless mounted.
+          if (remote.length > 0) catalog.upsert([...remote], { ttlMs: REMOTE_SKILL_TTL_MS });
         } catch {
           // public skills are optional enrichment
         }
       }
       const hits = catalog.search(input.query, input.limit).map((e) => {
         const installed =
-          options.isInstalled?.(e.id, e) ??
-          (e.id.startsWith('local:') || Boolean(e.inputSchema));
+          options.isInstalled?.(e.id, e) ?? (e.id.startsWith('local:') || Boolean(e.inputSchema));
         return {
           id: e.id,
           kind: e.kind,
@@ -440,7 +471,10 @@ export function createCatalogTools(
 }
 
 /** Build synthetic catalog entries for tests / benches. */
-export function syntheticCatalog(count: number, prefix = 'mcp:synth'): Omit<CatalogEntry, 'tokens'>[] {
+export function syntheticCatalog(
+  count: number,
+  prefix = 'mcp:synth',
+): Omit<CatalogEntry, 'tokens'>[] {
   const domains = [
     'github',
     'gitlab',
