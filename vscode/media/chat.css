@@ -2898,3 +2898,49 @@ textarea::placeholder {
   border-radius: 3px;
   background: var(--brand);
 }
+
+/* ==========================================================================
+   MINIMALIST FOCUS OVERRIDES (Dead-simple, zero visual noise, pristine chrome)
+   ========================================================================== */
+
+/* Reduce jarring borders & visual clutter across cards */
+.card, .posture-card, .model-row, .step-item {
+  border: 1px solid var(--vscode-editorWidget-border, rgba(255, 255, 255, 0.08)) !important;
+  background: var(--vscode-editor-background, rgba(0, 0, 0, 0.2)) !important;
+  box-shadow: none !important;
+}
+
+/* Streamline the input composer into a clean, floating prompt bar */
+.composer {
+  padding: 8px var(--pad-x) 12px;
+  background: transparent !important;
+}
+
+.input-wrap {
+  border: 1px solid var(--vscode-input-border, rgba(255, 255, 255, 0.12)) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--vscode-input-background, #1e1e1e) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.input-wrap:focus-within {
+  border-color: var(--vscode-focusBorder, #007fd4) !important;
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007fd4) !important;
+}
+
+/* Pure minimalist buttons */
+.btn-icon, .btn-ghost, .btn-secondary {
+  border-radius: var(--radius-sm);
+  transition: opacity 120ms ease, background 120ms ease;
+}
+
+.btn-icon:hover, .btn-ghost:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.08));
+}
+
+/* Eliminate excessive glowing / pulse noise for clean focus */
+.pulse-glow, .badge-glow {
+  box-shadow: none !important;
+  animation: none !important;
+}

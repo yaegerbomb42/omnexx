@@ -1860,3 +1860,52 @@ kbd {
     opacity: 0.9;
   }
 }
+
+/* ==========================================================================
+   MINIMALIST SETTINGS & OPTIONS REFINEMENTS
+   ========================================================================== */
+
+/* Clean, crisp sticky header */
+.settings .set-top {
+  background: var(--vscode-sideBar-background, #181818) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(255, 255, 255, 0.08)) !important;
+  box-shadow: none !important;
+}
+
+/* Subtle, refined section chips */
+.set-chip {
+  border-radius: var(--radius-sm) !important;
+  font-weight: 500;
+  opacity: 0.8;
+  border: 1px solid transparent;
+}
+
+.set-chip.active {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--sec, var(--vscode-focusBorder)) 40%, transparent) !important;
+  background: color-mix(in srgb, var(--sec, var(--vscode-focusBorder)) 12%, transparent) !important;
+}
+
+/* Form fields & inputs */
+.settings input[type="text"],
+.settings input[type="password"],
+.settings select {
+  border-radius: var(--radius-sm) !important;
+  border: 1px solid var(--vscode-input-border, rgba(255, 255, 255, 0.12)) !important;
+  background: var(--vscode-input-background, #1e1e1e) !important;
+}
+
+.settings input:focus,
+.settings select:focus {
+  border-color: var(--vscode-focusBorder, #007fd4) !important;
+}
+
+/* Simplify settings cards */
+.settings-section, .settings-group, .mcp-card, .provider-card {
+  border: 1px solid var(--vscode-editorWidget-border, rgba(255, 255, 255, 0.08)) !important;
+  background: var(--vscode-editor-background, rgba(0, 0, 0, 0.15)) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: none !important;
+}
