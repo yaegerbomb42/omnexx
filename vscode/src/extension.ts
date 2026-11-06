@@ -1,7 +1,17 @@
 import * as vscode from 'vscode';
+import { AutonomousQueueProvider } from './autonomousQueue.js';
 import { ChatViewProvider } from './chatView.js';
 import { initEngine } from './engine.js';
 import { control, openTerminal, type Control } from './cli.js';
+import {
+  DIFF_SCHEME,
+  DiffCodeLensProvider,
+  InlineDiffReviewProvider,
+  approveDiff,
+  openQueueDiff,
+  rejectDiff,
+  taskIdFromArg,
+} from './inline-diff-review.js';
 import { runArgs, validateDuration, type RunOptions } from './model.js';
 import { primaryFolder, RunsProvider, type Node } from './tree.js';
 
@@ -55,6 +65,17 @@ export function activate(context: vscode.ExtensionContext): void {
   const chat = new ChatViewProvider(context.extensionUri);
   provider.setVisible(view.visible);
   paintStatus();
+
+  // The daemon's work queue, and inline diff review for finished tasks.
+  const queueProvider = new AutonomousQueueProvider();
+  const queueView = vscode.window.createTreeView('omnexx.autonomousQueueView', {
+    treeDataProvider: queueProvider,
+    showCollapseAll: true,
+  });
+  const diffProvider = new InlineDiffReviewProvider();
+  const refreshQueue = (): void => {
+    queueProvider.refresh();
+  };
 
   context.subscriptions.push(
     provider,
@@ -111,6 +132,21 @@ export function activate(context: vscode.ExtensionContext): void {
     view,
     cmd('omnexx.startRun', () => startRun(false, refresh)),
     cmd('omnexx.startAutonomous', () => startRun(true, refresh)),
+    queueProvider,
+    queueView,
+    vscode.workspace.registerTextDocumentContentProvider(DIFF_SCHEME, diffProvider),
+    vscode.languages.registerCodeLensProvider({ scheme: DIFF_SCHEME }, new DiffCodeLensProvider()),
+    queueView.onDidChangeVisibility(() => {
+      if (queueView.visible) refreshQueue();
+    }),
+    cmd('omnexx.refreshAutonomousQueue', refreshQueue),
+    cmd('omnexx.showQueueDiff', (arg) => {
+      const taskId = typeof arg === 'string' ? arg : taskIdFromArg(arg);
+      if (!taskId) throw new Error('Pick a task in the Autonomous Queue first.');
+      return openQueueDiff(taskId);
+    }),
+    cmd('omnexx.approveDiff', (arg) => approveDiff(arg, refreshQueue)),
+    cmd('omnexx.rejectDiff', (arg) => rejectDiff(arg, refreshQueue)),
     cmd('omnexx.openChat', () => {
       return openTerminal('omnexx', [], primaryFolder());
     }),

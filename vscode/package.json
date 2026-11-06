@@ -49,6 +49,10 @@
         {
           "id": "omnexx.runs",
           "name": "History"
+        },
+        {
+          "id": "omnexx.autonomousQueueView",
+          "name": "Autonomous Queue"
         }
       ]
     },
@@ -56,6 +60,10 @@
       {
         "view": "omnexx.runs",
         "contents": "No chats or runs for this folder yet.\n[Start run](command:omnexx.startRun)\n[Autonomous for N hours](command:omnexx.startAutonomous)\n[Open chat in terminal](command:omnexx.openChat)"
+      },
+      {
+        "view": "omnexx.autonomousQueueView",
+        "contents": "No daemon work queued yet.\n[Refresh](command:omnexx.refreshAutonomousQueue)"
       }
     ],
     "commands": [
@@ -170,6 +178,30 @@
         "title": "Compact Conversation",
         "category": "omnexx",
         "icon": "$(fold)"
+      },
+      {
+        "command": "omnexx.refreshAutonomousQueue",
+        "title": "Refresh Autonomous Queue",
+        "category": "omnexx",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "omnexx.showQueueDiff",
+        "title": "Show Queued Diff",
+        "category": "omnexx",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "omnexx.approveDiff",
+        "title": "Approve Diff",
+        "category": "omnexx",
+        "icon": "$(check)"
+      },
+      {
+        "command": "omnexx.rejectDiff",
+        "title": "Reject Diff",
+        "category": "omnexx",
+        "icon": "$(circle-slash)"
       }
     ],
     "menus": {
@@ -193,6 +225,11 @@
           "command": "omnexx.refresh",
           "when": "view == omnexx.runs",
           "group": "navigation@4"
+        },
+        {
+          "command": "omnexx.refreshAutonomousQueue",
+          "when": "view == omnexx.autonomousQueueView",
+          "group": "navigation@1"
         },
         {
           "command": "omnexx.newChat",
@@ -246,6 +283,16 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "omnexx.refreshAutonomousQueue",
+          "when": "view == omnexx.autonomousQueueView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "omnexx.showQueueDiff",
+          "when": "view == omnexx.autonomousQueueView && viewItem =~ /^autonomousTask/",
+          "group": "inline@1"
+        },
         {
           "command": "omnexx.attach",
           "when": "view == omnexx.runs && viewItem =~ /^run\\./",

@@ -44,6 +44,17 @@ export default defineConfig({
       {
         extends: true,
         test: {
+          name: 'autonomous',
+          include: ['test/autonomous/**/*.test.ts'],
+          // The soak drives 200 daemon cycles and the crash tests boot real
+          // daemons; 20s is too tight when the suite runs in parallel.
+          testTimeout: 120_000,
+          globalSetup: ['test/support/global-setup.ts'],
+        },
+      },
+      {
+        extends: true,
+        test: {
           name: 'e2e',
           include: ['test/e2e/**/*.test.ts'],
           testTimeout: 600_000,
