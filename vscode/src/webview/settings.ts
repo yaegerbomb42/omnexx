@@ -421,10 +421,12 @@ function shortcutsHtml(): string {
 function draw(): void {
   const page = q('settings', HTMLElement);
   const panel = (id: TabId, body: string): string => layout.tabPanelHtml(id, body, tab === id);
+  const navForTab = layout.navHtml({}, undefined, tab);
   page.innerHTML = `
 <div class="set-top">
   <div class="set-head"><button class="ghost back nav-pill" data-settings-close>← Back to chat</button><h2>Settings</h2></div>
   ${layout.tabsHtml(tab, { providers: connected.length })}
+  ${navForTab}
 </div>
 <div class="set-panels">
 ${panel(
@@ -635,6 +637,7 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
       saving = false;
       formTouched = false;
       status = { text: 'Connected. Checking it now; then pick a model above.', kind: 'ok' };
+      flashSaved('providers');
       // Prove the new provider works: test every provider again, the new one included.
       if (postRef) testAll(postRef);
     }

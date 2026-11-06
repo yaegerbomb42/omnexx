@@ -29,6 +29,29 @@ describe('settings layout', () => {
     }
   });
 
+  it('only renders tab nav chips when a tab has 3 or more sections', () => {
+    // providers tab has: model, providers, add (3 sections) -> rendered
+    const providersNav = navHtml({}, undefined, 'providers');
+    expect(providersNav).toContain('data-sec="providers"');
+    expect(providersNav).toContain('data-sec="add"');
+
+    // agent tab has: agent, models, approvals (3 sections) -> rendered
+    const agentNav = navHtml({}, undefined, 'agent');
+    expect(agentNav).toContain('data-sec="agent"');
+
+    // tools tab has: skills, mcp, browser (3 sections) -> rendered
+    const toolsNav = navHtml({}, undefined, 'tools');
+    expect(toolsNav).toContain('data-sec="skills"');
+
+    // appearance tab has only: shortcuts (1 section) -> omitted
+    const appearanceNav = navHtml({}, undefined, 'appearance');
+    expect(appearanceNav).toBe('');
+
+    // advanced tab has only: advanced (1 section) -> omitted
+    const advancedNav = navHtml({}, undefined, 'advanced');
+    expect(advancedNav).toBe('');
+  });
+
   it('draws a section folded or open with its header toggle', () => {
     const open = sectionHtml('models', '<p>x</p>', false);
     expect(open).toContain('aria-expanded="true"');
