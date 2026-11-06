@@ -50,7 +50,9 @@ const NAME = /^(@[A-Za-z0-9_.-]+\/)?[A-Za-z0-9_.-]{1,64}$/;
 export function checkName(name: string): string {
   const n = name.trim();
   if (!NAME.test(n))
-    throw new Error(`"${name}" is not a usable server name: use letters, digits, -, _, . and optional @scope/`);
+    throw new Error(
+      `"${name}" is not a usable server name: use letters, digits, -, _, . and optional @scope/`,
+    );
   return n;
 }
 

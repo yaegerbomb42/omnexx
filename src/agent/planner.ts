@@ -419,7 +419,10 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
   let codemap = '# Codebase map\n(not built)';
   if (codemapText) {
     try {
-      codemap = renderCodemap(JSON.parse(codemapText) as Codemap, run.config.context.repo_map_max_tokens);
+      codemap = renderCodemap(
+        JSON.parse(codemapText) as Codemap,
+        run.config.context.repo_map_max_tokens,
+      );
     } catch {
       codemap = '# Codebase map\n(not built)';
     }

@@ -21,6 +21,7 @@ export default tseslint.config(
       'test/.build/**',
       'eslint.config.js',
       'vscode/build.mjs',
+      'scripts/copy-kernel-data.mjs',
     ],
   },
   eslint.configs.recommended,

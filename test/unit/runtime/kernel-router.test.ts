@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/require-await, @typescript-eslint/no-base-to-string -- test doubles */
 import { describe, expect, it } from 'vitest';
 import {
   CapabilityIndex,

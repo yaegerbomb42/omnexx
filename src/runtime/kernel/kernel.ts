@@ -923,9 +923,15 @@ ${entry.description}`;
     const installedAll = this.catalog
       .allEntries()
       .filter((e) => e.id.startsWith('local:') || this.localInstalled.has(e.id));
+    const mountedTokens = mergedTools.reduce((n, t) => n + headerTokens(t), 0);
+    // Registry tools mounted live are not in installedAll; the catalog must still cover
+    // everything mounted, or the "N of M" report shows mounted > total.
     const mountSavings = {
-      catalogTokens: installedAll.reduce((n, e) => n + headerTokens(e), 0),
-      mountedTokens: mergedTools.reduce((n, t) => n + headerTokens(t), 0),
+      catalogTokens: Math.max(
+        mountedTokens,
+        installedAll.reduce((n, e) => n + headerTokens(e), 0),
+      ),
+      mountedTokens,
     };
     const phaseNow = this.optimizer.phases.phase;
     // Only the verify phase nudges (orient batching is in the system prompt already).

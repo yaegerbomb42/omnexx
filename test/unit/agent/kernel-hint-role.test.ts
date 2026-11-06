@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-deprecated -- test doubles */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { withKernelHint } from '../../../src/agent/loop.js';

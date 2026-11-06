@@ -264,10 +264,7 @@ export class McpClientManager {
         serverName,
         name: tool.name,
         description: tool.description ?? '',
-        inputSchema: (tool.inputSchema ?? { type: 'object', properties: {} }) as Record<
-          string,
-          unknown
-        >,
+        inputSchema: tool.inputSchema,
       });
     }
     this.toolCache = null; // stale after per-server connect

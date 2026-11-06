@@ -123,7 +123,10 @@ export function envLayer(env: NodeJS.ProcessEnv): Plain {
           `unset ${name} or fix it`,
         );
       }
-      if (name === 'OMNEXX_KERNEL_MAX_MOUNTED' && (!Number.isInteger(value) || (value as number) < 1)) {
+      if (
+        name === 'OMNEXX_KERNEL_MAX_MOUNTED' &&
+        (!Number.isInteger(value) || (value as number) < 1)
+      ) {
         throw new ConfigError(
           `${name}: expected a positive integer, got "${raw}"`,
           `unset ${name} or fix it`,

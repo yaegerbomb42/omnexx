@@ -51,9 +51,7 @@ export function hashErrorSignature(
 export function isVerificationCommand(command: string): boolean {
   const cmd = command.trim().toLowerCase();
   // Strip common leading runners (npm run, pnpm, yarn, etc.)
-  const core = cmd
-    .replace(/^(npm|pnpm|yarn|bun)\s+(run\s+)?/, '')
-    .replace(/^npx\s+(-y\s+)?/, '');
+  const core = cmd.replace(/^(npm|pnpm|yarn|bun)\s+(run\s+)?/, '').replace(/^npx\s+(-y\s+)?/, '');
   return (
     /\b(test|check|verify|lint|typecheck|tsc|validate)\b/.test(core) ||
     /\b(vitest|jest|mocha|pytest|cargo\s+test|go\s+test|deno\s+test)\b/.test(cmd) ||

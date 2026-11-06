@@ -548,6 +548,7 @@ export async function stepAct(run: Run): Promise<void> {
     void kernel.warm(tools.map((t) => ({ name: t.name, description: t.description })));
   }
 
+  const kernelGoalText = kernel ? (await run.store.readGoal()).text : '';
   const deps = (models: readonly ResolvedModel[]): LoopDeps => {
     const base: LoopDeps = {
       provider: run.deps.provider,
@@ -610,7 +611,7 @@ export async function stepAct(run: Run): Promise<void> {
       ...(kernel
         ? {
             kernel,
-            kernelObjective: `${task.id}: ${task.title}`,
+            kernelObjective: kernelObjectiveFor(task.title, kernelGoalText),
           }
         : {}),
       compaction: {
@@ -1189,4 +1190,16 @@ export async function runOneCycle(run: Run, taskId: string): Promise<PendingVerd
     usd: run.state.spend.usd,
   });
   return pending;
+}
+
+/**
+ * Capability-selection query for a cycle. The task id ("M1.T01") is left out because it
+ * matched unrelated registry tools (such as "DOL Form M-1") in BM25. Generic fast-path
+ * titles also get the goal text added, so selection runs on what the user actually asked.
+ */
+export function kernelObjectiveFor(title: string, goal: string): string {
+  const g = goal.trim().slice(0, 600);
+  const t = title.trim();
+  if (!g) return t;
+  return /^do the whole goal/i.test(t) || t.length < 12 ? g : `${t}\n${g}`;
 }

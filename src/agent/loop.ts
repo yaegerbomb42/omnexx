@@ -98,12 +98,12 @@ function resolveKernelObjective(deps: LoopDeps, messages: readonly Message[]): s
   }
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    if (msg && msg.role === 'user' && Array.isArray(msg.content)) {
+    if (msg?.role === 'user' && Array.isArray(msg.content)) {
       const textBlock = msg.content.find(
         (b): b is Extract<ContentBlock, { type: 'text' }> =>
-          b.type === 'text' && Boolean(b.text?.trim()),
+          b.type === 'text' && Boolean(b.text.trim()),
       );
-      if (textBlock?.text?.trim()) return textBlock.text.trim();
+      if (textBlock?.text.trim()) return textBlock.text.trim();
     }
   }
   return 'general task';

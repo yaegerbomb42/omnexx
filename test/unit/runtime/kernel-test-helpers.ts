@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion -- test doubles */
 import { z } from 'zod';
 import { AdaptiveRuntimeKernel, type KernelConfig } from '../../../src/runtime/kernel/kernel.js';
 import type { Tool } from '../../../src/tools/types.js';
