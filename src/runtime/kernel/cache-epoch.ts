@@ -59,7 +59,7 @@ export function capabilitySignature(spec: ToolSpec): string {
   const schema = spec.inputSchema as { properties?: Record<string, unknown>; required?: string[] };
   const req = new Set(schema.required ?? []);
   const params = Object.keys(schema.properties ?? {})
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
     .map((p) => (req.has(p) ? p : `${p}?`))
     .join(', ');
   const desc = spec.description.replace(/\s+/g, ' ').trim().slice(0, 140);

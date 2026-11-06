@@ -33,7 +33,7 @@ export class PrefixCache {
     const bps: string[] = [];
     for (const b of blocks) {
       const clean = JSON.stringify(b.v, (k, x: unknown) => (k === 'cache_control' ? undefined : x));
-      h = createHash('sha1')
+      h = createHash('sha256')
         .update(h + clean)
         .digest('hex');
       pos += estimateTokens(clean);
