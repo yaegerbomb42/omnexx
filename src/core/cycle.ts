@@ -2,6 +2,7 @@ import { FAST_TASK } from './fast-path.js';
 import { withoutVendored } from '../agent/codemap.js';
 import { loadRoleCard } from '../agent/sections.js';
 import { parseDuration } from '../config/duration.js';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import {
@@ -17,6 +18,7 @@ import { factsBlockFor } from './facts.js';
 import { briefInput } from '../config/agent-settings.js';
 import { renderCodemap, type Codemap } from '../agent/codemap.js';
 import { runAgentLoop, type LoopDeps } from '../agent/loop.js';
+import { SpeculativeFileChecks } from './speculative-check.js';
 import type { ResolvedModel } from '../providers/pricing.js';
 import { actAsThinkLoop, renderGateFailures, usesThinkLoop } from './think-loop-run.js';
 import { WORKER_SYSTEM } from '../agent/prompts.js';
@@ -215,6 +217,22 @@ async function loadCodemap(run: Run): Promise<string> {
   return renderCodemap(JSON.parse(text) as Codemap, run.config.context.repo_map_max_tokens);
 }
 
+/**
+ * The project's lint command, when it has one: eslint, or the `lint` script of package.json.
+ * The speculative checks run it on the file that changed, in the background.
+ */
+export function lintCommand(root: string): string | undefined {
+  if (existsSync(join(root, 'node_modules', '.bin', 'eslint'))) return 'npx eslint';
+  const pkg = join(root, 'package.json');
+  if (!existsSync(pkg)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(pkg, 'utf8')) as { scripts?: Record<string, string> };
+    return typeof parsed.scripts?.lint === 'string' ? 'npm run --silent lint --' : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** PREPARE: the worktree must sit exactly on lastGreen with a clean tree before ACT. */
 export async function prepareWorktree(run: Run): Promise<void> {
   const head = await headSha(run.worktree);
@@ -390,8 +408,20 @@ export async function stepAct(run: Run): Promise<void> {
   const running = new RunningContext(run.store, task.id, () => run.clock.now());
   toolCtx.runningContext = running;
   let editOps = 0;
-  toolCtx.onEdit = () => {
+  // The speculative file checks run in the background from the moment a file is written,
+  // so the typecheck and the lint are already done when the model asks for them.
+  const speculative = run.config.plan.speculative_checks
+    ? new SpeculativeFileChecks({
+        exec: run.exec,
+        root: run.worktree,
+        env: run.childEnv,
+        signal: run.signal,
+        ...(lintCommand(run.worktree) ? { lint: lintCommand(run.worktree) } : {}),
+      })
+    : undefined;
+  toolCtx.onEdit = (path, content) => {
     editOps++;
+    if (speculative && content !== undefined) speculative.touch(path, content);
   };
   const runningText = await running.forPrompt();
   const [goal, intent, notes, progressTail, codemap] = await Promise.all([
@@ -457,7 +487,7 @@ export async function stepAct(run: Run): Promise<void> {
     memory: memory.stats(),
   });
   const deps = (models: readonly ResolvedModel[]): LoopDeps => ({
-    provider: run.deps.provider,
+    provider: run.provider,
     models,
     providerBlocked: (p) => run.providerBlocked(p),
     modelExhausted: (r) => run.modelExhausted(r),
@@ -524,6 +554,8 @@ export async function stepAct(run: Run): Promise<void> {
     : await runAgentLoop(ctx, deps(route.chain));
   // The browser (and the page it holds) lives for one cycle; the next starts fresh.
   await closeSession(run.state.runId).catch(() => undefined);
+  // The background checks stop with the cycle: nothing outlives it.
+  await speculative?.stop();
   if (result.end === 'max_usd') run.state.budgetExhausted = true;
   if (result.end === 'providers_unavailable')
     run.state.providersUnavailable = result.detail ?? 'no model could take a call';

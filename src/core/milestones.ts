@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { buildCodemap, setPurposes, updateCodemap, type Codemap } from '../agent/codemap.js';
+import { buildCodemapCached, setPurposes, updateCodemap, type Codemap } from '../agent/codemap.js';
 import { describeFiles } from '../agent/describe.js';
 import { tagCheckpoint } from '../git/checkpoint.js';
 import { readTextOr, writeJsonAtomic, writeFileAtomic } from './atomic.js';
@@ -151,7 +151,9 @@ export async function consolidateNotes(run: Run): Promise<boolean> {
 export async function initCodemap(run: Run, opts: { describe?: boolean } = {}): Promise<void> {
   const describe = opts.describe ?? true;
   const text = await readTextOr(run.store.file('codemap.json'), '');
-  const map = text ? (JSON.parse(text) as Codemap) : await buildCodemap(run.worktree);
+  const map = text
+    ? (JSON.parse(text) as Codemap)
+    : await buildCodemapCached(run.worktree, run.astCache);
   const missing = describe ? map.entries.filter((e) => !e.purpose).map((e) => e.path) : [];
   if (text && !missing.length) return;
   const purposes = missing.length ? await describeFiles(run, map, missing) : {};
@@ -162,7 +164,12 @@ export async function initCodemap(run: Run, opts: { describe?: boolean } = {}): 
 export async function refreshCodemap(run: Run, changed: readonly string[]): Promise<void> {
   const text = await readTextOr(run.store.file('codemap.json'), '');
   if (!text || !changed.length) return;
-  const { map, touched } = await updateCodemap(JSON.parse(text) as Codemap, run.worktree, changed);
+  const { map, touched } = await updateCodemap(
+    JSON.parse(text) as Codemap,
+    run.worktree,
+    changed,
+    run.astCache,
+  );
   const needs = touched.filter((p) => !map.entries.find((e) => e.path === p)?.purpose);
   const purposes = needs.length ? await describeFiles(run, map, needs) : {};
   await saveCodemap(run, setPurposes(map, purposes));

@@ -1,4 +1,10 @@
 import type { OmnexxEvent } from '../core/events.js';
+import {
+  cacheHitRate as metricsHitRate,
+  emptyCacheMetrics,
+  foldTurn,
+  type CacheMetrics,
+} from './cache-metrics.js';
 
 /** Live totals folded from the event stream: the TUI header, `status --json` and the line feed footer. */
 export interface Telemetry {
@@ -34,6 +40,12 @@ export interface Telemetry {
   milestonesDone: number;
   /** Turns whose cache read fell under 80% of the previous prompt. */
   cacheMisses: number;
+  /**
+   * The cache's own numbers: how many prompt tokens came from the cache, how many calls hit
+   * it, and the same per provider. Filled from the `turn` events, which carry the usage the
+   * provider reported.
+   */
+  cache: CacheMetrics;
 }
 
 export function emptyTelemetry(): Telemetry {
@@ -55,6 +67,7 @@ export function emptyTelemetry(): Telemetry {
     stuck: 0,
     milestonesDone: 0,
     cacheMisses: 0,
+    cache: emptyCacheMetrics(),
   };
 }
 
@@ -82,6 +95,8 @@ export function fold(t: Telemetry, e: OmnexxEvent): Telemetry {
       t.usd += n(e.usd);
       if (typeof e.model === 'string') t.model = e.model;
       if (typeof e.provider === 'string') t.provider = e.provider;
+      // The cache's own numbers, from the usage the provider reported.
+      foldTurn(t.cache, e);
       break;
     }
     case 'cache.miss':
@@ -136,6 +151,31 @@ export function fold(t: Telemetry, e: OmnexxEvent): Telemetry {
 
 export function cacheHitRate(t: Telemetry): number {
   return t.tokens.input ? t.tokens.cacheRead / t.tokens.input : 0;
+}
+
+/**
+ * The cache's own hit rate: the share of the prompt tokens that came from the cache, and
+ * the share of the calls that hit it at all. The second number is the one that says whether
+ * the prefix pinning works: above 80% of the calls reading their prefix from the cache.
+ */
+export function cacheStats(t: Telemetry): {
+  hitRate: number;
+  callHitRate: number;
+  hits: number;
+  misses: number;
+  calls: number;
+  saved: number;
+} {
+  const m = t.cache;
+  const calls = m.calls;
+  return {
+    hitRate: metricsHitRate(m),
+    callHitRate: calls > 0 ? m.hits / calls : 0,
+    hits: m.hits,
+    misses: m.misses,
+    calls,
+    saved: m.cacheRead,
+  };
 }
 
 /** Input tokens spent per accepted commit: the efficiency number we optimise. */

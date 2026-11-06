@@ -181,7 +181,7 @@ export function subagentRunner(
       maxTokens: Math.min(run.config.providers.anthropic.max_tokens, 4_096),
       limits: { tokens: cfg.subagent_max_tokens, turns: cfg.subagent_max_turns },
       loop: {
-        provider: run.deps.provider,
+        provider: run.provider,
         providerBlocked: (p) => run.providerBlocked(p),
         modelExhausted: (r) => run.modelExhausted(r),
         markExhausted: (r) => {

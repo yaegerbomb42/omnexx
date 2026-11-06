@@ -263,6 +263,10 @@ export class OpenAICompatProvider implements Provider {
     stall: ReturnType<typeof stallWatch> | undefined,
   ): Promise<CompletionResponse> {
     const effort = sendEffort ? openaiReasoning(req) : undefined;
+    // The cache key routes a conversation to the same cache shard. It must stay the same
+    // for the whole conversation, so the caller sends one (the run's id); when it sends
+    // none, the endpoint's own prefix matching still applies.
+    const cacheKey = req.promptCacheKey ?? req.cacheKey;
     const body = {
       model: req.model,
       messages: toChatMessages(req),
@@ -289,9 +293,7 @@ export class OpenAICompatProvider implements Provider {
       ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}),
       ...(thinking === undefined ? {} : { enable_thinking: thinking }),
       ...(effort ? { reasoning_effort: effort } : {}),
-      ...(this.promptCacheKey && req.promptCacheKey
-        ? { prompt_cache_key: req.promptCacheKey }
-        : {}),
+      ...(this.promptCacheKey && cacheKey ? { prompt_cache_key: cacheKey } : {}),
     };
     const signals = [
       AbortSignal.timeout(this.opts.timeoutMs),

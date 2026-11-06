@@ -302,6 +302,19 @@ const cycleContextLine: Formatter = (e) => {
   ];
 };
 
+/** What a provider did with its cache on one call. */
+const cacheTrackedLine: Formatter = (e) => {
+  const hit = Math.round(num(e.hitRate) * 100);
+  const read = num(e.cacheRead);
+  const fresh = num(e.uncached);
+  return [
+    'verbose',
+    hit >= 80 ? 'ok' : 'info',
+    'cache',
+    `${str(e.provider)}: ${hit}% cached (${fmtTokens(read)} read, ${fmtTokens(fresh)} fresh), prefix ${fmtTokens(num(e.stableTokens))} tok${num(e.cacheable) ? '' : ' (below the cache minimum)'}`,
+  ];
+};
+
 const contextPrunedLine: Formatter = (e) => [
   'verbose',
   'info',
@@ -513,6 +526,7 @@ const FORMATTERS: Partial<Record<string, Formatter>> = {
     'cache',
     `turn ${num(e.turn)} read ${num(e.got)} cached tokens, under 80% of the previous prompt (${num(e.expected)})`,
   ],
+  'cache.tracked': cacheTrackedLine,
   'cycle.context': cycleContextLine,
   'context.pruned': contextPrunedLine,
   'context.cleared': contextClearedLine,

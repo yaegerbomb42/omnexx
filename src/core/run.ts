@@ -17,6 +17,8 @@ import { LlmJudge } from '../judge/llm.js';
 import { preflight, spentInWindow } from '../guard/budget.js';
 import { costUsd, resolveChain, type ResolvedModel } from '../providers/pricing.js';
 import { shouldFailover } from '../providers/router.js';
+import { withCacheTracking } from '../providers/cache-tracking.js';
+import { estimateTokens } from './tokens.js';
 import { QuotaLedger } from '../providers/quota-ledger.js';
 import { isQuotaError } from '../providers/sticky.js';
 import type { CompletionRequest, CompletionResponse, Provider, Usage } from '../providers/types.js';
@@ -28,6 +30,7 @@ import type { ControlSignal } from '../agent/loop.js';
 import type { Clock } from './clock.js';
 import { EventLog } from './events.js';
 import { runShell, type Executor } from './exec.js';
+import { AstCache, astCacheFile } from './ast-cache.js';
 import type { OmnexxPaths } from './paths.js';
 import type { Plan } from './plan.js';
 import { RunStore, type Phase, type RunState } from './run-store.js';
@@ -137,6 +140,16 @@ export class Run {
     this.redactor = Redactor.fromEnv(deps.env, deps.secrets ?? []);
     this.events = new EventLog(store.eventsPath, state.runId, this.redactor, deps.clock);
     this.events.cycle = state.cycle;
+    this.astCache = new AstCache(astCacheFile(deps.paths.home, state.worktree));
+    // Every provider call reports what it did with its cache, so the run's telemetry shows
+    // the hit rate per provider without asking the provider again.
+    this.provider = withCacheTracking(deps.provider, {
+      emit: (type, data) => {
+        this.events.emit(type, data);
+      },
+      now: () => deps.clock.now(),
+      estimate: estimateTokens,
+    });
     this.tmpDir = join('/tmp', `omnexx-${state.runId}`);
     this.childEnv = scrubEnv(deps.env, {
       passthrough: deps.config.policy.env_passthrough,
@@ -203,6 +216,20 @@ export class Run {
   get worktree(): string {
     return this.state.worktree;
   }
+
+  /**
+   * The AST cache for this run: the parsed ASTs and symbol tables of the files it touched.
+   *
+   * It is content-addressed and lives on disk, so a file that did not change is never read
+   * or parsed again, in this run or in the next one. The cache is flushed when the run ends.
+   */
+  readonly astCache: AstCache;
+
+  /**
+   * The provider this run talks to, wrapped so every call reports what it did with its
+   * cache. The wrapper measures only; it never changes what is sent.
+   */
+  readonly provider: Provider;
 
   policy(): PolicyContext {
     return {
@@ -364,7 +391,7 @@ export class Run {
       });
       if (!pf.ok) return undefined;
       try {
-        const res = await this.deps.provider.complete({
+        const res = await this.provider.complete({
           ...req,
           model: model.id,
           route: model.provider,

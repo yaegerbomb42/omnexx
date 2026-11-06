@@ -412,7 +412,7 @@ export async function runPlanner(run: Run, mode: PlannerMode): Promise<Plan> {
       tools: tools.map(toolSpec),
     },
     {
-      provider: run.deps.provider,
+      provider: run.provider,
       models: plannerCandidates(
         run,
         (

@@ -37,8 +37,11 @@ export interface ToolContext {
   /**
    * Called on every successful edit, including repeat edits to a file already in `edited`: the
    * no-edits stuck signal needs edit operations, not distinct files.
+   *
+   * `content` is the file's new text when the tool has it (the speculative checks hash it to
+   * tell one version of a file from another); undefined when the tool did not keep it.
    */
-  onEdit?: (path: string) => void;
+  onEdit?: (path: string, content?: string) => void;
   /**
    * Content hashes of what `read` has already returned this cycle, by path and range. A repeat
    * read of unchanged content gets a one-line pointer instead of the same text again. Cleared

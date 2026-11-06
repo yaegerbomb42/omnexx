@@ -146,7 +146,7 @@ async function applyEdits(
   if (!syntaxCheck.ok) return fail(syntaxCheck.error);
 
   await writeFile(abs, text);
-  recordEdit(ctx, abs);
+  recordEdit(ctx, abs, text);
   const how = notes.length ? `; ${notes.join('; ')}` : '';
   const tail = await afterEdit(ctx, abs, before);
 
@@ -274,7 +274,7 @@ export async function runCandidateTournament(
     };
   }
   await writeFile(abs, winner.text);
-  recordEdit(ctx, abs);
+  recordEdit(ctx, abs, winner.text);
   const how = winner.notes.length ? `; ${winner.notes.join('; ')}` : '';
   const tail = await afterEdit(ctx, abs, before);
   const finalDiskText = await readFile(abs, 'utf8').catch(() => winner.text);
@@ -414,15 +414,21 @@ export const writeFileTool: Tool<typeof writeSchema> = {
     if (!syntaxCheck.ok) return fail(syntaxCheck.error);
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, input.content);
-    recordEdit(ctx, abs);
+    recordEdit(ctx, abs, input.content);
     const tail = await afterEdit(ctx, abs, before);
     return ok(`wrote ${input.path} (${input.content.split('\n').length} lines)${tail}`);
   },
 };
 
-/** Note a successful edit: the file joins `edited`, and every edit (repeat ones too) is counted. */
-export function recordEdit(ctx: ToolContext, abs: string): void {
+/**
+ * Note a successful edit: the file joins `edited`, and every edit (repeat ones too) is counted.
+ *
+ * `content` is the file's new text, when the caller has it. The speculative checks use it
+ * to tell one version of a file from another, so a check result is never handed out for a
+ * file that changed since it ran.
+ */
+export function recordEdit(ctx: ToolContext, abs: string, content?: string): void {
   const rel = ctx.jail.relative(abs);
   ctx.edited.add(rel);
-  ctx.onEdit?.(rel);
+  ctx.onEdit?.(rel, content);
 }

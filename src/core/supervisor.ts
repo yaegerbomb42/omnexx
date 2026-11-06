@@ -1156,6 +1156,8 @@ export async function supervise(
   run.state.status = outcome.status;
   run.state.statusReason = outcome.reason;
   await run.setPhase('done');
+  // The AST cache outlives the run: the next run on this repo starts with the parses paid for.
+  await run.astCache.flush().catch(() => undefined);
   run.events.emit('run.finish', {
     status: outcome.status,
     reason: outcome.reason,

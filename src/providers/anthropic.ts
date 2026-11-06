@@ -8,6 +8,7 @@ import type {
 } from '@anthropic-ai/sdk/resources/messages/messages';
 import { ProviderError } from '../errors.js';
 import { anthropicThinking } from './turn-effort.js';
+import { lastStableIndex } from './cache-pinning.js';
 import type {
   CompletionRequest,
   CompletionResponse,
@@ -57,10 +58,16 @@ export class AnthropicProvider implements Provider {
     // Longer TTLs must come before shorter ones; the prefix always precedes the messages.
     const prefixTtl = this.opts.cacheTtl === '1h' ? '1h' : (this.opts.prefixTtl ?? '5m');
     const prefixCache = { type: 'ephemeral' as const, ttl: prefixTtl };
-    const system: TextBlockParam[] = req.system.map((b) => ({
+    // The stable blocks come first and the breakpoint sits on the last of them, so a change
+    // to a volatile block (the goal, the notes) never invalidates the cached prefix in
+    // front of it. Anthropic caches the prefix up to the breakpoint.
+    const stable = lastStableIndex(req.system);
+    const system: TextBlockParam[] = req.system.map((b, i) => ({
       type: 'text',
       text: b.text,
-      ...(b.cacheBreakpoint ? { cache_control: prefixCache } : {}),
+      ...(b.cacheBreakpoint || (stable >= 0 && i === stable)
+        ? { cache_control: prefixCache }
+        : {}),
     }));
     const tools: Tool[] = [...req.tools]
       .sort((a, b) => a.name.localeCompare(b.name))
