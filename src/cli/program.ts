@@ -209,6 +209,10 @@ export function createProgram(
     .option('--budget <usd>', 'run-level spend cap in USD')
     .option('--task-budget <usd>', 'per-task spend cap; the task is checkpointed and parked at it')
     .option('--task-tokens <n>', 'per-task token cap; the task is checkpointed and parked at it')
+    .option(
+      '--tokens-per-turn <value>',
+      'per-turn input context budget: a number ("4096") or k shorthand ("1k".."256k")',
+    )
     .option('--hours <n>', 'wall-clock cap: hours (e.g. 2, 0.5) or a duration (e.g. 30m, 1h30m)')
     .option(
       '--max-turns <n>',

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { estimateTokens, foldPaysOff } from './cache-epoch.js';
+import { TurnBudgetAllocator, type TurnBudgetPlan } from '../../agent/turn-budget.js';
 import { DenseIndex } from './dense.js';
 import {
   GeneralAgentOptimizer,
@@ -57,6 +58,8 @@ export interface KernelConfig {
   maxMountedTools?: number | undefined;
   /** Single cap for mounted catalog capabilities AND router-mounted tools (`[kernel] max_mounted`). */
   maxMounted?: number | undefined;
+  /** User-settable per-turn input budget (1k–256k); scales the mounted cap when set. */
+  tokensPerTurn?: number | undefined;
   reselectEvery?: number | undefined;
   registry?: boolean | undefined;
   localDiscovery?: boolean | undefined;
@@ -288,6 +291,9 @@ export class AdaptiveRuntimeKernel {
   private banditUpdates = 0;
   /** Turns a fold is amortized over (cache-economy gate for voluntary GC). */
   expectedRemainingTurns = 8;
+  /** Per-turn input budget plan (set only when `tokens_per_turn` is configured). */
+  private readonly budgetPlan: TurnBudgetPlan | undefined;
+  private readonly budget = new TurnBudgetAllocator();
   /** SkillMD lookups memoized per query (TTL) so retries don't re-hit the network. */
   private readonly publicSkillSearch = cachedSearch((query: string, limit: number) =>
     searchSkillMd(query, {
@@ -300,10 +306,12 @@ export class AdaptiveRuntimeKernel {
 
   constructor(config: KernelConfig) {
     this.config = config;
+    this.budgetPlan =
+      config.tokensPerTurn !== undefined ? this.budget.planFor(config.tokensPerTurn) : undefined;
     this.profile = {
       maxWindow: config.maxWindow,
       attentionCeiling: config.attentionCeiling,
-      maxMountedTools: resolveMaxMounted(config),
+      maxMountedTools: this.effectiveMaxMounted(),
     };
     this.telemetry = new TelemetryMonitor(this.profile);
     this.vfs = new MemoryVfs(config.worktree);
@@ -351,6 +359,13 @@ export class AdaptiveRuntimeKernel {
     this.rebuildCatalogTools();
   }
 
+  /** The effective mounted-capability cap, scaled down by the per-turn budget when set. */
+  private effectiveMaxMounted(): number {
+    const base = resolveMaxMounted(this.config);
+    const plan = this.budgetPlan;
+    return plan ? Math.min(base, plan.maxMounted) : base;
+  }
+
   /**
    * Ranked candidates for a selection: hybrid when the dense cache is warm and this query
    * is already embedded; otherwise BM25 now, with the query embedded in the background for
@@ -383,7 +398,7 @@ export class AdaptiveRuntimeKernel {
   }
 
   private rebuildCatalogTools(): void {
-    const maxMounted = resolveMaxMounted(this.config);
+    const maxMounted = this.effectiveMaxMounted();
     this.catalogTools = createCatalogTools(this.catalog, {
       maxMounted,
       isInstalled: (id) => this.localInstalled.has(id) || id.startsWith('local:'),
@@ -751,8 +766,8 @@ ${entry.description}`;
     if (this.catalog.size > 0 && reselect) {
       const maxMounted =
         opt.profile.taskClass === 'trivial'
-          ? Math.min(resolveMaxMounted(this.config), opt.profile.topK)
-          : resolveMaxMounted(this.config);
+          ? Math.min(this.effectiveMaxMounted(), opt.profile.topK)
+          : this.effectiveMaxMounted();
       const ctx = this.lastToolError || undefined;
       const sel = this.catalog.select({
         query,
@@ -1111,6 +1126,8 @@ export function createKernelIfEnabled(
   worktree: string,
   maxWindow: number,
   fetchImpl?: typeof fetch,
+  /** User-settable per-turn input budget (1k–256k); undefined keeps existing behavior. */
+  tokensPerTurn?: number,
 ): AdaptiveRuntimeKernel | undefined {
   const k = config.kernel;
   // Default-on: missing section still enables via schema defaults; explicit false opts out.
@@ -1129,5 +1146,6 @@ export function createKernelIfEnabled(
     localDiscovery: k?.local_discovery ?? true,
     publicSkills: k?.public_skills ?? true,
     ...(fetchImpl ? { fetchImpl } : {}),
+    ...(tokensPerTurn !== undefined ? { tokensPerTurn } : {}),
   });
 }

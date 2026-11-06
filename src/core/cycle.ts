@@ -14,8 +14,9 @@ import {
   type CycleSummary,
 } from '../agent/compaction.js';
 import { buildCycleContext } from '../agent/context.js';
+import { TurnBudgetAllocator } from '../agent/turn-budget.js';
 import { factsBlockFor } from './facts.js';
-import { briefInput } from '../config/agent-settings.js';
+import { briefInput, tokensPerTurnOf } from '../config/agent-settings.js';
 import { renderCodemap, type Codemap } from '../agent/codemap.js';
 import { runAgentLoop, type LoopDeps } from '../agent/loop.js';
 import type { ResolvedModel } from '../providers/pricing.js';
@@ -454,6 +455,11 @@ export async function stepAct(run: Run): Promise<void> {
       ? buildToolIndexForPrompt(run.loadedToolsState, availableToolNames)
       : undefined;
 
+  // Per-turn input budget: one deterministic plan per epoch (stable tools/system → no cache bust).
+  const tokensPerTurn = tokensPerTurnOf(run.config);
+  const budgetPlan =
+    tokensPerTurn !== undefined ? new TurnBudgetAllocator().planFor(tokensPerTurn) : undefined;
+
   const ctx = buildCycleContext({
     systemPrompt: getWorkerPrompt(workModeOf(run.config)),
     codemap,
@@ -467,7 +473,7 @@ export async function stepAct(run: Run): Promise<void> {
     ...(assembled.text ? { memory: assembled.text } : {}),
     ...(runningText ? { runningContext: runningText } : {}),
     role: await loadRoleCard(run.store, task, run.state.repoRoot),
-    sections: run.config.context.sections,
+    sections: budgetPlan ? budgetPlan.sections : run.config.context.sections,
     ...briefInput(run.config),
     clock: (() => {
       const elapsedMs = run.elapsedMs();
@@ -538,7 +544,13 @@ export async function stepAct(run: Run): Promise<void> {
     (modelRef ? knownWindow(modelRef) : undefined) ??
     run.config.models.profiles[profileRef]?.context ??
     200_000;
-  const kernel = createKernelIfEnabled(run.config, run.worktree, maxWindow);
+  const kernel = createKernelIfEnabled(
+    run.config,
+    run.worktree,
+    maxWindow,
+    undefined,
+    tokensPerTurn,
+  );
   if (kernel) {
     const mgr = getActiveMcpManager();
     if (mgr) {
@@ -572,6 +584,7 @@ export async function stepAct(run: Run): Promise<void> {
       loadedToolsState: run.loadedToolsState,
       budget: run.config.budget,
       maxTokens: run.config.providers.anthropic.max_tokens,
+      ...(tokensPerTurn !== undefined ? { tokensPerTurn } : {}),
       clock: run.clock,
       events: run.events,
       cacheKey: run.state.runId,

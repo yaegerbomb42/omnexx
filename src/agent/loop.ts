@@ -55,11 +55,14 @@ import {
   DEFAULT_KEEP_TURNS,
 } from './rolling-memory.js';
 import { turnRequest } from './context.js';
+import { TurnBudgetAllocator, type TurnBudgetPlan } from './turn-budget.js';
+import { VerificationCoalescer } from './redundant-read.js';
 import {
   ToolEpoch,
   capabilityDirective,
   estimateTokens as estimateJsonTokens,
 } from '../runtime/kernel/cache-epoch.js';
+import { isRealVerification } from '../runtime/kernel/optimizer.js';
 import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
 import type { DoomLoopRatchet } from '../core/doom-loop-ratchet.js';
 import type { AdaptiveRuntimeKernel } from '../runtime/kernel/index.js';
@@ -287,6 +290,8 @@ export interface LoopDeps {
   onResponse?: (r: { model: string; inputTokens: number; ms: number }) => void;
   /** In-cycle context control; off when unset. */
   compaction?: { settings: CompactionSettings; summarize?: Summarize };
+  /** User-settable per-turn input budget (1k–256k); undefined preserves existing behavior. */
+  tokensPerTurn?: number;
   /**
    * Rolling memory condensation (`memory: rolling`, the default): every few turns the working
    * memory is rewritten into a compact note and only the last turns stay raw, so the prompt
@@ -534,6 +539,14 @@ export async function runAgentLoop(
   let todoNudged = false;
   let lastCondenseTurn = 0;
   const end = (e: LoopEnd): LoopResult => ({ end: e, turns, finalText, usage, usd, messages });
+  // Per-turn input budget: one deterministic plan per epoch (stable tools/system → no cache bust).
+  const budgetAllocator = new TurnBudgetAllocator();
+  const budgetPlan: TurnBudgetPlan | undefined =
+    deps.tokensPerTurn !== undefined ? budgetAllocator.planFor(deps.tokensPerTurn) : undefined;
+  // Turn-efficiency deduplication state (unchanged re-reads + redundant verification).
+  const verificationCoalescer = new VerificationCoalescer();
+  let toolSeq = 0;
+  let lastMutationSeq = 0;
   // The stable prefix never changes within a cycle; size it once for the per-turn breakdown.
   const prefixTokens = {
     system: estimateTokens(ctx.system.map((b) => b.text).join('\n')),
@@ -680,10 +693,14 @@ export async function runAgentLoop(
 
     if (deps.compaction && turns > 0) {
       const settings = missAwareSettings(deps.compaction.settings, cacheMisses, turns - 1);
+      // When the user set a per-turn budget, enforce it as the history ceiling (target cap).
+      const effective = budgetPlan
+        ? { ...settings, budget: budgetPlan.compactionTarget }
+        : settings;
       messages = await manageContext(
         messages,
         ctx.anchor ?? ctx.first,
-        ctx.pinned ? { ...settings, pinned: ctx.pinned } : settings,
+        ctx.pinned ? { ...effective, pinned: ctx.pinned } : effective,
         deps.compaction.summarize,
         ({ kind, ...rest }) => {
           // Earlier read results are gone from the context now; let `read` return them again.
@@ -1113,6 +1130,13 @@ export async function runAgentLoop(
       let isError: boolean;
       let miss = false;
       let savedTokens = 0;
+      toolSeq += 1;
+      const mutationTool = tool?.readOnly !== true;
+      if (mutationTool) {
+        // Any mutating tool invalidates the verification cache.
+        verificationCoalescer.invalidate();
+        lastMutationSeq = toolSeq;
+      }
       const toolStart = deps.clock.now();
       deps.events.emit('tool.start', {
         tool: call.name,
@@ -1190,27 +1214,53 @@ export async function runAgentLoop(
             content = systemOneBlock;
             isError = true;
           } else {
-            const deadlineMs = deps.deadlineMs;
-            const reminder = deadlineMs
-              ? setInterval(() => {
-                  deps.events.emit('time.reminder', {
-                    tool: call.name,
-                    elapsed_s: Math.round((deps.clock.now() - toolStart) / 1000),
-                    remaining_s: Math.max(0, Math.round((deadlineMs - deps.clock.now()) / 1000)),
-                  });
-                }, 60_000)
-              : undefined;
-            if (reminder) reminder.unref();
-            if (deps.kernel) {
-              await deps.kernel.beforeMutatingTool(call.name, parsed.data, messages.length);
+            // --- Turn-efficiency short-circuits (neither runs the underlying tool) ---
+            let shortCircuit: string | undefined;
+            // Unchanged re-reads are handled by the read tool's own guard, which reports the
+            // tokens saved so the usage ledger records them as repeat_read savings.
+            // Redundant verification: the exact same read-only checker ran back-to-back with zero
+            // mutating tools since, so the tree is unchanged — short-circuit to "already green".
+            {
+              const cmd = (parsed.data as { command?: unknown }).command;
+              const isShell = tool.name === 'bash' || tool.name === 'shell' || tool.name === 'run';
+              if (
+                isShell &&
+                typeof cmd === 'string' &&
+                isRealVerification('bash', { command: cmd })
+              ) {
+                if (verificationCoalescer.decide(cmd, toolSeq, lastMutationSeq) === 'skip') {
+                  shortCircuit =
+                    '[harness:verification] this exact verification ran green on the current tree already (no changes since); proceeding without re-running.';
+                }
+              }
             }
-            const out = await tool.run(parsed.data, deps.toolCtx);
-            if (reminder) clearInterval(reminder);
-            content = out.content;
-            isError = out.isError === true;
-            miss = out.miss === true;
-            savedTokens = out.savedTokens ?? 0;
-            if (out.final && !isError) finished.now = true;
+            if (shortCircuit) {
+              content = shortCircuit;
+              isError = false;
+              miss = false;
+            } else {
+              const deadlineMs = deps.deadlineMs;
+              const reminder = deadlineMs
+                ? setInterval(() => {
+                    deps.events.emit('time.reminder', {
+                      tool: call.name,
+                      elapsed_s: Math.round((deps.clock.now() - toolStart) / 1000),
+                      remaining_s: Math.max(0, Math.round((deadlineMs - deps.clock.now()) / 1000)),
+                    });
+                  }, 60_000)
+                : undefined;
+              if (reminder) reminder.unref();
+              if (deps.kernel) {
+                await deps.kernel.beforeMutatingTool(call.name, parsed.data, messages.length);
+              }
+              const out = await tool.run(parsed.data, deps.toolCtx);
+              if (reminder) clearInterval(reminder);
+              content = out.content;
+              isError = out.isError === true;
+              miss = out.miss === true;
+              savedTokens = out.savedTokens ?? 0;
+              if (out.final && !isError) finished.now = true;
+            }
           }
         }
       }

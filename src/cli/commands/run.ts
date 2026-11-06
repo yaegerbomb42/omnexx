@@ -13,6 +13,7 @@ import { formatEstimate } from '../../core/run-estimate.js';
 import { estimateForRun, PROGRESS_EVENTS, remainingForRun } from '../../core/run-estimate-io.js';
 import { UsageError } from '../../errors.js';
 import { parseDuration } from '../../config/duration.js';
+import { parseTokensPerTurn } from '../../agent/turn-budget.js';
 import type { ConfigInput } from '../../config/schema.js';
 import { selfEntry, spawnDetached } from '../../daemon/detach.js';
 import { brand } from '../brand.js';
@@ -32,6 +33,8 @@ export interface RunFlags {
   taskBudget?: string;
   /** Per-task token cap. */
   taskTokens?: string;
+  /** Per-turn input context budget: a number ("4096") or k shorthand ("16k"). */
+  tokensPerTurn?: string;
   hours?: string;
   /** Run-level turn cap: stop as expired after this many worker + planner turns. */
   maxTurns?: string;
@@ -109,6 +112,7 @@ export function flagsToConfig(f: RunFlags): ConfigInput {
       : {}),
     ...(f.push ? { git: { push: f.push as 'none' } } : {}),
     ...(f.toolDiscovery ? { tools: { discovery: f.toolDiscovery as 'full' | 'lazy' } } : {}),
+    ...(f.tokensPerTurn ? { agent: { tokens_per_turn: parseTokensPerTurn(f.tokensPerTurn) } } : {}),
     ...planFlags(f),
     ...domainFlag(f),
     ...beyondFlag(f),
