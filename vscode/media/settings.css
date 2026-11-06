@@ -4,6 +4,23 @@
  * Colors come from each section's --sec (set in chat.css) and VS Code theme variables.
  */
 
+:root {
+  --omx-surface-1: var(--glass-bg);
+  --omx-surface-2: var(--glass-card);
+  --omx-surface-3: color-mix(in srgb, var(--fg, #ccc) 9%, var(--surface, #1e1e1e));
+  --omx-border: var(--glass-border);
+  --omx-border-strong: color-mix(in srgb, var(--fg, #ccc) 20%, transparent);
+  --omx-accent: var(--accent);
+  --omx-accent-soft: var(--accent-soft);
+  --omx-radius-sm: var(--radius-sm, 6px);
+  --omx-radius-md: var(--radius-md, 8px);
+  --omx-radius-lg: var(--radius-lg, 12px);
+  --omx-font-sans:
+    'Inter',
+    var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  --omx-font-mono: 'JetBrains Mono', var(--mono, ui-monospace, SFMono-Regular, monospace);
+}
+
 /* Section colors also apply to the nav chips. */
 .set-chip[data-sec='agent'] {
   --sec: var(--vscode-charts-purple, #b180d7);
@@ -2048,5 +2065,88 @@ kbd {
   }
   .ko-phase {
     transition: none;
+  }
+}
+
+/* ==========================================================================
+   Apple/Google Neo-Minimalism & Container Responsiveness for Settings
+   ========================================================================== */
+
+#settings,
+.settings {
+  container-type: inline-size;
+  container-name: settings-shell;
+}
+
+/* Provider Connection Card Grid */
+.providers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+
+.provider {
+  border-radius: var(--omx-radius-md);
+  border: 1px solid var(--omx-border);
+  background: var(--omx-surface-2);
+  padding: 10px 12px;
+  transition: all var(--dur-fast) var(--ease);
+}
+
+.provider:hover {
+  border-color: color-mix(in srgb, var(--omx-accent) 30%, var(--omx-border));
+  background: color-mix(in srgb, var(--omx-accent) 4%, var(--omx-surface-2));
+}
+
+.provider .pill {
+  font-family: var(--omx-font-mono);
+  font-size: 11px;
+  border-radius: var(--omx-radius-sm);
+  padding: 1px 6px;
+}
+
+/* Custom styled range sliders */
+input[type='range'] {
+  accent-color: var(--omx-accent);
+  height: 4px;
+}
+
+/* Custom styled switch controls */
+.soon-switch.live input:checked + span {
+  background: var(--omx-accent);
+}
+
+.soon-switch > span {
+  border: 1px solid var(--omx-border);
+  transition: background var(--dur-fast) var(--ease);
+}
+
+/* Container Queries for Settings Shell */
+@container settings-shell (max-width: 340px) {
+  .sec-sub,
+  .set-tab span:not(.set-count) {
+    display: none;
+  }
+
+  .providers {
+    grid-template-columns: 1fr;
+  }
+
+  .set-tabbar {
+    gap: 4px;
+  }
+
+  .set-tab {
+    padding: 6px 8px;
+  }
+}
+
+@container settings-shell (min-width: 480px) {
+  .set-panels,
+  .set-top {
+    max-width: 760px;
+    margin-left: auto;
+    margin-right: auto;
+    width: 100%;
   }
 }
