@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { OmnexxConfig } from '../config/schema.js';
 import type { PlanNode } from '../core/plan.js';
 import type { FileChange } from '../git/repo.js';
@@ -30,6 +31,12 @@ export interface InCycleLimits {
 
 /**
  * Tracks one cycle's tool calls and edits. `afterTurn` returns a finding once a limit is hit.
+ *
+ * Identical calls are compared by outcome, not just identity: when a caller supplies the
+ * result, the key includes a hash of it, so re-reading a file that changed between reads
+ * (different result) does not count as a repeat. An errored call is never counted: retrying
+ * after a failure is recovery, and an error loop that changes nothing is still caught by
+ * the no-edits signal and the run-level idle-cycle detector (see isIdleCycle).
  */
 export class InCycleWatch {
   private readonly calls = new Map<string, number>();
@@ -44,7 +51,7 @@ export class InCycleWatch {
   afterTurn(
     turn: number,
     cycleTokens: number,
-    calls: readonly { name: string; input: unknown }[],
+    calls: readonly { name: string; input: unknown; result?: string; isError?: boolean }[],
   ): (StuckFinding & { signal: InCycleSignal }) | undefined {
     const edits = this.editCount();
     if (edits > this.lastEdits) {
@@ -54,7 +61,12 @@ export class InCycleWatch {
       this.calls.clear();
     }
     for (const c of calls) {
-      const key = `${c.name} ${JSON.stringify(c.input)}`;
+      if (c.isError) continue;
+      const base = `${c.name} ${JSON.stringify(c.input)}`;
+      const key =
+        c.result === undefined
+          ? base
+          : `${base} ${createHash('sha256').update(c.result).digest('hex').slice(0, 16)}`;
       const n = (this.calls.get(key) ?? 0) + 1;
       this.calls.set(key, n);
       if (n >= this.limits.repeatedToolCall)
@@ -76,6 +88,27 @@ export class InCycleWatch {
       };
     return undefined;
   }
+}
+
+export interface IdleCycleInput {
+  verdict: 'accept' | 'reject';
+  /** Files changed vs lastGreen at verify time. */
+  diffFiles: number;
+  /** The cycle was cut short by a budget cap: an interruption, not stuckness. */
+  budgetCut: boolean;
+  /** A task check ran and failed: new information for the next attempt, not idleness. */
+  checksFailed: boolean;
+}
+
+/**
+ * Run-level doom-loop detector: a cycle is idle when it was rejected with no diff, no
+ * budget interruption, and no failing check. An accepted cycle is progress (a task
+ * completed, or a commit landed), and a cycle with a diff attempted real work, even if
+ * rejected — so neither counts. The supervisor ends the run as `stuck` after
+ * `stuck.max_idle_cycles` consecutive idle cycles.
+ */
+export function isIdleCycle(o: IdleCycleInput): boolean {
+  return o.verdict === 'reject' && o.diffFiles === 0 && !o.budgetCut && !o.checksFailed;
 }
 
 /** Burn threshold from earlier cycles' token totals; needs at least 3 of them. */

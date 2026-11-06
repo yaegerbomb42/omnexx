@@ -138,6 +138,13 @@ export const stateSchema = z.object({
   acceptedCommits: z.number().default(0),
   /** Improvement rounds planned after the goal was met (beyond mode). */
   beyondRounds: z.number().int().default(0),
+  /**
+   * Consecutive cycles rejected with no diff, no budget interruption, and no failing
+   * check (doom-loop detector; see guard/stuck.ts isIdleCycle). Any cycle with a diff
+   * resets it; guardPre ends the run as `stuck` at stuck.max_idle_cycles. Reset to 0
+   * when the run stops stuck, so a resume gets a fresh window.
+   */
+  idleCycles: z.number().int().default(0),
   /** Autonomous mode: improvement rounds in a row that added nothing. */
   idleRounds: z.number().int().default(0),
   /** Paths earlier improvement rounds were shown as evidence, so each round gets fresh ones. */

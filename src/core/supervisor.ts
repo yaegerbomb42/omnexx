@@ -717,6 +717,23 @@ class Supervisor {
       await r.save();
       await r.savePlan();
     }
+    // Doom-loop detector, run level: consecutive cycles that produced no diff, no
+    // accepted commit, and no failing-check signal are the run going in circles, not
+    // working — stop it as `stuck` with a resumption point instead of burning cycles
+    // until the looser no-progress trip below. Autonomous runs are exempt: with nobody
+    // to ask, they park stalled work and move on (see recoverNoProgress).
+    if (!r.config.autonomous.enabled && r.state.idleCycles >= r.config.stuck.max_idle_cycles) {
+      const taskId = r.state.taskId ?? 'unknown';
+      const detail = `${r.state.idleCycles} consecutive cycles with no diff, no accepted commit, and no failing-check signal (task ${taskId}; ${r.state.acceptedCommits} accepted commits so far, last progress at cycle ${r.state.lastProgressCycle})`;
+      r.events.emit('stuck.signal', { signal: 'idle_cycles', task: taskId, detail });
+      // A resume gets a fresh window: the count served its purpose once the run stops.
+      r.state.idleCycles = 0;
+      await r.save();
+      return {
+        status: 'stuck',
+        reason: `stuck: ${detail}. What was done is on branch ${r.state.branch}; resume with a narrower goal or a different approach for ${taskId}.`,
+      };
+    }
     const sinceCycles = r.state.cycle - r.state.lastProgressCycle;
     const sinceMs = r.clock.now() - (r.state.lastProgressAt ?? r.state.startedAt);
     if (
@@ -1404,7 +1421,7 @@ export async function supervise(
     await rememberRunTook(run, deps, outcome.status);
     const prUrl = deps.config.git.open_pr ? await openPullRequest(run) : undefined;
     const kind: NotifyKind =
-      outcome.status === 'blocked'
+      outcome.status === 'blocked' || outcome.status === 'stuck'
         ? 'needs-human'
         : outcome.status === 'expired'
           ? 'budget'
