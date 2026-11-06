@@ -21,10 +21,8 @@ describe('settings layout', () => {
       expect(FOLDED_BY_DEFAULT).toContain(id);
     }
   });
-  it('has a chip in the nav for every section, each with a subtitle', () => {
-    const nav = navHtml();
+  it('gives every section a subtitle', () => {
     for (const s of SECTIONS) {
-      expect(nav).toContain(`data-sec-jump="${s.id}"`);
       expect(s.subtitle.length).toBeGreaterThan(10);
     }
   });
@@ -82,14 +80,15 @@ describe('settings layout', () => {
 });
 
 describe('MCP gallery cards', () => {
-  it('gives known servers a glyph or letter mark, and anything else a letter badge', () => {
-    expect(mcpIcon('postgres')).toContain('<svg');
-    expect(mcpIcon('notion')).toContain('>N<');
-    expect(mcpIcon('my-tool')).toMatch(/hsl\(\d+ 55% 42%\)">My</);
+  it('gives every server the shared badge: two letters on a stable hue', () => {
+    expect(mcpIcon('postgres')).toContain('class="badge"');
+    expect(mcpIcon('postgres')).toContain('>PO<');
+    expect(mcpIcon('notion')).toContain('>NO<');
+    expect(mcpIcon('my-tool')).toMatch(/class="badge" style="--h:\d+">MY</);
   });
 
-  it('prefers a real one-liner over a bare category', () => {
-    expect(mcpBlurb('notion', 'docs & files')).toBe('Search and edit your Notion pages');
+  it('takes the first sentence of the description as its one-liner', () => {
+    expect(mcpBlurb('notion', 'docs & files')).toBe('docs & files');
     expect(mcpBlurb('x', 'Does a thing. More detail.')).toBe('Does a thing.');
   });
 

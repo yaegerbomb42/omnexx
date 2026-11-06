@@ -448,6 +448,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
   private html(webview: vscode.Webview): string {
     const nonce = randomBytes(16).toString('base64');
+    const tokensCss = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'tokens.css'),
+    );
     const css = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'chat.css'));
     const settingsCss = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'media', 'settings.css'),
@@ -467,6 +470,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="${tokensCss.toString()}">
 <link rel="stylesheet" href="${css.toString()}">
 <link rel="stylesheet" href="${settingsCss.toString()}">
 <title>omnexx</title>
@@ -486,9 +490,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
   <h2>What should omnexx do?</h2>
   <p>It edits this workspace, runs your tests, and asks before anything outside the repo.</p>
   <div class="suggestions">
-    <button data-suggest="Explain how this project is structured and where to start reading.">Explain this codebase</button>
-    <button data-suggest="Run the tests and fix whatever fails.">Fix failing tests</button>
-    <button data-suggest="Find likely bugs in the code I changed recently and fix them.">Review recent changes</button>
   </div>
 </section>
 <div id="kernel-observe" class="kernel-observe" hidden></div>
@@ -541,7 +542,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 <main id="log" class="conversation" aria-live="polite"></main>
 <button id="jump" class="jump" hidden title="Jump to latest" aria-label="Jump to latest"><svg viewBox="0 0 16 16"><path d="M8 3v9M4 8.5 8 12.5 12 8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
 <section id="settings" class="settings" hidden aria-label="Settings"></section>
-<section id="ctxpage" class="settings" hidden aria-label="Context files"></section>
 <section id="inspector" class="settings" hidden aria-label="Context inspector"></section>
 <section id="ask" class="ask" hidden role="alertdialog" aria-labelledby="ask-text">
   <div id="ask-title" class="ask-title">Approval needed</div>

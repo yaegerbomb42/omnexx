@@ -10,10 +10,10 @@
  */
 import { escapeHtml } from './render.js';
 import { flashSaved } from './savedMark.js';
+import { MODES as POSTURE_MODES } from './posture.js';
 import {
   applyModePreset,
   detectMode,
-  EXECUTION_MODE_BUTTONS,
   isExecutionMode,
   meaning,
   position,
@@ -36,10 +36,11 @@ let offered = false;
 let status = '';
 let selectedMode: ExecutionMode | null = null;
 
+/** The posture pill, rendered from posture.ts's modes: picking one snaps the sliders to its preset. */
 function modePillHtml(activeMode: ExecutionMode | null): string {
-  const buttons = EXECUTION_MODE_BUTTONS.map(
+  const buttons = POSTURE_MODES.map(
     (b) =>
-      `<button type="button" data-agent-mode="${b.id}" data-posture="${b.id}" aria-pressed="${String(b.id === activeMode)}" title="${escapeHtml(b.caption)}"><span class="posture-ico" aria-hidden="true">${b.icon}</span>${b.name}</button>`,
+      `<button type="button" data-agent-mode="${b.id}" aria-pressed="${String(b.id === activeMode)}" title="${escapeHtml(b.caption)}"><span class="posture-ico" aria-hidden="true">${b.icon}</span>${b.name}</button>`,
   ).join('');
   return `<div class="agent-mode-selector">
   <div class="agent-mode-label">Execution Mode</div>

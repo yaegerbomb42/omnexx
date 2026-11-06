@@ -62,7 +62,6 @@ let showAllProviders = false;
 
 let catalog: CatalogProvider[] = [];
 let connected: ConnectedProvider[] = [];
-let current: string | null = null;
 let autoApproveDefault = false;
 let lazyToolDiscovery = true;
 let confirmingRemove: string | undefined;
@@ -71,6 +70,8 @@ let tests: Record<string, 'running' | { ok: boolean; detail: string }> = {};
 /** Whether this opening of the page has checked every provider yet. */
 let testedOnOpen = false;
 let saving = false;
+/** A provider just connected: flash "Saved ✓" once the redraw below has rebuilt the header. */
+let pendingFlashAdd = false;
 /** The agent's browser settings from config, or undefined until they arrive. */
 let browserPrefs: BrowserPrefs | undefined;
 let engineInfo: { source: string; version: string | null; bundled: string } | undefined;
@@ -140,7 +141,6 @@ function saveBrowser(post: Post, change: Partial<BrowserPrefs>): void {
 
 /** The person has typed or picked something in the add form, so a redraw keeps it. */
 let formTouched = false;
-let status: { text: string; kind: 'ok' | 'error' | 'busy' } | undefined;
 
 function q<T extends HTMLElement>(id: string, type: new () => T): T {
   const found = document.getElementById(id);
@@ -149,6 +149,8 @@ function q<T extends HTMLElement>(id: string, type: new () => T): T {
 }
 
 function modelFieldHtml(): string {
+  // The model in use lives in the picker; this field only reads it.
+  const current = modelPicker.getCurrent();
   if (!current)
     return '<button id="set-model-btn" class="field picker" data-open-model-picker><span class="muted">Pick a model</span><span class="caret">▾</span></button>';
   const [provider = '', ...rest] = current.split(':');
@@ -349,7 +351,7 @@ function addFormHtml(): string {
   <div id="add-extra"></div>
   <div id="add-key-row"><label for="add-key">API key</label><input id="add-key" class="field" type="password" autocomplete="off" spellcheck="false"><a id="add-signup" class="signup" href="#">Get a key ↗</a></div>
   <p class="hint">🔒 Stored privately on this machine; only ever shown masked.</p>
-  <div class="row-end"><span id="add-status" class="status" role="status"></span><button id="add-probe" class="ghost" title="Check the URL and key without saving">Test</button><button id="add-save" class="primary">Connect</button></div>`;
+  <div class="row-end"><button id="add-probe" class="ghost" title="Check the URL and key without saving">Test</button><button id="add-save" class="primary">Connect</button></div>`;
 }
 
 function approvalsHtml(): string {
@@ -437,7 +439,7 @@ ${sec('add', addFormHtml(), 'add')}`,
 )}
 ${panel(
   'agent',
-  `${sec('agent', `<div id="agent-box">${agentCard.html()}</div><div id="token-budget">${stats.tokenBudgetHtml()}</div><div id="live-stats">${stats.liveStatsHtml()}</div><div id="kernel-observe-settings" class="kernel-observe" hidden></div>`)}
+  `${sec('agent', `<div id="agent-box">${agentCard.html()}</div><div id="live-stats">${stats.liveStatsHtml()}</div><div id="kernel-observe-settings" class="kernel-observe" hidden></div>`)}
 ${sec('models', `<div id="roles-box">${roles.html()}</div>`)}
 ${sec('approvals', approvalsHtml())}
 ${layout.cardHtml('Work modes', 'How much autonomy a run has and what kind of work it does.', workModesHtml())}`,
@@ -461,7 +463,6 @@ ${panel('advanced', sec('advanced', advancedHtml()))}
   domain.render();
   stats.refresh();
   syncForm();
-  drawStatus();
   armScrollSpy();
 }
 
@@ -488,16 +489,19 @@ function syncForm(): void {
   signup.href = p?.signup ?? '#';
 }
 
-function drawStatus(): void {
-  const node = document.getElementById('add-status');
-  if (!node) return;
-  node.textContent = status?.text ?? '';
-  node.className = `status ${status?.kind ?? ''}`;
-  const save = document.getElementById('add-save');
-  if (save instanceof HTMLButtonElement) {
-    save.disabled = saving;
-    save.textContent = saving ? 'Connecting…' : 'Connect';
+/** The Connect button while a save is in flight (the only busy state the form shows). */
+function setSaveBusy(busy: boolean): void {
+  const saveBtn = document.getElementById('add-save');
+  if (saveBtn instanceof HTMLButtonElement) {
+    saveBtn.disabled = busy;
+    saveBtn.textContent = busy ? 'Connecting…' : 'Connect';
   }
+}
+
+/** A form problem (bad URL, missing key, malformed header), shown on the form's own
+ *  result line; a successful connect confirms with flashSaved instead. */
+function showFormError(text: string): void {
+  setProbeBox(`<span class="pill warn">✗ ${escapeHtml(text)}</span>`);
 }
 
 function save(post: Post): void {
@@ -507,24 +511,20 @@ function save(post: Post): void {
   const url = q('add-url', HTMLInputElement).value.trim();
   const name = q('add-name', HTMLInputElement).value.trim().toLowerCase();
   if (custom && !/^https?:\/\/\S+$/i.test(url)) {
-    status = { text: 'Enter the server URL, starting with http:// or https://', kind: 'error' };
-    drawStatus();
+    showFormError('Enter the server URL, starting with http:// or https://');
     return;
   }
   if (p && !p.local && !key) {
-    status = { text: `Paste your ${p.label} key first`, kind: 'error' };
-    drawStatus();
+    showFormError(`Paste your ${p.label} key first`);
     return;
   }
   const extras = providerForm.readExtras(p, custom);
   if (typeof extras === 'string') {
-    status = { text: extras, kind: 'error' };
-    drawStatus();
+    showFormError(extras);
     return;
   }
   saving = true;
-  status = { text: 'Connecting and listing models…', kind: 'busy' };
-  drawStatus();
+  setSaveBusy(true);
   post({
     type: 'addProvider',
     ...(custom ? { url, ...(name ? { provider: name } : {}) } : { provider: p?.name }),
@@ -546,8 +546,7 @@ function probe(post: Post): void {
   const p = selectedProvider();
   const extras = providerForm.readExtras(p, custom);
   if (typeof extras === 'string') {
-    status = { text: extras, kind: 'error' };
-    drawStatus();
+    showFormError(extras);
     return;
   }
   const url = q('add-url', HTMLInputElement).value.trim();
@@ -636,13 +635,12 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
     if (saving) {
       saving = false;
       formTouched = false;
-      status = { text: 'Connected. Checking it now; then pick a model above.', kind: 'ok' };
-      flashSaved('providers');
+      pendingFlashAdd = true;
       // Prove the new provider works: test every provider again, the new one included.
       if (postRef) testAll(postRef);
     }
   } else if (m.type === 'models') {
-    current = typeof m.current === 'string' ? m.current : current;
+    if (typeof m.current === 'string') modelPicker.setCurrent(m.current);
   } else if (m.type === 'engine') {
     engineInfo = {
       source: typeof m.source === 'string' ? m.source : 'missing',
@@ -667,11 +665,8 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
     lazyToolDiscovery = m.lazyToolDiscovery !== false;
   } else if (m.type === 'error' && saving) {
     saving = false;
-    status = {
-      text: typeof m.message === 'string' ? m.message : 'That did not work',
-      kind: 'error',
-    };
-    if (isOpen()) drawStatus();
+    setSaveBusy(false);
+    // Falls through to chat.ts, which shows the message in the banner.
     return false;
   } else return false;
   if (isOpen()) {
@@ -693,13 +688,17 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
       if (keep[0]) q('add-url', HTMLInputElement).value = keep[0];
     }
   }
+  if (pendingFlashAdd) {
+    pendingFlashAdd = false;
+    flashSaved('add');
+  }
   return true;
 }
 
 /** Track the model in use while the page is closed, so it opens on the right one. */
 export function setCurrentModel(model: string | null): void {
-  if (model === current) return;
-  current = model;
+  if (model === modelPicker.getCurrent()) return;
+  modelPicker.setCurrent(model);
   // Keep the field in step with the model actually in use while the page is open.
   const field = document.getElementById('set-model-btn');
   if (field && isOpen()) field.outerHTML = modelFieldHtml();
@@ -746,10 +745,8 @@ export function wire(post: Post): void {
       chosen = tileName;
       providerForm.reset();
       formTouched = true;
-      status = undefined;
       q('tile-box', HTMLElement).innerHTML = tilesHtml();
       syncForm();
-      drawStatus();
       q(
         selectedProvider()?.local || chosen === CUSTOM ? 'add-url' : 'add-key',
         HTMLInputElement,

@@ -8,6 +8,8 @@
  */
 import { escapeHtml, formatTokens } from './render.js';
 import { budgetTone } from './stats.js';
+import { emptyStateHtml } from './emptyState.js';
+import * as contextPage from './contextPage.js';
 
 type Post = (msg: Record<string, unknown>) => void;
 type Group = 'system' | 'tools' | 'notes' | 'chat';
@@ -72,6 +74,8 @@ let loading = true;
 let editing: string | null = null;
 /** Items the user opened, kept across redraws. */
 let opened = new Set<string>();
+/** Which tab the cockpit shows: the context groups, or the files explorer. */
+let tab: 'context' | 'files' = 'context';
 
 function page(): HTMLElement {
   const el = document.getElementById('inspector');
@@ -182,11 +186,10 @@ function itemHtml(i: ContextItem): string {
 
 function groupHtml(g: (typeof GROUPS)[number]): string {
   const list = items.filter((i) => i.group === g.id);
+  // No placeholder for an empty group: the header already shows "0 items".
   const listHtml = list.length
     ? `<ul class="ci-cards-list">${list.map(itemHtml).join('')}</ul>`
-    : `<div class="ci-empty-container">
-        <span>No ${g.title.toLowerCase()} currently active.</span>
-      </div>`;
+    : '';
   const extra = g.id === 'notes' ? addNoteHtml() : '';
   const groupTokens = sum(list);
   const totalUsed = sum(items);
@@ -220,8 +223,8 @@ function groupHtml(g: (typeof GROUPS)[number]): string {
     </div>`;
 }
 
-function draw(): void {
-  const el = page();
+/** The cockpit's content: head, tabs, and whichever tab is showing. */
+export function html(): string {
   const head = `
     <div class="set-head ci-nav-header">
       <button class="ci-btn ci-btn-ghost back" data-ci-close>← Back to chat</button>
@@ -230,17 +233,22 @@ function draw(): void {
         <span class="ci-sub">Token allocations, model payloads, and memory controls</span>
       </div>
     </div>`;
+  const tabs = `<div class="ci-tabs" role="tablist" aria-label="Context views">
+    <button class="ci-tab${tab === 'context' ? ' on' : ''}" role="tab" aria-selected="${String(tab === 'context')}" data-ci-tab="context">Context</button>
+    <button class="ci-tab${tab === 'files' ? ' on' : ''}" role="tab" aria-selected="${String(tab === 'files')}" data-ci-tab="files">Files &amp; Sections</button>
+  </div>`;
 
   if (loading) {
-    el.innerHTML = `${head}<div class="ci-loading-state"><span class="spinner"></span> Reading context components…</div>`;
-    return;
+    return `${head}${tabs}<div class="ci-loading-state"><span class="spinner"></span> Reading context components…</div>`;
   }
+  if (tab === 'files') return `${head}${tabs}${contextPage.html()}`;
 
   const empty = items.length === 0;
   const hasChat = items.some((i) => i.group === 'chat');
 
-  el.innerHTML = `
+  return `
     ${head}
+    ${tabs}
     <div class="ci-cockpit-shell">
       <div class="ci-top-panel">
         ${budgetHtml()}
@@ -266,9 +274,13 @@ function draw(): void {
       </div>
 
       <div class="ci-containers-flow">
-        ${empty ? '<div class="ci-empty-notice">Context initializes upon your first interaction or repo start.</div>' : GROUPS.map(groupHtml).join('')}
+        ${empty ? emptyStateHtml() : GROUPS.map(groupHtml).join('')}
       </div>
     </div>`;
+}
+
+function draw(): void {
+  page().innerHTML = html();
 }
 
 export function isOpen(): boolean {
@@ -280,6 +292,7 @@ export function open(post: Post): void {
   page().hidden = false;
   loading = items.length === 0;
   editing = null;
+  tab = 'context';
   draw();
   post({ type: 'contextList' });
 }
@@ -310,6 +323,19 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
 }
 
 function handleClick(t: Element, post: Post, openFiles: () => void): void {
+  const tabBtn = t.closest<HTMLElement>('[data-ci-tab]')?.dataset.ciTab;
+  if (tabBtn === 'files') {
+    openFiles();
+    return;
+  }
+  if (tabBtn === 'context') {
+    tab = 'context';
+    draw();
+    return;
+  }
+  // Clicks inside the Files tab belong to the context page.
+  if (tab === 'files' && contextPage.click(t, post)) return;
+
   const edit = t.closest<HTMLElement>('[data-ci-edit]')?.dataset.ciEdit;
   const del = t.closest<HTMLElement>('[data-ci-delete]')?.dataset.ciDelete;
   const save = t.closest<HTMLElement>('[data-ci-save]')?.dataset.ciSave;
@@ -318,7 +344,6 @@ function handleClick(t: Element, post: Post, openFiles: () => void): void {
 
   if (t.closest('[data-ci-close]')) close();
   else if (t.closest('[data-ci-files]')) {
-    close();
     openFiles();
   } else if (t.closest('[data-ci-clear-chat]')) {
     post({ type: 'contextClearChat' });
@@ -354,6 +379,21 @@ function handleClick(t: Element, post: Post, openFiles: () => void): void {
 }
 
 export function wire(post: Post, openFiles: () => void): void {
+  // The context page renders as a tab in here: its open()/close() switch tabs through this.
+  contextPage.bindTabHost({
+    showFiles: () => {
+      tab = 'files';
+      draw();
+    },
+    showContext: () => {
+      tab = 'context';
+      draw();
+    },
+    filesOpen: () => isOpen() && tab === 'files',
+    refresh: () => {
+      if (isOpen() && tab === 'files') draw();
+    },
+  });
   page().addEventListener('click', (e) => {
     const t = e.target instanceof Element ? e.target : null;
     if (t) handleClick(t, post, openFiles);
