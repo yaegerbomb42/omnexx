@@ -1,0 +1,105 @@
+/*
+ * omnexx design tokens — the single token layer (UI_OVERHAUL §3).
+ * Loaded FIRST, before chat.css and settings.css. Every spacing, type,
+ * radius, motion, color and surface value in the UI resolves through here;
+ * the other files consume tokens and contain only component rules.
+ * Semantic colors resolve through VS Code theme variables with hex
+ * fallbacks; surfaces are one flat card style on one border style.
+ */
+:root {
+  /* Spacing: one scale, no orphan tokens. */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 14px;
+  --space-6: 20px;
+  --space-7: 28px;
+  --space-8: 40px;
+  --gap: var(--space-4);
+  /* One horizontal gutter for the whole panel: header, sections, log, composer. */
+  --pad-x: var(--space-5);
+
+  /* Type: derived from the editor font size. No hardcoded px font sizes. */
+  --fs-xs: calc(var(--vscode-font-size, 13px) * 0.85);
+  --fs-sm: calc(var(--vscode-font-size, 13px) * 0.92);
+  --fs-md: var(--vscode-font-size, 13px);
+  --fs-lg: calc(var(--vscode-font-size, 13px) * 1.08);
+
+  /* Radii: xs → chips, sm → small surfaces, md → buttons/inputs (8px),
+     lg → cards/modals (12px), full → pills. */
+  --radius-xs: 3px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 999px;
+
+  /* Motion: durations and easings. Animations are subtle: fades and 4px
+     slides only. --ease is the default expo-out; --ease-soft is the gentler
+     in-out for hovers and pulses; --ease-spring is reserved for pop-in
+     surfaces. */
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 340ms;
+  --dur-fade: 700ms;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-soft: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+
+  /* Z scale: popovers, nav, overlays. */
+  --z-sticky: 5;
+  --z-float: 10;
+  --z-pop: 20;
+  --z-suggest: 25;
+  --z-overlay: 40;
+
+  /* Surfaces: one flat card style on one border style. */
+  --fg: var(--vscode-foreground);
+  --muted: var(--vscode-descriptionForeground);
+  --surface: var(--vscode-sideBar-background);
+  --card: color-mix(in srgb, var(--vscode-foreground) 8%, var(--surface));
+  --line: color-mix(in srgb, var(--vscode-foreground) 16%, transparent);
+  --border: 1px solid var(--line);
+
+  /* Semantic palette (fallbacks only — the theme variables win when the
+     theme defines them). */
+  --violet: var(--vscode-charts-purple, #8b5cf6);
+  --teal: var(--vscode-terminal-ansiCyan, #2dd4bf);
+  --emerald: var(--vscode-testing-iconPassed, #3fb950);
+  --rose: var(--vscode-testing-iconFailed, #f87171);
+  --amber: var(--vscode-editorWarning-foreground, #f59e0b);
+  --pink: var(--vscode-charts-pink, #f472b6);
+  --ok: var(--emerald);
+  --warn: var(--amber);
+  --bad: var(--vscode-errorForeground, #f14c4c);
+
+  /* One accent, taken from the theme (resolved in the theme classes below). */
+  --accent: var(--vscode-textLink-foreground, #36c5f0);
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+
+  /* One elevation, used sparingly (popovers only). */
+  --shadow-md: 0 2px 6px rgb(0 0 0 / 14%), 0 8px 20px rgb(0 0 0 / 10%);
+
+  --mono: var(--vscode-editor-font-family, ui-monospace, monospace);
+}
+
+body.vscode-light {
+  /* Light theme overrides come from VS Code theme variables, never hardcoded theme
+     colors: the user's light theme decides the exact value. */
+  --accent: var(--vscode-textLink-foreground);
+  --violet: var(--vscode-charts-purple);
+  --teal: var(--vscode-terminal-ansiCyan);
+  --emerald: var(--vscode-testing-iconPassed);
+  --rose: var(--vscode-testing-iconFailed);
+  --amber: var(--vscode-editorWarning-foreground);
+  --pink: color-mix(in srgb, var(--rose) 55%, var(--violet));
+  --ok: var(--emerald);
+  --warn: var(--amber);
+}
+
+body.vscode-high-contrast,
+body.vscode-high-contrast-light {
+  --accent: var(--vscode-focusBorder);
+  --card: transparent;
+  --line: var(--vscode-contrastBorder);
+}

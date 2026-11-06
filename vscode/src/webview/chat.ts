@@ -47,7 +47,7 @@ import * as posture from './posture.js';
 import type { KernelSnapshot, SystemOneSnapshot } from './kernelObserve.js';
 import * as settings from './settings.js';
 import * as stats from './stats.js';
-import { chatEmptyStateHtml, quickStartCards } from './emptyState.js';
+import { chatEmptyStateHtml } from './emptyState.js';
 
 interface State {
   entries: Entry[];
@@ -112,7 +112,8 @@ type Incoming =
         | 'browser'
         | 'agentSettings'
         | 'executionMode'
-        | 'workDomain';
+        | 'workDomain'
+        | 'contextItems';
     } & Record<string, unknown>)
   | ({ type: 'browserFrame' } & browserCockpit.BrowserFrameMsg)
   | ({ type: 'browserDiagnostics' } & browserCockpit.BrowserDiagnosticsMsg)
@@ -162,8 +163,12 @@ const steps = el('steps', HTMLElement);
 const stepsBody = el('steps-body', HTMLElement);
 const banner = el('banner', HTMLElement);
 const welcome = el('welcome', HTMLElement);
-/** The welcome section's quick-start cards (same prompts as the empty state). */
-welcome.innerHTML = `<h2>What should omnexx do?</h2><p>It edits this workspace, runs your tests, and asks before anything outside the repo.</p>${quickStartCards()}`;
+/**
+ * The welcome section stays hidden: the conversation's empty state
+ * (`chatEmptyStateHtml`, rendered into #log while there is nothing yet) is the
+ * single empty state, and its quick-start cards come from `emptyState.ts`.
+ */
+welcome.hidden = true;
 /** The head agent's avatar in the crew view: the extension logo. */
 const logoSrc = document.body.dataset.logo ?? '';
 
@@ -182,6 +187,7 @@ let blocks: Block[] = [];
 let logLines: LogLine[] = [];
 let state: State | undefined;
 let lastStepsSignature = '';
+let stepsWasBusy = false;
 let rafPending = false;
 let pendingState: State | null = null;
 let lastLiveHtml = '';
@@ -189,6 +195,12 @@ let needsRedrawAfterSelect = false;
 
 /** Tracks user-toggled `<details>` accordions by stable key so re-renders never collapse them. */
 const openDisclosures = new Set<string>();
+
+/**
+ * Accordions the person explicitly closed. Think accordions open on their own while
+ * streaming, but a deliberate close must stick across re-renders.
+ */
+const userClosedDisclosures = new Set<string>();
 
 /** When each block was first seen, for user-message timestamps (no timestamp in the data). */
 const blockSeenAt = new Map<number, number>();
@@ -309,7 +321,10 @@ function renderThinkAccordion(
   const depthBadge =
     trails > 1 ? `<span class="think-badge">${String(trails)} thought trails</span>` : '';
   const countBadge = `<span class="think-badge">${String(wordCount)} words · ~${formatTokens(estTokens)} tokens</span>`;
-  const isOpen = openDisclosures.has(disclosureId);
+  // Open while streaming so live reasoning is visible; collapsed by default once
+  // it stops, unless the person opened it — and a deliberate close always sticks.
+  const isOpen =
+    openDisclosures.has(disclosureId) || (isStreaming && !userClosedDisclosures.has(disclosureId));
 
   // Show the latest 2 lines during streaming so the user sees live progress while collapsed
   const previewSlice = isStreaming
@@ -440,8 +455,6 @@ function hasActiveSelectionIn(container: HTMLElement): boolean {
  * and updates `liveRoot` for active token streaming and tool execution status.
  */
 function drawConversation(): void {
-  welcome.hidden = blocks.length > 0 || Boolean(state?.live) || Boolean(state?.busy);
-
   const empty = blocks.length === 0 && !state?.live && !state?.busy;
   if (empty) {
     blocksRoot.innerHTML = chatEmptyStateHtml();
@@ -568,6 +581,12 @@ function stepDetail(s: string, states: readonly string[], pct: number, recent: s
 
 function drawSteps(items: readonly TodoItem[]): void {
   steps.hidden = items.length === 0;
+  // Collapse the timeline to its one-line summary when the run goes idle, so a
+  // finished mission stops competing with the conversation. Opening it again
+  // while idle is the person's choice and is left alone.
+  const busy = Boolean(state?.busy);
+  if (stepsWasBusy && !busy) (steps as HTMLDetailsElement).open = false;
+  stepsWasBusy = busy;
   const stepEl = el('status-step', HTMLElement);
   if (!items.length) {
     stepEl.textContent = state?.busy ? 'working…' : 'idle';
@@ -752,8 +771,13 @@ conversation.addEventListener(
     const target = e.target;
     if (!(target instanceof HTMLDetailsElement) || !target.dataset.disclosureId) return;
     if (!target.isConnected) return;
-    if (target.open) openDisclosures.add(target.dataset.disclosureId);
-    else openDisclosures.delete(target.dataset.disclosureId);
+    if (target.open) {
+      openDisclosures.add(target.dataset.disclosureId);
+      userClosedDisclosures.delete(target.dataset.disclosureId);
+    } else {
+      openDisclosures.delete(target.dataset.disclosureId);
+      userClosedDisclosures.add(target.dataset.disclosureId);
+    }
   },
   true,
 );
@@ -818,8 +842,10 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
     blocks = [];
     logLines = [];
     openDisclosures.clear();
+    userClosedDisclosures.clear();
     blockSeenAt.clear();
     lastStepsSignature = '';
+    stepsWasBusy = false;
     blocksRoot.replaceChildren();
     liveRoot.replaceChildren();
     drawConversation();

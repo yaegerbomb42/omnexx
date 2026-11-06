@@ -192,6 +192,11 @@ export function setCurrent(ref: string | null): void {
   current = ref;
 }
 
+/** The model in use — the single source of truth; settings reads it instead of tracking its own copy. */
+export function getCurrent(): string | null {
+  return current;
+}
+
 export function wire(openSettings: () => void): void {
   const el = root();
   el.addEventListener('input', (e) => {

@@ -2,7 +2,7 @@
  * The crew view next to the conversation: helpers the agent started, each a small card wired to
  * the head agent. The browser cockpit lives in `browserCockpit.ts`.
  */
-import { badge } from './modelPicker.js';
+import { badge } from './badge.js';
 import { escapeHtml, formatUsd } from './render.js';
 
 export interface Helper {
@@ -72,6 +72,12 @@ function cardHtml(h: Helper): string {
   return `<li class="helper ${h.status} accent-${role.accent}"><span class="wire wire-${h.status}" aria-hidden="true"></span><div class="h-card"><div class="h-top">${badge(name)}<span class="h-name">${escapeHtml(name)}</span><span class="h-role">${role.role}</span>${statusHtml(h)}</div>${statusLineHtml(h)}<div class="h-task">${escapeHtml(h.description)}</div><div class="h-foot">${footHtml(h)}</div></div></li>`;
 }
 
+/** The crew section's inner HTML: the head-agent pill plus one card per helper. */
+export function html(helpers: readonly Helper[], logoSrc: string): string {
+  if (!helpers.length) return '';
+  return `<div class="head-agent head-agent-pill"><img src="${logoSrc}" alt=""><span>omnexx</span></div><ul class="helpers">${helpers.map(cardHtml).join('')}</ul>`;
+}
+
 export function drawCrew(helpers: readonly Helper[], logoSrc: string): void {
   const section = el('crew');
   section.hidden = helpers.length === 0;
@@ -80,8 +86,7 @@ export function drawCrew(helpers: readonly Helper[], logoSrc: string): void {
   el('crew-count').textContent = working
     ? `${String(working)} working`
     : `${String(helpers.length)} reported`;
-  el('crew-body').innerHTML =
-    `<div class="head-agent head-agent-pill"><img src="${logoSrc}" alt=""><span>omnexx</span></div><ul class="helpers">${helpers.map(cardHtml).join('')}</ul>`;
+  el('crew-body').innerHTML = html(helpers, logoSrc);
 }
 
 export function resetViews(): void {

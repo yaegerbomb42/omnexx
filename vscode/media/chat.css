@@ -1,184 +1,7 @@
 /*
- * omnexx chat panel — Frontier Observability Cockpit Edition.
- * Base tokens follow the VS Code workbench theme while glassmorphic surfaces,
- * semantic tool execution pills, inline diff highlights, and live thinking
- * accordions elevate observability.
+ * omnexx chat panel. Tokens live in tokens.css (loaded first); this file
+ * holds component rules only — conversation, composer, popovers, HUD.
  */
-:root {
-  /* One scale, no orphan tokens (§3.1): every spacing, radius, size and duration
-     lives here, and repeated across surfaces means the same token. */
-  --space-1: 2px;
-  --space-2: 4px;
-  --space-3: 6px;
-  --space-4: 8px;
-  --space-5: 14px;
-  --space-6: 20px;
-  --space-7: 28px;
-  --space-8: 40px;
-  --gap: var(--space-4);
-  /* One horizontal gutter for the whole panel: header, sections, log, composer. */
-  --pad-x: var(--space-5);
-  --fs-xs: calc(var(--vscode-font-size, 13px) * 0.85);
-  --fs-sm: calc(var(--vscode-font-size, 13px) * 0.92);
-  --fs-md: var(--vscode-font-size, 13px);
-  --fs-lg: calc(var(--vscode-font-size, 13px) * 1.08);
-
-  /* Motion tokens (§3.5): durations and easings, gated by reduced-motion.
-     --ease is the default expo-out; --ease-soft is the gentler in-out for
-     hovers and pulses; --ease-spring is reserved for pop-in surfaces. */
-  --dur-fast: 140ms;
-  --dur-base: 220ms;
-  --dur-slow: 340ms;
-  --dur-fade: 700ms;
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-soft: cubic-bezier(0.65, 0, 0.35, 1);
-  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
-
-  /* Z scale (§P2.14): popovers, nav, overlays. */
-  --z-sticky: 5;
-  --z-float: 10;
-  --z-pop: 20;
-  --z-suggest: 25;
-  --z-overlay: 40;
-
-  /* Radii (§3.2): xs → chips, sm → small surfaces, md → buttons/inputs (8px),
-     lg → cards/modals (12px), full → pills. */
-  --radius-xs: 3px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-full: 999px;
-
-  --fg: var(--vscode-foreground);
-  --muted: var(--vscode-descriptionForeground);
-  --surface: var(--vscode-sideBar-background);
-  --card: color-mix(in srgb, var(--vscode-foreground) 8%, var(--surface));
-  --card-strong: color-mix(in srgb, var(--vscode-foreground) 12%, var(--surface));
-  --line: color-mix(in srgb, var(--vscode-foreground) 16%, transparent);
-
-  /* Semantic Palette: deeper violet, warmer amber (fallbacks only — the theme
-     variables win when the theme defines them). */
-  --violet: var(--vscode-charts-purple, #8b5cf6);
-  --teal: var(--vscode-terminal-ansiCyan, #2dd4bf);
-  --emerald: var(--vscode-testing-iconPassed, #3fb950);
-  --rose: var(--vscode-testing-iconFailed, #f87171);
-  --amber: var(--vscode-editorWarning-foreground, #f59e0b);
-  --pink: #f472b6;
-  --ok: var(--emerald);
-  --warn: var(--amber);
-  --bad: var(--vscode-errorForeground, #f14c4c);
-  /* One accent, taken from the theme (resolved in the theme classes below);
-     gradients are reserved for the posture pill. */
-  --brand: var(--accent);
-  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
-
-  /* Glassmorphism Tokens: slightly more opaque for legibility, deeper blur for
-     depth, and a softer two-sided inner light (top highlight + faint bottom
-     shade) so panels read as lit from above rather than rimmed. */
-  --glass-bg: color-mix(in srgb, var(--surface) 78%, transparent);
-  --glass-card: color-mix(
-    in srgb,
-    var(--fg) 6%,
-    color-mix(in srgb, var(--surface) 84%, transparent)
-  );
-  --glass-border: color-mix(in srgb, var(--fg) 14%, transparent);
-  --glass-highlight:
-    inset 0 1px 0 0 color-mix(in srgb, #ffffff 8%, transparent),
-    inset 0 -1px 0 0 color-mix(in srgb, #000000 6%, transparent);
-  --glass-blur: blur(14px) saturate(150%);
-  --glow:
-    0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
-    0 4px 16px color-mix(in srgb, var(--accent) 18%, transparent),
-    0 12px 32px color-mix(in srgb, var(--accent) 10%, transparent);
-  /* Multi-layer elevation: ambient (tight, dark) + key light (wide, soft).
-     Use --shadow-sm for rows, --shadow-md for cards, --shadow-lg for popovers. */
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 12%), 0 1px 3px rgb(0 0 0 / 8%);
-  --shadow-md: 0 2px 6px rgb(0 0 0 / 14%), 0 8px 20px rgb(0 0 0 / 10%);
-  --shadow-lg: 0 4px 12px rgb(0 0 0 / 16%), 0 16px 40px rgb(0 0 0 / 14%);
-  /* Subtle film grain for large glass surfaces (composer, model picker). The
-     tile is near-invisible by design — texture, not a pattern. */
-  --glass-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
-  --mono: var(--vscode-editor-font-family, ui-monospace, monospace);
-
-  /* Bento glass tokens: the shared surface language of the posture pill, the swarm
-     cockpit cards, the telemetry strip and the settings Live Stats card. */
-  --bento-bg: linear-gradient(
-    165deg,
-    color-mix(in srgb, var(--fg) 7%, transparent),
-    color-mix(in srgb, var(--accent) 3%, transparent) 55%,
-    color-mix(in srgb, var(--surface) 86%, transparent)
-  );
-  --bento-border: color-mix(in srgb, var(--fg) 13%, transparent);
-  --bento-shadow: 0 1px 2px rgb(3 7 18 / 18%), 0 6px 16px rgb(3 7 18 / 16%), var(--glass-highlight);
-  /* Execution posture gradients (active pill segments) and their glow colors. */
-  --grad-efficient: linear-gradient(92deg, #2b6cb8, #4aa3e0);
-  --grad-normal: linear-gradient(92deg, #5b21b6, #8b5cf6);
-  --grad-extreme: linear-gradient(92deg, #b45309, #f59e0b);
-  --seg-efficient: #38bdf8;
-  --seg-normal: #c084fc;
-  --seg-extreme: #fbbf24;
-  /* Swarm role accents: explorer amber, planner violet, reviewer green, helper blue. */
-  --role-amber: var(--amber);
-  --role-violet: var(--violet);
-  --role-green: var(--emerald);
-  --role-blue: var(--accent);
-  --role-pink: var(--pink);
-
-  /* Omnexx Unified Bespoke Neo-Minimal Tokens */
-  --omx-surface-1: var(--glass-bg);
-  --omx-surface-2: var(--glass-card);
-  --omx-surface-3: color-mix(in srgb, var(--fg) 9%, var(--surface));
-  --omx-border: var(--glass-border);
-  --omx-border-strong: color-mix(in srgb, var(--fg) 20%, transparent);
-  --omx-accent: var(--accent);
-  --omx-accent-soft: var(--accent-soft);
-  --omx-radius-sm: var(--radius-sm);
-  --omx-radius-md: var(--radius-md);
-  --omx-radius-lg: var(--radius-lg);
-  --omx-font-sans:
-    'Inter',
-    var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
-  --omx-font-mono: 'JetBrains Mono', var(--mono, ui-monospace, SFMono-Regular, monospace);
-}
-
-body.vscode-light {
-  /* Light theme overrides come from VS Code theme variables, never hardcoded theme
-     colors: the user's light theme decides the exact value. */
-  --accent: var(--vscode-textLink-foreground);
-  --violet: var(--vscode-charts-purple);
-  --teal: var(--vscode-terminal-ansiCyan);
-  --emerald: var(--vscode-testing-iconPassed);
-  --rose: var(--vscode-testing-iconFailed);
-  --amber: var(--vscode-editorWarning-foreground);
-  --pink: color-mix(in srgb, var(--rose) 55%, var(--violet));
-  --ok: var(--emerald);
-  --warn: var(--amber);
-  --glass-bg: color-mix(in srgb, var(--surface) 88%, transparent);
-  --glass-card: color-mix(
-    in srgb,
-    var(--fg) 4%,
-    color-mix(in srgb, var(--surface) 90%, transparent)
-  );
-  --glass-highlight:
-    inset 0 1px 0 0 color-mix(in srgb, #ffffff 50%, transparent),
-    inset 0 -1px 0 0 color-mix(in srgb, #000000 5%, transparent);
-  --glow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
-}
-
-body.vscode-high-contrast,
-body.vscode-high-contrast-light {
-  --accent: var(--vscode-focusBorder);
-  --card: transparent;
-  --card-strong: transparent;
-  --glass-bg: var(--surface);
-  --glass-card: var(--surface);
-  --glass-border: var(--vscode-contrastBorder);
-  --glass-highlight: none;
-  --glass-blur: none;
-  --line: var(--vscode-contrastBorder);
-  --glow: 0 0 0 1px var(--vscode-contrastActiveBorder, var(--accent));
-}
-
 *,
 *::before,
 *::after {
@@ -231,9 +54,6 @@ body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Accent resolves per theme class (§P0.4): link color normally, focusBorder in
-     high-contrast so interactive affordances never blend into the theme. */
-  --accent: var(--vscode-textLink-foreground, #36c5f0);
 }
 
 button {
@@ -250,6 +70,21 @@ button:disabled {
 
 /* Micro-press feedback on every button (theme buttons keep their own
    background transitions; the transform transition above still applies). */
+
+.btn-icon,
+.btn-ghost,
+.btn-secondary {
+  border-radius: var(--radius-sm);
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+.btn-icon:hover,
+.btn-ghost:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.08));
+}
+
 button:active:not(:disabled) {
   transform: scale(0.97);
 }
@@ -273,8 +108,7 @@ svg {
   padding: 6px var(--pad-x);
   gap: var(--space-3);
   border-bottom: 1px solid var(--line);
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
+  background: var(--surface);
   flex: none;
 }
 
@@ -368,7 +202,7 @@ svg {
 .track {
   flex: 1;
   height: 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: color-mix(in srgb, var(--muted) 22%, transparent);
   overflow: hidden;
 }
@@ -376,8 +210,8 @@ svg {
 .fill {
   height: 100%;
   width: 0;
-  border-radius: 3px;
-  background: var(--brand);
+  border-radius: var(--radius-xs);
+  background: var(--accent);
   transition: width var(--dur-slow) var(--ease);
 }
 
@@ -389,7 +223,7 @@ svg {
 .mission .track {
   display: block;
   height: 3px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   background: var(--line);
   overflow: hidden;
 }
@@ -409,9 +243,8 @@ svg {
   min-width: 190px;
   padding: 6px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--vscode-editorWidget-border, var(--glass-border));
-  background: var(--vscode-editorWidget-background, var(--glass-bg));
-  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--vscode-editorWidget-border, var(--line));
+  background: var(--vscode-editorWidget-background, var(--surface));
   box-shadow: 0 6px 20px rgb(0 0 0 / 32%);
 }
 
@@ -453,7 +286,13 @@ svg {
 }
 
 /* ==========================================================================
-   Bento glass: Execution Posture pill, cockpit telemetry, swarm crew cards
+   .t-div {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+}
+
+Execution Posture pill, cockpit telemetry, swarm crew cards
    ========================================================================== */
 
 /* The posture pill sits in the chat header; the same markup renders in Settings. */
@@ -461,9 +300,7 @@ svg {
   flex: none;
   padding: 10px var(--pad-x) 9px;
   border-bottom: 1px solid var(--line);
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
+  background: var(--surface);
 }
 
 .posture-pill {
@@ -471,9 +308,8 @@ svg {
   gap: 3px;
   padding: 3px;
   border-radius: var(--radius-full);
-  border: 1px solid var(--bento-border);
+  border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface) 74%, transparent);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
 }
 
 .posture-pill button {
@@ -502,23 +338,23 @@ svg {
 }
 
 .posture-pill button[aria-pressed='true'] {
-  color: #fff;
+  color: var(--vscode-button-foreground, #fff);
   text-shadow: 0 1px 2px rgb(0 0 0 / 28%);
 }
 
 .posture-pill button[data-posture='efficient'][aria-pressed='true'] {
-  background: var(--grad-efficient);
-  box-shadow: 0 1px 6px color-mix(in srgb, var(--seg-efficient) 30%, transparent);
+  background: var(--ok);
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--ok) 30%, transparent);
 }
 
 .posture-pill button[data-posture='normal'][aria-pressed='true'] {
-  background: var(--grad-normal);
-  box-shadow: 0 1px 6px color-mix(in srgb, var(--seg-normal) 28%, transparent);
+  background: var(--violet);
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--violet) 28%, transparent);
 }
 
 .posture-pill button[data-posture='extreme'][aria-pressed='true'] {
-  background: var(--grad-extreme);
-  box-shadow: 0 1px 6px color-mix(in srgb, var(--seg-extreme) 30%, transparent);
+  background: var(--warn);
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--warn) 30%, transparent);
 }
 
 body.vscode-high-contrast .posture-pill button[aria-pressed='true'],
@@ -576,9 +412,9 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 }
 
 .domain-pill button[aria-pressed='true'] {
-  background: var(--card-strong);
+  background: var(--card);
   color: var(--fg);
-  box-shadow: inset 0 0 0 1px var(--bento-border);
+  box-shadow: inset 0 0 0 1px var(--line);
   text-shadow: none;
 }
 
@@ -589,10 +425,10 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   gap: 4px 16px;
   margin: 0 0 var(--space-4);
   padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--bento-border);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background: var(--bento-bg);
-  box-shadow: var(--bento-shadow);
+  background: var(--card);
+  box-shadow: none;
 }
 
 .t-cell {
@@ -614,17 +450,31 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   font-variant-numeric: tabular-nums;
 }
 
-/* Swarm crew: the head agent chip and one bento card per helper. The list is a
+.b-visual-bar {
+  display: block;
+  height: 6px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+  overflow: hidden;
+}
+.b-visual-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+}
+
+/* Swarm crew: the head agent chip and one card per helper. The list is a
    scrollable region — max-height with overflow-y: auto, and nothing overriding it. */
 .section.crew {
   flex: none;
   max-height: 44%;
   overflow-y: auto;
   margin: 10px var(--pad-x) 0;
-  border: 1px solid var(--bento-border);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background: var(--glass-card);
-  box-shadow: var(--bento-shadow);
+  background: var(--card);
+  box-shadow: none;
 }
 
 .section.crew > summary,
@@ -665,9 +515,9 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   align-items: center;
   gap: var(--space-3);
   padding: 3px 10px 3px var(--space-2);
-  border: 1px solid var(--bento-border);
+  border: 1px solid var(--line);
   border-radius: var(--radius-full);
-  background: var(--bento-bg);
+  background: var(--card);
   font-weight: 600;
   font-size: var(--fs-sm);
 }
@@ -687,23 +537,23 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 .helper {
   position: relative;
   margin-top: var(--space-4);
-  --role: var(--role-blue);
+  --role: var(--accent);
 }
 
 .helper.accent-amber {
-  --role: var(--role-amber);
+  --role: var(--warn);
 }
 
 .helper.accent-violet {
-  --role: var(--role-violet);
+  --role: var(--violet);
 }
 
 .helper.accent-green {
-  --role: var(--role-green);
+  --role: var(--ok);
 }
 
 .helper.accent-blue {
-  --role: var(--role-blue);
+  --role: var(--accent);
 }
 
 /* The wire from the head agent down to each helper card. */
@@ -717,12 +567,12 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 }
 
 .h-card {
-  border: 1px solid color-mix(in srgb, var(--role) 32%, var(--bento-border));
+  border: 1px solid color-mix(in srgb, var(--role) 32%, var(--line));
   border-left: 3px solid var(--role);
   border-radius: var(--radius-lg);
-  background: var(--bento-bg);
+  background: var(--card);
   box-shadow:
-    var(--bento-shadow),
+    none,
     0 0 18px -6px color-mix(in srgb, var(--role) 45%, transparent);
   padding: 9px 12px;
   display: grid;
@@ -748,12 +598,26 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   min-width: 22px;
   height: 22px;
   padding: 0 5px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   font-size: var(--fs-xs);
   font-weight: 700;
   color: hsl(var(--h, 210) 85% 72%);
   background: hsl(var(--h, 210) 70% 45% / 22%);
   box-shadow: inset 0 0 0 1px hsl(var(--h, 210) 70% 55% / 45%);
+}
+
+.head-agent-pill {
+  border-radius: var(--radius-full);
+  padding: 3px 12px;
+}
+.helper .wire.wire-working {
+  background: var(--accent);
+}
+.helper .wire.wire-done {
+  background: var(--ok);
+}
+.helper .wire.wire-stopped {
+  background: var(--muted);
 }
 
 /* Model picker: a searchable popover whose provider headers stay in view and fold. */
@@ -766,13 +630,9 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-lg);
-  border: 1px solid var(--glass-border);
+  border: 1px solid var(--line);
   background: var(--vscode-editorWidget-background, var(--surface));
-  background-image: var(--glass-noise);
-  background-size: 120px 120px;
-  box-shadow:
-    var(--shadow-lg),
-    0 0 24px color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: var(--shadow-md);
   overflow: hidden;
 }
 
@@ -897,11 +757,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 }
 
 .mp-item.active {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent) 20%, transparent),
-    color-mix(in srgb, var(--violet) 14%, transparent)
-  );
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .mp-item.current {
@@ -1006,6 +862,44 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   color: var(--accent);
 }
 
+/* Model picker loading + tag states (folded from the old polish appendix). */
+.mp-skeleton {
+  height: 28px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  animation: ls-shimmer 1.6s ease-in-out infinite alternate;
+}
+
+.mp-search-icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.mp-clear {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+}
+
+.mp-hints {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  padding: var(--space-2) var(--space-3);
+}
+
+.mp-tag-vision {
+  border-color: color-mix(in srgb, var(--violet) 45%, transparent);
+  color: var(--violet);
+}
+
+.mp-tag-reasoning {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  color: var(--warn);
+}
+
 /* The chat model field in Settings: a badge, the model name, and where it runs. */
 .field.picker {
   display: flex;
@@ -1091,7 +985,6 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   height: 7px;
   border-radius: 50%;
   background: var(--role);
-  box-shadow: 0 0 8px var(--role);
 }
 
 .helper.working .h-dot {
@@ -1104,7 +997,6 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 
 .helper.done .h-dot {
   background: var(--ok);
-  box-shadow: 0 0 8px var(--ok);
 }
 
 .helper.stopped .h-status {
@@ -1139,7 +1031,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, var(--line));
   max-height: 32%;
   overflow-y: auto;
-  background: var(--glass-card);
+  background: var(--card);
 }
 
 .mission > summary {
@@ -1250,9 +1142,8 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 }
 
 .step.active .card {
-  background: var(--glass-card);
+  background: var(--card);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  box-shadow: var(--glass-highlight);
   padding-block: 4px;
 }
 
@@ -1374,7 +1265,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 .memory-note pre {
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.5;
   margin: 0 0 10px;
   max-height: 40vh;
@@ -1424,13 +1315,9 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 
 .msg.user {
   border-radius: var(--radius-md);
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--accent) 9%, var(--card)),
-    var(--card)
-  );
+  background: var(--card);
   border: 1px solid var(--line);
-  box-shadow: var(--shadow-sm), var(--glass-highlight);
+  box-shadow: none;
   padding: var(--space-4) var(--space-5);
   transition:
     transform var(--dur-fast) var(--ease),
@@ -1439,7 +1326,7 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
 
 .msg.user:hover {
   transform: translateY(-1px);
-  box-shadow: var(--shadow-md), var(--glass-highlight);
+  box-shadow: var(--shadow-md);
 }
 
 .msg.user .who {
@@ -1523,9 +1410,8 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   right: 0;
   display: flex;
   border-radius: var(--radius-md);
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
+  background: var(--surface);
+  border: 1px solid var(--line);
   opacity: 0;
   transition: opacity var(--dur-fast);
 }
@@ -1553,15 +1439,44 @@ body.vscode-high-contrast-light .posture-pill button[aria-pressed='true'] {
   white-space: pre-wrap;
 }
 
-/* Code Blocks & Inline Diff Highlighting — code renders as a glass "stream" panel;
+.msg-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  font-size: var(--fs-xs);
+}
+.msg-time {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.msg-accent {
+  display: block;
+  height: 2px;
+  border-radius: var(--radius-xs);
+  margin: var(--space-2) 0;
+}
+.msg-brand {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.01em;
+}
+
+/* Code Blocks & Inline Diff Highlighting — code renders as a "stream" panel;
    lines the markdown already marks .diff-add/.diff-del get the green/red tinting. */
 pre {
   position: relative;
-  background: var(--bento-bg);
-  border: 1px solid var(--bento-border);
+  background: var(--card);
+  border: 1px solid var(--line);
   padding: 0 var(--space-4) var(--space-3);
   border-radius: var(--radius-lg);
-  box-shadow: var(--bento-shadow);
+  box-shadow: none;
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--fg) 22%, transparent) transparent;
@@ -1600,7 +1515,6 @@ pre[data-streaming='true'] {
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 6px var(--accent);
   animation: mcp-pulse 1.6s var(--ease-soft) infinite;
 }
 
@@ -1608,7 +1522,7 @@ pre[data-streaming='true'] {
   display: block;
   padding: 0 var(--space-2);
   margin: 0 calc(-1 * var(--space-2));
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .diff-add {
@@ -1637,7 +1551,7 @@ code {
 }
 
 :not(pre) > code {
-  background: var(--vscode-textCodeBlock-background, var(--card-strong));
+  background: var(--vscode-textCodeBlock-background, var(--card));
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
 }
@@ -1663,30 +1577,35 @@ blockquote {
   color: var(--muted);
 }
 
-/* Frontier Glassmorphic Thinking Accordion (`<think>`) */
+.code-line {
+  display: flex;
+  gap: var(--space-3);
+}
+.code-ln {
+  flex: none;
+  width: 2.5em;
+  text-align: right;
+  color: var(--muted);
+  font-family: var(--mono);
+  user-select: none;
+}
+
+/* Thinking Accordion (`<think>`) */
 .msg.think {
   font-size: var(--fs-xs);
   line-height: 1.4;
   color: var(--muted);
   border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--violet) 26%, var(--glass-border));
+  border: 1px solid color-mix(in srgb, var(--violet) 26%, var(--line));
   border-left: 2.5px solid var(--violet);
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--violet) 9%, var(--glass-card)),
-    var(--glass-card) 70%
-  );
-  backdrop-filter: var(--glass-blur);
-  box-shadow: var(--glass-highlight);
+  background: var(--card);
   padding: 5px 8px;
   white-space: pre-wrap;
 }
 
 .msg.think.is-streaming {
   border-color: color-mix(in srgb, var(--violet) 50%, var(--accent));
-  box-shadow:
-    var(--glass-highlight),
-    0 0 14px color-mix(in srgb, var(--violet) 16%, transparent);
+  box-shadow: none;
 }
 
 details.msg.think > summary {
@@ -1720,7 +1639,7 @@ details.msg.think > summary::-webkit-details-marker {
 
 .think-badge {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 500;
   padding: 0 5px;
   border-radius: var(--radius-full);
@@ -1756,7 +1675,7 @@ details.msg.think[open] .think-summary-text {
 details.msg.think > summary::after {
   content: '▾';
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--violet);
   opacity: 0.75;
 }
@@ -1792,7 +1711,7 @@ details.msg.think[open] > summary::after {
   font-family: var(--mono);
   padding: 0 var(--space-3);
   border-radius: var(--radius-full);
-  background: var(--card-strong);
+  background: var(--card);
   border: 1px solid var(--line);
   color: var(--fg);
 }
@@ -1829,12 +1748,12 @@ details.msg.think[open] > summary::after {
 }
 
 .tool:hover {
-  background: color-mix(in srgb, var(--accent) 10%, var(--glass-card));
-  border-color: var(--glass-border);
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
+  border-color: var(--line);
 }
 
 .tool.is-live {
-  background: color-mix(in srgb, var(--accent) 10%, var(--glass-card));
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
   border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   color: var(--fg);
 }
@@ -1849,7 +1768,7 @@ details.msg.think[open] > summary::after {
    gets the accent; the rest stay neutral so the feed reads as one calm list. */
 .tool-badge {
   flex: none;
-  font-size: 9.5px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.05em;
   padding: 0 5px;
@@ -1873,7 +1792,7 @@ details.msg.think[open] > summary::after {
 .tool-cmd {
   padding: 1px 5px;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, #000 22%, var(--card-strong));
+  background: color-mix(in srgb, var(--fg) 8%, var(--card));
   border: 1px solid var(--line);
   color: var(--fg);
 }
@@ -1885,7 +1804,7 @@ details.msg.think[open] > summary::after {
 
 .diff-stat {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
@@ -1902,7 +1821,7 @@ details.msg.think[open] > summary::after {
 }
 
 .test-pill {
-  font-size: 9.5px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   padding: 0 5px;
   border-radius: var(--radius-sm);
@@ -1923,8 +1842,17 @@ details.msg.think[open] > summary::after {
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 6px var(--accent);
   animation: mcp-pulse 1.6s var(--ease-soft) infinite;
+}
+
+.tool-run-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+  margin: var(--space-3) 0 var(--space-2);
 }
 
 /* Active Working Cockpit HUD */
@@ -1934,10 +1862,8 @@ details.msg.think[open] > summary::after {
   gap: var(--space-4);
   padding: 5px 8px;
   border-radius: var(--radius-md);
-  background: var(--glass-card);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--glass-border));
-  box-shadow: var(--glass-highlight);
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
   color: var(--muted);
   font-size: var(--fs-sm);
   min-width: 0;
@@ -1953,7 +1879,7 @@ details.msg.think[open] > summary::after {
   border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
   color: var(--fg);
   font-family: var(--mono);
   font-size: var(--fs-xs);
@@ -1966,7 +1892,7 @@ details.msg.think[open] > summary::after {
 
 .active-tool-pill .pill-tag {
   flex: none;
-  font-size: 9.5px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.05em;
   opacity: 0.9;
@@ -1999,6 +1925,33 @@ details.msg.think[open] > summary::after {
   padding: 0 var(--space-3);
 }
 
+.working-copy {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.working.cockpit-hud.is-thinking .working-copy {
+  color: var(--violet);
+}
+.working.cockpit-hud.is-tool .working-copy {
+  color: var(--warn);
+}
+.working.cockpit-hud.is-paused .working-copy {
+  color: var(--muted);
+}
+.ls-skeleton {
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  animation: ls-shimmer 1.6s var(--ease-soft, ease-in-out) infinite alternate;
+}
+@keyframes ls-shimmer {
+  from {
+    opacity: 0.45;
+  }
+  to {
+    opacity: 0.9;
+  }
+}
+
 /* Welcome, Banner, Ask & Composer */
 .welcome {
   padding: 6px var(--pad-x) 10px;
@@ -2028,8 +1981,8 @@ details.msg.think[open] > summary::after {
 }
 
 .suggestions button {
-  border: 1px solid var(--glass-border);
-  background: var(--glass-card);
+  border: 1px solid var(--line);
+  background: var(--card);
   border-radius: var(--radius-md);
   padding: 7px 10px;
   color: var(--accent);
@@ -2072,8 +2025,7 @@ details.msg.think[open] > summary::after {
 
 .ask {
   border: 1px solid var(--vscode-inputValidation-warningBorder, var(--warn));
-  background: var(--vscode-inputValidation-warningBackground, var(--glass-card));
-  backdrop-filter: var(--glass-blur);
+  background: var(--vscode-inputValidation-warningBackground, var(--card));
 }
 
 .ask-title {
@@ -2120,7 +2072,17 @@ details.msg.think[open] > summary::after {
   font-size: var(--fs-xs);
 }
 
-/* Composer: the input is one elevated card — borderless textarea inside, a filled
+.empty-sub {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.empty-hint {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+/* Composer: the input is one flat card — borderless textarea inside, a filled
    round send button, and the focus ring on the card, not the textarea. */
 .composer {
   position: relative;
@@ -2128,10 +2090,7 @@ details.msg.think[open] > summary::after {
   flex-direction: column;
   gap: var(--space-4);
   padding: 10px var(--pad-x) var(--space-5);
-  background: var(--glass-bg);
-  background-image: var(--glass-noise);
-  background-size: 120px 120px;
-  backdrop-filter: var(--glass-blur);
+  background: transparent;
   border-top: 1px solid var(--line);
   flex: none;
 }
@@ -2152,8 +2111,7 @@ details.msg.think[open] > summary::after {
   border-color: var(--vscode-focusBorder, var(--accent));
   box-shadow:
     0 0 0 1px var(--vscode-focusBorder, var(--accent)),
-    0 2px 6px rgb(0 0 0 / 14%),
-    0 8px 20px rgb(0 0 0 / 12%);
+    var(--shadow-md);
 }
 
 textarea {
@@ -2203,7 +2161,7 @@ textarea::placeholder {
 }
 
 .send:disabled {
-  background: var(--card-strong);
+  background: var(--card);
   color: var(--muted);
   opacity: 0.65;
 }
@@ -2220,7 +2178,7 @@ textarea::placeholder {
 
 .send.as-stop {
   background: color-mix(in srgb, var(--bad) 82%, transparent);
-  color: #fff;
+  color: var(--vscode-button-foreground, #fff);
 }
 
 .send.as-stop .stop-ico {
@@ -2346,9 +2304,8 @@ textarea::placeholder {
   height: 26px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid var(--vscode-widget-border, var(--glass-border));
-  background: var(--vscode-editorWidget-background, var(--glass-bg));
-  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--vscode-widget-border, var(--line));
+  background: var(--vscode-editorWidget-background, var(--surface));
   color: var(--fg);
   box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgb(0 0 0 / 35%));
 }
@@ -2364,9 +2321,8 @@ textarea::placeholder {
   overflow-y: auto;
   padding: var(--space-1);
   border-radius: var(--radius-md);
-  border: 1px solid var(--vscode-editorSuggestWidget-border, var(--glass-border));
-  background: var(--vscode-editorSuggestWidget-background, var(--glass-bg));
-  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--vscode-editorSuggestWidget-border, var(--line));
+  background: var(--vscode-editorSuggestWidget-background, var(--surface));
   box-shadow: 0 4px 14px var(--vscode-widget-shadow, rgb(0 0 0 / 36%));
 }
 
@@ -2375,7 +2331,7 @@ textarea::placeholder {
   align-items: baseline;
   gap: var(--space-4);
   padding: 3px var(--space-3);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
   color: var(--vscode-editorSuggestWidget-foreground, var(--fg));
 }
@@ -2417,6 +2373,28 @@ textarea::placeholder {
 }
 
 /* ==========================================================================
+.suggestion-card {
+  text-align: left;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  cursor: pointer;
+}
+.suggestion-card:hover {
+  transform: translateY(-1px);
+}
+.suggestion-icon {
+  font-size: var(--fs-lg);
+}
+.suggestion-title {
+  font-weight: 600;
+}
+.suggestion-hint {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
    Interactive Browser Session Canvas & Viewport (Milestone 2: PR 8)
    ========================================================================== */
 
@@ -2444,7 +2422,7 @@ textarea::placeholder {
 .bframe {
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: var(--surface);
 }
 
 .bbar {
@@ -2452,7 +2430,7 @@ textarea::placeholder {
   align-items: center;
   gap: var(--space-4);
   padding: 6px 10px;
-  background: var(--surface-2);
+  background: var(--card);
   border-bottom: 1px solid var(--line);
   font-size: var(--fs-xs);
 }
@@ -2469,7 +2447,7 @@ textarea::placeholder {
   color: var(--fg);
   cursor: pointer;
   padding: 2px var(--space-3);
-  font-size: 13px;
+  font-size: var(--fs-md);
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -2480,7 +2458,7 @@ textarea::placeholder {
 }
 
 .b-ctrl-btn:hover {
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface-hover));
+  background: color-mix(in srgb, var(--accent) 12%, var(--card));
   border-color: var(--line);
 }
 
@@ -2491,15 +2469,15 @@ textarea::placeholder {
   flex: 1;
   min-width: 0;
   padding: 3px 8px;
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 .b-lock-icon {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   opacity: 0.7;
 }
 
@@ -2512,9 +2490,9 @@ textarea::placeholder {
 
 .baction {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--accent);
-  background: var(--accent-subtle);
+  background: var(--accent-soft);
   padding: 2px var(--space-3);
   border-radius: var(--radius-sm);
   white-space: nowrap;
@@ -2525,7 +2503,7 @@ textarea::placeholder {
   width: 100%;
   display: flex;
   justify-content: center;
-  background: #0d1117;
+  background: var(--surface);
   overflow: hidden;
 }
 
@@ -2546,7 +2524,7 @@ textarea::placeholder {
   background: transparent;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   cursor: pointer;
   transition:
     background var(--dur-fast) var(--ease),
@@ -2555,12 +2533,12 @@ textarea::placeholder {
 }
 
 .b-tab:hover {
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface-hover));
+  background: color-mix(in srgb, var(--accent) 12%, var(--card));
   color: var(--fg);
 }
 
 .b-tab.active {
-  background: var(--accent-subtle);
+  background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -2568,22 +2546,22 @@ textarea::placeholder {
 .b-count {
   min-width: 14px;
   padding: 0 var(--space-2);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--line);
   color: var(--muted);
-  font-size: 9px;
+  font-size: var(--fs-xs);
   line-height: 14px;
   text-align: center;
 }
 
 .b-count.bad {
-  background: rgba(235, 64, 72, 0.2);
-  color: #ff8a90;
+  background: color-mix(in srgb, var(--bad) 20%, transparent);
+  color: var(--rose);
 }
 
 .b-count.ok {
-  background: rgba(63, 185, 80, 0.2);
-  color: #6ee787;
+  background: color-mix(in srgb, var(--ok) 20%, transparent);
+  color: var(--ok);
 }
 
 .b-panels {
@@ -2601,7 +2579,7 @@ textarea::placeholder {
   overflow: auto;
   list-style: none;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   line-height: 1.5;
 }
 
@@ -2626,34 +2604,34 @@ textarea::placeholder {
 }
 
 .b-issue.bad .b-tag {
-  color: #ff8a90;
-  background: rgba(235, 64, 72, 0.14);
+  color: var(--rose);
+  background: color-mix(in srgb, var(--bad) 14%, transparent);
 }
 
 .b-issue.warn .b-tag {
-  color: #e3b341;
-  background: rgba(227, 179, 65, 0.14);
+  color: var(--amber);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
 }
 
 .b-tag {
   padding: 1px 5px;
   border-radius: var(--radius-sm);
-  font-size: 9px;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  background: var(--surface-2);
+  background: var(--card);
   color: var(--muted);
 }
 
 .b-method {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--fs-xs);
 }
 
 .b-loc {
   grid-column: 3;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--fs-xs);
 }
 
 .b-empty {
@@ -2669,16 +2647,16 @@ textarea::placeholder {
 
 .b-visual-verdict {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 
 .b-visual-verdict.ok {
-  color: #6ee787;
+  color: var(--ok);
 }
 
 .b-visual-verdict.bad {
-  color: #ff8a90;
+  color: var(--rose);
 }
 
 .b-visual-facts {
@@ -2687,14 +2665,14 @@ textarea::placeholder {
   gap: var(--space-5);
   margin-top: var(--space-2);
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--fs-xs);
 }
 
 .b-visual-files code {
   display: block;
   margin-top: var(--space-2);
   color: var(--muted);
-  font-size: 9px;
+  font-size: var(--fs-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2704,7 +2682,7 @@ textarea::placeholder {
   display: block;
   max-width: 100%;
   height: auto;
-  background: #0d1117;
+  background: var(--surface);
 }
 
 #b-img {
@@ -2723,8 +2701,7 @@ textarea::placeholder {
 .b-dimmer {
   position: absolute;
   inset: 0;
-  background: rgba(13, 17, 23, 0.7);
-  backdrop-filter: blur(2px);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2749,245 +2726,23 @@ textarea::placeholder {
   }
 }
 
-/* Combined UI polish: hooks added by the chat/stats passes (Agents 2 + 4). */
-.msg-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  font-size: var(--fs-xs);
-}
-
-.msg-time {
-  font-size: var(--fs-xs);
-  color: var(--muted);
-  font-family: var(--mono);
-}
-
-.msg-accent {
-  display: block;
-  height: 2px;
-  border-radius: 2px;
-  margin: var(--space-2) 0;
-}
-
-.msg-brand {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--accent);
-  letter-spacing: 0.01em;
-}
-
-.code-line {
-  display: flex;
-  gap: var(--space-3);
-}
-
-.code-ln {
-  flex: none;
-  width: 2.5em;
-  text-align: right;
-  color: var(--muted);
-  font-family: var(--mono);
-  user-select: none;
-}
-
-.tool-run-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--muted);
-  margin: var(--space-3) 0 var(--space-2);
-}
-
-.empty-sub {
-  color: var(--muted);
-  font-size: var(--fs-sm);
-}
-
-.empty-hint {
-  font-family: var(--mono);
-  font-size: var(--fs-xs);
-  color: var(--muted);
-}
-
-.suggestion-card {
-  text-align: left;
-  padding: var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--bento-bg);
-  cursor: pointer;
-}
-
-.suggestion-card:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-sm);
-}
-
-.suggestion-icon {
-  font-size: 16px;
-}
-
-.suggestion-title {
-  font-weight: 600;
-}
-
-.suggestion-hint {
-  font-size: var(--fs-xs);
-  color: var(--muted);
-}
-
-.working-copy {
-  font-size: var(--fs-sm);
-  color: var(--muted);
-}
-
-.working.cockpit-hud.is-thinking .working-copy {
-  color: var(--role-violet);
-}
-
-.working.cockpit-hud.is-tool .working-copy {
-  color: var(--role-amber);
-}
-
-.working.cockpit-hud.is-paused .working-copy {
-  color: var(--muted);
-}
-
-.ls-skeleton {
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--muted) 14%, transparent);
-  animation: ls-shimmer 1.6s var(--ease-soft, ease-in-out) infinite alternate;
-}
-
-@keyframes ls-shimmer {
-  from {
-    opacity: 0.45;
-  }
-  to {
-    opacity: 0.9;
-  }
-}
-
-.t-div {
-  width: 1px;
-  align-self: stretch;
-  background: var(--line);
-}
-
-.head-agent-pill {
-  border-radius: var(--radius-full);
-  padding: 3px 12px;
-  box-shadow: var(--shadow-sm);
-}
-
-.helper .wire.wire-working {
-  background: var(--role-blue);
-}
-
-.helper .wire.wire-done {
-  background: var(--ok);
-}
-
-.helper .wire.wire-stopped {
-  background: var(--muted);
-}
-
-.b-visual-bar {
-  display: block;
-  height: 6px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--muted) 22%, transparent);
-  overflow: hidden;
-}
-
-.b-visual-bar > span {
-  display: block;
-  height: 100%;
-  border-radius: 3px;
-  background: var(--brand);
-}
-
-/* ==========================================================================
-   MINIMALIST FOCUS OVERRIDES (Dead-simple, zero visual noise, pristine chrome)
-   ========================================================================== */
-
-/* Reduce jarring borders & visual clutter across cards */
-.card,
-.posture-card,
-.model-row,
-.step-item {
-  border: 1px solid var(--vscode-editorWidget-border, rgba(255, 255, 255, 0.08)) !important;
-  background: var(--vscode-editor-background, rgba(0, 0, 0, 0.2)) !important;
-  box-shadow: none !important;
-}
-
-/* Streamline the input composer into a clean, floating prompt bar */
-.composer {
-  padding: 8px var(--pad-x) 12px;
-  background: transparent !important;
-}
-
-.input-wrap {
-  border: 1px solid var(--vscode-input-border, rgba(255, 255, 255, 0.12)) !important;
-  border-radius: var(--radius-md) !important;
-  background: var(--vscode-input-background, #1e1e1e) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
-  transition:
-    border-color var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease);
-}
-
-.input-wrap:focus-within {
-  border-color: var(--vscode-focusBorder, #007fd4) !important;
-  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007fd4) !important;
-}
-
-/* Pure minimalist buttons */
-.btn-icon,
-.btn-ghost,
-.btn-secondary {
-  border-radius: var(--radius-sm);
-  transition:
-    opacity 120ms ease,
-    background 120ms ease;
-}
-
-.btn-icon:hover,
-.btn-ghost:hover {
-  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.08));
-}
-
-/* Eliminate excessive glowing / pulse noise for clean focus */
-.pulse-glow,
-.badge-glow {
-  box-shadow: none !important;
-  animation: none !important;
-}
-
 /* Observe-only Kernel card: phase pill, active capabilities, cadence, savings. */
 .kernel-observe {
-  margin: 8px 0;
+  margin: var(--space-4) 0;
 }
+
 .ko-card {
-  border: 1px solid var(--bento-border, color-mix(in srgb, var(--fg, #ccc) 12%, transparent));
-  border-radius: var(--radius-lg, 14px);
-  background: var(--bento-bg, color-mix(in srgb, var(--bg, #111) 88%, transparent));
-  box-shadow: var(--bento-shadow, none);
-  backdrop-filter: blur(14px);
-  padding: 10px 12px;
+  border: var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: none;
+  padding: var(--space-4) var(--space-5);
   display: grid;
-  gap: 7px;
-  font-size: var(--fs-sm, 12px);
-  animation: ko-in 0.25s ease;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+  animation: ko-in var(--dur-base) var(--ease);
 }
+
 @keyframes ko-in {
   from {
     opacity: 0;
@@ -2998,276 +2753,108 @@ textarea::placeholder {
     transform: none;
   }
 }
+
 .ko-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--space-4);
 }
+
 .ko-title {
   font-weight: 600;
 }
+
 .ko-meta,
 .ko-dim {
-  color: var(--muted, #888);
-  font-family: var(--mono, 'JetBrains Mono', monospace);
-  font-size: var(--fs-xs, 11px);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
 }
+
 .ko-phases {
   display: flex;
-  gap: 4px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
+
 .ko-phase {
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: var(--fs-xs, 11px);
-  color: var(--muted, #888);
-  background: color-mix(in srgb, var(--fg, #ccc) 6%, transparent);
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
   transition:
-    background 0.2s ease,
-    color 0.2s ease;
+    background var(--dur-base) var(--ease),
+    color var(--dur-base) var(--ease);
 }
+
 .ko-phase.on {
-  color: var(--fg, #fff);
-  background: var(--accent-soft, color-mix(in srgb, #8b5cf6 18%, transparent));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #8b5cf6) 45%, transparent);
+  color: var(--fg);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
+
 .ko-caps {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 3px;
+  gap: var(--space-1);
 }
+
 .ko-caps li {
   display: grid;
   grid-template-columns: auto auto 1fr;
-  gap: 6px;
+  gap: var(--space-3);
   align-items: baseline;
   min-width: 0;
 }
+
 .ko-kind {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--muted, #888);
+  color: var(--muted);
 }
+
 .ko-cap {
-  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-family: var(--mono);
   white-space: nowrap;
 }
+
 .ko-why {
-  color: var(--muted, #888);
+  color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .ko-empty {
-  color: var(--muted, #888);
+  color: var(--muted);
 }
+
 .ko-row {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-4);
 }
+
 .ko-label {
-  color: var(--muted, #888);
+  color: var(--muted);
 }
+
 .ko-value {
-  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-family: var(--mono);
   text-align: right;
 }
-.ko-s1 {
-  margin-top: 8px;
-}
-.ko-pills {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-.ko-pill {
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: var(--fs-xs, 11px);
-  color: var(--accent, #a78bfa);
-  background: color-mix(in srgb, var(--accent, #a78bfa) 14%, transparent);
-}
+
 @media (prefers-reduced-motion: reduce) {
   .ko-card {
     animation: none;
   }
+
   .ko-phase {
     transition: none;
-  }
-}
-
-/* ==========================================================================
-   Apple/Google Neo-Minimalism, Floating Dock & Container Responsiveness
-   ========================================================================== */
-
-body {
-  container-type: inline-size;
-  container-name: chat-shell;
-}
-
-/* Unified Floating Composer Dock */
-.composer {
-  position: sticky;
-  bottom: 0;
-  z-index: var(--z-float);
-  margin: 0 var(--pad-x) 12px;
-  padding: 8px 10px 10px;
-  background: var(--omx-surface-1) !important;
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--omx-border) !important;
-  border-radius: var(--omx-radius-lg);
-  box-shadow:
-    0 4px 20px -2px rgba(0, 0, 0, 0.25),
-    var(--glass-highlight);
-  transition:
-    border-color var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease);
-}
-
-.composer:focus-within {
-  border-color: color-mix(in srgb, var(--omx-accent) 45%, var(--omx-border)) !important;
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--omx-accent) 35%, transparent),
-    0 8px 24px -4px rgba(0, 0, 0, 0.35);
-}
-
-.composer .input-wrap {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-.composer textarea {
-  font-family: var(--omx-font-sans);
-  font-size: var(--fs-md);
-  color: var(--fg);
-  padding: 6px 42px 6px 4px;
-  min-height: 38px;
-}
-
-.composer .statusline {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 4px 4px 6px;
-  border-bottom: 1px solid var(--omx-border);
-  margin-bottom: 4px;
-  font-family: var(--omx-font-mono);
-  font-size: 11px;
-}
-
-.status-model {
-  font-family: var(--omx-font-mono);
-  font-weight: 500;
-  padding: 2px 7px;
-  border-radius: var(--omx-radius-sm);
-  background: color-mix(in srgb, var(--fg) 5%, transparent);
-  border: 1px solid var(--omx-border);
-  transition: all var(--dur-fast) var(--ease);
-}
-
-.status-model:hover {
-  background: var(--omx-accent-soft);
-  border-color: color-mix(in srgb, var(--omx-accent) 30%, transparent);
-  color: var(--omx-accent);
-}
-
-/* Clean Autocomplete Popover */
-.suggest {
-  border-radius: var(--omx-radius-md);
-  border: 1px solid var(--omx-border);
-  background: var(--omx-surface-1);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
-}
-
-.sg-item {
-  border-radius: var(--omx-radius-sm);
-  transition:
-    background var(--dur-fast) var(--ease),
-    color var(--dur-fast) var(--ease);
-}
-
-.sg-item.on {
-  background: var(--omx-accent-soft);
-  color: var(--fg);
-}
-
-.sg-label {
-  font-family: var(--omx-font-mono);
-  font-weight: 600;
-  color: var(--omx-accent);
-}
-
-/* Compact Monospace Tool Execution Pill */
-.tool {
-  font-family: var(--omx-font-mono);
-  font-size: 11px;
-  border-radius: var(--omx-radius-sm);
-  padding: 3px 8px;
-  border: 1px solid var(--omx-border);
-  background: color-mix(in srgb, var(--fg) 4%, transparent);
-  transition: all var(--dur-fast) var(--ease);
-}
-
-.tool:hover {
-  background: color-mix(in srgb, var(--omx-accent) 8%, var(--omx-surface-2));
-  border-color: color-mix(in srgb, var(--omx-accent) 25%, transparent);
-}
-
-.tool-badge {
-  font-family: var(--omx-font-mono);
-  font-size: 9px;
-  border-radius: 3px;
-  padding: 1px 4px;
-}
-
-/* Container Queries for Adaptive Sidebar Layouts */
-@container chat-shell (max-width: 340px) {
-  .statusline .sep,
-  .statusline #status-tokens,
-  .statusline #status-step,
-  .modes button:not([aria-pressed='true']),
-  .empty-sub,
-  .suggestion-hint {
-    display: none !important;
-  }
-
-  .composer {
-    margin: 0 4px 8px;
-    padding: 6px 8px;
-  }
-
-  .status-model {
-    max-width: 100%;
-  }
-
-  .suggestions {
-    grid-template-columns: 1fr;
-  }
-}
-
-@container chat-shell (min-width: 480px) {
-  .conversation,
-  .empty-chat {
-    max-width: 720px;
-    margin-left: auto;
-    margin-right: auto;
-    width: 100%;
-  }
-
-  .composer {
-    max-width: 720px;
-    margin-left: auto;
-    margin-right: auto;
-    width: 100%;
   }
 }

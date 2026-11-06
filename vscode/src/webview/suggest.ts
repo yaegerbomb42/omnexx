@@ -26,16 +26,6 @@ export const COMMANDS: readonly SlashCommand[] = [
   },
   { name: 'model', hint: 'Switch the chat model', run: { action: 'pickModel' } },
   { name: 'context', hint: 'See what the model gets', run: { action: 'inspect' } },
-  {
-    name: 'fix',
-    hint: 'SWE-bench reproduction fix mode (red-to-green test gate)',
-    run: { action: 'fix' },
-  },
-  {
-    name: 'browser',
-    hint: 'Toggle live browser cockpit & web preview',
-    run: { action: 'toggleBrowser' },
-  },
   { name: 'settings', hint: 'Open settings', run: { action: 'settings' } },
   { name: 'approve', hint: 'Toggle auto-approve', run: { action: 'approval' } },
   { name: 'trace', hint: 'Toggle the per-turn trace', run: { action: 'trace' } },

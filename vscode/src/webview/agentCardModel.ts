@@ -20,34 +20,6 @@ export type SliderId = 'taskEffort' | 'turnEffort' | 'contextLevel' | 'time' | '
 
 export type ExecutionMode = 'efficient' | 'normal' | 'extreme';
 
-export interface ModeButtonMeta {
-  id: ExecutionMode;
-  icon: string;
-  name: string;
-  caption: string;
-}
-
-export const EXECUTION_MODE_BUTTONS: readonly ModeButtonMeta[] = [
-  {
-    id: 'efficient',
-    icon: '⚡',
-    name: 'Efficient',
-    caption: 'Fast & token-efficient: lower effort, focused memory, quick iterations',
-  },
-  {
-    id: 'normal',
-    icon: '⚖️',
-    name: 'Normal',
-    caption: 'The balanced default: standard planning, 96k context, 2h budget',
-  },
-  {
-    id: 'extreme',
-    icon: '🔥',
-    name: 'Extreme',
-    caption: 'Maximum autonomy: deep planning, 500k context, full thinking depth',
-  },
-];
-
 export const isExecutionMode = (v: unknown): v is ExecutionMode =>
   v === 'efficient' || v === 'normal' || v === 'extreme';
 

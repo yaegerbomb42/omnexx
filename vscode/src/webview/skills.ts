@@ -94,7 +94,7 @@ export function request(p: Post): void {
   p({ type: 'skills' });
 }
 
-export function search(p: Post): void {
+function search(p: Post): void {
   const field = document.getElementById('sk-search');
   query = field instanceof HTMLInputElement ? field.value : query;
   searching = true;

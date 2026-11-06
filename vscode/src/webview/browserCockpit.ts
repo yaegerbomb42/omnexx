@@ -71,8 +71,6 @@ let lastFrame = 0;
 let lastDiagnostics = 0;
 let lastVisual = 0;
 let currentTab: Tab = 'preview';
-let currentDiagnostics: BrowserDiagnosticsMsg | undefined;
-let currentVisual: BrowserVisualMsg | undefined;
 
 function el(id: string): HTMLElement | null {
   return document.getElementById(id);
@@ -123,7 +121,6 @@ export function drawFrame(f: BrowserFrameMsg): void {
 export function drawDiagnostics(d: BrowserDiagnosticsMsg): void {
   if (d.seq <= lastDiagnostics) return;
   lastDiagnostics = d.seq;
-  currentDiagnostics = d;
   show();
   const url = el('b-url');
   if (url && d.url) url.textContent = d.url;
@@ -172,7 +169,6 @@ export function drawDiagnostics(d: BrowserDiagnosticsMsg): void {
 export function drawVisual(v: BrowserVisualMsg): void {
   if (v.seq <= lastVisual) return;
   lastVisual = v.seq;
-  currentVisual = v;
   show();
   setBadge('b-visual-count', v.pass ? '✓' : '!', v.pass ? 'ok' : 'bad');
 
@@ -196,8 +192,6 @@ export function resetCockpit(): void {
   lastFrame = 0;
   lastDiagnostics = 0;
   lastVisual = 0;
-  currentDiagnostics = undefined;
-  currentVisual = undefined;
   const section = el('browser');
   if (section) section.hidden = true;
   selectTab('preview');
@@ -217,6 +211,34 @@ export function resetCockpit(): void {
   }
 }
 
+/** Show the cockpit, optionally on one of its tabs. */
+export function open(tab?: Tab): void {
+  show(tab);
+}
+
+/** Hide the cockpit. */
+export function close(): void {
+  const section = el('browser');
+  if (section) section.hidden = true;
+}
+
+/** Route a browser message to its painter; true when handled. */
+export function onMessage(m: { type: string } & Record<string, unknown>): boolean {
+  if (m.type === 'browserFrame') {
+    drawFrame(m as unknown as BrowserFrameMsg);
+    return true;
+  }
+  if (m.type === 'browserDiagnostics') {
+    drawDiagnostics(m as unknown as BrowserDiagnosticsMsg);
+    return true;
+  }
+  if (m.type === 'browserVisual') {
+    drawVisual(m as unknown as BrowserVisualMsg);
+    return true;
+  }
+  return false;
+}
+
 /** Wire tab clicks and the image's expand toggle. Safe to call once. */
 export function wireCockpit(): void {
   for (const button of document.querySelectorAll<HTMLElement>('[data-btab]')) {
@@ -229,11 +251,4 @@ export function wireCockpit(): void {
   el('b-img')?.addEventListener('click', () => {
     el('browser')?.classList.toggle('big');
   });
-}
-
-/** Re-apply tab state after the section is shown again (kept for parity with older webviews). */
-export function refreshCockpit(): void {
-  selectTab(currentTab);
-  if (currentDiagnostics) drawDiagnostics({ ...currentDiagnostics, seq: lastDiagnostics + 1 });
-  if (currentVisual) drawVisual({ ...currentVisual, seq: lastVisual + 1 });
 }
