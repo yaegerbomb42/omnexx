@@ -116,6 +116,13 @@ export function createProgram(
     '--experimental',
     'show the experimental commands and options (extra modes, integrations, run controls)',
   );
+  program.option(
+    '--no-system-one',
+    'turn off the System-1 (Jev) gates for this session (same as OMNEXX_SYSTEM_ONE=0)',
+  );
+  program.hook('preAction', () => {
+    if (program.opts<{ systemOne?: boolean }>().systemOne === false) io.env.OMNEXX_SYSTEM_ONE = '0';
+  });
   program.option('-c, --continue', 'continue the last chat in this folder');
   program.option('-p, --print <prompt>', 'one chat turn without the TUI; "-" reads stdin');
   program.option('-m, --model <model>', 'with -p: the model to use (provider:model)');

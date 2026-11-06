@@ -73,6 +73,10 @@ const ENV_MAP: readonly (readonly [string, readonly string[], EnvKind])[] = [
   ['OMNEXX_KERNEL_REGISTRY', ['kernel', 'registry'], 'boolean'],
   ['OMNEXX_KERNEL_LOCAL_DISCOVERY', ['kernel', 'local_discovery'], 'boolean'],
   ['OMNEXX_KERNEL_PUBLIC_SKILLS', ['kernel', 'public_skills'], 'boolean'],
+  ['OMNEXX_SYSTEM_ONE', ['system_one', 'enabled'], 'boolean'],
+  ['OMNEXX_SYSTEM_ONE_BACKEND', ['system_one', 'backend'], 'string'],
+  ['OMNEXX_SYSTEM_ONE_MODEL', ['system_one', 'model'], 'string'],
+  ['OMNEXX_SYSTEM_ONE_BASE_URL', ['system_one', 'base_url'], 'string'],
 ];
 
 export const ENV_VARS = ENV_MAP.map(([name]) => name);

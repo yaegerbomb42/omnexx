@@ -38,6 +38,7 @@ import {
   type Usage,
 } from '../providers/types.js';
 import type { Tool, ToolContext } from '../tools/types.js';
+import type { SystemOneMiddleware } from '../runtime/system-one/middleware.js';
 import { autoLoadToolGroup, type LoadedToolsState } from '../tools/request-tools.js';
 import {
   contextTokens,
@@ -339,6 +340,11 @@ export interface LoopDeps {
    * mutating tools are checkpointed. Omit (default) for zero behavior change.
    */
   kernel?: AdaptiveRuntimeKernel;
+  /**
+   * System-1 interceptor gates (intent + speculative pre-fetch, destructive-command guardrail,
+   * patch sanity, output triage, early stop). Off when unset.
+   */
+  systemOne?: Pick<SystemOneMiddleware, 'onPrompt' | 'beforeTool' | 'afterTool' | 'afterTurn'>;
   /** Goal text the kernel uses for allocation; falls back to rolling.goal when unset. */
   kernelObjective?: string;
   /** In-memory skills to index into the kernel catalog on its first warm. */
@@ -505,6 +511,19 @@ export async function runAgentLoop(
   deps: LoopDeps,
 ): Promise<LoopResult> {
   let messages: Message[] = [...(ctx.history ?? []), ctx.first];
+  if (deps.systemOne) {
+    // The pre-fetch rides in the new user turn, after the cached history and system prefix.
+    const prompt = ctx.first.content
+      .filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text')
+      .map((b) => b.text)
+      .join('\n');
+    const spec = await deps.systemOne.onPrompt(prompt);
+    if (spec)
+      messages[messages.length - 1] = {
+        ...ctx.first,
+        content: [...ctx.first.content, { type: 'text', text: spec }],
+      };
+  }
   const usage: Usage = { uncached: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0, output: 0 };
   let usd = 0;
   let turns = 0;
@@ -1160,8 +1179,15 @@ export async function runAgentLoop(
               hint = `only ${Math.round(remainingMs / 1000)}s left; finish, verify and report instead of starting more work`;
             }
           }
+          const systemOneBlock =
+            !refused && deps.systemOne
+              ? await deps.systemOne.beforeTool(tool.name, parsed.data, deps.toolCtx)
+              : undefined;
           if (refused) {
             content = `refused: ${hint}`;
+            isError = true;
+          } else if (systemOneBlock) {
+            content = systemOneBlock;
             isError = true;
           } else {
             const deadlineMs = deps.deadlineMs;
@@ -1189,6 +1215,7 @@ export async function runAgentLoop(
         }
       }
       const rawToolOutput = content;
+      if (deps.systemOne) content = await deps.systemOne.afterTool(call.name, content);
       content = deps.toolCtx.redactor.text(content);
       if (deps.deadlineMs && !isError) {
         const toolMs = deps.clock.now() - toolStart;
@@ -1347,6 +1374,23 @@ export async function runAgentLoop(
         ? { name: c.name, input: c.input, result: r.content, isError: r.isError === true }
         : { name: c.name, input: c.input };
     });
+    if (deps.systemOne) {
+      const closing = await deps.systemOne.afterTurn(
+        calls.map((c) => ({
+          name: c.name,
+          input: c.input,
+          isError: resultsById.get(c.id)?.isError === true,
+          readOnly: resolveTool(byName, c.name)?.readOnly === true,
+        })),
+        finalText,
+        turns,
+      );
+      if (closing) {
+        finalText = closing;
+        messages.push({ role: 'assistant', content: [{ type: 'text', text: closing }] });
+        return end('done');
+      }
+    }
     const finding = deps.watch?.afterTurn(turns, cycleTokens, callsWithResults);
     if (finding) {
       deps.events.emit('stuck.in_cycle', {

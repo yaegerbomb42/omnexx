@@ -282,7 +282,21 @@ function chatServerEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
       env.OMNEXX_KERNEL_PUBLIC_SKILLS = publicSkills ? '1' : '0';
     }
   }
+  systemOneEnv(cfg, env);
   return env;
+}
+
+/** Forward `omnexx.systemOne.*` settings (the key itself stays in TYPESAFE_API_KEY). */
+function systemOneEnv(cfg: vscode.WorkspaceConfiguration, env: NodeJS.ProcessEnv): void {
+  const enabled = cfg.get<boolean>('systemOne.enabled');
+  env.OMNEXX_SYSTEM_ONE = enabled === false ? '0' : '1';
+  if (enabled === false) return;
+  const backend = cfg.get<string>('systemOne.backend')?.trim();
+  if (backend) env.OMNEXX_SYSTEM_ONE_BACKEND = backend;
+  const model = cfg.get<string>('systemOne.model')?.trim();
+  if (model) env.OMNEXX_SYSTEM_ONE_MODEL = model;
+  const baseUrl = cfg.get<string>('systemOne.baseUrl')?.trim();
+  if (baseUrl) env.OMNEXX_SYSTEM_ONE_BASE_URL = baseUrl;
 }
 
 /** `omnexx.lazyToolDiscovery` (default on). Off forces `[tools] discovery = "full"` for chats. */

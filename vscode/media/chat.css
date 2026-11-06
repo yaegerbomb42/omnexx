@@ -3062,6 +3062,21 @@ textarea::placeholder {
   font-family: var(--mono, 'JetBrains Mono', monospace);
   text-align: right;
 }
+.ko-s1 {
+  margin-top: 8px;
+}
+.ko-pills {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.ko-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--fs-xs, 11px);
+  color: var(--accent, #a78bfa);
+  background: color-mix(in srgb, var(--accent, #a78bfa) 14%, transparent);
+}
 @media (prefers-reduced-motion: reduce) {
   .ko-card {
     animation: none;

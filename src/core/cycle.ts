@@ -55,6 +55,7 @@ import { runGates, toBaseline } from '../verify/gates.js';
 import { failureSignature, judgeGate } from '../verify/ratchet.js';
 import { DoomLoopRatchet } from './doom-loop-ratchet.js';
 import { createKernelIfEnabled, mcpCapabilityRuntime } from '../runtime/kernel/index.js';
+import { createSystemOneIfEnabled } from '../runtime/system-one/index.js';
 import { getActiveMcpManager } from '../tools/extra/mcp.js';
 import { knownWindow } from '../providers/context-windows.js';
 import { readTextOr, writeFileAtomic } from './atomic.js';
@@ -549,6 +550,7 @@ export async function stepAct(run: Run): Promise<void> {
   }
 
   const kernelGoalText = kernel ? (await run.store.readGoal()).text : '';
+  const systemOne = createSystemOneIfEnabled(run.config, run.worktree, run.events, process.env);
   const deps = (models: readonly ResolvedModel[]): LoopDeps => {
     const base: LoopDeps = {
       provider: run.deps.provider,
@@ -614,6 +616,7 @@ export async function stepAct(run: Run): Promise<void> {
             kernelObjective: kernelObjectiveFor(task.title, kernelGoalText),
           }
         : {}),
+      ...(systemOne ? { systemOne } : {}),
       compaction: {
         settings: {
           clearAt: run.config.context.clear_tool_results_at,
