@@ -6,6 +6,7 @@ import {
   addMounted,
   byCodePoint,
   argsProblem,
+  coerceMcpArgs,
   readMounted,
   renderSchemas,
   serverDirectory,
@@ -87,13 +88,14 @@ function createCallTool(
       if (!target) {
         return fail(`MCP server "${server}" has no tool "${tool}". Mount it again to list them.`);
       }
-      const problem = argsProblem(target.inputSchema, args);
+      const preparedArgs = coerceMcpArgs(target.inputSchema, args);
+      const problem = argsProblem(target.inputSchema, preparedArgs);
       if (problem) {
         const schema = JSON.stringify(normalizeMcpSchema(target.inputSchema));
         return fail(`Invalid args for ${server}/${tool}: ${problem}\nSchema: ${schema}`);
       }
       try {
-        return formatResult(await manager.callTool(server, tool, args), ctx);
+        return formatResult(await manager.callTool(server, tool, preparedArgs), ctx);
       } catch (err) {
         return fail(`MCP call error: ${ctx.redactor.text(errText(err))}`);
       }

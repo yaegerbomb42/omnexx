@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { McpClientManager, McpToolInfo } from '../../mcp/client-manager.js';
 import { formatMcpToolName } from '../../mcp/normalizer.js';
+import { coerceMcpArgs } from '../../mcp/mount.js';
 import { formatResult } from '../../tools/extra/mcp-lazy.js';
 import { fail, type Tool } from '../../tools/types.js';
 import { loadSkill } from '../../instructions/skills.js';
@@ -36,7 +37,8 @@ export function toolsFromMcpInfos(
       readOnly: false,
       async run(input, ctx) {
         try {
-          const args = (input ?? {}) as Record<string, unknown>;
+          const rawArgs = (input ?? {}) as Record<string, unknown>;
+          const args = coerceMcpArgs(toolInfo.inputSchema, rawArgs);
           const res = await manager.callTool(serverName, toolName, args);
           return formatResult(res, ctx);
         } catch (err) {

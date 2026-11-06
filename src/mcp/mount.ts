@@ -107,3 +107,76 @@ export function argsProblem(inputSchema: unknown, args: unknown): string | undef
     .map((i) => `${i.path.length ? i.path.join('.') : '(args)'}: ${i.message}`)
     .join('; ');
 }
+
+/**
+ * Common parameter synonyms used across MCP tool ecosystems (e.g. Playwright, Puppeteer, GitHub).
+ * When an LLM calls an MCP tool using a common alias (e.g. `script`/`expression`/`code` instead of `function`),
+ * this maps the alias to the expected property if the alias is missing in the schema but the target exists.
+ */
+const MCP_SYNONYMS: Record<string, string[]> = {
+  function: ['script', 'expression', 'code', 'fn', 'eval'],
+  expression: ['script', 'function', 'code', 'fn', 'eval'],
+  script: ['function', 'expression', 'code'],
+  code: ['function', 'expression', 'script'],
+  url: ['uri', 'link', 'href', 'targetUrl'],
+  selector: ['element', 'css', 'target', 'query'],
+  text: ['content', 'value', 'message'],
+  content: ['text', 'value', 'data'],
+  query: ['search', 'pattern', 'q'],
+  path: ['file', 'filepath', 'filePath', 'filename'],
+  name: ['title', 'id'],
+};
+
+/**
+ * Coerces and adapts arguments for an MCP tool call by checking the tool's declared
+ * input JSON schema and mapping synonyms or stringified JSON when applicable.
+ */
+export function coerceMcpArgs(
+  inputSchema: unknown,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const norm = normalizeMcpSchema(inputSchema);
+  const properties = (norm.properties ?? {}) as Record<string, unknown>;
+  const propKeys = Object.keys(properties);
+  if (!propKeys.length) return args;
+
+  const adapted: Record<string, unknown> = { ...args };
+
+  // 1. Synonym mapping: if an expected property is missing, check known aliases
+  for (const expectedKey of propKeys) {
+    if (adapted[expectedKey] === undefined) {
+      const aliases = MCP_SYNONYMS[expectedKey] ?? [];
+      for (const alias of aliases) {
+        if (adapted[alias] !== undefined) {
+          adapted[expectedKey] = adapted[alias];
+          break;
+        }
+      }
+    }
+  }
+
+  // 2. Type coercion for primitive target types if the model passed another type
+  for (const [key, propDef] of Object.entries(properties)) {
+    if (adapted[key] !== undefined && propDef && typeof propDef === 'object') {
+      const targetType = (propDef as { type?: string }).type;
+      const currentVal = adapted[key];
+      if (targetType === 'string' && typeof currentVal !== 'string') {
+        if (typeof currentVal === 'object' && currentVal !== null) {
+          adapted[key] = JSON.stringify(currentVal);
+        } else if (typeof currentVal === 'number' || typeof currentVal === 'boolean') {
+          adapted[key] = String(currentVal);
+        } else {
+          adapted[key] = '';
+        }
+      } else if (targetType === 'number' && typeof currentVal === 'string') {
+        const num = Number(currentVal);
+        if (!Number.isNaN(num)) adapted[key] = num;
+      } else if (targetType === 'boolean' && typeof currentVal === 'string') {
+        if (currentVal === 'true') adapted[key] = true;
+        else if (currentVal === 'false') adapted[key] = false;
+      }
+    }
+  }
+
+  return adapted;
+}
