@@ -1,3 +1,4 @@
+import { cacheSummary } from '../../providers/cache-stats.js';
 import pc from 'picocolors';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -67,7 +68,9 @@ function stepsSection(io: CliIO, report: UsageReport): void {
     );
 }
 
-async function latestRunDir(p: ReturnType<typeof resolvePaths>): Promise<string | undefined> {
+export async function latestRunDir(
+  p: ReturnType<typeof resolvePaths>,
+): Promise<string | undefined> {
   const base = runsDir(p);
   let entries: string[];
   try {
@@ -131,6 +134,16 @@ async function render(
   println(
     io.stdout,
     `  ${String(report.calls)} calls · $${report.usd.toFixed(4)} · input ${fmt(report.inputTokens)} (${fmt(report.cacheRead)} cached) · output ${fmt(report.outputTokens)}${when}`,
+  );
+  const cache = cacheSummary({
+    input: report.inputTokens,
+    cacheRead: report.cacheRead,
+    output: report.outputTokens,
+    usd: report.usd,
+  });
+  println(
+    io.stdout,
+    `  cache hit ${String(cache.hitPercent)}% · saved ~${fmt(Math.max(0, cache.savedTokens))} tokens (~$${Math.max(0, cache.savedUsd).toFixed(4)})`,
   );
   if (report.runs.length && report.runs.length <= 3)
     println(io.stdout, pc.dim(`  runs: ${report.runs.join(', ')}`));

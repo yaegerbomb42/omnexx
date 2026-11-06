@@ -44,6 +44,7 @@ import * as domain from './domain.js';
 import * as inspector from './inspector.js';
 import * as modelPicker from './modelPicker.js';
 import * as posture from './posture.js';
+import type { KernelSnapshot } from './kernelObserve.js';
 import * as settings from './settings.js';
 import * as stats from './stats.js';
 import { chatEmptyStateHtml, quickStartCards } from './emptyState.js';
@@ -72,6 +73,8 @@ interface State {
   /** The rolling memory note (what the agent remembers); null before the first condensation. */
   memoryNote?: string | null;
   usage: (Usage & { startedAt: number | null }) | null;
+  /** Observe-only kernel snapshot; absent on an older omnexx or with the kernel off. */
+  kernel?: KernelSnapshot | null;
   helpers?: crew.Helper[];
   waiting?: { startedAt: number; estimateMs: number | null } | null;
   estimate?: string | null;
@@ -725,6 +728,7 @@ function scheduleApply(s: State): void {
     drawStats(next);
     drawMemoryNote(next);
     stats.update(next);
+    stats.updateKernel(next.kernel, next.usage);
     drawSteps(next.todos);
     inspector.onBusy(next.busy, post);
     crew.drawCrew(next.helpers ?? [], logoSrc);

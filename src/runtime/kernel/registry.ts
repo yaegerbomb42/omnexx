@@ -41,8 +41,11 @@ export interface RegistrySnapshot {
 
 export interface RegistryLoadResult {
   snapshot: RegistrySnapshot;
-  from: 'live' | 'cache' | 'bundled';
+  /** `none` = no cache, network, or bundled snapshot was found (likely a packaging bug). */
+  from: 'live' | 'cache' | 'bundled' | 'none';
   entries: Omit<CatalogEntry, 'tokens'>[];
+  /** Corrupt/invalid snapshot files that were skipped (integrity failures). */
+  issues?: string[];
 }
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -57,31 +60,85 @@ export const LIVE_REGISTRY_TIMEOUT_MS = 15_000;
 const PAGE_TIMEOUT_MS = 30_000;
 
 function cachePath(env: NodeJS.ProcessEnv = process.env): string {
+  // `||` on purpose: an empty env var must fall back too.
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
   const home = env.OMNEXX_CONFIG_HOME || env.XDG_CONFIG_HOME || join(homedir(), '.config');
   return join(home, 'omnexx', 'cache', 'mcp-registry-snapshot.json.gz');
 }
 
-function bundledCandidates(moduleUrl = import.meta.url): string[] {
-  const here = dirname(fileURLToPath(moduleUrl));
+export function bundledCandidates(moduleUrl = import.meta.url): string[] {
   const snap = 'mcp-registry-snapshot.json.gz';
-  return [
-    // Next to this module (src/runtime/kernel/data or dist/.../data after copy)
-    join(here, 'data', snap),
-    join(here, '..', 'data', snap),
-    join(here, '..', '..', 'data', snap),
-    join(here, '..', '..', '..', 'data', snap),
-    // Dev / package layouts
-    join(here, '..', '..', '..', 'src', 'runtime', 'kernel', 'data', snap),
-    join(process.cwd(), 'src', 'runtime', 'kernel', 'data', snap),
-    join(process.cwd(), 'dist', 'data', snap),
-    join(process.cwd(), 'data', snap),
-  ];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (p: string) => {
+    if (!seen.has(p)) {
+      seen.add(p);
+      out.push(p);
+    }
+  };
+  // Walk up from this module (works for src/, dist/ chunks and global installs regardless
+  // of cwd) and probe each known layout at every ancestor.
+  let dir = dirname(fileURLToPath(moduleUrl));
+  for (let depth = 0; depth < 6; depth++) {
+    add(join(dir, 'data', snap));
+    add(join(dir, 'dist', 'data', snap));
+    add(join(dir, 'src', 'runtime', 'kernel', 'data', snap));
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return out;
+}
+
+/** Structural integrity check: a corrupt/truncated snapshot must fail loudly, not load partial. */
+export function validateRegistrySnapshot(value: unknown): RegistrySnapshot {
+  if (!value || typeof value !== 'object') throw new Error('registry snapshot: not an object');
+  const snap = value as Partial<RegistrySnapshot>;
+  if (!Array.isArray(snap.servers)) throw new Error('registry snapshot: servers is not an array');
+  if (typeof snap.fetchedAt !== 'string' || !Number.isFinite(Date.parse(snap.fetchedAt)))
+    throw new Error('registry snapshot: invalid fetchedAt');
+  if (typeof snap.latestCount === 'number' && snap.latestCount !== snap.servers.length)
+    throw new Error(
+      `registry snapshot: latestCount ${snap.latestCount} != ${snap.servers.length} servers (truncated?)`,
+    );
+  for (const [i, rec] of snap.servers.entries()) {
+    const r = rec as Partial<RegistryServerRecord> | null;
+    if (
+      !r ||
+      typeof r.id !== 'string' ||
+      typeof r.server !== 'string' ||
+      typeof r.name !== 'string'
+    )
+      throw new Error(`registry snapshot: malformed server record #${i}`);
+  }
+  return snap as RegistrySnapshot;
 }
 
 async function readGzipJson(path: string): Promise<RegistrySnapshot> {
   const buf = await readFile(path);
-  const json = gunzipSync(buf).toString('utf8');
-  return JSON.parse(json) as RegistrySnapshot;
+  let json: string;
+  try {
+    json = gunzipSync(buf).toString('utf8');
+  } catch (err) {
+    throw new Error(`registry snapshot: corrupt gzip (${(err as Error).message})`, {
+      cause: err,
+    });
+  }
+  return validateRegistrySnapshot(JSON.parse(json));
+}
+
+/** Read a snapshot, recording integrity failures (but not plain "file missing"). */
+async function readSnapshotNoting(
+  path: string,
+  issues: string[],
+): Promise<RegistrySnapshot | undefined> {
+  try {
+    return await readGzipJson(path);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT')
+      issues.push(`${path}: ${(err as Error).message}`);
+    return undefined;
+  }
 }
 
 async function writeGzipJson(path: string, snap: RegistrySnapshot): Promise<void> {
@@ -178,7 +235,12 @@ export async function fetchLiveRegistry(
     const rec: RegistryServerRecord = {
       id: `registry:mcp:${name}`,
       kind: 'mcp',
-      name: typeof srv.title === 'string' ? srv.title : name.split('/').pop() || name,
+      name:
+        typeof srv.title === 'string'
+          ? srv.title
+          : // `||`: a trailing slash yields '' and must fall back to the full name.
+            // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+            name.split('/').pop() || name,
       description: typeof srv.description === 'string' ? srv.description.slice(0, 500) : '',
       server: name,
       version: typeof srv.version === 'string' ? srv.version : undefined,
@@ -225,11 +287,13 @@ export function mergeWithFloor(live: RegistrySnapshot, floor: RegistrySnapshot):
   };
 }
 
-async function readBundledSnapshot(moduleUrl: string): Promise<RegistrySnapshot | undefined> {
+export async function readBundledSnapshot(
+  moduleUrl: string,
+): Promise<RegistrySnapshot | undefined> {
   for (const path of bundledCandidates(moduleUrl)) {
     try {
       const snap = await readGzipJson(path);
-      if (snap.servers?.length) return snap;
+      if (snap.servers.length) return snap;
     } catch {
       // try next
     }
@@ -249,16 +313,17 @@ export async function loadRegistry(opts?: {
 }): Promise<RegistryLoadResult> {
   const env = opts?.env ?? process.env;
   const cache = cachePath(env);
+  const issues: string[] = [];
+  const withIssues = (r: RegistryLoadResult): RegistryLoadResult =>
+    issues.length ? { ...r, issues: [...new Set(issues)] } : r;
 
   // 1. Fresh local cache
-  try {
-    const snap = await readGzipJson(cache);
-    const age = Date.now() - Date.parse(snap.fetchedAt);
-    if (Number.isFinite(age) && age >= 0 && age < CACHE_TTL_MS && snap.servers?.length) {
+  {
+    const snap = await readSnapshotNoting(cache, issues);
+    const age = snap ? Date.now() - Date.parse(snap.fetchedAt) : NaN;
+    if (snap && Number.isFinite(age) && age >= 0 && age < CACHE_TTL_MS && snap.servers.length) {
       return { snapshot: snap, from: 'cache', entries: toCatalogEntries(snap) };
     }
-  } catch {
-    // miss
   }
 
   // 2. Live refresh (unless offline) — never shrink below bundled/cache floor (#19).
@@ -274,12 +339,12 @@ export async function loadRegistry(opts?: {
       let cachedFloor: RegistrySnapshot | undefined;
       try {
         const cached = await readGzipJson(cache);
-        if (cached.servers?.length) cachedFloor = cached;
+        if (cached.servers.length) cachedFloor = cached;
       } catch {
         // no cache
       }
       const floorCandidates = [bundled, cachedFloor].filter((s): s is RegistrySnapshot =>
-        Boolean(s?.servers?.length),
+        Boolean(s?.servers.length),
       );
       if (floorCandidates.length) {
         const floor = floorCandidates.reduce((a, b) => (a.latestCount >= b.latestCount ? a : b));
@@ -287,44 +352,38 @@ export async function loadRegistry(opts?: {
       }
       // A truncated refresh is not a full snapshot: don't pin it as the fresh cache.
       if (!truncated) await writeGzipJson(cache, snap).catch(() => undefined);
-      return { snapshot: snap, from: 'live', entries: toCatalogEntries(snap) };
+      return withIssues({ snapshot: snap, from: 'live', entries: toCatalogEntries(snap) });
     } catch {
       // fall through
     }
   }
 
   // 3. Stale cache still better than nothing
-  try {
-    const snap = await readGzipJson(cache);
-    if (snap.servers?.length)
-      return { snapshot: snap, from: 'cache', entries: toCatalogEntries(snap) };
-  } catch {
-    // miss
+  {
+    const snap = await readSnapshotNoting(cache, issues);
+    if (snap?.servers.length)
+      return withIssues({ snapshot: snap, from: 'cache', entries: toCatalogEntries(snap) });
   }
 
   // 4. Bundled snapshot shipped with Omnexx
   for (const path of bundledCandidates(opts?.moduleUrl ?? import.meta.url)) {
-    try {
-      const snap = await readGzipJson(path);
-      if (snap.servers?.length)
-        return { snapshot: snap, from: 'bundled', entries: toCatalogEntries(snap) };
-    } catch {
-      // try next
-    }
+    const snap = await readSnapshotNoting(path, issues);
+    if (snap?.servers.length)
+      return withIssues({ snapshot: snap, from: 'bundled', entries: toCatalogEntries(snap) });
   }
 
-  return {
+  return withIssues({
     snapshot: {
       source: MCP_REGISTRY_URL,
       fetchedAt: new Date(0).toISOString(),
       rawCount: 0,
       latestCount: 0,
       servers: [],
-      note: 'No registry data available',
+      note: 'No registry data available (bundled snapshot missing — packaging bug?)',
     },
-    from: 'bundled',
+    from: 'none',
     entries: [],
-  };
+  });
 }
 
 export function toCatalogEntries(snap: RegistrySnapshot): Omit<CatalogEntry, 'tokens'>[] {
@@ -339,13 +398,24 @@ export function toCatalogEntries(snap: RegistrySnapshot): Omit<CatalogEntry, 'to
 }
 
 /** Human-readable install suggestion — never executes untrusted code. */
+/** The real CLI entry point for adding a registry MCP server (see `omnexx mcp add --help`). */
+export function mcpAddCommand(server: string): string {
+  const short = server.split('/').pop() ?? server;
+  return `omnexx mcp add ${short} --pick ${server}`;
+}
+
+/** The real CLI entry points for skills (`omnexx skills search` / `omnexx skills add <path|url>`). */
+export function skillInstallHint(name: string): string {
+  return `Find it with \`omnexx skills search ${name}\`, then \`omnexx skills add <path|url>\``;
+}
+
 export function installSuggestion(rec: RegistryServerRecord): string {
   const lines = [
     `Capability "${rec.id}" is in the official MCP Registry but is NOT installed locally.`,
     `Server: ${rec.server}${rec.version ? `@${rec.version}` : ''}`,
     rec.description ? `About: ${rec.description}` : '',
     'Omnexx will not download or run it automatically.',
-    'To enable it, add it to your Omnexx MCP config (or run `omnexx mcp add` / the VS Code MCP gallery), then remount.',
+    `To enable it, run \`${mcpAddCommand(rec.server)}\` (or add it in the VS Code MCP gallery), then remount.`,
   ];
   if (rec.install?.identifier) {
     lines.push(

@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { git } from '../../git/git.js';
 import { isMutatingTool, rollbackConstraint, type CheckpointRecord } from './types.js';
@@ -10,7 +10,12 @@ export interface CheckpointOptions {
   maxCheckpoints?: number | undefined;
   /** Optional shared VFS (created automatically when omitted). */
   vfs?: MemoryVfs | undefined;
+  /** Files larger than this (or binary) are not snapshotted (default 2 MiB). */
+  maxFileBytes?: number | undefined;
 }
+
+/** Default per-file snapshot ceiling; bigger/binary files can't be restored from memory. */
+export const DEFAULT_MAX_SNAPSHOT_FILE_BYTES = 2 * 1024 * 1024;
 
 export interface RollbackResult {
   restored: boolean;
@@ -21,6 +26,8 @@ export interface RollbackResult {
   filesRestored: string[];
   /** True when the snapshot came from the in-memory VFS rather than git status. */
   usedVfs: boolean;
+  /** Paths that were too large/binary to snapshot and therefore were NOT restored. */
+  skipped: string[];
 }
 
 /**
@@ -31,13 +38,18 @@ export class StateCheckpointer {
   private readonly worktree: string;
   private readonly maxCheckpoints: number;
   readonly vfs: MemoryVfs;
-  private readonly byNode = new Map<string, CheckpointRecord & { usedVfs: boolean }>();
+  private readonly maxFileBytes: number;
+  private readonly byNode = new Map<
+    string,
+    CheckpointRecord & { usedVfs: boolean; skipped: string[] }
+  >();
   private order: string[] = [];
   private gitAvailable: boolean | undefined;
 
   constructor(options: CheckpointOptions) {
     this.worktree = resolve(options.worktree);
     this.maxCheckpoints = options.maxCheckpoints ?? 32;
+    this.maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_SNAPSHOT_FILE_BYTES;
     this.vfs = options.vfs ?? new MemoryVfs(this.worktree);
   }
 
@@ -66,7 +78,7 @@ export class StateCheckpointer {
     nodeId: string,
     conversationLength: number,
     extraPaths: readonly string[] = [],
-  ): Promise<CheckpointRecord & { usedVfs: boolean }> {
+  ): Promise<CheckpointRecord & { usedVfs: boolean; skipped: string[] }> {
     await this.vfs.ingestMany(extraPaths);
     const headSha = await this.headSha();
     const dirty = await this.dirtyPaths();
@@ -87,13 +99,20 @@ export class StateCheckpointer {
     }
 
     const files: Record<string, string> = {};
+    const skipped: string[] = [];
     for (const rel of paths) {
+      if (!(await this.snapshottable(rel))) {
+        skipped.push(rel);
+        continue;
+      }
       files[rel] = await this.readRel(rel);
-      this.vfs.touch(rel, files[rel] === '' ? null : files[rel]!);
+      this.vfs.touch(rel, files[rel] === '' ? null : files[rel]);
     }
     // Always merge current VFS snapshot so previously touched-but-clean files are covered.
     if (usedVfs) {
-      Object.assign(files, this.vfs.snapshot());
+      const vfsFiles = this.vfs.snapshot();
+      for (const rel of skipped) Reflect.deleteProperty(vfsFiles, rel);
+      Object.assign(files, vfsFiles);
     }
 
     const record = {
@@ -103,6 +122,7 @@ export class StateCheckpointer {
       createdAt: Date.now(),
       conversationLength,
       usedVfs,
+      skipped,
     };
     this.byNode.set(nodeId, record);
     this.order = this.order.filter((id) => id !== nodeId);
@@ -124,6 +144,7 @@ export class StateCheckpointer {
         nodeId,
         filesRestored: [],
         usedVfs: false,
+        skipped: [],
       };
     }
 
@@ -136,13 +157,18 @@ export class StateCheckpointer {
       this.order = this.order.slice(0, idx);
     }
 
+    const skippedNote = record.skipped.length
+      ? ` [not restored (too large/binary): ${record.skipped.slice(0, 5).join(', ')}${record.skipped.length > 5 ? ', …' : ''}]`
+      : '';
     return {
       restored: true,
-      constraint: rollbackConstraint(nodeId, negativeConstraint, 'a different approach'),
+      constraint:
+        rollbackConstraint(nodeId, negativeConstraint, 'a different approach') + skippedNote,
       pruneAfter: record.conversationLength,
       nodeId,
       filesRestored: restored,
       usedVfs: record.usedVfs,
+      skipped: record.skipped,
     };
   }
 
@@ -151,6 +177,20 @@ export class StateCheckpointer {
     const r = relative(this.worktree, abs);
     if (!r || r.startsWith('..')) return '';
     return r.split('\\').join('/');
+  }
+
+  /** Missing files are snapshottable (absent); oversized or binary files are not. */
+  private async snapshottable(rel: string): Promise<boolean> {
+    const abs = join(this.worktree, rel);
+    try {
+      const st = await stat(abs);
+      if (!st.isFile()) return false;
+      if (st.size > this.maxFileBytes) return false;
+      const head = (await readFile(abs)).subarray(0, 8000);
+      return !head.includes(0);
+    } catch {
+      return true;
+    }
   }
 
   private async readRel(rel: string): Promise<string> {

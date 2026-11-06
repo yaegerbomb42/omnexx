@@ -63,8 +63,9 @@ export function sourceNote(source: ModeSource): string {
 let current: ExecutionMode = 'normal';
 let source: ModeSource = 'default';
 /** The mode pickers only show in the chat header while experimental mode is on. */
-// @ts-ignore
 let experimental = false;
+/** Whether the host reported experimental mode (pickers gate on it). */
+export const isExperimental = (): boolean => experimental;
 
 /** The pill: three gradient segments, the active mode's caption, and any override note. */
 export function pillHtml(): string {

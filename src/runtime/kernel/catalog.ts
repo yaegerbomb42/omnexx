@@ -1,6 +1,17 @@
 import { z } from 'zod';
 import { ok, fail, type Tool } from '../../tools/types.js';
 import type { CapabilityEntry } from './types.js';
+import type { DenseIndex } from './dense.js';
+import { denseDocText, dot } from './dense.js';
+import {
+  CapabilityRetriever,
+  INSTALLED_NAMED_TIER,
+  tokenizeText,
+  type RetrievalDoc,
+} from './retrieval.js';
+
+/** How long unverified remote (SkillMD) search hits stay in the catalog. */
+export const REMOTE_SKILL_TTL_MS = 30 * 60 * 1000;
 
 export interface CatalogEntry {
   /** Stable id, e.g. `mcp:github:create_issue` or `skill:testing`. */
@@ -18,7 +29,23 @@ export interface CatalogEntry {
   embedding?: number[] | undefined;
 }
 
-export interface CatalogSelectOptions {
+export interface CatalogSearchOptions {
+  /** Low-weight context terms (recent tool errors, state delta). */
+  context?: string | undefined;
+  /** Additive per-id prior (co-usage, stickiness). */
+  bonus?: ((id: string) => number) | undefined;
+}
+
+/** Already-mounted capabilities get this relative bonus when re-selecting (hysteresis). */
+export const MOUNT_STICKINESS = 0.5;
+/** Uninstalled candidates scoring below this fraction of the best one are not mounted. */
+export const MOUNT_MIN_RELATIVE_SCORE = 0.6;
+/** Lower bar for a candidate that brings a new specific product named in the task. */
+export const MOUNT_NEW_PRODUCT_RELATIVE_SCORE = 0.4;
+
+export interface CatalogSelectOptions extends CatalogSearchOptions {
+  /** Pre-ranked candidates (e.g. hybrid retrieval); default: BM25 rankEntries. */
+  ranked?: readonly { entry: CatalogEntry; score: number }[] | undefined;
   query: string;
   /** Max capabilities to keep mounted (default 8). */
   maxMounted?: number | undefined;
@@ -42,12 +69,6 @@ function tokenize(text: string): string[] {
     .filter((t) => t.length > 1);
 }
 
-function termFreq(tokens: string[]): Map<string, number> {
-  const m = new Map<string, number>();
-  for (const t of tokens) m.set(t, (m.get(t) ?? 0) + 1);
-  return m;
-}
-
 /**
  * Scalable capability registry: holds thousands of MCP tool / skill *headers*
  * without putting their schemas in the model context. Selection is System-1
@@ -55,7 +76,13 @@ function termFreq(tokens: string[]): Map<string, number> {
  */
 export class CapabilityCatalog {
   private entries = new Map<string, CatalogEntry>();
-  private idf = new Map<string, number>();
+  /** Expiry (epoch ms) for ephemeral entries such as unverified remote SkillMD hits. */
+  private expiry = new Map<string, number>();
+  private readonly retriever = new CapabilityRetriever();
+  private retrieverDirty = true;
+  private readonly uses = new Map<string, number>();
+  private isInstalled: (id: string) => boolean = (id) => id.startsWith('local:');
+  private priorBonus: ((id: string) => number) | undefined;
   private mounted = new Map<string, CatalogEntry>();
   private lru: string[] = [];
   private turnsSinceSelect = 0;
@@ -85,6 +112,11 @@ export class CapabilityCatalog {
     return this.mounted.has(id);
   }
 
+  /** All entries (headers only), insertion order. */
+  allEntries(): readonly CatalogEntry[] {
+    return [...this.entries.values()];
+  }
+
   get(id: string): CatalogEntry | undefined {
     return this.entries.get(id);
   }
@@ -92,6 +124,7 @@ export class CapabilityCatalog {
   /** Replace the catalog contents (headers only). O(n) rebuild of IDF. */
   load(entries: readonly Omit<CatalogEntry, 'tokens'>[]): void {
     this.entries.clear();
+    this.expiry.clear();
     for (const e of entries) {
       const text = `${e.name} ${e.description} ${e.triggerConditions ?? ''} ${e.server ?? ''}`;
       this.entries.set(e.id, { ...e, tokens: tokenize(text) });
@@ -107,12 +140,36 @@ export class CapabilityCatalog {
   }
 
   /** Merge additional entries without clearing (for incremental MCP discovery). */
-  upsert(entries: readonly Omit<CatalogEntry, 'tokens'>[]): void {
+  upsert(
+    entries: readonly Omit<CatalogEntry, 'tokens'>[],
+    opts: { ttlMs?: number; now?: number } = {},
+  ): void {
+    const now = opts.now ?? Date.now();
     for (const e of entries) {
       const text = `${e.name} ${e.description} ${e.triggerConditions ?? ''} ${e.server ?? ''}`;
+      const existed = this.entries.has(e.id);
       this.entries.set(e.id, { ...e, tokens: tokenize(text) });
+      if (opts.ttlMs !== undefined) {
+        // Never demote a permanent entry to ephemeral.
+        if (!existed || this.expiry.has(e.id)) this.expiry.set(e.id, now + opts.ttlMs);
+      } else {
+        this.expiry.delete(e.id);
+      }
     }
     this.rebuildIdf();
+  }
+
+  /** Evict expired ephemeral entries (mounted ones are kept until unmounted). */
+  pruneExpired(now = Date.now()): number {
+    let removed = 0;
+    for (const [id, at] of this.expiry) {
+      if (at > now || this.mounted.has(id)) continue;
+      this.expiry.delete(id);
+      this.entries.delete(id);
+      removed++;
+    }
+    if (removed) this.rebuildIdf();
+    return removed;
   }
 
   /** Convert to CapabilityEntry shape used by the meta-router. */
@@ -132,22 +189,126 @@ export class CapabilityCatalog {
    * Rank the whole catalog for `query` (TF-IDF; uses embeddings when present).
    * Returns top-K ids — does not change the mount set.
    */
-  search(query: string, k = 10): CatalogEntry[] {
-    const qTokens = tokenize(query);
-    if (qTokens.length === 0) return [...this.entries.values()].slice(0, k);
-    const qtf = termFreq(qTokens);
-    const qEmbed = averageEmbedding(
-      [...this.entries.values()].filter((e) => e.embedding).slice(0, 1),
-    );
-    return [...this.entries.values()]
-      .map((e) => {
-        let score = tfidfScore(qtf, e.tokens, this.idf);
-        if (qEmbed && e.embedding) score += 2 * cosine(qEmbed, e.embedding);
-        return { e, score };
+  search(query: string, k = 10, opts: CatalogSearchOptions = {}): CatalogEntry[] {
+    this.pruneExpired();
+    if (!query.trim()) return [...this.entries.values()].slice(0, k);
+    return this.rankEntries(query, k, opts).map((r) => r.entry);
+  }
+
+  /** Ranked search with scores (field-weighted BM25 + expansion + installed-first priors). */
+  rankEntries(
+    query: string,
+    k = 10,
+    opts: CatalogSearchOptions = {},
+  ): { entry: CatalogEntry; score: number }[] {
+    if (this.retrieverDirty) {
+      this.retriever.build([...this.entries.values()]);
+      this.retrieverDirty = false;
+    }
+    const isInstalled = this.isInstalled;
+    return this.retriever
+      .rank(query, k, {
+        isInstalled: (d) => isInstalled(d.id),
+        ...(opts.context ? { context: opts.context } : {}),
+        ...(opts.bonus ? { bonus: (d: RetrievalDoc) => opts.bonus?.(d.id) ?? 0 } : {}),
       })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, k)
-      .map((x) => x.e);
+      .flatMap((r) => {
+        const entry = this.entries.get(r.doc.id);
+        return entry ? [{ entry, score: r.score }] : [];
+      });
+  }
+
+  /**
+   * Hybrid retrieval: BM25 candidates (+ dense candidates when the full catalog is
+   * embedded), fused with cosine similarity from local embeddings. Falls back to plain
+   * BM25 when the dense index is unavailable.
+   */
+  async rankHybrid(
+    query: string,
+    k: number,
+    dense: DenseIndex | undefined,
+    opts: CatalogSearchOptions & { candidates?: number; denseWeight?: number } = {},
+  ): Promise<{ entry: CatalogEntry; score: number }[]> {
+    const pool = opts.candidates ?? 100;
+    const lexical = this.rankEntries(query, pool, opts);
+    if (!dense?.available) return lexical.slice(0, k);
+    const qv = await dense.embedQuery(opts.context ? `${query}\n${opts.context}` : query);
+    if (!qv) return lexical.slice(0, k);
+    const cands = new Map<string, { entry: CatalogEntry; lex: number; tier: number }>();
+    for (const r of lexical) {
+      const tier = r.score >= INSTALLED_NAMED_TIER ? INSTALLED_NAMED_TIER : 0;
+      cands.set(r.entry.id, { entry: r.entry, lex: r.score - tier, tier });
+    }
+    // Full dense index → dense-only candidates BM25 never surfaced.
+    if (dense.size >= this.entries.size * 0.9) {
+      for (const h of dense.search(qv, 50)) {
+        const entry = this.entries.get(h.id);
+        if (entry && !cands.has(h.id)) cands.set(h.id, { entry, lex: 0, tier: 0 });
+      }
+    }
+    await dense.ensure(
+      [...cands.values()].map((c) => ({ id: c.entry.id, text: denseDocText(c.entry) })),
+    );
+    const maxLex = Math.max(1e-9, ...[...cands.values()].map((c) => c.lex));
+    const w = opts.denseWeight ?? 0.5;
+    const installed = this.isInstalled;
+    const out = [...cands.values()].map((c) => {
+      const v = dense.get(c.entry.id);
+      const cos = v ? dot(qv, v) : 0;
+      let score = (1 - w) * (c.lex / maxLex) + w * Math.max(0, (cos - 0.35) / 0.65);
+      if (installed(c.entry.id) && c.entry.kind !== 'tool') score *= 1.15;
+      return { entry: c.entry, score: score + c.tier };
+    });
+    out.sort((a, b) => b.score - a.score);
+    return out.slice(0, k);
+  }
+
+  /**
+   * Non-blocking hybrid: fuse BM25 with an already-embedded query vector, using only
+   * vectors already in the dense index (never embeds on the hot path).
+   */
+  rankHybridCached(
+    query: string,
+    k: number,
+    dense: DenseIndex,
+    qv: Float32Array,
+    opts: CatalogSearchOptions & { candidates?: number; denseWeight?: number } = {},
+  ): { entry: CatalogEntry; score: number }[] {
+    const lexical = this.rankEntries(query, opts.candidates ?? 100, opts);
+    const cands = new Map<string, { entry: CatalogEntry; lex: number; tier: number }>();
+    for (const r of lexical) {
+      const tier = r.score >= INSTALLED_NAMED_TIER ? INSTALLED_NAMED_TIER : 0;
+      cands.set(r.entry.id, { entry: r.entry, lex: r.score - tier, tier });
+    }
+    if (dense.size >= this.entries.size * 0.9) {
+      for (const h of dense.search(qv, 50)) {
+        const entry = this.entries.get(h.id);
+        if (entry && !cands.has(h.id)) cands.set(h.id, { entry, lex: 0, tier: 0 });
+      }
+    }
+    const maxLex = Math.max(1e-9, ...[...cands.values()].map((c) => c.lex));
+    const w = opts.denseWeight ?? 0.5;
+    const out = [...cands.values()].map((c) => {
+      const v = dense.get(c.entry.id);
+      // Missing vector: lexical only (re-weighted so it is not penalized).
+      let score = v
+        ? (1 - w) * (c.lex / maxLex) + w * Math.max(0, (dot(qv, v) - 0.35) / 0.65)
+        : c.lex / maxLex;
+      if (this.isInstalled(c.entry.id) && c.entry.kind !== 'tool') score *= 1.15;
+      return { entry: c.entry, score: score + c.tier };
+    });
+    out.sort((a, b) => b.score - a.score);
+    return out.slice(0, k);
+  }
+
+  /** Learned prior (e.g. bandit) applied multiplicatively in chooseMountSet: 1 + bonus. */
+  setPriorBonus(fn: ((id: string) => number) | undefined): void {
+    this.priorBonus = fn;
+  }
+
+  /** Decide which ids count as installed for installed-first ranking (default: `local:*`). */
+  setInstalledPredicate(fn: (id: string) => boolean): void {
+    this.isInstalled = fn;
   }
 
   /**
@@ -157,16 +318,8 @@ export class CapabilityCatalog {
   select(opts: CatalogSelectOptions): CatalogSelectResult {
     const t0 = Date.now();
     const maxMounted = opts.maxMounted ?? 8;
-    const ranked = this.search(opts.query, Math.max(maxMounted * 3, 24));
-    const nextIds: string[] = [];
-    for (const id of opts.pin ?? []) {
-      if (this.entries.has(id) && !nextIds.includes(id)) nextIds.push(id);
-    }
-    for (const e of ranked) {
-      if (nextIds.length >= maxMounted) break;
-      if (!nextIds.includes(e.id)) nextIds.push(e.id);
-    }
-
+    const ranked = opts.ranked ?? this.rankEntries(opts.query, Math.max(maxMounted * 4, 32), opts);
+    const nextIds = this.chooseMountSet(opts.query, ranked, maxMounted, opts.pin ?? []);
     const prev = new Set(this.mounted.keys());
     const next = new Set(nextIds);
     const added: string[] = [];
@@ -198,6 +351,78 @@ export class CapabilityCatalog {
     this.turnsSinceSelect = 0;
     this.lastQuery = opts.query;
     return { mounted: this.getMounted().slice(), added, removed, ms: Date.now() - t0 };
+  }
+
+  /**
+   * Turn a ranked list into a mount set:
+   * - relative score cutoff (don't fill slots with junk just because they exist)
+   * - one uninstalled registry server per product named in the query (no 5× github-*)
+   * - stickiness: already-mounted capabilities get a bonus (hysteresis, less thrash)
+   * - co-usage prior: capabilities the agent actually used get a small boost
+   */
+  chooseMountSet(
+    query: string,
+    ranked: readonly { entry: CatalogEntry; score: number }[],
+    maxMounted: number,
+    pin: readonly string[] = [],
+  ): string[] {
+    const tierOf = (sc: number) => (sc >= INSTALLED_NAMED_TIER ? INSTALLED_NAMED_TIER : 0);
+    const rescored = ranked
+      .map((r) => {
+        const tier = tierOf(r.score);
+        let base = r.score - tier;
+        const uses = this.uses.get(r.entry.id) ?? 0;
+        if (uses) base *= 1 + 0.15 * Math.log1p(uses);
+        if (this.mounted.has(r.entry.id)) base *= 1 + MOUNT_STICKINESS;
+        const prior = this.priorBonus?.(r.entry.id) ?? 0;
+        if (prior) base *= Math.max(0.5, 1 + prior);
+        return { entry: r.entry, base, tier };
+      })
+      .sort((a, b) => b.tier + b.base - (a.tier + a.base));
+    const top = rescored.find((r) => r.tier === 0)?.base ?? rescored[0]?.base ?? 0;
+    if (this.retrieverDirty) {
+      this.retriever.build([...this.entries.values()]);
+      this.retrieverDirty = false;
+    }
+    const qTokens = tokenizeText(query);
+    const productTerms = new Set(qTokens.filter((t) => this.retriever.isProductTerm(t)));
+    const products = new Set<string>();
+    const nextIds: string[] = [];
+    for (const id of pin) if (this.entries.has(id) && !nextIds.includes(id)) nextIds.push(id);
+    for (const r of rescored) {
+      if (nextIds.length >= maxMounted) break;
+      if (nextIds.includes(r.entry.id)) continue;
+      const names = new Set(
+        tokenizeText(`${r.entry.name} ${(r.entry.server ?? '').split('/').pop() ?? ''}`),
+      );
+      const product = qTokens.find((t) => names.has(t));
+      // A candidate bringing a not-yet-covered product named by the task (multi-tool
+      // tasks: "Sentry crash -> GitHub issue") gets a much lower bar than generic matches.
+      const bar =
+        product && productTerms.has(product) && !products.has(product)
+          ? MOUNT_NEW_PRODUCT_RELATIVE_SCORE * top
+          : MOUNT_MIN_RELATIVE_SCORE * top;
+      if (r.tier === 0 && nextIds.length > 0 && r.base < bar) {
+        // Generic tail reached: stop unless a named product is still uncovered.
+        if ([...productTerms].every((t) => products.has(t))) break;
+        continue;
+      }
+      if (!this.isInstalled(r.entry.id)) {
+        if (product) {
+          if (products.has(product)) continue;
+          products.add(product);
+        }
+      } else {
+        for (const t of qTokens) if (tokenizeText(r.entry.name).includes(t)) products.add(t);
+      }
+      nextIds.push(r.entry.id);
+    }
+    return nextIds;
+  }
+
+  /** Record that the agent actually used a mounted capability (co-usage prior). */
+  recordUse(id: string): void {
+    this.uses.set(id, (this.uses.get(id) ?? 0) + 1);
   }
 
   /** Explicitly mount one capability (from search_capabilities). Evicts LRU if over cap. */
@@ -246,56 +471,9 @@ export class CapabilityCatalog {
   }
 
   private rebuildIdf(): void {
-    const df = new Map<string, number>();
-    for (const e of this.entries.values()) {
-      for (const t of new Set(e.tokens)) df.set(t, (df.get(t) ?? 0) + 1);
-    }
-    const N = Math.max(1, this.entries.size);
-    this.idf = new Map([...df.entries()].map(([t, d]) => [t, Math.log((N + 1) / (d + 1)) + 1]));
+    // Index rebuild is lazy (next search) so bursts of upserts stay cheap on 50k+ catalogs.
+    this.retrieverDirty = true;
   }
-}
-
-function tfidfScore(
-  qtf: Map<string, number>,
-  docTokens: string[],
-  idf: Map<string, number>,
-): number {
-  const dtf = termFreq(docTokens);
-  let score = 0;
-  for (const [t, qf] of qtf) {
-    const df = dtf.get(t);
-    if (!df) continue;
-    score += qf * df * (idf.get(t) ?? 1);
-  }
-  return score;
-}
-
-function cosine(a: number[], b: number[]): number {
-  if (a.length !== b.length || a.length === 0) return 0;
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    const x = a[i] ?? 0;
-    const y = b[i] ?? 0;
-    dot += x * y;
-    na += x * x;
-    nb += y * y;
-  }
-  if (na === 0 || nb === 0) return 0;
-  return dot / (Math.sqrt(na) * Math.sqrt(nb));
-}
-
-function averageEmbedding(entries: CatalogEntry[]): number[] | undefined {
-  const withEmb = entries.filter((e) => e.embedding && e.embedding.length);
-  if (!withEmb.length) return undefined;
-  const dim = withEmb[0]!.embedding!.length;
-  const out = new Array<number>(dim).fill(0);
-  for (const e of withEmb) {
-    for (let i = 0; i < dim; i++) out[i]! += e.embedding![i] ?? 0;
-  }
-  for (let i = 0; i < dim; i++) out[i]! /= withEmb.length;
-  return out;
 }
 
 const searchSchema = z.strictObject({
@@ -307,6 +485,21 @@ const searchSchema = z.strictObject({
 
 const mountSchema = z.strictObject({
   id: z.string().describe('Capability id from search_capabilities results'),
+});
+
+const manageSchema = z.strictObject({
+  actions: z
+    .array(
+      z.strictObject({
+        action: z.enum(['search', 'mount', 'unmount', 'list']),
+        query: z.string().optional(),
+        ids: z.array(z.string()).optional(),
+        kind: z.enum(['all', 'mcp', 'tool', 'skill']).optional(),
+        limit: z.number().int().min(1).max(25).optional(),
+      }),
+    )
+    .min(1)
+    .max(12),
 });
 
 export interface CatalogToolsOptions {
@@ -355,14 +548,14 @@ export function createCatalogTools(
       if (options.publicSkillSearch) {
         try {
           const remote = await options.publicSkillSearch(input.query, input.limit);
-          if (remote.length > 0) catalog.upsert([...remote]);
+          // Unverified remote hits are ephemeral: evicted after the TTL unless mounted.
+          if (remote.length > 0) catalog.upsert([...remote], { ttlMs: REMOTE_SKILL_TTL_MS });
         } catch {
           // public skills are optional enrichment
         }
       }
       const hits = catalog.search(input.query, input.limit).map((e) => {
-        const installed =
-          options.isInstalled?.(e.id, e) ?? e.id.startsWith('local:');
+        const installed = options.isInstalled?.(e.id, e) ?? e.id.startsWith('local:');
         return {
           id: e.id,
           kind: e.kind,
@@ -390,13 +583,12 @@ export function createCatalogTools(
       const entry = catalog.get(input.id);
       if (!entry) return fail(`Unknown capability id "${input.id}". Search first.`);
 
-      const installed =
-        options.isInstalled?.(input.id, entry) ?? input.id.startsWith('local:');
+      const installed = options.isInstalled?.(input.id, entry) ?? input.id.startsWith('local:');
 
       if (!installed) {
         const suggestion =
           options.suggestInstall?.(input.id, entry) ??
-          `Capability "${input.id}" is not installed locally. Add it via Omnexx MCP config / \`omnexx mcp add\` before mounting. Omnexx will not auto-install or run untrusted code.`;
+          `Capability "${input.id}" is not installed locally. Add it with \`omnexx mcp add <name>\` (or your Omnexx MCP config) before mounting. Omnexx will not auto-install or run untrusted code.`;
         return fail(suggestion);
       }
 
@@ -435,7 +627,97 @@ export function createCatalogTools(
     },
   };
 
-  return [searchTool, mountTool];
+  const manageTool: Tool<typeof manageSchema> = {
+    name: MANAGE_CAPABILITIES,
+    description:
+      'Manage tools, MCP servers and skills in ONE call. Batch several actions: ' +
+      '{action:"search",query,kind?,limit?} finds capabilities in the catalog (official MCP Registry + local MCP + skills); ' +
+      '{action:"mount",ids} loads installed ones (registry-only servers return an install suggestion; nothing is downloaded); ' +
+      '{action:"unmount",ids} frees slots; {action:"list"} shows what is mounted. ' +
+      'Newly mounted tools are listed under [kernel:mounted_capabilities]; run them by name or via call_capability.',
+    schema: manageSchema,
+    readOnly: false,
+    // Accept a single action object as well as {actions:[...]} or a bare array.
+    normalize: (raw) => {
+      if (Array.isArray(raw)) return { actions: raw };
+      if (raw && typeof raw === 'object' && 'action' in raw) return { actions: [raw] };
+      if (raw === undefined || (raw && typeof raw === 'object' && Object.keys(raw).length === 0))
+        return { actions: [{ action: 'list' }] };
+      return raw;
+    },
+    async run(input, ctx) {
+      const out: string[] = [];
+      let anyError = false;
+      for (const [i, a] of input.actions.entries()) {
+        const tag = `#${String(i + 1)} ${a.action}`;
+        if (a.action === 'search') {
+          if (!a.query?.trim()) {
+            anyError = true;
+            out.push(`${tag}: query is required`);
+            continue;
+          }
+          const limit = a.limit ?? 8;
+          const r = await searchTool.run(
+            { query: a.query, limit: kindOf(a.kind) ? 25 : limit },
+            ctx,
+          );
+          if (kindOf(a.kind)) {
+            const parsed = JSON.parse(r.content) as { results: { kind: string }[] };
+            const results = parsed.results.filter((x) => x.kind === kindOf(a.kind)).slice(0, limit);
+            out.push(`${tag}: ${JSON.stringify({ count: results.length, results })}`);
+          } else out.push(`${tag}: ${r.content.replace(/\n\s*/g, ' ')}`);
+        } else if (a.action === 'mount' || a.action === 'unmount') {
+          if (!a.ids?.length) {
+            anyError = true;
+            out.push(`${tag}: ids are required`);
+            continue;
+          }
+          for (const id of a.ids) {
+            if (a.action === 'mount') {
+              const r = await mountTool.run({ id }, ctx);
+              if (r.isError) anyError = true;
+              out.push(`${tag} ${id}: ${r.isError ? 'FAILED ' : ''}${r.content}`);
+            } else {
+              const okUnmount = catalog.unmount(id);
+              if (okUnmount && options.onUnmount) {
+                try {
+                  await options.onUnmount(id);
+                } catch {
+                  // best-effort
+                }
+              }
+              out.push(`${tag} ${id}: ${okUnmount ? 'unmounted' : 'was not mounted'}`);
+            }
+          }
+        } else {
+          const ids = catalog.getMountedIds();
+          const k = kindOf(a.kind);
+          const rows = ids
+            .map((id) => catalog.get(id))
+            .filter((e): e is CatalogEntry => Boolean(e) && (!k || e?.kind === k))
+            .map((e) => `${e.id} (${e.kind}) — ${e.description.slice(0, 80)}`);
+          out.push(`${tag}: ${rows.length ? rows.join('; ') : 'nothing mounted'}`);
+        }
+      }
+      // Partial failures are reported inline; only an all-failed batch is an error.
+      const content = out.join('\n');
+      return anyError && out.every((l) => /required|FAILED/.test(l)) ? fail(content) : ok(content);
+    },
+  };
+
+  return [manageTool, searchTool, mountTool];
+}
+
+export const MANAGE_CAPABILITIES = 'manage_capabilities';
+/** Legacy meta-tools: still executable (byName) but kept out of the Slot-0 tool prefix. */
+export const LEGACY_CATALOG_TOOLS: ReadonlySet<string> = new Set([
+  'search_capabilities',
+  'mount_capability',
+]);
+
+function kindOf(kind: string | undefined): CatalogEntry['kind'] | undefined {
+  if (!kind || kind === 'all') return undefined;
+  return kind as CatalogEntry['kind'];
 }
 
 /** Build synthetic catalog entries for tests / benches. */
@@ -474,8 +756,8 @@ export function syntheticCatalog(
   ];
   const out: Omit<CatalogEntry, 'tokens'>[] = [];
   for (let i = 0; i < count; i++) {
-    const domain = domains[i % domains.length]!;
-    const verb = verbs[i % verbs.length]!;
+    const domain = domains[i % domains.length] ?? 'misc';
+    const verb = verbs[i % verbs.length] ?? 'get';
     const name = `${verb}_${domain}_${i}`;
     out.push({
       id: `${prefix}:${domain}:${name}`,

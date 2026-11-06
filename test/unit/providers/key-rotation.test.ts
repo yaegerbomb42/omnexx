@@ -57,3 +57,45 @@ describe('withKeyRotation', () => {
     expect(withKeyRotation([a])).toBe(a);
   });
 });
+
+describe('withKeyRotation: rejected keys (401/403)', () => {
+  const reject = (_key: string, status: 401 | 403): Provider & { calls: number } => {
+    const c = {
+      name: 'nvidia',
+      calls: 0,
+      complete() {
+        c.calls++;
+        return Promise.reject(
+          new ProviderError(`nvidia error ${String(status)}: Authorization failed`, {
+            retryable: false,
+            status,
+          }),
+        );
+      },
+    };
+    return c;
+  };
+
+  it('skips a 403 key, benches it, and never calls it again', async () => {
+    const bad = reject('k7', 403);
+    const bad2 = reject('k10', 401);
+    const good = client('k1', []);
+    const benched: number[] = [];
+    const p = withKeyRotation([bad, bad2, good], undefined, (i) => benched.push(i));
+    expect((await p.complete(req)).model).toBe('k1');
+    expect((await p.complete(req)).model).toBe('k1');
+    expect(bad.calls).toBe(1);
+    expect(bad2.calls).toBe(1);
+    expect(benched).toEqual([0, 1]);
+  });
+
+  it('a 429 on the good key still rotates past benched keys, and all-bad throws the auth error', async () => {
+    const good = client('k1', [429]);
+    const other = client('k2', []);
+    const p = withKeyRotation([reject('k7', 403), good, other]);
+    expect((await p.complete(req)).model).toBe('k2');
+    await expect(
+      withKeyRotation([reject('a', 403), reject('b', 401)]).complete(req),
+    ).rejects.toMatchObject({ status: 401 });
+  });
+});

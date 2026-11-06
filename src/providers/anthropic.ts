@@ -59,10 +59,13 @@ export class AnthropicProvider implements Provider {
     const prefixTtl = this.opts.cacheTtl === '1h' ? '1h' : (this.opts.prefixTtl ?? '5m');
     const prefixCache = { type: 'ephemeral' as const, ttl: prefixTtl };
     const pinnedSystem = pinPrefix(req.system);
-    const system: TextBlockParam[] = pinnedSystem.map((b) => ({
+    // At most 4 cache_control breakpoints (Anthropic's limit): last tool, last stable system
+    // block, messages[0] and messages[cachedLast] (deduped).
+    const lastSysBreak = pinnedSystem.reduce((acc, b, i) => (b.cacheBreakpoint ? i : acc), -1);
+    const system: TextBlockParam[] = pinnedSystem.map((b, i) => ({
       type: 'text',
       text: b.text,
-      ...(b.cacheBreakpoint ? { cache_control: prefixCache } : {}),
+      ...(i === lastSysBreak ? { cache_control: prefixCache } : {}),
     }));
     const tools: Tool[] = [...req.tools]
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -71,7 +74,20 @@ export class AnthropicProvider implements Provider {
         description: t.description,
         input_schema: t.inputSchema as Tool['input_schema'],
       }));
-    const breakpoints = new Set(req.messageBreakpoints);
+    const lastTool = tools.at(-1);
+    if (lastTool) Object.assign(lastTool, { cache_control: prefixCache });
+    const budget = 4 - (lastTool ? 1 : 0) - (lastSysBreak >= 0 ? 1 : 0);
+    const wanted = [...new Set(req.messageBreakpoints)].sort((a, b) => a - b);
+    // Keep the first and the latest breakpoints when over budget (latest matters most).
+    const kept =
+      wanted.length <= budget
+        ? wanted
+        : budget <= 0
+          ? []
+          : budget === 1
+            ? wanted.slice(-1)
+            : [...wanted.slice(0, 1), ...wanted.slice(-(budget - 1))];
+    const breakpoints = new Set(kept);
     const messages: MessageParam[] = req.messages.map((m, i) => {
       const content = m.content.map((b) => toParam(b));
       const last = content.at(-1);

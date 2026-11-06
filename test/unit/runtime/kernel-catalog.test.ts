@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/require-await, @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- test doubles */
 import { describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -152,7 +153,10 @@ describe('local discovery (real configs)', () => {
         },
       }),
     );
-    const found = await discoverLocalMcpServers({ repoRoot: root, env: { ...process.env, HOME: root } });
+    const found = await discoverLocalMcpServers({
+      repoRoot: root,
+      env: { ...process.env, HOME: root },
+    });
     expect(found.entries.map((e) => e.name).sort()).toEqual(['custom_db', 'filesystem']);
     expect(found.entries.every((e) => e.id.startsWith('local:mcp:'))).toBe(true);
     expect(found.sources.some((s) => s.includes('mcp.json'))).toBe(true);

@@ -54,10 +54,15 @@ import {
   DEFAULT_KEEP_TURNS,
 } from './rolling-memory.js';
 import { turnRequest } from './context.js';
+import {
+  ToolEpoch,
+  capabilityDirective,
+  estimateTokens as estimateJsonTokens,
+} from '../runtime/kernel/cache-epoch.js';
 import type { InCycleWatch, StuckFinding } from '../guard/stuck.js';
 import type { DoomLoopRatchet } from '../core/doom-loop-ratchet.js';
 import type { AdaptiveRuntimeKernel } from '../runtime/kernel/index.js';
-import { toolSpec } from '../tools/registry.js';
+import { toolStateProgress } from '../runtime/kernel/telemetry.js';
 import { todoItemsOf, todoNudge, todoTool, type TodoItem } from '../tools/todo.js';
 
 /** Thrown inside the retry loop when a pre-flight check refuses the call; ends the cycle, never retried. */
@@ -93,12 +98,12 @@ function resolveKernelObjective(deps: LoopDeps, messages: readonly Message[]): s
   }
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    if (msg && msg.role === 'user' && Array.isArray(msg.content)) {
+    if (msg?.role === 'user' && Array.isArray(msg.content)) {
       const textBlock = msg.content.find(
         (b): b is Extract<ContentBlock, { type: 'text' }> =>
-          b.type === 'text' && Boolean(b.text?.trim()),
+          b.type === 'text' && Boolean(b.text.trim()),
       );
-      if (textBlock?.text?.trim()) return textBlock.text.trim();
+      if (textBlock?.text.trim()) return textBlock.text.trim();
     }
   }
   return 'general task';
@@ -120,6 +125,7 @@ const TOOL_ALIASES: Record<string, string> = {
   glob: 'outline',
   list: 'outline',
   grep: 'search',
+  list_capabilities: 'manage_capabilities',
   ripgrep: 'search',
   search_files: 'search',
   search_code: 'search',
@@ -531,11 +537,17 @@ export async function runAgentLoop(
   // byName must be rebuilt when tools change.
   let byName = buildToolMap(deps.tools, warnDup);
   let turnMaxTokens = deps.maxTokens;
+  // Kernel: the full tool pool it allocates from (byName narrows to the mounted set).
+  let kernelPool: Tool[] = [...deps.tools];
+  const toolEpoch = new ToolEpoch();
+  let pendingFold = false;
+  let turnDirective = '';
   for (;;) {
     // Refresh tools at the start of each turn if refreshTools is provided (lazy mode).
     if (deps.refreshTools) {
       const { tools: freshTools, specs: freshSpecs } = deps.refreshTools();
       byName = buildToolMap(freshTools, warnDup);
+      kernelPool = [...freshTools];
       liveCtx = { ...liveCtx, tools: freshSpecs };
     }
     turnMaxTokens = deps.maxTokens;
@@ -543,29 +555,45 @@ export async function runAgentLoop(
     if (deps.kernel) {
       const plan = await deps.kernel.planTurn({
         objective: resolveKernelObjective(deps, messages),
-        allTools: [...byName.values()],
+        allTools: kernelPool,
         defaultMaxTokens: deps.maxTokens,
         messages,
         ...(deps.kernelSkills ? { skills: deps.kernelSkills } : {}),
+        turn: turns + 1,
       });
-      byName = buildToolMap(plan.tools, warnDup);
-      liveCtx = { ...liveCtx, tools: plan.tools.map(toolSpec) };
       turnMaxTokens = plan.maxTokens;
       if (plan.compactedMessages) {
         messages = plan.compactedMessages;
         deps.toolCtx.reads?.clear();
+        pendingFold = true;
         deps.events.emit('kernel.gc', {
           turn: turns,
           messages: messages.length,
         });
       }
-      // Quiet by default: only surface a kernel hint when deliberative (tier>=2) or GC ran.
-      if (plan.allocation.tier >= 2 || plan.compactedMessages) {
-        messages.push({
-          role: 'user',
-          content: [{ type: 'text', text: plan.systemHint }],
-        });
-      }
+      // Prompt cache: req.tools and req.system stay byte-identical within an epoch. Newly
+      // mounted capabilities go into the per-turn terminal directive (after the cached last
+      // message) and run by name or via call_capability; tools re-bake only at a fold.
+      const ep = toolEpoch.plan({
+        mounted: plan.tools,
+        fold: pendingFold,
+        suffixTokens: estimateJsonTokens(ctx.system) + estimateJsonTokens(messages),
+        foldBustTokens: estimateJsonTokens(ctx.system) + estimateJsonTokens(messages.slice(0, 1)),
+        expectedRemainingTurns: Math.max(1, deps.budget.max_turns_per_cycle - turns),
+      });
+      pendingFold = false;
+      byName = ep.byName;
+      liveCtx = { ...liveCtx, system: ctx.system, tools: ep.specs };
+      if (ep.rebaked && ep.epoch > 1)
+        deps.events.emit('kernel.epoch', { turn: turns, epoch: ep.epoch });
+      // Quiet by default: a kernel hint only when deliberative (tier>=2) or GC ran.
+      turnDirective = [
+        plan.allocation.tier >= 2 || plan.compactedMessages ? plan.systemHint.trim() : undefined,
+        capabilityDirective(ep.extra),
+        plan.phaseNudge,
+      ]
+        .filter((x): x is string => Boolean(x))
+        .join('\n\n');
       deps.events.emit('kernel.allocate', {
         turn: turns,
         tier: plan.allocation.tier,
@@ -574,7 +602,16 @@ export async function runAgentLoop(
         friction: plan.telemetry.frictionScore,
         pressure: plan.telemetry.contextPressure,
         ...(plan.mctsSelectedId ? { mcts: plan.mctsSelectedId } : {}),
+        ...(plan.phase ? { phase: plan.phase, taskClass: plan.taskClass } : {}),
+        ...(plan.cadence
+          ? { cadence: plan.cadence.action, reason: plan.cadence.reason, epoch: ep.epoch }
+          : {}),
+        ...(plan.rankMode ? { rank: plan.rankMode } : {}),
+        ...(plan.whyMounted ? { why: plan.whyMounted } : {}),
+        ...(plan.mountSavings ? { mountSavings: plan.mountSavings } : {}),
+        priors: deps.kernel.optimizer.bandit.top(3),
         ...(plan.droppedTools?.length ? { dropped: plan.droppedTools } : {}),
+        ...(plan.toolNameCollisions?.length ? { collisions: plan.toolNameCollisions } : {}),
       });
     }
     let signal = await deps.control();
@@ -609,6 +646,7 @@ export async function runAgentLoop(
         if (condensed) {
           messages = condensed.messages;
           lastCondenseTurn = turns;
+          pendingFold = true;
           // Earlier read results are gone from the context now; let `read` return them again.
           deps.toolCtx.reads?.clear();
           rolling.onNote?.(condensed.note, turns);
@@ -689,7 +727,14 @@ export async function runAgentLoop(
               // The provider is up: send the real request once more, cooling or not.
               try {
                 const req = {
-                  ...turnRequest(liveCtx, messages, m.id, turnMaxTokens, deps.cacheKey),
+                  ...turnRequest(
+                    liveCtx,
+                    messages,
+                    m.id,
+                    turnMaxTokens,
+                    deps.cacheKey,
+                    turnDirective ? { terminalDirective: turnDirective } : undefined,
+                  ),
                   route: m.provider,
                   ...(deps.signal ? { signal: deps.signal } : {}),
                 };
@@ -755,8 +800,15 @@ export async function runAgentLoop(
               turnMaxTokens,
               deps.cacheKey,
               isTerminalTurn
-                ? { toolChoice: 'none', terminalDirective: '[harness:terminal_step]' }
-                : undefined,
+                ? {
+                    toolChoice: 'none',
+                    terminalDirective: [turnDirective, '[harness:terminal_step]']
+                      .filter(Boolean)
+                      .join('\n\n'),
+                  }
+                : turnDirective
+                  ? { terminalDirective: turnDirective }
+                  : undefined,
             );
             const quote = pricedPrompt(tokenRatios, m, req);
             const estimate = quote.estimate;
@@ -1211,7 +1263,11 @@ export async function runAgentLoop(
         }
       }
       if (deps.kernel) {
-        const progress = !isError && call.name !== 'read' && call.name !== 'search' ? 1 : 0;
+        const progress = toolStateProgress({
+          name: call.name,
+          readOnly: byName.get(call.name)?.readOnly,
+          isError,
+        });
         const rolled = await deps.kernel.afterTool(
           {
             tool: call.name,
@@ -1293,4 +1349,15 @@ export async function runAgentLoop(
       return { ...end('stuck'), stuck: finding };
     }
   }
+}
+
+/**
+ * @deprecated The kernel hint now rides in the turn's terminal directive (after the cached
+ * last message) so req.system stays byte-stable. Kept for callers outside the loop.
+ */
+export function withKernelHint(
+  base: readonly SystemBlock[],
+  hint: string | undefined,
+): SystemBlock[] {
+  return hint?.trim() ? [...base, { text: hint, volatile: true }] : [...base];
 }

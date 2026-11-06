@@ -58,13 +58,14 @@ export class ContextGarbageCollector {
     let clusters = 0;
 
     // For each older message, drop it if a newer one in `head` is near-duplicate.
-    for (let i = 0; i < head.length; i++) {
-      if (!keep[i]) continue;
-      if (!isGcCandidate(head[i]!)) continue;
+    for (const [i, mi] of head.entries()) {
+      const fi = fingerprints[i];
+      if (!keep[i] || !fi || !isGcCandidate(mi)) continue;
       for (let j = i + 1; j < head.length; j++) {
-        if (!keep[j]) continue;
-        if (!isGcCandidate(head[j]!)) continue;
-        const sim = similarity(fingerprints[i]!, fingerprints[j]!);
+        const mj = head[j];
+        const fj = fingerprints[j];
+        if (!keep[j] || !mj || !fj || !isGcCandidate(mj)) continue;
+        const sim = similarity(fi, fj);
         if (sim >= threshold) {
           keep[i] = false; // drop older
           clusters += 1;
@@ -74,9 +75,7 @@ export class ContextGarbageCollector {
     }
 
     let compacted: Message[] = [];
-    for (let i = 0; i < head.length; i++) {
-      if (keep[i]) compacted.push(head[i]!);
-    }
+    for (const [i, m] of head.entries()) if (keep[i]) compacted.push(m);
     compacted = compacted.concat(tail);
 
     if (opts.targetTokens !== undefined) {
@@ -114,7 +113,7 @@ function isGcCandidate(m: Message): boolean {
     }
   }
   // Pure user text mid-history can dedupe if duplicated.
-  return m.role === 'user';
+  return true;
 }
 
 function fingerprintMessage(
@@ -150,7 +149,7 @@ function ngrams(text: string, n: number): Map<string, number> {
 
 function similarity(a: Fingerprint, b: Fingerprint): number {
   if (a.hash === b.hash) return 1;
-  if (a.embedding && b.embedding && a.embedding.length === b.embedding.length) {
+  if (a.embedding && a.embedding.length === b.embedding?.length) {
     return cosine(a.embedding, b.embedding);
   }
   return jaccard(a.grams, b.grams);
@@ -188,7 +187,7 @@ function trimToBudget(messages: Message[], target: number, keepRecent: number): 
   if (estimateTokens(JSON.stringify(messages)) <= target) return messages;
   const out = [...messages];
   // Drop from the oldest non-anchor end, skipping the newest `keepRecent`.
-  let i = 1; // preserve index 0 as anchor
+  const i = 1; // preserve index 0 as anchor
   while (out.length > keepRecent + 1 && estimateTokens(JSON.stringify(out)) > target) {
     const idx = i;
     if (idx >= out.length - keepRecent) break;

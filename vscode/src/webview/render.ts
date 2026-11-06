@@ -331,6 +331,14 @@ export function formatUsd(usd: number): string {
 }
 
 /** Share of input tokens served from the prompt cache, 0-100. */
+/** Uncached-equivalent input tokens and dollars the prompt cache saved (read 0.1x, write 1.25x). */
+export function cacheSaved(u: Usage): { tokens: number; usd: number } {
+  const t = u.tokens;
+  const tokens = Math.max(0, Math.round(t.cacheRead * 0.9 - t.cacheWrite * 0.25));
+  const billedEq = t.input - t.cacheRead * 0.9 + t.cacheWrite * 0.25 + t.output * 5;
+  return { tokens, usd: billedEq > 0 && u.usd > 0 ? (u.usd / billedEq) * tokens : 0 };
+}
+
 export function cacheHitPercent(u: Usage): number {
   return u.tokens.input ? Math.round((u.tokens.cacheRead / u.tokens.input) * 100) : 0;
 }

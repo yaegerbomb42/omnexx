@@ -128,6 +128,23 @@ export class TelemetryMonitor {
   }
 }
 
+/**
+ * Validated state progress (ΔS>0) for a finished tool call: only a successful
+ * state-mutating tool counts. Read-only tools and shell commands (whose effect is
+ * unknown — `ls` succeeds as easily as a passing test) are neutral, so they decay
+ * friction slowly instead of resetting it.
+ */
+export function toolStateProgress(args: {
+  name: string;
+  readOnly: boolean | undefined;
+  isError: boolean;
+}): 0 | 1 {
+  if (args.isError) return 0;
+  if (args.readOnly !== false) return 0;
+  if (args.name === 'bash' || args.name === 'shell') return 0;
+  return 1;
+}
+
 /** Classify a tool error string into a friction kind. */
 export function classifyToolError(content: string): ToolObservation['kind'] {
   const s = content.toLowerCase();

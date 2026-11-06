@@ -1,3 +1,4 @@
+import type { KernelObserveSnapshot } from '../runtime/kernel/observe.js';
 import { join } from 'node:path';
 import { resolvePaths } from '../core/paths.js';
 import { readFile } from 'node:fs/promises';
@@ -70,6 +71,8 @@ export interface ChatState {
   /** The rolling memory note (what the agent remembers), or null before the first condensation. */
   memoryNote: string | null;
   usage: ChatUsage | null;
+  /** Observe-only kernel snapshot (phase, active capabilities, cadence, savings). */
+  kernel?: KernelObserveSnapshot | null;
   run: { id: string; alive: boolean; phase?: string; done?: number; tasks?: number } | null;
   /** Helpers (subagents) for the current message. */
   helpers: Helper[];
@@ -221,6 +224,7 @@ export async function serveChat(
       routing: session.chatRouting ?? null,
       context: session.context ?? null,
       memoryNote: session.chatMemoryNote ?? null,
+      kernel: session.chatKernel,
       usage: t
         ? {
             startedAt: t.startedAt ?? null,

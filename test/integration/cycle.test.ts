@@ -57,8 +57,10 @@ describe('M1: one full cycle with the scripted provider', () => {
     const req = provider.requests[0];
     const prefix = req?.system.map((b) => b.text).join('\n\n') ?? '';
     expect(prefix).not.toContain('Evidence from earlier attempts');
-    const first = req?.messages[0]?.content[0];
-    const text = first?.type === 'text' ? first.text : '';
+    // Slot 6 and Slot 7 are separate text blocks of the first message.
+    const text = (req?.messages[0]?.content ?? [])
+      .map((b) => (b.type === 'text' ? b.text : ''))
+      .join('\n\n');
     expect(text.match(/# Evidence from earlier attempts/g)).toHaveLength(1);
     expect(text).toContain('- typecheck failed: add() returns string');
   });

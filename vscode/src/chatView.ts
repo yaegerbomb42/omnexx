@@ -491,6 +491,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     <button data-suggest="Find likely bugs in the code I changed recently and fix them.">Review recent changes</button>
   </div>
 </section>
+<div id="kernel-observe" class="kernel-observe" hidden></div>
 <details id="crew" class="section crew" open hidden>
   <summary><span class="chev" aria-hidden="true"></span><span class="h">Crew</span><span class="sub-h">helpers report to omnexx</span><span id="crew-count" class="count"></span></summary>
   <div id="crew-telemetry" class="telemetry" hidden></div>

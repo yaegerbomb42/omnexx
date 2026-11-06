@@ -107,15 +107,31 @@ export async function resolveRunDeps(
       ...(ep.headers ? { headers: ep.headers } : {}),
       ...(io.fetch ? { fetch: io.fetch } : {}),
     };
-    const extra = (ep.api_key_envs ?? []).flatMap((n) => {
+    const extraNamed = (ep.api_key_envs ?? []).flatMap((n) => {
       const k = io.env[n]?.trim();
-      return k && k !== apiKey ? [k] : [];
+      return k && k !== apiKey ? [{ env: n, key: k }] : [];
     });
+    const extra = extraNamed.map((x) => x.key);
     secrets.push(...extra);
-    const keys = [...new Set([...(apiKey ? [apiKey] : []), ...extra])];
+    // Key slots by env var NAME only (never the key) so a rejected key can be reported.
+    const slots: { env: string; key: string }[] = [];
+    for (const x of [
+      ...(apiKey ? [{ env: ep.api_key_env ?? name, key: apiKey }] : []),
+      ...extraNamed,
+    ])
+      if (!slots.some((y) => y.key === x.key)) slots.push(x);
+    const keys = slots.map((x) => x.key);
     const inner =
       keys.length > 1
-        ? withKeyRotation(keys.map((k) => makeEndpointProvider(ep.kind, { ...opts, apiKey: k })))
+        ? withKeyRotation(
+            keys.map((k) => makeEndpointProvider(ep.kind, { ...opts, apiKey: k })),
+            undefined,
+            (i, status) => {
+              io.stderr.write(
+                `omnexx: ${name}: ${slots[i]?.env ?? `key ${String(i + 1)}`} was rejected (HTTP ${String(status)}); skipping it for this run\n`,
+              );
+            },
+          )
         : makeEndpointProvider(ep.kind, opts);
     // Weaker and local models often emit broken tool JSON; repair it before the loop sees it.
     const repaired = withToolRepair(inner);

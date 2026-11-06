@@ -8,12 +8,14 @@
  */
 import {
   cacheHitPercent,
+  cacheSaved,
   contextPercent,
   escapeHtml,
   formatTokens,
   formatUsd,
   type Usage,
 } from './render.js';
+import { kernelObserveHtml, type KernelSnapshot } from './kernelObserve.js';
 
 export interface StatsInput {
   usage: (Usage & { startedAt: number | null }) | null;
@@ -63,7 +65,13 @@ const skeleton = `<div class="ls-skeleton" aria-hidden="true">
 export function liveStatsHtml(s: StatsInput = last): string {
   const u = s.usage;
   const rows: string[] = [];
-  if (u) rows.push(barRow('Cache Hit', `${String(cacheHitPercent(u))}%`, cacheHitPercent(u)));
+  if (u) {
+    rows.push(barRow('Cache Hit', `${String(cacheHitPercent(u))}%`, cacheHitPercent(u)));
+    const saved = cacheSaved(u);
+    rows.push(
+      `<div class="ls-row"><span class="ls-label">Cache Saved</span><span class="ls-value">${escapeHtml(formatTokens(saved.tokens))} tok · ${escapeHtml(formatUsd(saved.usd))}</span></div>`,
+    );
+  }
   const rate = successRate(u);
   if (rate !== null) rows.push(barRow('Success Rate', `${String(rate)}%`, rate));
   if (s.context && s.context.limit > 0) {
@@ -112,6 +120,7 @@ export function telemetryHtml(s: StatsInput = last): string {
     tps !== null ? cell('Tokens/sec', `${formatTokens(tps)}/s avg`) : '',
     cell('Est. cost', formatUsd(u.usd)),
     cell('Cache hit', `${String(cacheHitPercent(u))}%`),
+    cell('Cache saved', formatUsd(cacheSaved(u).usd)),
   ].filter((c) => c !== '');
   return cells.join('<span class="t-div" aria-hidden="true"></span>');
 }
@@ -125,6 +134,7 @@ function paint(id: string, html: string): void {
 export function refresh(): void {
   paint('token-budget', tokenBudgetHtml());
   paint('live-stats', liveStatsHtml());
+  if (lastKernel) updateKernel(lastKernel, last.usage);
   const strip = document.getElementById('crew-telemetry');
   if (strip) {
     const html = telemetryHtml();
@@ -137,4 +147,18 @@ export function refresh(): void {
 export function update(s: StatsInput): void {
   last = { usage: s.usage, context: s.context };
   refresh();
+}
+
+/** Paint every observe-only Kernel card on the page (chat panel + Settings → Agent). */
+let lastKernel: KernelSnapshot | null | undefined;
+
+export function updateKernel(k: KernelSnapshot | null | undefined, u?: Usage | null): void {
+  lastKernel = k;
+  const html = kernelObserveHtml(k, u);
+  for (const id of ['kernel-observe', 'kernel-observe-settings']) {
+    const node = document.getElementById(id);
+    if (!node) continue;
+    if (node.innerHTML !== html) node.innerHTML = html;
+    node.hidden = html === '';
+  }
 }

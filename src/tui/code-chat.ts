@@ -1,3 +1,7 @@
+import {
+  snapshotFromAllocateEvent,
+  type KernelObserveSnapshot,
+} from '../runtime/kernel/observe.js';
 import { turnTraceLine } from '../telemetry/humanize.js';
 import { emptyTrace, pushTrace, type TraceAcc } from '../telemetry/turn-trace.js';
 import { thinkingGist } from '../telemetry/narrate.js';
@@ -630,7 +634,11 @@ export class CodeChat {
     return { system, tools, conversation: Math.max(0, this.contextUsed - system - tools) };
   }
 
+  /** Latest observe-only kernel snapshot (from `kernel.allocate`), or null. */
+  kernelSnapshot: KernelObserveSnapshot | null = null;
+
   private onEvent(e: OmnexxEvent): void {
+    if (e.type === 'kernel.allocate') this.kernelSnapshot = snapshotFromAllocateEvent(e);
     const closed = this.showTrace ? pushTrace(this.traceAcc, e) : undefined;
     const v = this.view;
     if (!v) return;
