@@ -37,6 +37,15 @@ SonarCloud findings from the #20 integration merge are still open.
 
 ### Session log
 
+- **2026-11-05 (single agent), branch `feat/doom-loop-hard-stop`:** doom-loop detector
+  that hard-stops a stuck run as `stuck` — result-aware identical-call counting in
+  `InCycleWatch` (a repeated call only counts when its result is also identical;
+  errored calls never count), a run-level idle-cycle detector (`isIdleCycle` in
+  `src/guard/stuck.ts`, counted in VERIFY, tripped in `guardPre` at
+  `stuck.max_idle_cycles`, default 3), a terminal `stuck` run status (exit 2), and
+  the idle count + task + accepted commits in the run reason and report. Autonomous
+  runs are exempt from the idle trip (they park stalled work and move on).
+
 - **2026-10-28 (4-agent UI polish), branch `feat/vscode-ui-polish`:** VS Code panel polish across chat/settings/stats: CSS design tokens (spacing, 12px/8px radii, easing, glass, typography, hue-shift hovers, press/lift micro-motion), chat onboarding + welcome cards + message chrome (avatars, timestamps, brand mark, thinking depth/counts, grouped tool clusters, busy phase copy, numbered code blocks, copy feedback), settings nav pill + count badges + model-picker skeletons/search/capability tags + provider pulse/hue/selected checks, stats live card + budget tones + telemetry dividers + posture/crew/inspector polish. Presentation only; no data flow or extension-host messages changed. New CSS hooks wired in the same branch (msg-_, code-_, suggestion-_, working-copy, ls-skeleton, t-div, head-agent-pill, wire-_, b-visual-bar, nav-pill, set-count, mp-*, pulse, t-check, kbd). Gates: tsc, eslint, prettier on touched .ts files, affected vitest files pass; CSS validated by parse + brace balance (no pixel check in VM).
 
 - **2026-10-28 (single agent), uncommitted, on the clone's main checkout:** context value per token + cache reuse. (1) Stable-prefix refinement: only the clock block is volatile now — codemap/goal/settings/facts/notes were all marked volatile, shrinking the cached stable segment to just the system prompt; the breakpoint now sits on the last stable block, `pinPrefix` strips stale breakpoints from volatile blocks, and the frozen-prefix digest ignores volatile blocks. (2) Slot 7 tail-clamp: over-long living state now drops the oldest entries instead of the newest running-context entries. Gates green: tsc, lint, format, 57/57 affected tests (7 new).
