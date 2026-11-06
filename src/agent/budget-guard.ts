@@ -1,15 +1,14 @@
 import type { ContentBlock, Message } from '../providers/types.js';
 import { contextTokens } from './compaction.js';
+import { ContextPlanner } from './context-planner.js';
 
 /**
  * The last line of defence for the user's context budget: when pruning and folding still leave
- * the history over it (one huge tool result, a fold that failed), replace the largest blocks with
- * a digest until it fits. A digest keeps the head and tail lines and says how to get the rest
- * back (the bash log id, or the same call again). The first message (goal and working state) is
- * never touched. Pure: returns new messages.
+ * the history over it, ContextPlanner evaluates legal downgrades to structural digests/stubs
+ * until the budget ceiling is satisfied. The first message (goal and working state) is never touched.
  */
 
-export const DIGEST_PREFIX = '[digest by omnexx:';
+export const DIGEST_PREFIX = '[digest';
 const DIGEST_LINES = 6;
 const DIGEST_LINE_CHARS = 200;
 /** Blocks shorter than this can't be shrunk meaningfully. */
@@ -25,7 +24,7 @@ export function digest(content: string): string {
   const log = LOG_ID.exec(content)?.[1];
   const back = log ? `read_log id="${log}" has it all` : 'repeat the call for the full output';
   return [
-    `${DIGEST_PREFIX} ${content.length} chars, ${lines.length} lines; ${back}]`,
+    `[digest by omnexx: ${content.length} chars, ${lines.length} lines; ${back}]`,
     ...head,
     ...(tail.length ? ['…', ...tail] : []),
   ].join('\n');
@@ -86,6 +85,19 @@ export function enforceBudget(
 ): GuardOutcome {
   let tokens = contextTokens(messages);
   if (tokens <= budget) return { messages: [...messages], digested: 0, tokens };
+
+  // Use ContextPlanner to plan and execute budget enforcement with pair integrity
+  const planner = new ContextPlanner();
+  const plan = planner.plan(messages, budget);
+  if (plan.actions.length > 0 && !spareNewest) {
+    const applied = planner.applyPlan(messages, plan);
+    tokens = contextTokens(applied);
+    if (tokens <= budget) {
+      return { messages: applied, digested: plan.actions.length, tokens };
+    }
+  }
+
+  // Fallback / spareNewest mode: safely digest spots respecting spareNewest and message 0
   let current = [...messages];
   let digested = 0;
   const newest = newestTurnStart(messages);

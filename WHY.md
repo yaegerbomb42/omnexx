@@ -82,10 +82,12 @@
   - Created `src/agent/milestone-compactor.ts` with `foldMilestoneCheckpoint`, `formatMilestoneRecap`, `extractFilesTouched`, and `extractVerificationCommand`.
   - Automatically folds intermediate trial-and-error discussion turns (up to 10 turns) into a structured 3-line milestone recap (`Milestone X complete: ... - Changed: ... - Verified via: ...`) upon subtask/milestone commit, preserving the system prompt and reducing working context by >70-80% for subsequent subtasks.
   - Exported through `src/agent/compaction.ts` and added unit test suite in `test/unit/agent/milestone-compactor.test.ts`. PR #376.
-- **2026-10-28 (Task 8: Dynamic Phase-Based Model Router)**:
-  - Implemented dynamic phase-aware model tiering in `src/router/stage.ts` and integrated into `src/router/router.ts` and `src/router/classify.ts`.
-  - Defined 3 task execution stages:
-    1. `Exploration & Tool Output Filtering`: routes grepping, listing directories, reading ASTs, and summarizing to Fast/Low-Cost models (Gemini Flash, Claude Haiku, Qwen 2.5 14B).
-    2. `Architecture & Core Implementation`: routes planning, replanning, splitting, refactoring, and patch design to High-Reasoning models (Claude Sonnet 3.7 / Opus, DeepSeek-R1, GPT-4o).
-    3. `Test Verification & Lint Triage`: routes test execution and lint triage to Fast/Low-Cost models (local Ollama / small models).
-  - Added unit test suite in `test/unit/router/stage-router.test.ts`. PR #377.
+- **2026-11-05 (Task 9: Optimal Cache-Aware Context Planner & Supersede Index)**:
+  - Replaced naive per-turn context compaction heuristics with a unified, cache-aware, causally informed Context Engine 2.0 (`ContextPlanner` and `SupersedeIndex`).
+  - Implemented `TokenCounter` in `src/core/token-count.ts` with `WeakMap<ContentBlock, TokenEstimate>` memoization, provider usage calibration via EMA, and deterministic key sorting.
+  - Implemented `SupersedeIndex` and `LineIntervalSet` in `src/agent/supersede-index.ts` with interval line-range coverage across edit epochs, shell mutation detection, and 64-bit FNV-1a MinHash LSH near-duplicate clustering.
+  - Implemented `ContextPlanner` in `src/agent/context-planner.ts` with multiple-choice representation lattice (`FULL -> DIGEST -> STUB`), representation floors for error traces/active edits, CPU-only structural digesters, and `foldPaysOff` cache-epoch gating.
+  - Enforced strict `tool_use` and `tool_result` pairing invariants and message 0 immutability in `applyPlan()`.
+  - Refactored `src/agent/budget-guard.ts` to delegate to `ContextPlanner` while maintaining 100% backwards-compatible public signatures.
+  - Verified with comprehensive test suite in `test/unit/agent/context-planner.test.ts` (11 tests) and passed the entire repository test suite (317 test files, 2,061 tests green). PR #393.
+
