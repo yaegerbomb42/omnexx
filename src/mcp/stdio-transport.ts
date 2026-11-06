@@ -48,8 +48,20 @@ export class NodeStdioClientTransport implements Transport {
     }
 
     return new Promise((resolve, reject) => {
+      // An allowlisted env must be used verbatim: merging process.env back in would hand every
+      // host secret to the server. PATH is the only inherited extra, so bare commands still spawn.
+      const env: NodeJS.ProcessEnv =
+        this._params.env === undefined
+          ? process.env
+          : {
+              ...this._params.env,
+              ...(this._params.env.PATH === undefined && process.env.PATH !== undefined
+                ? { PATH: process.env.PATH }
+                : {}),
+            };
+
       const child = spawn(this._params.command, this._params.args ?? [], {
-        env: this._params.env ? { ...process.env, ...this._params.env } : process.env,
+        env,
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: false,
         cwd: this._params.cwd,
@@ -118,11 +130,27 @@ export class NodeStdioClientTransport implements Transport {
       this._process = undefined;
       if (proc.pid !== undefined) unregisterChild(proc.pid);
 
+      let closed = proc.exitCode !== null || proc.signalCode !== null;
       const closePromise = new Promise<void>((resolve) => {
+        if (closed) {
+          resolve();
+          return;
+        }
         proc.once('close', () => {
+          closed = true;
           resolve();
         });
       });
+
+      /** Wait for `close`, but never longer than `ms`; the timer must not keep the process alive. */
+      const waitForClose = (ms: number): Promise<void> => {
+        const timeout = new Promise<void>((resolve) => {
+          setTimeout(resolve, ms).unref();
+        });
+        return Promise.race([closePromise, timeout]);
+      };
+
+      const alive = (): boolean => !closed && proc.exitCode === null && proc.signalCode === null;
 
       try {
         proc.stdin?.end();
@@ -130,27 +158,25 @@ export class NodeStdioClientTransport implements Transport {
         // ignore
       }
 
-      const timeoutPromise = new Promise<void>((resolve) => {
-        setTimeout(resolve, 2000).unref();
-      });
+      await waitForClose(2000);
 
-      await Promise.race([closePromise, timeoutPromise]);
-
-      if (proc.exitCode === null) {
+      if (alive()) {
         try {
           proc.kill('SIGTERM');
         } catch {
           // ignore
         }
-        await Promise.race([closePromise, timeoutPromise]);
+        await waitForClose(2000);
       }
 
-      if (proc.exitCode === null) {
+      if (alive()) {
         try {
           proc.kill('SIGKILL');
         } catch {
           // ignore
         }
+        // A short grace period so close() resolves without leaving a zombie behind.
+        await waitForClose(500);
       }
     }
     this._readBuffer.clear();
