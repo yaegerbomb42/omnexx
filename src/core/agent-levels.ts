@@ -8,6 +8,18 @@
 export const MIN_LEVEL = 1;
 export const MAX_LEVEL = 10;
 
+/** Per-turn input context budget bounds (`tokens_per_turn`). */
+export const TOKENS_PER_TURN_MIN = 1_000;
+export const TOKENS_PER_TURN_MAX = 256_000;
+
+/** Clamp a per-turn token budget into the settable range (1k–256k). */
+export function clampTokensPerTurn(n: number): number {
+  return Math.min(
+    TOKENS_PER_TURN_MAX,
+    Math.max(TOKENS_PER_TURN_MIN, Math.round(Number.isFinite(n) ? n : TOKENS_PER_TURN_MIN)),
+  );
+}
+
 /** Context budgets in tokens, one per context level (1 = bare, 10 = keep everything). */
 export const CONTEXT_BUDGETS = [
   5_000, 10_000, 20_000, 40_000, 64_000, 96_000, 128_000, 200_000, 500_000, 1_000_000,
@@ -33,6 +45,8 @@ export interface AgentLevels {
   time: TimeChoice;
   /** Output cap per model call, in tokens. */
   maxTokens: number;
+  /** Per-turn input context budget (1k–256k); unset preserves existing behavior. */
+  tokensPerTurn?: number;
 }
 
 export const DEFAULT_LEVELS: AgentLevels = {

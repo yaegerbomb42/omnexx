@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { MAX_LEVEL, MIN_LEVEL, TIME_CHOICES } from '../../core/agent-levels.js';
+import {
+  MAX_LEVEL,
+  MIN_LEVEL,
+  TIME_CHOICES,
+  TOKENS_PER_TURN_MAX,
+  TOKENS_PER_TURN_MIN,
+} from '../../core/agent-levels.js';
 
 const level = z.number().int().min(MIN_LEVEL).max(MAX_LEVEL).optional();
 
@@ -21,6 +27,12 @@ export const agent = z
     time: z.enum(TIME_CHOICES).optional(),
     /** Output cap per model call (providers.anthropic.max_tokens). */
     max_tokens_per_turn: z.number().int().min(256).max(128_000).optional(),
+    /**
+     * Per-turn input context budget (1k–256k tokens), distinct from the output cap. When set it
+     * sizes the frozen prefix, mounted capabilities, tool-output caps and history compaction; the
+     * allocator lives in src/agent/turn-budget.ts.
+     */
+    tokens_per_turn: z.number().int().min(TOKENS_PER_TURN_MIN).max(TOKENS_PER_TURN_MAX).optional(),
     /** Offer the settings at every start (CLI chat and the VS Code panel). */
     ask_on_start: z.boolean().default(true),
   })

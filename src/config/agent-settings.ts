@@ -5,6 +5,7 @@ import type { OmnexxPaths } from '../core/paths.js';
 import {
   agentBrief,
   clampLevel,
+  clampTokensPerTurn,
   contextProfile,
   DEFAULT_LEVELS,
   isTimeChoice,
@@ -49,12 +50,14 @@ export function parseLevels(raw: unknown): AgentLevels {
   const o = isPlain(raw) ? raw : {};
   const level = (v: unknown, d: number): number => clampLevel(num(v) ?? d);
   const tokens = num(o.maxTokens);
+  const perTurn = num(o.tokensPerTurn);
   return {
     taskEffort: level(o.taskEffort, DEFAULT_LEVELS.taskEffort),
     turnEffort: level(o.turnEffort, DEFAULT_LEVELS.turnEffort),
     contextLevel: level(o.contextLevel, DEFAULT_LEVELS.contextLevel),
     time: isTimeChoice(o.time) ? o.time : DEFAULT_LEVELS.time,
     maxTokens: tokens === undefined ? DEFAULT_LEVELS.maxTokens : snapMaxTokens(tokens),
+    ...(perTurn === undefined ? {} : { tokensPerTurn: clampTokensPerTurn(perTurn) }),
   };
 }
 
@@ -98,6 +101,7 @@ export function agentSettingsLayer(s: StoredAgentSettings): Plain {
             context_level: l.contextLevel,
             time: l.time,
             max_tokens_per_turn: l.maxTokens,
+            ...(l.tokensPerTurn === undefined ? {} : { tokens_per_turn: l.tokensPerTurn }),
           }
         : {}),
     },
@@ -111,6 +115,7 @@ interface SetLevels {
   contextLevel?: number;
   time?: AgentLevels['time'];
   maxTokens?: number;
+  tokensPerTurn?: number;
 }
 
 function setLevels(agentTable: unknown): SetLevels {
@@ -123,13 +128,22 @@ function setLevels(agentTable: unknown): SetLevels {
   const turn = pick(a.turn_effort);
   const ctx = pick(a.context_level);
   const tokens = num(a.max_tokens_per_turn);
+  const perTurn = num(a.tokens_per_turn);
+  const safePerTurn = perTurn === undefined ? undefined : clampTokensPerTurn(perTurn);
   return {
     ...(task === undefined ? {} : { taskEffort: task }),
     ...(turn === undefined ? {} : { turnEffort: turn }),
     ...(ctx === undefined ? {} : { contextLevel: ctx }),
     ...(isTimeChoice(a.time) ? { time: a.time } : {}),
     ...(tokens === undefined ? {} : { maxTokens: tokens }),
+    ...(safePerTurn === undefined ? {} : { tokensPerTurn: safePerTurn }),
   };
+}
+
+/** The per-turn input context budget from a merged config, clamped, or undefined when unset. */
+export function tokensPerTurnOf(config: { agent: unknown }): number | undefined {
+  const s = setLevels(config.agent);
+  return s.tokensPerTurn;
 }
 
 /** The first worker model's context window: its profile's, else the family's documented one. */
