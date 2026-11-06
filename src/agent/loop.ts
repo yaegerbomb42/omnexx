@@ -56,7 +56,7 @@ import {
 } from './rolling-memory.js';
 import { turnRequest } from './context.js';
 import { TurnBudgetAllocator, type TurnBudgetPlan } from './turn-budget.js';
-import { RedundantReadTracker, VerificationCoalescer, readSliceKey } from './redundant-read.js';
+import { VerificationCoalescer } from './redundant-read.js';
 import {
   ToolEpoch,
   capabilityDirective,
@@ -544,7 +544,6 @@ export async function runAgentLoop(
   const budgetPlan: TurnBudgetPlan | undefined =
     deps.tokensPerTurn !== undefined ? budgetAllocator.planFor(deps.tokensPerTurn) : undefined;
   // Turn-efficiency deduplication state (unchanged re-reads + redundant verification).
-  const redundantReadTracker = new RedundantReadTracker();
   const verificationCoalescer = new VerificationCoalescer();
   let toolSeq = 0;
   let lastMutationSeq = 0;
@@ -1134,8 +1133,7 @@ export async function runAgentLoop(
       toolSeq += 1;
       const mutationTool = tool?.readOnly !== true;
       if (mutationTool) {
-        // Any mutating tool invalidates the unchanged-read and verification caches.
-        redundantReadTracker.invalidate();
+        // Any mutating tool invalidates the verification cache.
         verificationCoalescer.invalidate();
         lastMutationSeq = toolSeq;
       }
@@ -1218,40 +1216,11 @@ export async function runAgentLoop(
           } else {
             // --- Turn-efficiency short-circuits (neither runs the underlying tool) ---
             let shortCircuit: string | undefined;
-            const readData = parsed.data as {
-              path?: unknown;
-              refresh?: unknown;
-              start?: unknown;
-              end?: unknown;
-              anchors?: unknown;
-            };
-            // Unchanged file re-read: the exact slice was read since the last mutation, so it is
-            // already in context — return a tiny pointer instead of re-sending thousands of tokens.
-            if (
-              tool.name === 'read' &&
-              readData.refresh !== true &&
-              typeof readData.path === 'string'
-            ) {
-              const sliceKey = readSliceKey(
-                readData.path,
-                typeof readData.start === 'number' ? readData.start : undefined,
-                typeof readData.end === 'number' ? readData.end : undefined,
-                readData.anchors === true,
-              );
-              if (redundantReadTracker.record(readData.path, sliceKey)) {
-                shortCircuit =
-                  '[already in context] — this file slice was read earlier and nothing has changed since (use read with refresh:true to force the bytes).';
-                redundantReadTracker.noteSavedTokens(0);
-                deps.events.emit('loop.redundant_read', {
-                  path: readData.path,
-                  slice: sliceKey,
-                  turn: turns,
-                });
-              }
-            }
+            // Unchanged re-reads are handled by the read tool's own guard, which reports the
+            // tokens saved so the usage ledger records them as repeat_read savings.
             // Redundant verification: the exact same read-only checker ran back-to-back with zero
             // mutating tools since, so the tree is unchanged — short-circuit to "already green".
-            if (!shortCircuit) {
+            {
               const cmd = (parsed.data as { command?: unknown }).command;
               const isShell = tool.name === 'bash' || tool.name === 'shell' || tool.name === 'run';
               if (

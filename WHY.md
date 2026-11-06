@@ -90,4 +90,3 @@
   - Enforced strict `tool_use` and `tool_result` pairing invariants and message 0 immutability in `applyPlan()`.
   - Refactored `src/agent/budget-guard.ts` to delegate to `ContextPlanner` while maintaining 100% backwards-compatible public signatures.
   - Verified with comprehensive test suite in `test/unit/agent/context-planner.test.ts` (11 tests) and passed the entire repository test suite (317 test files, 2,061 tests green). PR #393.
-
