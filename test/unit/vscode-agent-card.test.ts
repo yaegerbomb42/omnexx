@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { AGENT_META } from '../../src/cli/chat-agent-settings.js';
 import {
+  applyModePreset,
+  detectMode,
   meaning,
+  MODE_PRESETS,
   position,
   steps,
   withPosition,
@@ -36,5 +39,35 @@ describe('VS Code agent card', () => {
     expect(levels.time).toBe('30m');
     expect(withPosition('maxTokens', 7, levels, meta).maxTokens).toBe(64_000);
     expect(withPosition('taskEffort', 9, levels, meta).taskEffort).toBe(9);
+  });
+
+  it('applies mode presets to update all 5 settings simultaneously', () => {
+    expect(MODE_PRESETS.efficient.taskEffort).toBe(3);
+    const efficient = applyModePreset('efficient');
+    expect(efficient.taskEffort).toBe(3);
+    expect(efficient.turnEffort).toBe(3);
+    expect(efficient.contextLevel).toBe(4);
+    expect(efficient.time).toBe('30m');
+    expect(efficient.maxTokens).toBe(4_096);
+    expect(detectMode(efficient)).toBe('efficient');
+
+    const normal = applyModePreset('normal');
+    expect(normal.taskEffort).toBe(5);
+    expect(normal.turnEffort).toBe(5);
+    expect(normal.contextLevel).toBe(6);
+    expect(normal.time).toBe('2h');
+    expect(normal.maxTokens).toBe(16_000);
+    expect(detectMode(normal)).toBe('normal');
+
+    const extreme = applyModePreset('extreme');
+    expect(extreme.taskEffort).toBe(9);
+    expect(extreme.turnEffort).toBe(9);
+    expect(extreme.contextLevel).toBe(9);
+    expect(extreme.time).toBe('8h');
+    expect(extreme.maxTokens).toBe(32_000);
+    expect(detectMode(extreme)).toBe('extreme');
+
+    // Custom levels return null for detectMode
+    expect(detectMode(levels)).toBeNull();
   });
 });

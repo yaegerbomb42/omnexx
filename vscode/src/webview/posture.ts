@@ -10,6 +10,7 @@
  * overrides the user value, the host reports that source and the pill shows it, with a note.
  */
 import { escapeHtml } from './render.js';
+import * as agentCard from './agentCard.js';
 
 type Post = (msg: Record<string, unknown>) => void;
 
@@ -123,5 +124,6 @@ export function wire(post: Post): void {
     current = mode;
     render();
     post({ type: 'setExecutionMode', mode });
+    agentCard.setMode(mode, post);
   });
 }
