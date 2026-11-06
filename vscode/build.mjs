@@ -45,7 +45,9 @@ await build({
   minify: true,
   // Optional browser engines stay out; the browser tool explains how to add them.
   external: ['playwright-core', 'camoufox-js', 'react-devtools-core'],
-  banner: { js: "import{createRequire as __cr}from'module';const require=__cr(import.meta.url);" },
+  banner: {
+    js: "import{createRequire as __cr}from'module';import{fileURLToPath as __futp}from'url';import{dirname as __dn}from'path';const require=__cr(import.meta.url);const __filename=__futp(import.meta.url);const __dirname=__dn(__filename);",
+  },
 });
 
 console.log(`built extension + bundled omnexx ${version}`);
