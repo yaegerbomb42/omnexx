@@ -130,6 +130,10 @@ export class ResultsWriter {
         m.cached.toLocaleString(),
         seconds(m.wall_ms),
         String(m.interventions),
+        String(m.turns ?? '-'),
+        m.re_read_ratio === undefined ? '-' : (m.re_read_ratio * 100).toFixed(0) + '%',
+        m.verified_after_last_edit === undefined ? '-' : m.verified_after_last_edit ? '✅' : '❌',
+        m.failure_label ?? '-',
         ...efficiencyCells(m.efficiency),
       ].join(' | ')} |\n`;
     }
@@ -150,9 +154,12 @@ const BASE_COLUMNS = [
   'Cached',
   'Wall Time',
   'Interventions',
+  'Turns',
+  'Re-read',
+  'Verified',
+  'Fail Label',
 ];
 const EFFICIENCY_COLUMNS = [
-  'Turns',
   'Calls/turn',
   'Multi-call turns',
   'Bookkeeping',
@@ -219,6 +226,10 @@ export function summaryRow(agent: string, rows: readonly TaskRunResult[]): strin
     sum((m) => m.cached).toLocaleString(),
     seconds(sum((m) => m.wall_ms) / ms.length),
     String(sum((m) => m.interventions)),
+    String(Math.round(mean(ms.map((m) => m.turns ?? 0)))),
+    '-',
+    '-',
+    '-',
     ...efficiencyCells(eff),
   ].join(' | ')} |\n`;
 }

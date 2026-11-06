@@ -2,6 +2,16 @@
 
 import type { Efficiency } from './efficiency.ts';
 
+/** Labels for why a run did not resolve. */
+export type FailureLabel =
+  | 'never verified'
+  | 'bad edit'
+  | 'incomplete propagation'
+  | 'stuck loop'
+  | 'gave up'
+  | 'context overflow'
+  | 'env/bench';
+
 export interface BenchmarkResult {
   /** Whether the agent successfully resolved the task. */
   resolved: boolean;
@@ -23,6 +33,14 @@ export interface BenchmarkResult {
   provider_outage_ms?: number;
   /** Turns, tool calls per turn, gate and idle time; only for harnesses that log events. */
   efficiency?: Efficiency;
+  /** Number of turns (model calls) when reported by the harness. */
+  turns?: number;
+  /** Share of file reads that re-read a file already read this run. */
+  re_read_ratio?: number;
+  /** Whether verification ran after the last edit. */
+  verified_after_last_edit?: boolean;
+  /** Failure label, when the run did not resolve. */
+  failure_label?: FailureLabel;
 }
 
 /** What a runner returns: metrics (resolved is overwritten by the hidden check) and where the work is. */

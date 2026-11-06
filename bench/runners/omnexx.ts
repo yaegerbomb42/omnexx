@@ -7,7 +7,7 @@ import { AgentRunner } from './base.ts';
 import { meterMetrics, type Meter } from '../meter-metrics.ts';
 import { efficiency, readRunEvents } from '../efficiency.ts';
 import { providerOutageMs } from '../outage.ts';
-import type { AgentRunOutput, BenchmarkResult, TaskDef } from '../types.ts';
+import type { AgentRunOutput, BenchmarkResult, FailureLabel, TaskDef } from '../types.ts';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const CLI = join(REPO_ROOT, 'dist/cli.js');
@@ -33,6 +33,8 @@ export interface OmnexxRunnerOptions {
   beyond?: boolean;
   /** One model for every role; the user's pool and roles are then left out entirely. */
   model?: string | undefined;
+  /** A/B switch: run Omnexx with new features on (true) or off (false). */
+  features?: boolean;
   /** lean: 0.8 defaults (codemap optional). full: every context section pinned (pre-0.8). */
   context?: 'lean' | 'full';
   /** A metering proxy every model call goes through; `model` is then that endpoint's model id. */
@@ -95,6 +97,8 @@ export class OmnexxRunner extends AgentRunner {
           judge: this.opts.judge ?? false,
           endpoint: this.opts.meter?.url,
         }),
+        // A/B: the read guard is on by default, so the baseline run turns it off explicitly.
+        ...(this.opts.features === false ? { OMNEXX_CONTEXT_READ_GUARD: '0' } : {}),
         CI: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -115,10 +119,20 @@ export class OmnexxRunner extends AgentRunner {
     const events = await readRunEvents(`${workDir}.run`);
     const outage = providerOutageMs(events);
     const eff = efficiency(events, { start, end: start + wall_ms });
+    const reRead = reReadRatio(events);
+    const verifiedAfterLastEdit = verifiedAfterLastEditEvent(events);
+    const turns = eff?.turns;
+    const failureLabel = metrics.resolved ? undefined : failureLabelFrom(events, timedOut);
     return {
       ...metrics,
       ...(outage ? { provider_outage_ms: outage } : {}),
       ...(eff ? { efficiency: eff } : {}),
+      ...(turns !== undefined ? { turns } : {}),
+      ...(reRead !== undefined ? { re_read_ratio: reRead } : {}),
+      ...(verifiedAfterLastEdit !== undefined
+        ? { verified_after_last_edit: verifiedAfterLastEdit }
+        : {}),
+      ...(failureLabel ? { failure_label: failureLabel } : {}),
       interventions: timedOut ? 1 : 0,
       resultDir: state.worktree,
     };
@@ -137,6 +151,78 @@ export function metricsFromState(state: RunState, wall_ms: number): BenchmarkRes
     wall_ms,
     interventions: 0,
   };
+}
+
+/** Tool inputs are stored as the JSON string the model sent; older events may hold an object. */
+function eventInput(e: RunEvent): { path?: string; file?: string } | undefined {
+  if (typeof e.input !== 'string') return e.input;
+  try {
+    return JSON.parse(e.input) as { path?: string; file?: string };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Share of file-read tool calls that re-read a path already read earlier in the run. */
+function reReadRatio(events: RunEvent[]): number | undefined {
+  const readEvents = events.filter(
+    (e) => e.type === 'tool.call' && String(e.tool).toLowerCase().includes('read'),
+  );
+  const seen = new Set<string>();
+  let reads = 0;
+  let reReads = 0;
+  for (const e of readEvents) {
+    const input = eventInput(e);
+    const path = input ? (input.path ?? input.file ?? '') : '';
+    if (!path) continue;
+    reads++;
+    if (seen.has(path)) reReads++;
+    else seen.add(path);
+  }
+  return reads ? Math.round((reReads / reads) * 1000) / 1000 : undefined;
+}
+
+/** Whether a verify/loop.gates event occurred after the last edit-like tool call. */
+function verifiedAfterLastEditEvent(events: RunEvent[]): boolean | undefined {
+  const editTools = new Set(['edit', 'write', 'str_replace', 'apply_diff', 'patch']);
+  let lastEditMs: number | undefined;
+  let lastVerifyMs: number | undefined;
+  for (const e of events) {
+    if (e.type === 'tool.call' && editTools.has(String(e.tool).toLowerCase())) {
+      lastEditMs = e.ts;
+    }
+    if (e.type === 'verify.gates' || e.type === 'loop.gates') {
+      lastVerifyMs = e.ts;
+    }
+  }
+  if (lastEditMs === undefined) return undefined;
+  return lastVerifyMs !== undefined && lastVerifyMs > lastEditMs;
+}
+
+/** Best-effort failure label from the run's events and timeout status. */
+function failureLabelFrom(events: RunEvent[], timedOut: boolean): FailureLabel {
+  if (timedOut) return 'gave up';
+  const types = new Set(events.map((e) => e.type));
+  const hasStuck = events.some(
+    (e) => e.type === 'stuck.in_cycle' || e.type === 'budget.preflight_stop',
+  );
+  if (types.has('provider.failover') && !types.has('provider.recovered')) return 'context overflow';
+  if (types.has('provider.give_up')) return 'env/bench';
+  if (hasStuck) return 'stuck loop';
+  // Default: never verified if no gate events at all
+  if (!events.some((e) => e.type === 'verify.gates' || e.type === 'loop.gates')) {
+    return 'never verified';
+  }
+  return 'bad edit';
+}
+
+/** Run event shape used by the efficiency module and here. */
+interface RunEvent {
+  ts: number;
+  type: string;
+  tool?: string;
+  input?: { path?: string; file?: string } | string;
+  [key: string]: unknown;
 }
 
 /**

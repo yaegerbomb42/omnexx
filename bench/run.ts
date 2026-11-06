@@ -1,6 +1,7 @@
 import { program } from 'commander';
 import { join, resolve } from 'node:path';
 import { getHard10Suite, getJimmy10Suite, getWeb5Suite } from './suites/index.ts';
+import { getLong5Suite } from './suites/long5/index.ts';
 import { OmnexxRunner } from './runners/omnexx.ts';
 import {
   anthropicEndpointFromEnv,
@@ -10,6 +11,7 @@ import {
 import { CodexRunner } from './runners/codex.ts';
 import { ClineRunner } from './runners/cline.ts';
 import { OpenHandsRunner } from './runners/openhands.ts';
+import { OpenCodeRunner } from './runners/opencode.ts';
 import { endpointFromEnv, startMeter, type Meter } from './meter.ts';
 import { cachedSetup, planJobs, runPool, tagLines, type Job } from './pool.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -31,6 +33,7 @@ const SUITES: Record<string, () => Suite> = {
   jimmy10: getJimmy10Suite,
   web5: getWeb5Suite,
   hard10: getHard10Suite,
+  long5: getLong5Suite,
 };
 
 interface RunnerOpts {
@@ -38,6 +41,7 @@ interface RunnerOpts {
   budget: number;
   model?: string | undefined;
   context: 'lean' | 'full';
+  features: boolean;
   meter?: Meter | undefined;
   judge: boolean;
   /** claude-code: the endpoint's Anthropic-compatible URL (PREFIX_ANTHROPIC_BASE_URL). */
@@ -59,11 +63,19 @@ const RUNNERS: Record<string, (o: RunnerOpts) => AgentRunner> = {
       budgetUsd: o.budget,
       model: o.model,
       context: o.context,
+      features: o.features,
       meter: o.meter,
       judge: o.judge,
     }),
   cline: (o) => new ClineRunner(needMeter(o)),
   openhands: (o) => new OpenHandsRunner(needMeter(o)),
+  opencode: (o) =>
+    new OpenCodeRunner({
+      meter: needMeter(o).meter,
+      model: needMeter(o).model,
+      hours: o.hours,
+      features: o.features,
+    }),
   'claude-code': (o) => {
     // Without an Anthropic-format URL, claude would silently bill the user's own login instead
     // of the endpoint every other agent uses.
@@ -88,6 +100,7 @@ interface Opts {
   budget: string;
   model?: string;
   context: string;
+  features?: string;
   endpoint?: string;
   judge?: boolean;
   concurrency: string;
@@ -97,7 +110,18 @@ interface Opts {
 /** 61_234 → "61k". */
 const fmtK = (n: number): string => (n >= 1_000 ? `${String(Math.round(n / 1_000))}k` : String(n));
 
-const ZERO = { usd: 0, tokens_in: 0, tokens_out: 0, cached: 0, wall_ms: 0, interventions: 0 };
+const ZERO = {
+  usd: 0,
+  tokens_in: 0,
+  tokens_out: 0,
+  cached: 0,
+  wall_ms: 0,
+  interventions: 0,
+  turns: 0,
+  re_read_ratio: 0,
+  verified_after_last_edit: false,
+  failure_label: 'env/bench' as const,
+};
 
 async function main(): Promise<void> {
   program
@@ -120,6 +144,7 @@ async function main(): Promise<void> {
       'omnexx: lean (0.8 defaults) or full (every section pinned)',
       'lean',
     )
+    .option('--features <mode>', 'omnexx: new features on or off (A/B)', 'on')
     .option(
       '--endpoint <prefix>',
       'one OpenAI-compatible endpoint for every agent, metered the same way, from env vars PREFIX_BASE_URL, PREFIX_MODEL, PREFIX_API_KEY',
@@ -148,6 +173,7 @@ async function main(): Promise<void> {
   if (endpoint) await mkdir(resultsDir(config.out), { recursive: true });
   const callsLog = join(resultsDir(config.out), 'calls.jsonl');
   if (opts.context !== 'lean' && opts.context !== 'full') fail('--context is lean or full');
+  if (opts.features !== 'on' && opts.features !== 'off') fail('--features is on or off');
   const quick = opts.quick === true;
   const concurrency = quick ? 64 : positiveInt('--concurrency', opts.concurrency);
   const reps = positiveInt('--reps', opts.reps);
@@ -156,6 +182,7 @@ async function main(): Promise<void> {
     budget: Number(opts.budget),
     model: endpoint?.model ?? opts.model,
     context: opts.context,
+    features: opts.features !== 'off',
     judge: opts.judge ?? false,
     anthropic: opts.endpoint ? anthropicEndpointFromEnv(process.env, opts.endpoint) : undefined,
     endpointGiven: opts.endpoint !== undefined,
@@ -229,12 +256,26 @@ async function main(): Promise<void> {
       };
       say(`${resolved ? 'PASS' : 'FAIL'} ${summary(metrics)}`);
     } catch (error) {
-      console.error(tagLines(tag, `ERROR ${String(error)}`));
+      const errMsg = String(error);
+      const timedOut = errMsg.includes('timed out') || errMsg.includes('Timeout');
+      const failureLabel = timedOut
+        ? 'gave up'
+        : errMsg.includes('meter') ||
+            errMsg.includes('endpoint') ||
+            errMsg.includes('EADDRNOTAVAIL')
+          ? 'env/bench'
+          : 'never verified';
+      console.error(tagLines(tag, `ERROR ${errMsg}`));
       result = {
         ...base,
-        metrics: { ...ZERO, resolved: false },
+        metrics: {
+          ...ZERO,
+          resolved: false,
+          failure_label: failureLabel,
+          wall_ms: Date.now() - new Date(startedAt).getTime(),
+        },
         finishedAt: new Date().toISOString(),
-        error: String(error),
+        error: errMsg,
       };
     } finally {
       clearInterval(ticker);

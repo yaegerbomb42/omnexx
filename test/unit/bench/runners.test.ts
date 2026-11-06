@@ -3,6 +3,7 @@ import {
   createFakeOmnexxRunner,
   createFakeClaudeCodeRunner,
   createFakeCodexRunner,
+  createFakeOpenCodeRunner,
 } from '../../../bench/runners/index.ts';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
@@ -93,6 +94,7 @@ describe('Fake runners for testing', () => {
     expect(createFakeOmnexxRunner().agentName).toBe('omnexx');
     expect(createFakeClaudeCodeRunner().agentName).toBe('claude-code');
     expect(createFakeCodexRunner().agentName).toBe('codex');
+    expect(createFakeOpenCodeRunner().agentName).toBe('opencode');
   });
 
   it('fake runners isAvailable returns true by default', async () => {
@@ -101,6 +103,27 @@ describe('Fake runners for testing', () => {
     await expect(createFakeOmnexxRunner().isAvailable()).resolves.toBeDefined();
     await expect(createFakeClaudeCodeRunner().isAvailable()).resolves.toBeDefined();
     await expect(createFakeCodexRunner().isAvailable()).resolves.toBeDefined();
+    await expect(createFakeOpenCodeRunner().isAvailable()).resolves.toBeDefined();
+  });
+
+  it('createFakeOpenCodeRunner returns overridden metrics', async () => {
+    const runner = createFakeOpenCodeRunner({
+      resolved: false,
+      usd: 0.99,
+      tokens_in: 999,
+      wall_ms: 1234,
+    });
+
+    const result = await runner.run(mockTask, mockWorkDir, 'goal');
+
+    expect(result.resolved).toBe(false);
+    expect(result.usd).toBe(0.99);
+    expect(result.tokens_in).toBe(999);
+    expect(result.wall_ms).toBe(1234);
+    // Unspecified metrics should have default values from the real runner
+    expect(result.tokens_out).toBeGreaterThan(0);
+    expect(result.cached).toBeGreaterThanOrEqual(0);
+    expect(result.interventions).toBeGreaterThanOrEqual(0);
   });
 });
 

@@ -36,7 +36,8 @@
     "coverage": "vitest run --coverage",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build",
     "bench": "node bench/run.ts",
-    "bench:watch": "node bench/watch.ts"
+    "bench:watch": "node bench/watch.ts",
+    "bench:report": "node bench/report.ts"
   },
   "keywords": [
     "agent",
