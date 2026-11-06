@@ -1,3 +1,4 @@
+import type { SystemOneObserveSnapshot } from '../runtime/system-one/observe.js';
 import type { KernelObserveSnapshot } from '../runtime/kernel/observe.js';
 import {
   contextTransform,
@@ -1115,6 +1116,11 @@ export class Session {
   /** Observe-only kernel snapshot for the open chat (null until the kernel allocates). */
   get chatKernel(): KernelObserveSnapshot | null {
     return this.code?.kernelSnapshot ?? null;
+  }
+
+  /** Observe-only System-1 telemetry for the open chat (null until a gate runs). */
+  get chatSystemOne(): SystemOneObserveSnapshot | null {
+    return this.code?.systemOneSnapshot ?? null;
   }
 
   /** Token, tool and turn totals for the open chat (runs have their own `telemetry`). */

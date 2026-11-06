@@ -26,6 +26,20 @@ export interface KernelSnapshot {
   priors: { arm: string; pulls: number; mean: number }[];
 }
 
+/** Observe-only System-1 (Jev) telemetry; mirrors `SystemOneObserveSnapshot` on the CLI side. */
+export interface SystemOneSnapshot {
+  backend: string;
+  model: string;
+  intent: { label: string; confidence: number } | null;
+  guardrail: { checked: number; intercepted: number };
+  patch: { checked: number; caught: number };
+  triage: { runs: number; linesPruned: number; tokensSaved: number };
+  speculative: { hits: number };
+  earlyStop: { turnsSaved: number; tokensSaved: number };
+  tokensSaved: number;
+  latencyP50Ms: number;
+}
+
 const PHASES = ['orient', 'plan', 'act', 'verify', 'synthesize'] as const;
 
 const CADENCE: Record<string, string> = {
@@ -45,8 +59,29 @@ const kindOf = (id: string): string =>
       : 'tool';
 const shortId = (id: string): string => id.replace(/^(local|registry):(mcp|tool|skill):/, '');
 
-export function kernelObserveHtml(k: KernelSnapshot | null | undefined, u?: Usage | null): string {
-  if (!k) return '';
+/** The System-1 card: backend, last intent, gates passed/caught, and what it saved. No controls. */
+export function systemOneObserveHtml(s: SystemOneSnapshot | null | undefined): string {
+  if (!s) return '';
+  const intent = s.intent
+    ? `<span class="ko-pill">${escapeHtml(s.intent.label.replaceAll('_', ' '))} · ${String(Math.round(s.intent.confidence * 100))}%</span>`
+    : '';
+  const turns = s.earlyStop.turnsSaved + s.speculative.hits;
+  return `<div class="ko-card ko-s1" role="status" aria-label="System-1">
+<div class="ko-head"><span class="ko-title">System-1</span><span class="ko-meta">${escapeHtml(s.backend)} · p50 ${escapeHtml(s.latencyP50Ms.toFixed(1))}ms</span></div>
+${intent ? `<div class="ko-pills">${intent}</div>` : ''}
+<div class="ko-row"><span class="ko-label">Guardrails</span><span class="ko-value">${String(s.guardrail.checked)} checked · ${String(s.guardrail.intercepted)} intercepted</span></div>
+<div class="ko-row"><span class="ko-label">Patch sanity</span><span class="ko-value">${String(s.patch.checked)} checked · ${String(s.patch.caught)} caught</span></div>
+<div class="ko-row"><span class="ko-label">Saved</span><span class="ko-value">${escapeHtml(formatTokens(s.tokensSaved))} tok · ${String(turns)} turn${turns === 1 ? '' : 's'} <span class="ko-dim">(${escapeHtml(formatTokens(s.triage.linesPruned))} noise lines pruned)</span></span></div>
+</div>`;
+}
+
+export function kernelObserveHtml(
+  k: KernelSnapshot | null | undefined,
+  u?: Usage | null,
+  s1?: SystemOneSnapshot | null,
+): string {
+  const systemOne = systemOneObserveHtml(s1);
+  if (!k) return systemOne;
   const phases = PHASES.map(
     (p) =>
       `<span class="ko-phase${p === k.phase ? ' on' : ''}"${p === k.phase ? ' aria-current="step"' : ''}>${p}</span>`,
@@ -72,5 +107,5 @@ export function kernelObserveHtml(k: KernelSnapshot | null | undefined, u?: Usag
 <div class="ko-row"><span class="ko-label">Cadence</span><span class="ko-value">${escapeHtml(CADENCE[k.cadence] ?? k.cadence)} <span class="ko-dim">(${escapeHtml(k.reason.replace(/_/g, ' '))})</span></span></div>
 <div class="ko-row"><span class="ko-label">Selective mount</span><span class="ko-value">${escapeHtml(formatTokens(saved))} tok/turn saved</span></div>
 <div class="ko-row"><span class="ko-label">KV cache</span><span class="ko-value">${escapeHtml(cache)}</span></div>
-</div>`;
+</div>${systemOne}`;
 }

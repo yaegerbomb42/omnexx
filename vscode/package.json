@@ -347,6 +347,32 @@
           "type": "boolean",
           "default": true,
           "description": "Enable public skills catalog indexing in the Adaptive Runtime Kernel."
+        },
+        "omnexx.systemOne.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "System-1 (Jev-style) decision gates around the agent loop: destructive-command pre-flight, lazy-patch rejection, tool-output triage, intent routing with speculative pre-fetch, and early stopping. Works offline with calibrated local models; add a TYPESAFE_API_KEY for TypeSafe Jev."
+        },
+        "omnexx.systemOne.backend": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "typesafe",
+            "ollama",
+            "local"
+          ],
+          "default": "auto",
+          "description": "auto: TypeSafe Jev when TYPESAFE_API_KEY (or a custom base URL) is set, else local Ollama, else calibrated local models."
+        },
+        "omnexx.systemOne.model": {
+          "type": "string",
+          "default": "jev-latest",
+          "description": "System-1 model on the /v1/systemone endpoint (e.g. jev-latest, jev-1.14.0)."
+        },
+        "omnexx.systemOne.baseUrl": {
+          "type": "string",
+          "default": "https://api.typesafe.ai/v1/systemone",
+          "description": "System-1 endpoint (TypeSafe Jev, or a local Kev / Clef / OpenRouter System-1 server)."
         }
       }
     },

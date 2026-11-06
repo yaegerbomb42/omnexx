@@ -16,6 +16,12 @@ import { capChatHistory, trimChatHistory } from '../agent/chat-context.js';
 import { contextTokens, transcriptFor } from '../agent/compaction.js';
 import { runAgentLoop, type LoopDeps } from '../agent/loop.js';
 import { createKernelIfEnabled, mcpCapabilityRuntime } from '../runtime/kernel/index.js';
+import {
+  createSystemOneIfEnabled,
+  reduceSystemOneEvent,
+  emptySystemOneSnapshot,
+  type SystemOneObserveSnapshot,
+} from '../runtime/system-one/index.js';
 import { getActiveMcpManager } from '../tools/extra/mcp.js';
 import { knownWindow } from '../providers/context-windows.js';
 import type { CliIO } from '../cli/io.js';
@@ -637,8 +643,16 @@ export class CodeChat {
   /** Latest observe-only kernel snapshot (from `kernel.allocate`), or null. */
   kernelSnapshot: KernelObserveSnapshot | null = null;
 
+  /** Observe-only System-1 telemetry for this chat (null until a gate runs). */
+  systemOneSnapshot: SystemOneObserveSnapshot | null = null;
+
   private onEvent(e: OmnexxEvent): void {
     if (e.type === 'kernel.allocate') this.kernelSnapshot = snapshotFromAllocateEvent(e);
+    if (e.type.startsWith('system1.'))
+      this.systemOneSnapshot = reduceSystemOneEvent(
+        this.systemOneSnapshot ?? emptySystemOneSnapshot(),
+        e,
+      );
     const closed = this.showTrace ? pushTrace(this.traceAcc, e) : undefined;
     const v = this.view;
     if (!v) return;
@@ -805,6 +819,9 @@ export class CodeChat {
         }
         void kernel.warm(tools.map((t) => ({ name: t.name, description: t.description })));
       }
+      const systemOne = isGreeting
+        ? undefined
+        : createSystemOneIfEnabled(this.config, this.ctx.jail.root, this.events, process.env);
       const deps: LoopDeps = {
         provider: this.provider,
         models: this.models,
@@ -839,6 +856,7 @@ export class CodeChat {
         ),
         watchMode: 'nudge',
         ...(kernel ? { kernel, kernelObjective: text.split('\n')[0]?.slice(0, 200) ?? '' } : {}),
+        ...(systemOne ? { systemOne } : {}),
         maxTokens: this.config.providers.anthropic.max_tokens,
         clock: realClock,
         events: this.events,
