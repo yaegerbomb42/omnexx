@@ -64,10 +64,28 @@ export async function withRetry<T>(fn: () => Promise<T>, hooks: RetryHooks): Pro
         throw new ProvidersUnavailable(err.message, outageMs);
       const backoff = Math.min(max, base * 2 ** Math.min(attempt - 1, 20));
       // Retry-After is a floor: never call back sooner than the server asked.
-      const delayMs = Math.min(
+      // Ignore non-finite / non-positive Retry-After values.
+      const validRetryAfter =
+        err.retryAfterMs !== undefined && Number.isFinite(err.retryAfterMs) && err.retryAfterMs > 0
+          ? err.retryAfterMs
+          : undefined;
+      // Fail fast when the server's Retry-After cannot fit in the remaining budget.
+      if (
+        err.retryAfterMs !== undefined &&
+        hooks.giveUpAfterMs !== undefined &&
+        err.retryAfterMs > hooks.giveUpAfterMs - outageMs
+      ) {
+        throw new ProvidersUnavailable(err.message, outageMs);
+      }
+      let delayMs = Math.min(
         max,
-        err.retryAfterMs !== undefined ? Math.max(backoff, err.retryAfterMs) : backoff,
+        validRetryAfter !== undefined ? Math.max(backoff, validRetryAfter) : backoff,
       );
+      // Clamp the sleep so we never overshoot giveUpAfterMs.
+      if (hooks.giveUpAfterMs !== undefined && outageMs < hooks.giveUpAfterMs) {
+        const remainingMs = hooks.giveUpAfterMs - outageMs;
+        delayMs = Math.min(delayMs, remainingMs);
+      }
       hooks.onRetry?.({ attempt, delayMs, error: err.message, outageMs });
       if (await hooks.shouldStop?.()) throw new StopRequested();
       await hooks.clock.sleep(delayMs, hooks.signal);
