@@ -57,6 +57,12 @@ export interface SystemOneStats {
 
 type AnyAnswer = ReturnType<typeof normalizeAnswer>;
 
+function trimSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === '/') end--;
+  return url.slice(0, end);
+}
+
 const estimateTokens = (s: string): number => Math.ceil(s.length / 4);
 
 export class SystemOneClient {
@@ -83,7 +89,7 @@ export class SystemOneClient {
       baseUrl: opts.baseUrl ?? DEFAULT_SYSTEM_ONE_URL,
       model: opts.model ?? DEFAULT_SYSTEM_ONE_MODEL,
       ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
-      ollamaUrl: (opts.ollamaUrl ?? 'http://127.0.0.1:11434').replace(/\/+$/, ''),
+      ollamaUrl: trimSlashes(opts.ollamaUrl ?? 'http://127.0.0.1:11434'),
       ollamaModel: opts.ollamaModel ?? 'qwen2.5:3b',
       timeoutMs: opts.timeoutMs ?? 600,
       fetch: opts.fetch ?? globalThis.fetch.bind(globalThis),

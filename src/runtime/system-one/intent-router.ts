@@ -56,7 +56,7 @@ const STOP = new Set(
 
 /** Search terms from a prompt: identifiers and content words, singularized, most specific first. */
 export function searchTerms(prompt: string): string[] {
-  const words = prompt.match(/[A-Za-z_][A-Za-z0-9_]{2,}/g) ?? [];
+  const words = prompt.match(/[A-Za-z_]\w{2,}/g) ?? [];
   const seen = new Set<string>();
   for (const w of words) {
     const lower = w.toLowerCase();

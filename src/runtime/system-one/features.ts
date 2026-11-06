@@ -23,10 +23,6 @@ const DESTRUCTIVE: readonly Signal[] = [
     re: /\bgit\s+(?:filter-branch|filter-repo|update-ref\s+-d|reflog\s+expire|stash\s+(?:drop|clear))\b/,
     weight: 5,
   },
-  {
-    re: /\brm\s+(?:-[a-zA-Z]*[rR][a-zA-Z]*\s+|--recursive\s+)(?:-\S+\s+)*(?:\/|~|\$HOME|\.\.|(?:\.\/)?\*|\.(?:\s|$)|\/\S*)/,
-    weight: 7,
-  },
   { re: /\bdrop\s+(?:table|database|schema)\b/i, weight: 6.5 },
   { re: /\btruncate\s+table\b/i, weight: 5.5 },
   { re: /\bdelete\s+from\s+\w+\s*(?:;|$)/i, weight: 5 },
@@ -46,16 +42,78 @@ const DESTRUCTIVE: readonly Signal[] = [
   },
 ];
 
-/** Recursive deletes of scoped build outputs: reversible enough to only lean slightly risky. */
-const SCOPED_CLEAN =
-  /\brm\s+-[a-zA-Z]*[rR][a-zA-Z]*\s+(?:\.\/)?(?:dist|build|out|coverage|node_modules|\.cache|tmp|\.turbo|\.next)\/?(?:\s|$)/;
+const SEPARATORS = new Set([';', '&&', '||', '|', '&']);
+const SCOPED_OUTPUTS = new Set([
+  'dist',
+  'build',
+  'out',
+  'coverage',
+  'node_modules',
+  '.cache',
+  'tmp',
+  '.turbo',
+  '.next',
+]);
+const WIPE_TARGETS = new Set(['/', '~', '$HOME', '.', '..', '*', './*', '/*', '~/*']);
+const MUTATORS = new Set(['rm', 'mv', 'cp', 'chmod', 'chown', 'tee', 'truncate']);
+
+/** Shell words, split on whitespace with `;`, `&&`, `|` kept as their own tokens. */
+const words = (command: string): string[] =>
+  command
+    .replaceAll(';', ' ; ')
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
+
+/** The arguments of every `name ...` segment in a command line. */
+function segmentsOf(command: string, names: ReadonlySet<string>): string[][] {
+  const out: string[][] = [];
+  let current: string[] | undefined;
+  for (const w of words(command)) {
+    if (SEPARATORS.has(w)) current = undefined;
+    else if (current) current.push(w);
+    else if (names.has(w)) {
+      current = [w];
+      out.push(current);
+    }
+  }
+  return out;
+}
+
+const unquote = (w: string): string => w.replace(/^["']/, '').replace(/["']$/, '');
+
+/** `rm -r` of a whole tree ("wipe"), of a build output ("scoped"), or neither. */
+export function recursiveDeleteRisk(command: string): 'wipe' | 'scoped' | 'none' {
+  let risk: 'wipe' | 'scoped' | 'none' = 'none';
+  for (const [, ...args] of segmentsOf(command, new Set(['rm']))) {
+    const flags = args.filter((a) => a.startsWith('-'));
+    const recursive = flags.some(
+      (f) => f === '--recursive' || (!f.startsWith('--') && /[rR]/.test(f)),
+    );
+    if (!recursive) continue;
+    for (const t of args.filter((a) => !a.startsWith('-')).map(unquote)) {
+      const base = t.replace(/^\.\//, '').replace(/\/$/, '');
+      if (WIPE_TARGETS.has(t) || t.startsWith('/') || t.startsWith('~/') || t.startsWith('../'))
+        return 'wipe';
+      if (SCOPED_OUTPUTS.has(base)) risk = 'scoped';
+    }
+  }
+  return risk;
+}
 
 const outsideRepo = (command: string, cwd: string, repoRoot: string): boolean => {
   if (repoRoot && cwd && !cwd.startsWith(repoRoot)) return true;
-  const m = /\b(?:rm|mv|cp|chmod|chown|tee|truncate)\b[^|;&]*?\s(\/(?!tmp\b|dev\/null)\S+)/.exec(
-    command,
+  if (!repoRoot) return false;
+  return segmentsOf(command, MUTATORS).some(([, ...args]) =>
+    args
+      .map(unquote)
+      .some(
+        (a) =>
+          a.startsWith('/') &&
+          !a.startsWith('/tmp') &&
+          a !== '/dev/null' &&
+          !a.startsWith(repoRoot),
+      ),
   );
-  return Boolean(m?.[1] && repoRoot && !m[1].startsWith(repoRoot));
 };
 
 /** P(destructive, unrecoverable, or out-of-scope) for a shell command. */
@@ -75,7 +133,9 @@ export function destructiveProb(
       hit = true;
     }
   }
-  if (!hit && SCOPED_CLEAN.test(c)) z += 2.6;
+  const rm = recursiveDeleteRisk(c);
+  if (rm === 'wipe') z += 7;
+  else if (rm === 'scoped' && !hit) z += 2.6;
   if (!allowOutsideRepo && outsideRepo(c, cwd, repoRoot)) z += 6.5;
   return sigmoid(z);
 }
@@ -110,11 +170,56 @@ export const TRIAGE_KEYS = [
 ] as const;
 export type TriageClass = (typeof TRIAGE_KEYS)[number];
 
-const ERROR_LINE =
-  /\b(?:error|failed|failure|fail|exception|traceback|panic|assert(?:ion)?|expected|received|cannot|undefined is not|not found|segmentation|fatal|TS\d{4})\b|✗|×|✕|^\s*at .*\(?(?:src|test|lib)\/|^\s*File ".*", line \d+|^\s*[-+]\s{2,}\S|\bexit code [1-9]/i;
+const ERROR_WORDS =
+  /\b(?:error|failed|failure|fail|exception|traceback|panic|assert|assertion|expected|received|cannot|fatal|segmentation)\b/i;
+const ERROR_MARKS = ['✗', '×', '✕', 'undefined is not', 'not found'];
+
+function isErrorLine(line: string): boolean {
+  const t = line.trim();
+  if (ERROR_WORDS.test(t) || /\bTS\d{4}\b/.test(t) || /\bexit code [1-9]/i.test(t)) return true;
+  if (ERROR_MARKS.some((m) => t.includes(m))) return true;
+  if (t.startsWith('at ') && /(?:src|test|lib)\//.test(t)) return true;
+  if (t.startsWith('File "') && t.includes('", line ')) return true;
+  return /^[-+] {2}/.test(t);
+}
+
 const WARN_LINE = /\b(?:warn(?:ing)?|deprecat\w*|notice|peer dep\w*|ExperimentalWarning)\b/i;
-const NOISE_LINE =
-  /^\s*(?:✓|✔|√|PASS\b|ok \d+|\[\d+\/\d+\]|added \d+ packages?|audited \d+|up to date|found 0 vulnerabilities|\d+ packages? are looking for funding|run `npm fund`|transforming|rendering chunks|computing gzip|building|bundl|compil(?:ing|ed)|downloading|resolving|fetching|linking|progress|\S+\s+\d+(?:\.\d+)?\s*[kKmM]?B\b|\.{3,}|[-=#*]{6,}|\s*$)/;
+
+const NOISE_PREFIXES = [
+  '✓',
+  '✔',
+  '√',
+  'pass',
+  'ok ',
+  'up to date',
+  'found 0 vulnerabilities',
+  'run `npm fund`',
+  'transforming',
+  'rendering chunks',
+  'computing gzip',
+  'building',
+  'bundl',
+  'compil',
+  'downloading',
+  'resolving',
+  'fetching',
+  'linking',
+  'progress',
+  '...',
+];
+const NOISE_PATTERNS = [
+  /^\[\d+\/\d+\]/,
+  /^(?:added|audited|removed|changed) \d+ packages?/i,
+  /^\d+ packages? (?:are )?looking for funding/i,
+  /^\S+ +\d+(?:\.\d+)? ?[kmKM]?B\b/,
+  /^[-=#*]{6,}$/,
+];
+
+function isNoiseLine(line: string): boolean {
+  const t = line.trim();
+  const lower = t.toLowerCase();
+  return NOISE_PREFIXES.some((p) => lower.startsWith(p)) || NOISE_PATTERNS.some((re) => re.test(t));
+}
 
 /** Class weights for one output chunk (fractions of its lines that look like each class). */
 export function triageWeights(chunk: string): Record<TriageClass, number> {
@@ -124,9 +229,9 @@ export function triageWeights(chunk: string): Record<TriageClass, number> {
   let warn = 0;
   let noise = 0;
   for (const l of lines) {
-    if (ERROR_LINE.test(l)) err++;
+    if (isErrorLine(l)) err++;
     else if (WARN_LINE.test(l)) warn++;
-    else if (NOISE_LINE.test(l)) noise++;
+    else if (isNoiseLine(l)) noise++;
   }
   const other = lines.length - err - warn - noise;
   // An error anywhere in a chunk makes the whole chunk worth keeping; unknown lines lean relevant
@@ -180,7 +285,6 @@ const INTENT_SIGNALS: Record<IntentClass, readonly Signal[]> = {
       re: /^\s*(?:hi|hello|hey|thanks|thank you|yo|sup|good (?:morning|evening|afternoon))\b/i,
       weight: 3,
     },
-    { re: /^\s*\S+(?:\s+\S+)?\s*\??\s*$/, weight: 1.5 },
   ],
 };
 
@@ -190,14 +294,40 @@ export function intentWeights(prompt: string): Record<IntentClass, number> {
   for (const k of INTENT_KEYS) {
     let z = k === 'ask_clarification' ? 0.4 : 0;
     for (const s of INTENT_SIGNALS[k]) if (s.re.test(prompt)) z += s.weight;
+    // One or two words ("thanks", "auth?") are rarely a task on their own.
+    if (k === 'ask_clarification' && prompt.trim().split(/\s+/).length <= 2) z += 1.5;
     out[k] = Math.exp(z);
   }
   return out;
 }
 
-/** Comments that stand in for code the model didn't bother to write out. */
-export const PLACEHOLDER =
-  /^\s*(?:\/\/|#|\/\*|\*|<!--|--)\s*(?:\.{3}|…)?\s*(?:\(?\s*)?(?:(?:the\s+)?(?:rest|remainder)\s+of\s+(?:the\s+)?(?:file|code|implementation|function|class|method|logic)|existing\s+(?:code|logic|implementation)|(?:code|logic)\s+(?:unchanged|omitted|remains?\s+the\s+same)|unchanged|same\s+as\s+before|previous\s+(?:code|implementation)|implementation\s+(?:here|omitted)|todo:?\s*implement\b|\.{3}\s*$|…\s*$)/i;
+const COMMENT_PREFIXES = ['//', '#', '/*', '*', '<!--', '--'];
+const PLACEHOLDER_PHRASES = [
+  /\b(?:rest|remainder) of (?:the )?(?:file|code|implementation|function|class|method|logic)\b/i,
+  /\bexisting (?:code|logic|implementation)\b/i,
+  /\b(?:code|logic) (?:unchanged|omitted|remains the same)\b/i,
+  /\bsame as before\b/i,
+  /\bprevious (?:code|implementation)\b/i,
+  /\bimplementation (?:here|omitted)\b/i,
+  /\btodo:? ?implement\b/i,
+];
+
+/** A comment that stands in for code the model didn't bother to write out. */
+export function isPlaceholder(line: string): boolean {
+  const t = line.trim();
+  const prefix = COMMENT_PREFIXES.find((p) => t.startsWith(p));
+  if (!prefix) return false;
+  const body = t.slice(prefix.length).replace('*/', '').replace('-->', '').trim();
+  const bare = body
+    .replaceAll('…', '...')
+    .replaceAll('.', '')
+    .replaceAll('(', '')
+    .replaceAll(')', '')
+    .trim();
+  if (body.length > 0 && bare === '') return true;
+  if (bare.toLowerCase() === 'unchanged') return true;
+  return PLACEHOLDER_PHRASES.some((re) => re.test(body));
+}
 
 const isComment = (l: string): boolean => /^\s*(?:\/\/|#|\/\*|\*|<!--|--)/.test(l);
 const codeLines = (s: string): string[] =>
@@ -225,7 +355,7 @@ export function patchSignals(oldText: string, newText: string): PatchSignals {
   const before = new Set(oldText.split('\n').map((l) => l.trim()));
   const placeholders = newText
     .split('\n')
-    .filter((l) => PLACEHOLDER.test(l) && !before.has(l.trim()))
+    .filter((l) => isPlaceholder(l) && !before.has(l.trim()))
     .map((l) => l.trim());
   const kept = new Set(codeLines(newText).map((l) => l.trim()));
   const droppedCodeLines = codeLines(oldText).filter((l) => !kept.has(l.trim())).length;
@@ -257,5 +387,4 @@ export function completenessWeights(s: PatchSignals): Record<string, number> {
 }
 
 /** Whether any line of a chunk looks like an error, failure, or stack frame worth keeping. */
-export const hasErrorLine = (chunk: string): boolean =>
-  chunk.split('\n').some((l) => ERROR_LINE.test(l));
+export const hasErrorLine = (chunk: string): boolean => chunk.split('\n').some(isErrorLine);

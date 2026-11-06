@@ -94,5 +94,7 @@ export function snapshotFromEvents(
   events: readonly { type: string; [k: string]: unknown }[],
 ): SystemOneObserveSnapshot | null {
   const s1 = events.filter((e) => e.type.startsWith('system1.'));
-  return s1.length ? s1.reduce(reduceSystemOneEvent, emptySystemOneSnapshot()) : null;
+  return s1.length
+    ? s1.reduce((acc, e) => reduceSystemOneEvent(acc, e), emptySystemOneSnapshot())
+    : null;
 }

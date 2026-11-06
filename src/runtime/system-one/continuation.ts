@@ -4,8 +4,13 @@ import type { SystemOneBackendKind } from './types.js';
 
 export const DONE_QUESTION = 'Has the core user request been fully resolved by the actions taken?';
 
-const VERIFY =
-  /\b(?:vitest|jest|pytest|mocha|tsc|eslint|prettier\s+--check|cargo\s+(?:test|check|clippy)|go\s+(?:test|vet)|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|lint|typecheck|check|build|format:check))\b/;
+const VERIFY = [
+  /\b(?:vitest|jest|pytest|mocha|tsc|eslint)\b/,
+  /\bprettier\s+--check\b/,
+  /\bcargo\s+(?:test|check|clippy)\b/,
+  /\bgo\s+(?:test|vet)\b/,
+  /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|lint|typecheck|check|build|format:check)\b/,
+];
 const INSPECT =
   /^\s*(?:ls|cat|head|tail|wc|pwd|tree|find|stat|git\s+(?:status|diff|log|show|branch)|rg|grep)\b/;
 
@@ -30,7 +35,7 @@ type Kind = 'verify' | 'inspect' | 'mutate';
 function kindOf(c: TurnCall): Kind {
   if (c.name === 'bash') {
     const cmd = commandOf(c.input);
-    if (VERIFY.test(cmd)) return 'verify';
+    if (VERIFY.some((re) => re.test(cmd))) return 'verify';
     return INSPECT.test(cmd) ? 'inspect' : 'mutate';
   }
   return c.readOnly ? 'inspect' : 'mutate';
@@ -52,37 +57,35 @@ export class ContinuationTracker {
 
   private recordOne(c: TurnCall, summary: string): void {
     const kind = kindOf(c);
-    this.recentActions.push(
-      `${c.name}${c.name === 'bash' ? `: ${commandOf(c.input).slice(0, 60)}` : ''}`,
-    );
+    const detail = c.name === 'bash' ? ': ' + commandOf(c.input).slice(0, 60) : '';
+    this.recentActions.push(c.name + detail);
     if (this.recentActions.length > 8) this.recentActions.shift();
-    if (kind === 'verify') {
-      if (c.isError) {
-        this.failed = true;
-        this.green = false;
-        this.redundantReadOnly = 0;
-      } else {
-        if (this.green) this.redundantReadOnly++;
-        this.green = true;
-        this.failed = false;
-      }
-      return;
-    }
-    if (c.isError) {
-      this.errorsLastTurn = true;
-      return;
-    }
-    if (kind === 'mutate') {
-      const p = pathOf(c.input);
-      if (p) this.filesModified.add(p);
-      else if (c.name === 'bash') this.filesModified.add('(shell)');
+    if (kind === 'verify') this.recordVerify(c.isError);
+    else if (c.isError) this.errorsLastTurn = true;
+    else if (kind === 'mutate') this.recordMutation(c);
+    else if (this.green || (this.filesModified.size === 0 && summary.length >= 200))
+      this.redundantReadOnly++;
+  }
+
+  private recordVerify(failed: boolean): void {
+    if (failed) {
+      this.failed = true;
       this.green = false;
-      this.failed = false;
       this.redundantReadOnly = 0;
       return;
     }
-    const answered = this.filesModified.size === 0 && summary.length >= 200;
-    if (this.green || answered) this.redundantReadOnly++;
+    if (this.green) this.redundantReadOnly++;
+    this.green = true;
+    this.failed = false;
+  }
+
+  private recordMutation(c: TurnCall): void {
+    const p = pathOf(c.input);
+    if (p) this.filesModified.add(p);
+    else if (c.name === 'bash') this.filesModified.add('(shell)');
+    this.green = false;
+    this.failed = false;
+    this.redundantReadOnly = 0;
   }
 
   /** Only ask System-1 once the work is verified (or answered) and the loop is re-inspecting. */

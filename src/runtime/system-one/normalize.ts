@@ -68,37 +68,40 @@ export function scoreAnswer(
   };
 }
 
+const noulOf = (r: Record<string, unknown>): NoulAnswer => {
+  const p = num(r.noul) ?? num(r.prob) ?? num(r.probability);
+  if (p !== undefined) return noulAnswer(p);
+  if (typeof r.value === 'boolean') return noulAnswer(r.value ? 1 : 0);
+  return noulAnswer(0.5);
+};
+
+/** Known numeric weights from an upstream `probabilities` map, for the given keys. */
+function weightsOf(r: Record<string, unknown>, keys: readonly string[]): Record<string, number> {
+  const probs = obj(r.probabilities);
+  const weights: Record<string, number> = {};
+  for (const k of keys) {
+    const w = num(probs[k]);
+    if (w !== undefined) weights[k] = w;
+  }
+  return weights;
+}
+
 /** One upstream answer (any of the wire spellings) → the typed answer for `q`. */
 export function normalizeAnswer(
   q: SystemOneQuestion,
   raw: unknown,
 ): NoulAnswer | ChoiceAnswer | ScoreAnswer {
   const r = obj(raw);
-  if (q.type === 'noul') {
-    const p =
-      num(r.noul) ??
-      num(r.prob) ??
-      num(r.probability) ??
-      (r.value === true ? 1 : r.value === false ? 0 : 0.5);
-    return noulAnswer(p);
-  }
+  if (q.type === 'noul') return noulOf(r);
   if (q.type === 'choice') {
     const keys = Object.keys(q.criteria);
-    const probs = obj(r.probabilities);
-    const weights: Record<string, number> = {};
-    for (const k of keys) {
-      const w = num(probs[k]);
-      if (w !== undefined) weights[k] = w;
-    }
-    const picked = typeof r.choice === 'string' ? r.choice : undefined;
-    if (picked && !Object.keys(weights).length) weights[picked] = 1;
+    const weights = weightsOf(r, keys);
+    if (typeof r.choice === 'string' && !Object.keys(weights).length) weights[r.choice] = 1;
     return choiceAnswer(keys, weights);
   }
-  const probs = obj(r.probabilities);
-  const weights: Record<string, number> = {};
-  q.criteria.forEach((_, i) => {
-    const w = num(probs[String(i)]);
-    if (w !== undefined) weights[String(i)] = w;
-  });
+  const weights = weightsOf(
+    r,
+    q.criteria.map((_, i) => String(i)),
+  );
   return scoreAnswer(q.criteria, weights, num(r.score));
 }

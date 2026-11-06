@@ -269,9 +269,14 @@ export class SystemOneMiddleware {
   private closingReply(assistantText: string): string {
     if (assistantText.trim().length >= 200) return assistantText.trim();
     const files = [...this.tracker.filesModified].sort((a, b) => a.localeCompare(b));
+    const more = files.length > 8 ? ' and ' + String(files.length - 8) + ' more' : '';
     const changed = files.length
-      ? `Changed ${files.slice(0, 8).join(', ')}${files.length > 8 ? ` and ${String(files.length - 8)} more` : ''}; the checks passed after the last edit.`
+      ? 'Changed ' +
+        files.slice(0, 8).join(', ') +
+        more +
+        '; the checks passed after the last edit.'
       : 'Answered above.';
-    return `${assistantText.trim() ? `${assistantText.trim()}\n\n` : ''}Done. ${changed}`;
+    const lead = assistantText.trim();
+    return (lead ? lead + '\n\n' : '') + 'Done. ' + changed;
   }
 }

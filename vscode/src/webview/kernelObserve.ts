@@ -63,7 +63,7 @@ const shortId = (id: string): string => id.replace(/^(local|registry):(mcp|tool|
 export function systemOneObserveHtml(s: SystemOneSnapshot | null | undefined): string {
   if (!s) return '';
   const intent = s.intent
-    ? `<span class="ko-pill">${escapeHtml(s.intent.label.replace(/_/g, ' '))} · ${String(Math.round(s.intent.confidence * 100))}%</span>`
+    ? `<span class="ko-pill">${escapeHtml(s.intent.label.replaceAll('_', ' '))} · ${String(Math.round(s.intent.confidence * 100))}%</span>`
     : '';
   const turns = s.earlyStop.turnsSaved + s.speculative.hits;
   return `<div class="ko-card ko-s1" role="status" aria-label="System-1">

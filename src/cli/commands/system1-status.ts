@@ -94,11 +94,12 @@ export async function system1Status(
     return EXIT.ok;
   }
   println(io.stdout, pc.bold('System-1'));
+  const disabledTag = enabled ? '' : pc.yellow(' · disabled');
   println(
     io.stdout,
-    `  backend ${pc.magenta(backend.label)} · ${backend.primary}${enabled ? '' : pc.yellow(' · disabled')} · key ${backend.apiKey}`,
+    `  backend ${pc.magenta(backend.label)} · ${backend.primary}${disabledTag} · key ${backend.apiKey}`,
   );
-  if (!snap) println(io.stdout, pc.dim(`  no system1 events${dir ? ` in ${dir}` : ''}`));
+  if (!snap) println(io.stdout, pc.dim('  no system1 events' + (dir ? ' in ' + dir : '')));
   else printSnapshot(io, snap);
   return EXIT.ok;
 }
@@ -156,11 +157,13 @@ export async function system1Eval(
     return EXIT.ok;
   }
   const ms = (n: number): string => `${n.toFixed(2)}ms`;
+  const verdict = guard.destructive ? pc.red(' → would intercept') : pc.green(' → passes');
   println(io.stdout, pc.bold(`System-1 self-check · ${result.backend}`));
-  println(io.stdout, `  input   ${pc.dim(text.length > 100 ? `${text.slice(0, 97)}...` : text)}`);
+  const shown = text.length > 100 ? text.slice(0, 97) + '...' : text;
+  println(io.stdout, `  input   ${pc.dim(shown)}`);
   println(
     io.stdout,
-    `  noul    destructive prob ${pct(guard.prob)}${guard.destructive ? pc.red(' → would intercept') : pc.green(' → passes')} · ${guard.backend} · ${ms(guard.latencyMs)}`,
+    `  noul    destructive prob ${pct(guard.prob)}${verdict} · ${guard.backend} · ${ms(guard.latencyMs)}`,
   );
   const probs = Object.entries(intent.probabilities)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
