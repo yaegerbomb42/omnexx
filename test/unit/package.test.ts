@@ -26,6 +26,8 @@ describe('package.json', () => {
         'react',
         'shell-quote',
         'smol-toml',
+        'typescript', // runtime dep: the autonomous daemon's ast-analysis/complexity
+        // collector imports the TS compiler API at runtime (daemon start).
         'zod',
       ].sort(),
     );
