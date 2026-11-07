@@ -99,21 +99,26 @@ export class DependencyCollector implements DiscoveryCollector {
       const severity = (vuln.severity ?? 'low').toLowerCase();
       if (severity !== 'critical' && severity !== 'high') continue;
       const fix = vuln.fixAvailable;
+      const targetPkg = typeof fix === 'object' && (fix as { name?: string })?.name
+        ? (fix as { name?: string }).name!
+        : pkg;
+      const fixVersion = typeof fix === 'object' ? ((fix as { version?: string })?.version ?? null) : null;
       findings.push(
         makeFinding({
           collector: this.name,
-          ruleOrTestId: `audit:${pkg}:${severity}`,
+          ruleOrTestId: `audit:${targetPkg}:${severity}`,
           targetFiles: ['package.json', 'package-lock.json'],
           severity: SEVERITY_SCORE[severity] ?? 0.5,
           confidence: 0.85,
           verification: 0.6,
           findingPayload: {
             kind: 'vulnerable-dependency',
-            package: pkg,
+            package: targetPkg,
+            vulnerableDependency: pkg,
             severity,
             title: vuln.title ?? null,
             fixAvailable: Boolean(fix),
-            fixVersion: typeof fix === 'object' ? (fix.version ?? null) : null,
+            fixVersion,
           },
         }),
       );
