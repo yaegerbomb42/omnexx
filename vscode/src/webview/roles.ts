@@ -9,12 +9,14 @@ import * as modelPicker from './modelPicker.js';
 import type { ModelItem } from './modelPicker.js';
 import {
   filterModels,
+  filterProviders,
   listHtml,
   MAX_LIST,
   modeHtml,
   modeOf,
   paletteChipsHtml,
   placeRef,
+  providerOf,
   removeRef,
   shiftRef,
   type Mode,
@@ -34,6 +36,16 @@ interface Roles {
 interface Pool {
   ranked: string[];
   mode: Mode;
+  /** Ordered provider names the pool may use; empty means all connected providers. */
+  providers: string[];
+}
+
+/** One connected provider as the selector shows it: key status decides if it can be picked. */
+export interface ProviderOption {
+  name: string;
+  label: string;
+  local: boolean;
+  hasKey: boolean;
 }
 
 const ROLES: { id: Role; name: string; what: string }[] = [
@@ -48,10 +60,12 @@ const ROLE_IDS = new Set<string>(ROLES.map((r) => r.id));
 const MAX_PER_ROLE = 20;
 const POOL = 'pool';
 
-let pool: Pool = { ranked: [], mode: 'fallback' };
+let pool: Pool = { ranked: [], mode: 'fallback', providers: [] };
 let roles: Roles = { models: {}, strategies: {}, spreadHelpers: true };
 let exhausted: Record<string, number> = {};
 let palette: ModelItem[] = [];
+/** The connected providers, from the settings page; empty until its `settings` arrives. */
+let providers: ProviderOption[] = [];
 let query = '';
 let advancedOpen: boolean | undefined;
 let post: Post | undefined;
@@ -76,17 +90,93 @@ function modeFor(id: string): Mode {
   return s === 'random' || s === 'priority' || s === 'fallback' ? s : pool.mode;
 }
 
+/** Provider names that can be picked: local ones, or hosted ones with a key. */
+function usableProviders(): string[] {
+  return providers.filter((p) => p.local || p.hasKey).map((p) => p.name);
+}
+
+/** Whether a provider's models are offered: every provider is, when nothing is selected. */
+function isActive(name: string): boolean {
+  return pool.providers.length === 0 || pool.providers.includes(name);
+}
+
+/** Palette models from the selected providers (all of them, when nothing is selected). */
+function visiblePalette(): ModelItem[] {
+  return filterProviders(palette, pool.providers);
+}
+
+/** Refs in `list` whose provider is not selected: kept in the list, shown greyed. */
+function inactiveRefs(list: readonly string[]): Set<string> {
+  if (!pool.providers.length) return new Set();
+  const selected = new Set(pool.providers);
+  return new Set(list.filter((ref) => !selected.has(providerOf(ref))));
+}
+
+/** Only the string names in a saved provider list, in order, without duplicates. */
+function providersOf(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((p): p is string => typeof p === 'string' && p.length > 0))];
+}
+
+/**
+ * Toggle one provider in the saved selection. `usable` is every pickable provider, in
+ * order. Toggling from "all" starts from every usable provider minus this one; ending
+ * with none left, or every usable one, saves back as empty — which means "all".
+ */
+export function toggleProvider(
+  selected: readonly string[],
+  name: string,
+  usable: readonly string[],
+): string[] {
+  const base = (selected.length ? [...selected] : [...usable]).filter((p) => usable.includes(p));
+  const i = base.indexOf(name);
+  if (i >= 0) base.splice(i, 1);
+  else base.push(name);
+  return base.length === 0 || base.length === usable.length ? [] : base;
+}
+
+/** The settings page hands over the connected providers (with key status) when they arrive. */
+export function setProviders(list: ProviderOption[]): void {
+  providers = list;
+  redraw();
+}
+
+function providersHtml(): string {
+  if (!providers.length) return '';
+  const all = pool.providers.length === 0;
+  const chips = providers
+    .map((p) => {
+      const usable = p.local || p.hasKey;
+      const on = isActive(p.name);
+      const status = p.local ? 'local' : p.hasKey ? 'key ✓' : 'no key';
+      const title = usable ? p.label : `${p.label}: add a key below to use its models`;
+      return `<button class="prov-chip${on ? ' on' : ''}" data-provider-toggle="${escapeHtml(p.name)}" aria-pressed="${String(on)}" ${usable ? '' : 'disabled'} title="${escapeHtml(title)}">${modelPicker.badge(p.name)}<span class="prov-label">${escapeHtml(p.label)}</span><span class="prov-key">${escapeHtml(status)}</span></button>`;
+    })
+    .join('');
+  return `<div class="prov-sel" role="group" aria-label="Providers"><button class="prov-chip all${all ? ' on' : ''}" data-provider-all aria-pressed="${String(all)}" title="Use every connected provider">All</button>${chips}</div>
+<p class="hint">Only the selected providers' models are offered below; the ranked list keeps the rest, skipped until their provider is selected again.</p>`;
+}
+
 function roleHtml(r: (typeof ROLES)[number]): string {
   const list = roles.models[r.id] ?? [];
-  const body = listHtml(r.id, list, exhausted, 'Empty: uses your main list. Drop models here.');
+  const body = listHtml(
+    r.id,
+    list,
+    exhausted,
+    'Empty: uses your main list. Drop models here.',
+    inactiveRefs(list),
+  );
   const mode = list.length > 1 ? modeHtml(r.id, modeFor(r.id)) : '';
   return `<div class="role${r.id === 'helpers' ? ' minor' : ''}"><div class="role-head"><span class="role-name">${r.name}</span><span class="role-what">${r.what}</span><button class="rc-add" data-role-add="${r.id}" aria-label="Add a model to ${r.name}">+</button></div>${body}${mode}</div>`;
 }
 
 function paletteHtml(): string {
+  const visible = visiblePalette();
   if (!palette.length)
     return '<p class="hint">Connect a provider below; its models appear here to add to your list.</p>';
-  return `<input id="pal-search" class="field" type="search" placeholder="Search models…" aria-label="Search models" value="${escapeHtml(query)}" spellcheck="false"><div id="pal-chips">${paletteChipsHtml(filterModels(palette, query), new Set(pool.ranked))}</div>`;
+  if (!visible.length)
+    return '<p class="hint">No models from the selected providers. Select another provider above.</p>';
+  return `<input id="pal-search" class="field" type="search" placeholder="Search models…" aria-label="Search models" value="${escapeHtml(query)}" spellcheck="false"><div id="pal-chips">${paletteChipsHtml(filterModels(visible, query), new Set(pool.ranked))}</div>`;
 }
 
 function advancedHtml(): string {
@@ -96,14 +186,21 @@ function advancedHtml(): string {
 }
 
 export function html(): string {
-  return `<div class="palette" aria-label="Your models">${paletteHtml()}</div>
+  const inactive = inactiveRefs(pool.ranked);
+  const skippedProviders = [...new Set([...inactive].map(providerOf))];
+  const skipped =
+    skippedProviders.length > 0
+      ? `<p class="hint">Skipped until re-selected: ${skippedProviders.map(escapeHtml).join(', ')}.</p>`
+      : '';
+  return `${providersHtml()}<div class="palette" aria-label="Your models">${paletteHtml()}</div>
 <div class="rank-main">
   <div class="role-head">
     <span class="role-name">Ranked list</span>
     <span class="role-what">used for everything</span>
     <button class="ghost small auto-calibrate-btn" data-auto-calibrate title="Automatically select and rank the best models across all your connected providers">✨ Auto-Calibrate Roles</button>
   </div>
-  ${listHtml(POOL, pool.ranked, exhausted, 'Click or drag a model above to add it. #1 is tried first.')}
+  ${listHtml(POOL, pool.ranked, exhausted, 'Click or drag a model above to add it. #1 is tried first.', inactive)}
+  ${skipped}
   ${modeHtml(POOL, pool.mode)}
 </div>
 ${advancedHtml()}<p class="hint">⏳ means out of quota; it is skipped until its quota resets. Applies to new chats and runs.</p>`;
@@ -150,7 +247,12 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
       spreadHelpers: r.spreadHelpers !== false,
     };
   const p = m.pool as Partial<Pool> | undefined;
-  if (p) pool = { ranked: Array.isArray(p.ranked) ? p.ranked : [], mode: modeOf(p.mode) };
+  if (p)
+    pool = {
+      ranked: Array.isArray(p.ranked) ? p.ranked : [],
+      mode: modeOf(p.mode),
+      providers: providersOf(p.providers),
+    };
   exhausted = (m.exhausted as Record<string, number> | undefined) ?? {};
   redraw();
   return true;
@@ -164,6 +266,24 @@ export function request(p: Post): void {
 /** Clicks inside the models box; true when handled. */
 export function click(t: Element, p: Post): boolean {
   post = p;
+  const provToggle = t.closest<HTMLElement>('[data-provider-toggle]');
+  if (provToggle?.dataset.providerToggle) {
+    pool = {
+      ...pool,
+      providers: toggleProvider(
+        pool.providers,
+        provToggle.dataset.providerToggle,
+        usableProviders(),
+      ),
+    };
+    save();
+    return true;
+  }
+  if (t.closest('[data-provider-all]')) {
+    pool = { ...pool, providers: [] };
+    save();
+    return true;
+  }
   const pal = t.closest<HTMLElement>('[data-pal-add]');
   if (pal?.dataset.palAdd) {
     place(pal.dataset.palAdd, POOL, undefined);
@@ -210,7 +330,10 @@ function wireKeys(root: HTMLElement): void {
     query = e.target.value;
     const chips = document.getElementById('pal-chips');
     if (chips)
-      chips.innerHTML = paletteChipsHtml(filterModels(palette, query), new Set(pool.ranked));
+      chips.innerHTML = paletteChipsHtml(
+        filterModels(visiblePalette(), query),
+        new Set(pool.ranked),
+      );
   });
   // Alt+↑↓ on a focused chip moves it, so the list can be ranked without a mouse.
   root.addEventListener('keydown', (e) => {

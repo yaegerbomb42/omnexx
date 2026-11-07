@@ -41,6 +41,9 @@
     "vscode/src/webview/domain.ts",
     "vscode/src/webview/stats.ts",
     "vscode/src/webview/savedMark.ts",
-    "vscode/src/webview/suggestBox.ts"
+    "vscode/src/webview/suggestBox.ts",
+    // A DOM test of a webview module: the root lib has no DOM, so it is
+    // typechecked by the webview tsconfig instead (see below).
+    "test/unit/vscode-roles-providers.test.ts"
   ]
 }

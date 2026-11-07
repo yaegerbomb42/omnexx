@@ -479,6 +479,17 @@ export const poolSchema = z.strictObject({
   ranked: z.array(modelRef).max(64).default([]),
   /** How the pool is used: fallback (#1 until its quota runs out), priority (#1 first each call), random. */
   mode: z.enum(['fallback', 'priority', 'random', 'smart']).default('fallback'),
+  /**
+   * Providers the agent may draw from, in preference order. Empty means every provider
+   * (current behaviour). When non-empty, role chains and the router only use models on
+   * these providers, in this order as a tiebreak; a listed provider with no endpoint or
+   * key is skipped, and a list that leaves nothing usable falls back to the unfiltered
+   * pool (see src/router/pool.ts).
+   */
+  providers: z
+    .array(z.string().regex(/^[a-z][a-z0-9_-]*$/))
+    .max(64)
+    .default([]),
 });
 export type PoolConfig = z.infer<typeof poolSchema>;
 

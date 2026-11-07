@@ -10,12 +10,20 @@ import { toolContext } from '../../support/tool-context.js';
 import { makeRepo } from '../../support/harness.js';
 import { tempDir } from '../../support/tmp.js';
 
-type Outcome = 'ok' | 'quota' | 'rate-limit' | 'down';
+type Outcome = 'ok' | 'quota' | 'rate-limit' | 'down' | 'auth' | 'quota402' | 'quota403';
 
 const ERRORS: Record<Exclude<Outcome, 'ok'>, () => ProviderError> = {
   quota: () => new ProviderError('quota exceeded for today', { retryable: false, status: 429 }),
   'rate-limit': () => new ProviderError('slow down', { retryable: true, status: 429 }),
   down: () => new ProviderError('bad gateway', { retryable: true, status: 502 }),
+  auth: () => new ProviderError('invalid api key', { retryable: false, status: 401 }),
+  quota402: () =>
+    new ProviderError('insufficient_quota: billing limit reached', {
+      retryable: false,
+      status: 402,
+    }),
+  quota403: () =>
+    new ProviderError('quota exceeded for this key', { retryable: false, status: 403 }),
 };
 
 const price = { id: 'm', input: 0, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0 };
@@ -140,6 +148,33 @@ describe('fallback on quota', () => {
     f.outcome.b = 'quota';
     expect(await f.call()).toEqual(['a', 'b', 'c']);
     expect(await f.call()).toEqual(['c']);
+  });
+});
+
+describe('auth and quota errors', () => {
+  it('fails over on a 401 without marking the model out of quota', async () => {
+    const f = await fixture('priority');
+    f.outcome.a = 'auth';
+    expect(await f.call()).toEqual(['a', 'b']);
+    expect(f.ledger.isOut('a:m')).toBe(false);
+    // A bad key fails over on every call until it is fixed, it never parks the model.
+    expect(await f.call()).toEqual(['a', 'b']);
+  });
+
+  it('a 402 billing error is a quota error: the model is parked', async () => {
+    const f = await fixture('fallback');
+    f.outcome.a = 'quota402';
+    expect(await f.call()).toEqual(['a', 'b']);
+    expect(f.ledger.isOut('a:m')).toBe(true);
+    expect(await f.call()).toEqual(['b']);
+  });
+
+  it('a 403 that says quota is a quota error: the model is parked', async () => {
+    const f = await fixture('fallback');
+    f.outcome.a = 'quota403';
+    expect(await f.call()).toEqual(['a', 'b']);
+    expect(f.ledger.isOut('a:m')).toBe(true);
+    expect(await f.call()).toEqual(['b']);
   });
 });
 

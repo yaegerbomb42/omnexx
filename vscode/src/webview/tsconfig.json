@@ -14,7 +14,9 @@
     "contextPage.ts",
     "mcp.ts",
     "agentCard.ts",
-    "browserCockpit.ts"
+    "browserCockpit.ts",
+    // DOM test of roles.ts: typechecked here, with the DOM lib, not by the root config.
+    "../../../test/unit/vscode-roles-providers.test.ts"
   ],
   "exclude": []
 }

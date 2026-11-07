@@ -2293,6 +2293,117 @@ textarea::placeholder {
   font-size: var(--fs-xs);
 }
 
+/* Power: the control board. Dormant by default (body[data-power='off']):
+   the whole panel is desaturated and dimmed; only the logo power button
+   stays lit, pulsing gently until it is woken. Waking replays a ~600ms
+   color sweep. The kill switch posts the existing pause/resume over the
+   webview protocol (see webview/chat.ts); no new message type was needed. */
+
+/* The logo is the power button: first in the statusline, always visible. */
+.power {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.power img {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+/* Lit: a soft accent halo while the board is on. */
+body[data-power='on'] .power {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 8px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* Dormant: the board is grey and dim. The button lives in the statusline,
+   so the filter targets everything except it. */
+body[data-power='off'] > :not(.composer),
+body[data-power='off'] .composer > :not(.statusline),
+body[data-power='off'] .statusline > :not(#power) {
+  filter: grayscale(1) brightness(0.72);
+  opacity: 0.8;
+  transition:
+    filter var(--dur-slow) var(--ease),
+    opacity var(--dur-slow) var(--ease);
+}
+
+body[data-power='off'] .power {
+  animation: power-beacon 2.4s var(--ease-soft) infinite;
+}
+
+@keyframes power-beacon {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+/* Wake: color sweeps back in with a brief bright flash, ~600ms. */
+body.waking > :not(.composer),
+body.waking .composer > :not(.statusline),
+body.waking .statusline > :not(#power) {
+  animation: power-on var(--dur-wake) var(--ease) both;
+}
+
+body.waking #power {
+  animation: power-glow var(--dur-wake) var(--ease) both;
+}
+
+@keyframes power-on {
+  from {
+    filter: grayscale(1) brightness(0.6);
+    opacity: 0.7;
+  }
+
+  60% {
+    filter: grayscale(0.15) brightness(1.06);
+    opacity: 1;
+  }
+
+  to {
+    filter: grayscale(0) brightness(1);
+    opacity: 1;
+  }
+}
+
+@keyframes power-glow {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+
+  to {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-power='off'] .power {
+    animation: none;
+  }
+
+  body.waking > :not(.composer),
+  body.waking .composer > :not(.statusline),
+  body.waking .statusline > :not(#power),
+  body.waking #power {
+    animation-duration: 1ms;
+  }
+}
+
 .jump {
   position: absolute;
   right: 14px;
@@ -2726,39 +2837,30 @@ textarea::placeholder {
   }
 }
 
-/* Observe-only Kernel card: phase pill, active capabilities, cadence, savings. */
+/* Observe-only Kernel disclosure: one quiet line (phase pills) with the detail
+   collapsed behind it. No card chrome — the panel is telemetry, not content. */
 .kernel-observe {
   margin: var(--space-4) 0;
 }
 
-.ko-card {
-  border: var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
-  box-shadow: none;
-  padding: var(--space-4) var(--space-5);
-  display: grid;
-  gap: var(--space-3);
+.ko {
   font-size: var(--fs-sm);
-  animation: ko-in var(--dur-base) var(--ease);
 }
 
-@keyframes ko-in {
-  from {
-    opacity: 0;
-    transform: translateY(2px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.ko-head {
+.ko-summary {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
-  gap: var(--space-4);
+  gap: var(--space-3);
+  cursor: pointer;
+  list-style: none;
+}
+
+.ko-summary::-webkit-details-marker {
+  display: none;
+}
+
+.ko[open] > summary .chev {
+  transform: rotate(45deg) translateY(-2px);
 }
 
 .ko-title {
@@ -2797,15 +2899,14 @@ textarea::placeholder {
 
 .ko-caps {
   list-style: none;
-  margin: 0;
-  padding: 0;
+  margin: var(--space-3) 0 0 0;
+  padding: 0 0 0 var(--space-5);
   display: grid;
   gap: var(--space-1);
 }
 
 .ko-caps li {
-  display: grid;
-  grid-template-columns: auto auto 1fr;
+  display: flex;
   gap: var(--space-3);
   align-items: baseline;
   min-width: 0;
@@ -2823,13 +2924,6 @@ textarea::placeholder {
   white-space: nowrap;
 }
 
-.ko-why {
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .ko-empty {
   color: var(--muted);
 }
@@ -2838,6 +2932,8 @@ textarea::placeholder {
   display: flex;
   justify-content: space-between;
   gap: var(--space-4);
+  margin: var(--space-2) 0 0 0;
+  padding-left: var(--space-5);
 }
 
 .ko-label {
@@ -2850,10 +2946,6 @@ textarea::placeholder {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ko-card {
-    animation: none;
-  }
-
   .ko-phase {
     transition: none;
   }

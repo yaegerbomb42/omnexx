@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   filterModels,
+  filterProviders,
   listHtml,
   modeHtml,
   modeOf,
   paletteChipsHtml,
   placeRef,
+  providerOf,
   removeRef,
   shiftRef,
 } from '../../vscode/src/webview/rankList.js';
@@ -65,5 +67,26 @@ describe('ranked model list', () => {
     expect(html).toContain('Always tries #1 first');
     expect(modeOf('least-busy')).toBe('fallback');
     expect(modeOf('random')).toBe('random');
+  });
+
+  it('reads the provider off a ref and filters the palette by selected providers', () => {
+    expect(providerOf('groq:llama-3')).toBe('groq');
+    expect(providerOf('ollama')).toBe('ollama');
+    const items = list.map((ref) => {
+      const [provider = '', model = ''] = ref.split(':');
+      return { ref, provider, model };
+    });
+    expect(filterProviders(items, [])).toHaveLength(3);
+    expect(filterProviders(items, ['groq']).map((m) => m.ref)).toEqual(['groq:a', 'groq:b']);
+    expect(filterProviders(items, ['missing'])).toHaveLength(0);
+  });
+
+  it('greys out ranked models whose provider is not selected, without removing them', () => {
+    const html = listHtml('pool', list, {}, 'empty', new Set(['openrouter:c']));
+    expect(html).toMatch(/class="rchip inactive"[^>]*data-ref="openrouter:c"/);
+    expect(html).toContain('<span class="rc-skip">skipped</span>');
+    expect(html).toContain('provider not selected, skipped until re-selected');
+    expect(html).not.toMatch(/class="rchip inactive"[^>]*data-ref="groq:a"/);
+    expect(listHtml('pool', list, {}, 'empty')).not.toContain('inactive');
   });
 });

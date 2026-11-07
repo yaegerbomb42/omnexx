@@ -628,6 +628,14 @@ export function onMessage(m: { type: string } & Record<string, unknown>): boolea
   } else if (m.type === 'settings') {
     catalog = (m.catalog as CatalogProvider[] | undefined) ?? catalog;
     connected = (m.connected as ConnectedProvider[] | undefined) ?? [];
+    roles.setProviders(
+      connected.map((p) => ({
+        name: p.name,
+        label: p.label,
+        local: p.local,
+        hasKey: p.key !== null,
+      })),
+    );
     if (!testedOnOpen && postRef) {
       testedOnOpen = true;
       testAll(postRef);

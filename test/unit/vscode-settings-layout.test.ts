@@ -7,7 +7,6 @@ import {
   SECTIONS,
   emptyHtml,
   isSectionId,
-  navHtml,
   sectionHtml,
   toggled,
 } from '../../vscode/src/webview/settingsLayout.js';

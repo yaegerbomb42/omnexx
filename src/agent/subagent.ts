@@ -1,5 +1,5 @@
-import { resolveModel } from '../providers/pricing.js';
 import { orderForStrategy, strategyFor, type Strategy } from '../config/routing.js';
+import { resolvePoolChain } from '../router/pool.js';
 import type { Run } from '../core/run.js';
 import type { ResolvedModel } from '../providers/pricing.js';
 import { readOnlyTools, toolSpec } from '../tools/registry.js';
@@ -239,9 +239,6 @@ export function helperRunner(
   };
 }
 
-const chainOf = (c: string | readonly string[]): readonly string[] =>
-  typeof c === 'string' ? [c] : c;
-
 /** Helpers for a long run: its router (or models.helpers), budget and spend. */
 export function subagentRunner(
   run: Run,
@@ -253,7 +250,7 @@ export function subagentRunner(
       tools: () => readOnlyTools(run.config, { repoRoot: run.worktree, env: run.deps.env }),
       models: async (kind) =>
         run.config.models.helpers
-          ? chainOf(run.config.models.helpers).map((ref) => resolveModel(ref, run.config))
+          ? resolvePoolChain(run.config.models.helpers, run.config)
           : (
               await run.router.pick({
                 action: 'read-explore',

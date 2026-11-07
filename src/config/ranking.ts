@@ -51,10 +51,14 @@ async function readFileJson(p: OmnexxPaths): Promise<{ ranked?: unknown; mode?: 
 }
 
 /** The [pool] table of the unified config, when the legacy models.json is absent. */
-async function readPoolTable(p: OmnexxPaths): Promise<{ ranked?: unknown; mode?: unknown }> {
+async function readPoolTable(p: OmnexxPaths): Promise<{
+  ranked?: unknown;
+  mode?: unknown;
+  providers?: unknown;
+}> {
   try {
     const data = parseToml(await readFile(userConfigFile(p), 'utf8')) as {
-      pool?: { ranked?: unknown; mode?: unknown };
+      pool?: { ranked?: unknown; mode?: unknown; providers?: unknown };
     };
     return data.pool ?? {};
   } catch {
@@ -95,20 +99,45 @@ export function cleanRanked(value: unknown): string[] {
   return [...new Set(refs)].slice(0, MAX_RANKED);
 }
 
-async function save(p: OmnexxPaths, ranked: readonly string[], mode: PoolMode): Promise<void> {
+/** Provider names, cleaned like the schema: lowercase names, distinct, at most 64. */
+export function cleanProviders(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const names = value.filter(
+    (v): v is string => typeof v === 'string' && /^[a-z][a-z0-9_-]*$/.test(v),
+  );
+  return [...new Set(names)].slice(0, 64);
+}
+
+/** The [pool] providers allow-list, from the unified config (the legacy file has none). */
+export async function readPoolProviders(p: OmnexxPaths): Promise<string[]> {
+  return cleanProviders((await readPoolTable(p)).providers);
+}
+
+async function save(
+  p: OmnexxPaths,
+  ranked: readonly string[],
+  mode: PoolMode,
+  providers?: readonly string[],
+): Promise<void> {
+  // upsertTomlTable replaces the whole [pool] block: keep the providers list when the
+  // caller didn't send one, or a /models save would silently drop it.
+  const keep = providers ?? (await readPoolTable(p)).providers;
+  const clean = cleanProviders(keep);
   await upsertTomlTable(userConfigFile(p), 'pool', {
     ranked: cleanRanked(ranked),
     mode,
+    ...(clean.length ? { providers: clean } : {}),
   });
 }
 
-/** Save the list and its mode together (the editor sends both). */
+/** Save the list, its mode and (when given) its provider allow-list together. */
 export function writePool(
   p: OmnexxPaths,
   ranked: readonly string[],
   mode: PoolMode,
+  providers?: readonly string[],
 ): Promise<void> {
-  return enqueueWrite(() => save(p, ranked, mode));
+  return enqueueWrite(() => save(p, ranked, mode, providers));
 }
 
 export async function readRanking(p: OmnexxPaths): Promise<string[]> {

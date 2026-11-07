@@ -2,7 +2,9 @@ import type { WorkerPrefix } from '../verify/review.js';
 import {
   callOrder,
   orderForStrategy,
+  RATE_LIMITED_FOR_MS,
   skipsOutModels,
+  sticksOnRateLimit,
   strategyFor,
   type Strategy,
 } from '../config/routing.js';
@@ -36,6 +38,7 @@ import { scrubEnv } from '../security/env-scrub.js';
 import type { PolicyContext } from '../security/command-policy.js';
 import { Redactor } from '../security/redact.js';
 import { ModelRouter } from '../router/router.js';
+import { applyProviderPool } from '../router/pool.js';
 import type { ControlSignal } from '../agent/loop.js';
 import type { Clock } from './clock.js';
 import { EventLog } from './events.js';
@@ -256,9 +259,20 @@ export class Run {
     });
     const c = deps.config;
     // Each role's routing strategy orders its chain once per run (random, smart); least-busy
-    // only matters for parallel helpers, which order their chain per start.
-    const routed = (role: 'planner' | 'worker' | 'cheap') =>
-      orderForStrategy(resolveChain(c.models[role], c), strategyFor(c.models, role));
+    // only matters for parallel helpers, which order their chain per start. The chain is
+    // filtered through the provider pool first (src/router/pool.ts): a provider list that
+    // leaves nothing falls back to the unfiltered chain instead of failing the run.
+    const routed = (role: 'planner' | 'worker' | 'cheap') => {
+      const refs = typeof c.models[role] === 'string' ? [c.models[role]] : c.models[role];
+      const pooled = applyProviderPool(refs, c);
+      if (pooled.skipped.length || pooled.fellBack)
+        this.events.emit('pool.filter', {
+          role,
+          ...(pooled.skipped.length ? { skipped: pooled.skipped } : {}),
+          ...(pooled.fellBack ? { fellBack: true } : {}),
+        });
+      return orderForStrategy(resolveChain(pooled.refs, c), strategyFor(c.models, role));
+    };
     this.chains = { planner: routed('planner'), worker: routed('worker'), cheap: routed('cheap') };
     const first = (chain: ResolvedModel[]): ResolvedModel => {
       const m = chain[0];
@@ -586,6 +600,10 @@ export class Run {
         if (isQuotaError(err)) this.markExhausted(`${model.provider}:${model.id}`);
         else if (!err.contentFilter)
           this.coolProvider(model.provider, err.retryable ? 60_000 : 30 * 60_000);
+        // A plain rate limit moves a fallback list off the model until it recovers (the
+        // worker loop does the same); other strategies reshuffle or retry #1 anyway.
+        if (err.status === 429 && !isQuotaError(err) && sticksOnRateLimit(strategy))
+          this.markRateLimited(`${model.provider}:${model.id}`, RATE_LIMITED_FOR_MS);
         this.events.emit('provider.failover', {
           provider: model.provider,
           model: model.id,

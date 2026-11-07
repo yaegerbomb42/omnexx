@@ -42,6 +42,35 @@ export function prefixTtl(setting: 'auto' | '5m' | '1h', maxHours: number): '5m'
   return maxHours > 1 ? '1h' : '5m';
 }
 
+/** Whether `name` is on the pool's provider allow-list (only meaningful when non-empty). */
+const poolListed = (config: OmnexxConfig, name: string): boolean =>
+  config.pool.providers.includes(name);
+
+/**
+ * Drop models on providers that were not built (a pool-listed provider with no key is
+ * skipped, not fatal) from the run-role chains. A role left with nothing keeps its
+ * configured chain: the pool filter in Run falls back to it instead of failing the run.
+ */
+function pruneChainsToBuilt(
+  config: OmnexxConfig,
+  built: ReadonlyMap<string, unknown>,
+  warn: (msg: string) => void,
+): void {
+  const models = config.models as unknown as Record<string, string | string[] | undefined>;
+  for (const role of ['planner', 'worker', 'cheap', 'helpers'] as const) {
+    const chain = models[role];
+    if (!chain) continue;
+    const refs = typeof chain === 'string' ? [chain] : chain;
+    const kept = refs.filter((r) => built.has(r.slice(0, r.indexOf(':'))));
+    if (kept.length === refs.length) continue;
+    if (kept.length === 0) {
+      warn(`role "${role}" has no usable provider; keeping its configured chain`);
+      continue;
+    }
+    models[role] = kept;
+  }
+}
+
 /** Config + key + provider for any command that talks to the model. The key never leaves this process. */
 export async function resolveRunDeps(
   io: CliIO,
@@ -66,35 +95,48 @@ export async function resolveRunDeps(
   );
   const secrets: string[] = [];
   const providers = new Map<string, Provider>();
+  const warn = (msg: string): void => {
+    io.stderr.write(`omnexx: ${msg}\n`);
+  };
   if (used.has('anthropic')) {
     const key = await findAnthropicKey(paths, io.env);
-    if (!key) {
+    if (!key && !poolListed(config, 'anthropic')) {
       throw new UsageError(
         'no Anthropic API key found',
         'set ANTHROPIC_API_KEY or run `omnexx auth set anthropic`',
       );
     }
-    secrets.push(key.key);
-    const anthropic = config.providers.anthropic;
-    providers.set(
-      'anthropic',
-      new AnthropicProvider({
-        apiKey: key.key,
-        ...(anthropic.base_url ? { baseURL: anthropic.base_url } : {}),
-        cacheTtl: anthropic.cache_ttl,
-        prefixTtl: prefixTtl(anthropic.prefix_cache_ttl, config.budget.max_hours),
-        timeoutMs: parseDuration(anthropic.request_timeout),
-      }),
-    );
+    if (!key) {
+      // A pool-listed provider with no key is skipped, not fatal (run-deps prunes its
+      // models from the chains below); the pool filter then falls back if it must.
+      warn('anthropic is in [pool] providers but no key was found; skipping it');
+    } else {
+      secrets.push(key.key);
+      const anthropic = config.providers.anthropic;
+      providers.set(
+        'anthropic',
+        new AnthropicProvider({
+          apiKey: key.key,
+          ...(anthropic.base_url ? { baseURL: anthropic.base_url } : {}),
+          cacheTtl: anthropic.cache_ttl,
+          prefixTtl: prefixTtl(anthropic.prefix_cache_ttl, config.budget.max_hours),
+          timeoutMs: parseDuration(anthropic.request_timeout),
+        }),
+      );
+    }
   }
   for (const [name, ep] of Object.entries(config.providers.endpoints)) {
     if (!used.has(name)) continue;
     const apiKey = (await findProviderKey(paths, io.env, name, ep.api_key_env))?.key;
-    if (ep.api_key_env && !apiKey) {
+    if (ep.api_key_env && !apiKey && !poolListed(config, name)) {
       throw new UsageError(
         `provider "${name}" needs ${ep.api_key_env}`,
         `export ${ep.api_key_env}=… or run \`omnexx auth set ${name}\``,
       );
+    }
+    if (ep.api_key_env && !apiKey) {
+      warn(`provider "${name}" is in [pool] providers but ${ep.api_key_env} is unset; skipping it`);
+      continue;
     }
     if (apiKey) secrets.push(apiKey);
     const opts = {
@@ -147,6 +189,10 @@ export async function resolveRunDeps(
         : repaired,
     );
   }
+  // Only providers that were actually built can take a call: drop the rest from the
+  // run-role chains, so a key-less pool provider is never attempted. The pool filter in
+  // Run then falls back to the pruned chain when the list leaves nothing usable.
+  pruneChainsToBuilt(config, providers, warn);
   // Effort per turn ([agent] turn_effort) rides on every call this run makes.
   const circuits = new Map<string, ProviderCircuitBreaker>();
   for (const [name, ep] of Object.entries(config.providers.endpoints)) {

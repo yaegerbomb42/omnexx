@@ -29,7 +29,15 @@ export default tseslint.config(
   ...tseslint.configs.stylisticTypeChecked,
   {
     languageOptions: {
-      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+      parserOptions: {
+        projectService: {
+          // This one DOM test is typechecked by the webview tsconfig (DOM lib), not the
+          // root one: lint it with that project instead of the default.
+          allowDefaultProject: ['test/unit/vscode-roles-providers.test.ts'],
+          defaultProject: 'vscode/src/webview/tsconfig.json',
+        },
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',

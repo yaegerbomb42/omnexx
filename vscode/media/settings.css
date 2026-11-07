@@ -735,6 +735,63 @@ kbd {
   color: var(--accent);
 }
 
+/* "Your models" provider selector: toggle chips with key status, and the greyed
+   state for ranked models whose provider is not selected (kept, skipped). */
+.prov-sel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.prov-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px 10px 3px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: var(--card);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.prov-chip:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  color: var(--fg);
+}
+
+.prov-chip.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.prov-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.prov-chip .prov-key {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.rchip.inactive {
+  opacity: 0.45;
+}
+
+.rc-skip {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
 /* ==========================================================================
    Execution Posture card, slider rows, Token Budget bar,
    Live Stats card — surfaces share the tokens defined in chat.css.

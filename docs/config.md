@@ -38,13 +38,14 @@ The old `roles.json` and `models.json` are gone: on startup they are folded into
 
 The one ranked model list and the per-role overrides, in this file (migrated from the old `models.json` / `roles.json` on startup; see above).
 
-| Key                       | Default      | Meaning                                                                                                                                         |
-| ------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pool.ranked`             | `[]`         | Every model the person uses, in failover order (`provider:model`). Chat and every run role use it unless `[roles]` gives the role its own list. |
-| `pool.mode`               | `"fallback"` | How the pool is used: `fallback` (#1 until its quota runs out), `priority` (#1 first each call), `random`.                                      |
-| `roles.models.<role>`     | —            | A role's own list (`chat`, `planner`, `worker`, `cheap`, `helpers`); empty falls back to the pool.                                              |
-| `roles.strategies.<role>` | —            | How the role routes between its models (`fallback`, `priority`, `random`, `least-busy`, `smart`).                                               |
-| `roles.spread_helpers`    | `true`       | Helpers running at the same time start on different providers.                                                                                  |
+| Key                       | Default      | Meaning                                                                                                                                                                                                            |
+| ------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pool.ranked`             | `[]`         | Every model the person uses, in failover order (`provider:model`). Chat and every run role use it unless `[roles]` gives the role its own list.                                                                    |
+| `pool.mode`               | `"fallback"` | How the pool is used: `fallback` (#1 until its quota runs out), `priority` (#1 first each call), `random`.                                                                                                         |
+| `pool.providers`          | `[]`         | Providers the agent may draw from, in preference order; empty means every provider. A listed provider with no endpoint or key is skipped, and a list that leaves nothing usable falls back to the unfiltered pool. |
+| `roles.models.<role>`     | —            | A role's own list (`chat`, `planner`, `worker`, `cheap`, `helpers`); empty falls back to the pool.                                                                                                                 |
+| `roles.strategies.<role>` | —            | How the role routes between its models (`fallback`, `priority`, `random`, `least-busy`, `smart`).                                                                                                                  |
+| `roles.spread_helpers`    | `true`       | Helpers running at the same time start on different providers.                                                                                                                                                     |
 
 ## `[docker]` (when `sandbox = "docker"`)
 

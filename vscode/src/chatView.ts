@@ -475,7 +475,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 <link rel="stylesheet" href="${settingsCss.toString()}">
 <title>omnexx</title>
 </head>
-<body data-logo="${logo.toString()}">
+<body data-logo="${logo.toString()}" data-power="off">
 <div id="banner" class="banner" hidden role="status"></div>
 <details id="steps" class="mission" hidden>
   <summary><span class="chev" aria-hidden="true"></span><span id="steps-now" class="now"></span><span id="steps-count" class="count"></span><span class="track"><span id="steps-bar" class="fill"></span></span></summary>
@@ -555,6 +555,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 <footer class="composer">
   <div id="suggest" class="suggest" hidden role="listbox" aria-label="Suggestions"></div>
   <div id="statusline" class="statusline" role="status" aria-label="Session status">
+    <button id="power" class="power" title="Power on: wake omnexx" aria-label="Power omnexx on or off" aria-pressed="false"><img src="${logo.toString()}" alt=""></button>
+    <span class="sep" aria-hidden="true">·</span>
     <button id="model" class="status-model" data-action="settingsModels" title="Chat model: click to see your models in Settings">Pick a model</button>
     <span class="sep" aria-hidden="true">·</span>
     <span id="status-tokens" class="status-item" title="Tokens used this session">0 tok</span>

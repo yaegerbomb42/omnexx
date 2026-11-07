@@ -44,7 +44,7 @@ import * as domain from './domain.js';
 import * as inspector from './inspector.js';
 import * as modelPicker from './modelPicker.js';
 import * as posture from './posture.js';
-import type { KernelSnapshot, SystemOneSnapshot } from './kernelObserve.js';
+import type { KernelSnapshot } from './kernelObserve.js';
 import * as settings from './settings.js';
 import * as stats from './stats.js';
 import { chatEmptyStateHtml } from './emptyState.js';
@@ -75,8 +75,6 @@ interface State {
   usage: (Usage & { startedAt: number | null }) | null;
   /** Observe-only kernel snapshot; absent on an older omnexx or with the kernel off. */
   kernel?: KernelSnapshot | null;
-  /** Observe-only System-1 telemetry; absent on an older omnexx or with System-1 off. */
-  systemOne?: SystemOneSnapshot | null;
   helpers?: crew.Helper[];
   waiting?: { startedAt: number; estimateMs: number | null } | null;
   estimate?: string | null;
@@ -211,6 +209,66 @@ const jumpBtn = el('jump', HTMLButtonElement);
 /** Messages sent this session, newest last, for ↑/↓ recall in an empty composer. */
 const sent: string[] = [];
 let recall = -1;
+
+/**
+ * Power: the control board. Dormant by default on every fresh open (the HTML
+ * ships `data-power="off"`); the board stays grey until woken, and the logo
+ * is the kill switch. Powering off posts the existing `pause` when a turn is
+ * running — the agent finishes its current step, then holds, so no new turns
+ * start while off. Waking posts `resume` only when the session was paused.
+ * No new message type was needed: pause/resume are already forwarded.
+ */
+const powerBtn = el('power', HTMLButtonElement);
+let powerOn = document.body.dataset.power === 'on';
+/** Last server-side paused state, from state frames: resume only when paused. */
+let lastPaused = false;
+let wakeTimer: number | undefined;
+
+function applyPower(): void {
+  document.body.dataset.power = powerOn ? 'on' : 'off';
+  powerBtn.setAttribute('aria-pressed', String(powerOn));
+  powerBtn.title = powerOn ? 'Power off: pause omnexx' : 'Power on: wake omnexx';
+  input.disabled = !powerOn;
+  send.disabled = !powerOn;
+}
+
+function setPower(on: boolean): void {
+  if (on === powerOn) return;
+  powerOn = on;
+  applyPower();
+  if (on) {
+    document.body.classList.add('waking');
+    window.clearTimeout(wakeTimer);
+    wakeTimer = window.setTimeout(() => {
+      document.body.classList.remove('waking');
+    }, 650);
+    if (lastPaused) post({ type: 'resume' });
+  } else {
+    window.clearTimeout(wakeTimer);
+    document.body.classList.remove('waking');
+    if (state?.busy) post({ type: 'pause' });
+  }
+}
+
+/** First interaction wakes the board: a mouse move, or a click anywhere. */
+document.addEventListener('pointermove', () => {
+  if (!powerOn) setPower(true);
+});
+document.addEventListener(
+  'click',
+  (e) => {
+    if (powerOn) return;
+    // The waking click only wakes: nothing underneath it fires.
+    e.stopPropagation();
+    e.preventDefault();
+    setPower(true);
+  },
+  true,
+);
+powerBtn.addEventListener('click', () => {
+  setPower(!powerOn);
+});
+applyPower();
 
 const ICON = {
   check:
@@ -742,6 +800,7 @@ function scheduleApply(s: State): void {
     const next = pendingState;
     pendingState = null;
     state = next;
+    lastPaused = next.paused;
     settings.setCurrentModel(next.model);
     modelPicker.setCurrent(next.model);
     banner.hidden = true;
@@ -749,7 +808,7 @@ function scheduleApply(s: State): void {
     drawStats(next);
     drawMemoryNote(next);
     stats.update(next);
-    stats.updateKernel(next.kernel, next.usage, next.systemOne);
+    stats.updateKernel(next.kernel);
     drawSteps(next.todos);
     inspector.onBusy(next.busy, post);
     crew.drawCrew(next.helpers ?? [], logoSrc);
@@ -868,6 +927,7 @@ function drawSend(): void {
 
 /** Sends the input. Only a click on the button (shown as Stop) stops a run; Enter never does. */
 function submit(fromButton = false): void {
+  if (!powerOn) return;
   const text = input.value.trim();
   if (!text) {
     if (fromButton && state?.busy) post({ type: 'stop' });

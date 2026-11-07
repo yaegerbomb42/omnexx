@@ -140,6 +140,39 @@ describe('modelsWaiter: a pending resolver per request', () => {
   });
 });
 
+describe('power: dormant control board', () => {
+  it('ships dormant with the logo as the power button', () => {
+    const provider = new ChatViewProvider({ fsPath: '/ext' } as never);
+    let html = '';
+    let options: unknown;
+    const webview = {
+      set options(v: unknown) {
+        options = v;
+      },
+      get options(): unknown {
+        return options;
+      },
+      set html(v: string) {
+        html = v;
+      },
+      asWebviewUri: (u: { fsPath: string }) => ({ toString: () => `https://file/${u.fsPath}` }),
+      onDidReceiveMessage: () => ({ dispose: () => undefined }),
+    };
+    const view = {
+      webview,
+      onDidDispose: () => ({ dispose: () => undefined }),
+    };
+    (provider as unknown as { resolveWebviewView: (v: unknown) => void }).resolveWebviewView(view);
+    // Dormant on every fresh open: the board is dark until woken.
+    expect(html).toContain('data-power="off"');
+    // The logo is the kill switch, first in the statusline.
+    expect(html).toContain('id="power"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain('Power omnexx on or off');
+    expect(html).toContain('id="statusline"');
+  });
+});
+
 describe('chat footer: one status line, one Stop button', () => {
   it('renders model · tokens · step and no pause button or scattered chips', () => {
     const provider = new ChatViewProvider({ fsPath: '/ext' } as never);

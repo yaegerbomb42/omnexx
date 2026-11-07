@@ -185,3 +185,99 @@ coordinate through the coordinator, don't edit the same lines.
 
 Each worker: own clone at `23a2a40`, branch `feat/ui-overhaul`, commit on its
 slice branch, no push. Coordinator integrates.
+
+## 11. Quiet Kernel + System-1 panels (2026-11-06, on top of the overhaul)
+
+### Audit — what each row is for
+
+**Kernel panel** (`vscode/src/webview/kernelObserve.ts`, painted by
+`stats.updateKernel` into `#kernel-observe` / `#kernel-observe-settings`).
+Data: `KernelSnapshot` from `src/runtime/kernel/observe.ts`
+(`snapshotFromAllocateEvent`) built from the loop's `kernel.allocate` event
+(`src/agent/loop.ts:597`). No protocol change: the snapshot type and the
+state-frame shape are untouched; this is UI-only.
+
+| Row                                             | Source                        | Verdict                                                                                                                                                                                                                                                      |
+| ----------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Phase pills (orient/plan/act/verify/synthesize) | `snapshot.phase`              | **Keep** — the only glanceable signal. Now the single quiet summary line instead of a full card.                                                                                                                                                             |
+| Active capabilities (≤8, kind + id)             | `snapshot.active[].id`        | **Keep, names only.** The `why` text is raw bm25 ranking debug built in `src/runtime/kernel/kernel.ts:772` (`bm25 match for "<objective>" (reason)`); it is never rendered anymore. Truncation at the source was not needed — the UI simply drops the field. |
+| Header meta (taskClass · tier · rank)           | snapshot fields               | **Trimmed.** `rank` is effectively always `bm25`; dropped. taskClass · tier survive in the summary line.                                                                                                                                                     |
+| Cadence                                         | `snapshot.cadence` + `reason` | **Keep, inside the disclosure.** Changes per turn; a one-liner, not noise.                                                                                                                                                                                   |
+| Selective mount ("X tok/turn saved")            | `snapshot.mountSavings`       | **Keep, conditional.** Hidden when the saving is 0 — with no catalog `mountSavings` is null and the row sat at "0 tok/turn saved" forever.                                                                                                                   |
+| KV cache ("% hit · $ saved")                    | `Usage` totals                | **Removed.** It duplicated Live Stats (Cache Hit / Cache Saved, same data, same `Usage` object). The `Usage` parameter was dropped from `kernelObserveHtml` and `updateKernel` as a result.                                                                  |
+
+**System-1 panel — does not exist at this base.** The strings "ask
+clarification", "Guardrails … intercepted", "Patch sanity … caught", "Saved
+0 tok · 0 turns", and "noise lines pruned" appear nowhere in `vscode/src/`
+or `src/` (searched 2026-11-06). The closest analogues are not panels:
+`src/telemetry/humanize.ts:305` renders a `context.pruned` event line
+("pruned N superseded results …") and `src/telemetry/turn-trace.ts`
+folds per-turn tool calls into a `/trace` line — neither is a UI panel and
+neither renders in the webview. Nothing was removed because there is nothing
+to remove; if those rows appear in a newer omnexx, they come from a state
+shape this base does not have.
+
+**Trace lines.** The per-turn trace (`turnTraceLine`,
+`src/telemetry/humanize.ts:569`) folds `turn` / `tool.call` / gates only —
+it never carries kernel allocate or bm25 text. `kernel.allocate` has no
+formatter in `humanize.ts`, so it never appears as a chat-log line in the
+webview either (at CLI debug verbosity it would surface via `debugLine`,
+not in the panel). The bm25 `why` text only ever surfaced in the Kernel
+card itself, which is now fixed. No trace-line change was needed.
+
+### What changed
+
+- `vscode/src/webview/kernelObserve.ts` — the card is now a `<details
+class="ko">` collapsed by default: summary = "Kernel" + phase pills +
+  taskClass · tier; body = capability names (kind + id, no `why`) + Cadence
+  row + Selective mount row only when saving > 0. `Usage` param dropped.
+- `vscode/src/webview/stats.ts` — `updateKernel(k)` drops the unused usage
+  argument; `refresh()` updated to match.
+- `vscode/src/webview/chat.ts` — `stats.updateKernel(next.kernel)` call
+  updated to match.
+- `vscode/media/chat.css` — `.ko-card` (border, background, entrance
+  animation), `.ko-head`, `.ko-why`, `@keyframes ko-in` deleted. New
+  `.ko` / `.ko-summary` disclosure styles reuse the existing `.chev`
+  pattern and design tokens; detail rows indent under the summary.
+- `test/unit/runtime/kernel-observe.test.ts` — render test updated to the
+  disclosure (collapsed by default, no `why` text, no KV cache row) plus a
+  new test for the hidden-when-zero mount row and the "core tools only"
+  empty state.
+- Nothing moved to the Output channel: the dropped `why` strings are
+  ranking debug with no user-facing value, and the full `kernel.allocate`
+  event payload is already emitted on the event stream for anyone who
+  wants it (`src/agent/loop.ts:597`).
+
+## 12. Control-board power (2026-11-06, on top of the overhaul)
+
+The panel opens as a control board that isn't turned on: greyed out and
+dormant. The omnexx logo is the power button — click it, move the mouse, or
+click anywhere and the board brilliantly animates to life in full color.
+The logo is also the kill switch: click it while on and the agent pauses.
+
+### What changed
+
+- `vscode/src/chatView.ts` — `<body>` ships `data-power="off"` (dormant on
+  every fresh open; never persisted) and the statusline gains the power
+  button first: `#power`, the logo image, `aria-pressed`.
+- `vscode/media/tokens.css` — `--dur-wake: 600ms` motion token for the
+  power-on sweep.
+- `vscode/media/chat.css` — dormant rules desaturate + dim everything
+  except `#power` (`grayscale(1) brightness(0.72)`); the lit button gets an
+  accent halo, the dormant one a slow beacon pulse; `power-on` keyframes
+  sweep color back in ~600ms with a glow flash; `prefers-reduced-motion`
+  disables the pulse and collapses the sweep.
+- `vscode/src/webview/chat.ts` — power state machine (`powerOn`,
+  `applyPower`, `setPower`): dormant disables the composer input + send and
+  guards `submit()`; the first `pointermove` or (capture-phase) click wakes
+  the board, and the waking click is swallowed so nothing underneath fires.
+  Kill switch: powering off posts the existing `pause` when a turn is
+  running (the agent finishes its current step, then holds — no new turns);
+  waking posts `resume` only when the last state frame said paused.
+- No new message type was needed: `pause`/`resume` are already in the
+  `FORWARD` set (`vscode/src/forward.ts`) and the chat server already
+  handles them (`src/cli/chat-server.ts`, `session.command('pause' |
+'resume')`); both are safe no-ops when nothing is running.
+- `test/unit/vscode-chat-view-models.test.ts` — new `power` describe block
+  asserts the rendered HTML ships `data-power="off"` with the `#power`
+  button first in the statusline.

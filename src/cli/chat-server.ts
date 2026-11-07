@@ -320,13 +320,17 @@ export async function serveChat(
    */
   const sendRoles = async (): Promise<void> => {
     const { readRoles } = await import('../config/roles.js');
-    const { readPoolMode, readRanking } = await import('../config/ranking.js');
+    const { readPoolMode, readPoolProviders, readRanking } = await import('../config/ranking.js');
     const { QuotaLedger } = await import('../providers/quota-ledger.js');
     const paths = resolvePaths(io.env);
     write({
       type: 'roles',
       roles: await readRoles(paths),
-      pool: { ranked: await readRanking(paths), mode: await readPoolMode(paths) },
+      pool: {
+        ranked: await readRanking(paths),
+        mode: await readPoolMode(paths),
+        providers: await readPoolProviders(paths),
+      },
       exhausted: new QuotaLedger(join(paths.configHome, 'quota.json')).all(),
     });
   };
@@ -552,13 +556,21 @@ export async function serveChat(
             const paths = resolvePaths(io.env);
             if (typeof c.roles === 'object' && c.roles)
               await writeRoles(paths, parseRoles({ ...c.roles, version: ROLES_VERSION }));
-            const pool = c.pool as { ranked?: unknown; mode?: unknown } | undefined;
+            const pool = c.pool as {
+              ranked?: unknown;
+              mode?: unknown;
+              providers?: unknown;
+            } | null;
             if (pool) {
-              const { parsePoolMode, writePool } = await import('../config/ranking.js');
+              const { cleanProviders, parsePoolMode, writePool } =
+                await import('../config/ranking.js');
               const ranked = Array.isArray(pool.ranked)
                 ? pool.ranked.filter((r): r is string => typeof r === 'string')
                 : [];
-              await writePool(paths, ranked, parsePoolMode(pool.mode));
+              // The editor may not send providers (older clients): keep the saved list.
+              const providers =
+                pool.providers === undefined ? undefined : cleanProviders(pool.providers);
+              await writePool(paths, ranked, parsePoolMode(pool.mode), providers);
             }
             await sendRoles();
           }),

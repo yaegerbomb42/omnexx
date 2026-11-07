@@ -51,6 +51,21 @@ export function shiftRef(list: readonly string[], from: number, by: number): str
   return placeRef(list, ref, Math.max(0, from + by));
 }
 
+/** The provider of a `provider:model` ref (the part before the first colon). */
+export function providerOf(ref: string): string {
+  return ref.split(':')[0] ?? '';
+}
+
+/** Palette models from the selected providers; an empty selection means all providers. */
+export function filterProviders(
+  items: readonly ModelItem[],
+  providers: readonly string[],
+): ModelItem[] {
+  if (!providers.length) return [...items];
+  const allowed = new Set(providers);
+  return items.filter((m) => allowed.has(m.provider));
+}
+
 /** Palette models whose ref has every typed word. */
 export function filterModels(items: readonly ModelItem[], query: string): ModelItem[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -61,20 +76,27 @@ export function modeOf(value: unknown): Mode {
   return MODES.find((m) => m.id === value)?.id ?? 'fallback';
 }
 
-function chipHtml(listId: string, ref: string, i: number, out: boolean): string {
+function chipHtml(listId: string, ref: string, i: number, out: boolean, inactive: boolean): string {
   const [provider = '', ...rest] = ref.split(':');
   const name = escapeHtml(ref);
-  return `<li class="rchip${out ? ' out' : ''}" draggable="true" tabindex="0" data-ref="${name}" data-list="${listId}" data-index="${String(i)}" title="${name}${out ? ' (out of quota, skipped until it resets)' : ''}. Drag to reorder; Alt+↑↓ moves it."><span class="rc-n">${String(i + 1)}</span>${badge(provider)}<span class="rc-name">${escapeHtml(rest.join(':'))}</span>${out ? '<span class="rc-q" aria-label="out of quota">⏳</span>' : ''}<button class="rc-x" data-rank-remove="${listId}" data-ref="${name}" aria-label="Remove ${name}">×</button></li>`;
+  const note = `${out ? ' (out of quota, skipped until it resets)' : ''}${inactive ? ' (provider not selected, skipped until re-selected)' : ''}`;
+  return `<li class="rchip${out ? ' out' : ''}${inactive ? ' inactive' : ''}" draggable="true" tabindex="0" data-ref="${name}" data-list="${listId}" data-index="${String(i)}" title="${name}${note}. Drag to reorder; Alt+↑↓ moves it."><span class="rc-n">${String(i + 1)}</span>${badge(provider)}<span class="rc-name">${escapeHtml(rest.join(':'))}</span>${out ? '<span class="rc-q" aria-label="out of quota">⏳</span>' : ''}${inactive ? '<span class="rc-skip">skipped</span>' : ''}<button class="rc-x" data-rank-remove="${listId}" data-ref="${name}" aria-label="Remove ${name}">×</button></li>`;
 }
 
-/** A ranked list: numbered chips, a drop zone, and an empty-state hint. */
+/**
+ * A ranked list: numbered chips, a drop zone, and an empty-state hint. `inactive` marks
+ * refs whose provider is not selected: they stay in the list, greyed, until re-selected.
+ */
 export function listHtml(
   listId: string,
   list: readonly string[],
   exhausted: Readonly<Record<string, number>>,
   empty: string,
+  inactive: ReadonlySet<string> = new Set(),
 ): string {
-  const chips = list.map((ref, i) => chipHtml(listId, ref, i, exhausted[ref] !== undefined));
+  const chips = list.map((ref, i) =>
+    chipHtml(listId, ref, i, exhausted[ref] !== undefined, inactive.has(ref)),
+  );
   const body = chips.length ? chips.join('') : `<li class="rc-empty">${escapeHtml(empty)}</li>`;
   return `<ol class="rank-list" data-drop-list="${listId}" aria-label="Ranked models">${body}</ol>`;
 }

@@ -111,11 +111,6 @@ export const isTabId = (v: unknown): v is TabId =>
 
 export const tabForSection = (id: SectionId): TabId => TAB_FOR_SECTION[id];
 
-/** Return the sections belonging to a specific tab. */
-export function sectionsForTab(tabId: TabId): readonly SectionMeta[] {
-  return SECTIONS.filter((s) => TAB_FOR_SECTION[s.id] === tabId);
-}
-
 /** The tab a key moves to from `current`, or undefined when the key is not a tab key. */
 export function nextTabFor(current: TabId, key: string): TabId | undefined {
   const index = TABS.findIndex((t) => t.id === current);
@@ -150,24 +145,6 @@ const meta = (id: SectionId): SectionMeta => {
   if (!found) throw new Error(`unknown settings section "${id}"`);
   return found;
 };
-
-/** The sticky row of colored jump chips. Counts add a badge (e.g. Providers (3)) and
- *  `active` marks the section currently in view (see the scroll-spy in settings.ts). */
-export function navHtml(
-  counts: Partial<Record<SectionId, number>> = {},
-  active?: SectionId,
-  tabId?: TabId,
-): string {
-  const sections = tabId ? sectionsForTab(tabId) : SECTIONS;
-  if (tabId && sections.length < 3) return '';
-  return `<nav class="set-nav" aria-label="Settings sections">${sections
-    .map((s) => {
-      const count = counts[s.id] ?? 0;
-      const isActive = s.id === active;
-      return `<button class="set-chip${isActive ? ' on' : ''}" data-sec="${s.id}" data-sec-jump="${s.id}" title="${escapeHtml(s.subtitle)}"${isActive ? ' aria-current="location"' : ''}>${icon(s.icon)}<span>${escapeHtml(s.chip)}</span>${count > 0 ? `<span class="set-count">${String(count)}</span>` : ''}</button>`;
-    })
-    .join('')}</nav>`;
-}
 
 /** The sticky header's tab list. The selected tab keeps tabindex 0; the rest are -1.
  *  Counts add a badge to a tab (e.g. the providers tab shows connected providers). */

@@ -1,5 +1,6 @@
 import type { ModelProfileConfig, OmnexxConfig } from '../config/schema.js';
 import { resolveModel, type ResolvedModel } from '../providers/pricing.js';
+import { applyProviderPool } from './pool.js';
 import type { Role } from './actions.js';
 
 export interface Candidate {
@@ -57,6 +58,8 @@ export function guessFromName(
 /**
  * Every model the user configured (role chains plus `models.extra`), deduplicated in a stable
  * order. Quality and speed come from the profile, else from the strongest role the model holds.
+ * When `pool.providers` is set, only models on those providers are listed (a list that leaves
+ * nothing falls back to the unfiltered set, per applyProviderPool).
  */
 export function listCandidates(config: OmnexxConfig): Candidate[] {
   const m = config.models;
@@ -66,10 +69,13 @@ export function listCandidates(config: OmnexxConfig): Candidate[] {
     if (role && !roles.includes(role)) roles.push(role);
     byRef.set(ref, roles);
   };
+  const pairs: [string, Role | undefined][] = [];
   for (const role of ['planner', 'worker', 'cheap'] as const) {
-    for (const ref of refsOf(m[role])) add(ref, role);
+    for (const ref of refsOf(m[role])) pairs.push([ref, role]);
   }
-  for (const ref of m.extra) add(ref);
+  for (const ref of m.extra) pairs.push([ref, undefined]);
+  const allowed = new Set(applyProviderPool([...new Set(pairs.map(([ref]) => ref))], config).refs);
+  for (const [ref, role] of pairs) if (allowed.has(ref)) add(ref, role);
   return [...byRef].map(([ref, roles]) => {
     const profile = m.profiles[ref] ?? { tags: [], tools: true, vision: false };
     const best = roles.reduce<Role | undefined>(

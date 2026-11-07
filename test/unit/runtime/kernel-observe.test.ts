@@ -28,21 +28,29 @@ describe('kernel observe snapshot', () => {
     expect(cadenceLabel(s)).toBe('sticky · prefix cached (sticky progress)');
   });
 
-  it('renders the observe-only card (phase pill, caps, cadence, savings) and nothing without data', () => {
-    const html = kernelObserveHtml(snapshotFromAllocateEvent(ev), {
-      tokens: { input: 10_000, cacheRead: 8_000, cacheWrite: 1_000, output: 500 },
-      usd: 0.05,
-      turns: 3,
-      toolCalls: 3,
-      toolErrors: 0,
-      compactions: 0,
-    });
+  it('renders the observe-only disclosure (phase line, caps, cadence, savings) and nothing without data', () => {
+    const html = kernelObserveHtml(snapshotFromAllocateEvent(ev));
     expect(html).toContain('class="ko-phase on" aria-current="step">act<');
     expect(html).toContain('github');
     expect(html).toContain('sticky · prefix cached');
     expect(html).toContain('6.5k tok/turn saved');
-    expect(html).toContain('80% hit');
+    // Collapsed by default: a <details> with no open attribute.
+    expect(html).toMatch(/^<details class="ko">/);
+    expect(html).not.toContain(' open');
+    // The bm25 `why` debug text is never rendered; capability names only.
+    expect(html).not.toContain('bm25 match for');
+    expect(html).not.toContain('ko-why');
+    // The KV cache row is gone: Live Stats shows the same numbers already.
+    expect(html).not.toContain('80% hit');
+    expect(html).not.toContain('KV cache');
     expect(html).not.toMatch(/<(input|button|select)/);
     expect(kernelObserveHtml(null)).toBe('');
+  });
+
+  it('hides the Selective mount row when nothing is saved and shows core tools only when empty', () => {
+    const noSavings = snapshotFromAllocateEvent({ ...ev, mountSavings: null, why: {} });
+    const html = kernelObserveHtml(noSavings);
+    expect(html).not.toContain('Selective mount');
+    expect(html).toContain('core tools only');
   });
 });
