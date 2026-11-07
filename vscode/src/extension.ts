@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { AutonomousQueueProvider } from './autonomousQueue.js';
 import { ChatViewProvider } from './chatView.js';
 import { initEngine } from './engine.js';
-import { control, openTerminal, type Control } from './cli.js';
+import { control, daemonStart, daemonStatus, daemonStop, openTerminal, type Control } from './cli.js';
 import {
   DIFF_SCHEME,
   DiffCodeLensProvider,
@@ -41,6 +43,27 @@ export function activate(context: vscode.ExtensionContext): void {
   // hidden: a count on the History view's icon and a status-bar item that opens it.
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   status.command = 'omnexx.showHistory';
+
+  // 24/7 Autonomous Daemon status bar item + 1-click toggle
+  const daemonStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
+  daemonStatusItem.command = 'omnexx.toggleAutonomousDaemon';
+  const paintDaemonStatus = async (): Promise<void> => {
+    const folder = primaryFolder();
+    if (!folder) {
+      daemonStatusItem.hide();
+      return;
+    }
+    const running = await daemonStatus(folder);
+    if (running) {
+      daemonStatusItem.text = '$(sync~spin) 24/7 Daemon: On';
+      daemonStatusItem.tooltip = 'Omnexx 24/7 Autonomous Daemon is active. Click to stop.';
+    } else {
+      daemonStatusItem.text = '$(play) 24/7 Daemon: Off';
+      daemonStatusItem.tooltip = 'Click to launch 24/7 autonomous daemon on this repository';
+    }
+    daemonStatusItem.show();
+  };
+  void paintDaemonStatus();
   const paintStatus = (): void => {
     if (provider.unseenFinished > 0) {
       const n = provider.unseenFinished;
@@ -134,6 +157,38 @@ export function activate(context: vscode.ExtensionContext): void {
     cmd('omnexx.startAutonomous', () => startRun(true, refresh)),
     queueProvider,
     queueView,
+    daemonStatusItem,
+    cmd('omnexx.toggleAutonomousDaemon', async () => {
+      const folder = primaryFolder();
+      if (!folder) throw new Error('Open a folder first.');
+      const running = await daemonStatus(folder);
+      if (running) {
+        await daemonStop(folder);
+        void vscode.window.showInformationMessage('omnexx: 24/7 autonomous daemon stopped');
+      } else {
+        const tomlPath = join(folder, 'omnexx.toml');
+        if (!existsSync(tomlPath)) {
+          writeFileSync(
+            tomlPath,
+            '# omnexx.toml\n[autonomous]\nenabled = true\nmode = "daemon"\ntarget_branch = "omnexx/auto-main"\nbase_branch = "main"\n',
+          );
+        } else {
+          const content = readFileSync(tomlPath, 'utf8');
+          if (!content.includes('[autonomous]')) {
+            writeFileSync(
+              tomlPath,
+              content + '\n[autonomous]\nenabled = true\nmode = "daemon"\ntarget_branch = "omnexx/auto-main"\nbase_branch = "main"\n',
+            );
+          } else if (content.includes('enabled = false')) {
+            writeFileSync(tomlPath, content.replace('enabled = false', 'enabled = true'));
+          }
+        }
+        await daemonStart(folder);
+        void vscode.window.showInformationMessage('omnexx: 24/7 autonomous daemon started');
+      }
+      refreshQueue();
+      await paintDaemonStatus();
+    }),
     vscode.workspace.registerTextDocumentContentProvider(DIFF_SCHEME, diffProvider),
     vscode.languages.registerCodeLensProvider({ scheme: DIFF_SCHEME }, new DiffCodeLensProvider()),
     queueView.onDidChangeVisibility(() => {
@@ -158,11 +213,17 @@ export function activate(context: vscode.ExtensionContext): void {
     cmd('omnexx.resume', (node) => controlRun('resume', node, refresh)),
     cmd('omnexx.stop', (node) => controlRun('stop', node, refresh)),
     cmd('omnexx.refresh', refresh),
-    vscode.workspace.onDidChangeWorkspaceFolders(refresh),
-    vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('omnexx')) refresh();
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      refresh();
+      void paintDaemonStatus();
     }),
-    autoRefresh(view, provider),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('omnexx')) {
+        refresh();
+        void paintDaemonStatus();
+      }
+    }),
+    autoRefresh(view, provider, paintDaemonStatus),
   );
 }
 
@@ -171,7 +232,11 @@ export function deactivate(): void {
 }
 
 /** Re-list while the sidebar is visible and a run is live, so the todo list moves on its own. */
-function autoRefresh(view: vscode.TreeView<Node>, provider: RunsProvider): vscode.Disposable {
+function autoRefresh(
+  view: vscode.TreeView<Node>,
+  provider: RunsProvider,
+  onTick?: () => Promise<void> | void,
+): vscode.Disposable {
   const seconds = Math.max(
     MIN_REFRESH_SECONDS,
     vscode.workspace.getConfiguration('omnexx').get<number>('refreshSeconds') ??
@@ -179,6 +244,7 @@ function autoRefresh(view: vscode.TreeView<Node>, provider: RunsProvider): vscod
   );
   const timer = setInterval(() => {
     if (view.visible && provider.hasActiveRun) provider.refresh();
+    if (onTick) void onTick();
   }, seconds * 1_000);
   return new vscode.Disposable(() => {
     clearInterval(timer);

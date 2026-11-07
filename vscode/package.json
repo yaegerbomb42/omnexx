@@ -2,7 +2,7 @@
   "name": "omnexx",
   "displayName": "omnexx",
   "description": "Autonomous coding agent for VS Code. Plan, code, test, and run unattended in your codebase with zero-config local Ollama or cloud models.",
-  "version": "0.26.9",
+  "version": "0.26.10",
   "publisher": "yaegerbomb42",
   "license": "MIT",
   "private": true,
@@ -202,6 +202,12 @@
         "title": "Reject Diff",
         "category": "omnexx",
         "icon": "$(circle-slash)"
+      },
+      {
+        "command": "omnexx.toggleAutonomousDaemon",
+        "title": "Toggle 24/7 Autonomous Daemon",
+        "category": "omnexx",
+        "icon": "$(play)"
       }
     ],
     "menus": {
@@ -225,6 +231,11 @@
           "command": "omnexx.refresh",
           "when": "view == omnexx.runs",
           "group": "navigation@4"
+        },
+        {
+          "command": "omnexx.toggleAutonomousDaemon",
+          "when": "view == omnexx.autonomousQueueView",
+          "group": "navigation@0"
         },
         {
           "command": "omnexx.refreshAutonomousQueue",

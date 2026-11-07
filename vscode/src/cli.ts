@@ -106,6 +106,23 @@ export async function control(
   return (await call([action, checkRunId(runId)], cwd)).trim();
 }
 
+export async function daemonStatus(cwd: string | undefined): Promise<boolean> {
+  try {
+    const out = await call(['daemon', 'status'], cwd);
+    return out.includes('running (pid');
+  } catch {
+    return false;
+  }
+}
+
+export async function daemonStart(cwd: string | undefined): Promise<string> {
+  return (await call(['daemon', 'start', '--detach'], cwd)).trim();
+}
+
+export async function daemonStop(cwd: string | undefined): Promise<string> {
+  return (await call(['daemon', 'stop'], cwd)).trim();
+}
+
 /** Open a terminal that runs omnexx directly (no shell, so the goal needs no quoting). */
 export async function openTerminal(
   name: string,
