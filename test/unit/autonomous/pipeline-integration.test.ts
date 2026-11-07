@@ -187,6 +187,95 @@ describe('VerificationPipeline.verify (stubbed commands, real git repo)', () => 
   });
 });
 
+describe('VerificationPipeline: test-gaming (live case 2026-11-06)', () => {
+  const ADDER_SRC = `export const add = (a: number, b: number): number => a * b;\n`;
+  const ADDER_TEST_HEAD = `import { expect, it } from 'vitest';
+import { add } from '../src/adder.js';
+
+it('adds', () => {
+  expect(add(2, 3)).toBe(5);
+});
+`;
+
+  async function adderRepo(): Promise<string> {
+    const repo = await tempRepo();
+    await mkdir(join(repo, 'src'), { recursive: true });
+    await mkdir(join(repo, 'test'), { recursive: true });
+    await writeFile(join(repo, 'src', 'adder.ts'), ADDER_SRC, 'utf8');
+    await writeFile(join(repo, 'test', 'adder.test.ts'), ADDER_TEST_HEAD, 'utf8');
+    await commitAll(repo, 'baseline');
+    return repo;
+  }
+
+  it('FAILs the live case end to end: test-only toBe(5) → toBe(6) with src untouched', async () => {
+    const repo = await adderRepo();
+    await writeFile(
+      join(repo, 'test', 'adder.test.ts'),
+      ADDER_TEST_HEAD.replace('toBe(5)', 'toBe(6)'),
+      'utf8',
+    );
+    const pipeline = new VerificationPipeline({ runCommand: () => Promise.resolve(ok()) });
+    const result = await pipeline.verify(
+      {
+        id: 't-live',
+        title: 'add() multiplies instead of adding',
+        kind: 'test_runner',
+        finding: 'add(2, 3) returns 6',
+      },
+      repo,
+      { repairRound: 0 },
+    );
+
+    expect(result.outcome).toBe('FAIL');
+    expect(result.stages[0]?.status).toBe('fail');
+    expect(result.diagnostics.join(' ')).toMatch(/weakened test expectation/);
+    expect(result.diagnostics.join(' ')).toMatch(/test-only diff/);
+  });
+
+  it('runStage3 fails a test-only diff that rewrites expectations', async () => {
+    const repo = await adderRepo();
+    await writeFile(
+      join(repo, 'test', 'adder.test.ts'),
+      ADDER_TEST_HEAD.replace('toBe(5)', 'toBe(6)'),
+      'utf8',
+    );
+    const pipeline = new VerificationPipeline({});
+    const stage = await pipeline.runStage3(repo, {
+      files: ['test/adder.test.ts'],
+      status: new Map([['test/adder.test.ts', 'M']]),
+      diff: '',
+      linesAdded: 1,
+      linesDeleted: 1,
+    });
+
+    expect(stage.status).toBe('fail');
+    expect(stage.diagnostics.join(' ')).toMatch(/without any source change/);
+  });
+
+  it('runStage3 still skips a test-only diff that only adds tests', async () => {
+    const repo = await adderRepo();
+    await writeFile(
+      join(repo, 'test', 'adder.test.ts'),
+      ADDER_TEST_HEAD.replace(
+        '});',
+        `});\n\nit('adds zero', () => {\n  expect(add(0, 0)).toBe(0);\n});`,
+      ),
+      'utf8',
+    );
+    const pipeline = new VerificationPipeline({});
+    const stage = await pipeline.runStage3(repo, {
+      files: ['test/adder.test.ts'],
+      status: new Map([['test/adder.test.ts', 'M']]),
+      diff: '',
+      linesAdded: 3,
+      linesDeleted: 0,
+    });
+
+    expect(stage.status).toBe('skipped');
+    expect(stage.details).toMatch(/no src changes/);
+  });
+});
+
 describe('FlakeIsolationController', () => {
   it('detects relatedness through the import graph', async () => {
     const repo = await tempDir('omnexx-flake-rel-');

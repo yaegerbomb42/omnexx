@@ -31,8 +31,13 @@ import type { QueuedTask } from './state-store.js';
 
 export type PlannerLogger = Pick<Console, 'log' | 'warn' | 'error'>;
 
-/** Default output cap: a plan is a small JSON object, not prose. */
-export const DEFAULT_PLANNER_MAX_TOKENS = 1024;
+/**
+ * Default output cap: a plan is a small JSON object, not prose — but reasoning
+ * models spend most of their output budget thinking (Nemotron 3.x used ~870
+ * reasoning tokens before emitting ~50 tokens of JSON in a live test), so the
+ * cap needs headroom above the JSON itself or every attempt comes back empty.
+ */
+export const DEFAULT_PLANNER_MAX_TOKENS = 4096;
 /** Total `Provider.complete` calls before giving up and throwing. */
 export const MAX_PLANNER_ATTEMPTS = 3;
 /** Finding-payload characters sent to the model (keeps the prompt small). */
@@ -60,6 +65,14 @@ const SYSTEM_PROMPT = [
   '  npx tsc --noEmit); fall back to "npm run typecheck" when unsure.',
   '- subSteps are concrete, ordered, and implementable from the finding alone.',
   '- summary is a single line describing the change.',
+  // Test-file authorization (live case 2026-11-06: the executor changed
+  // `toBe(5)` → `toBe(6)` and never touched the source). Listing a test file
+  // in filesToTouch does NOT authorize editing it — the executor refuses
+  // test-file writes unless a sub-step explicitly says to ADD tests there,
+  // and it never authorizes changing an existing expectation. The flag lives
+  // in a sub-step (not a plan field) because `boundPlan` in daemon.ts strips
+  // unknown plan fields before the plan reaches the executor.
+  '- If the task needs new tests, name the test file in filesToTouch AND write a sub-step that says so explicitly, e.g. "Add new test(s) in <test file>": without that sub-step the executor cannot touch the test file at all. Never plan a change to an existing test expectation — a failing test is fixed by fixing the source, not the expectation.',
 ].join('\n');
 
 /** Shell metacharacters / words that have no place in a verification command. */

@@ -270,6 +270,21 @@ function findingKindOf(task: QueuedTask): FindingKind {
     : 'todo';
 }
 
+/**
+ * What `shipTask` hands to `learnTask` once a task's final ship outcome is
+ * known. `deliveryMode` is what lands in done_set: `'auto'` for a merged /
+ * PR ship, `'auto:branch-only'` when the branch pushed but no PR was opened
+ * — the work is done and must not be re-proposed, but a human still has to
+ * open the PR from `prBodyPath` (the review queue already holds the branch).
+ */
+interface ShipCompletion {
+  shippedCommitSha: string;
+  deliveryMode: string;
+  branch: string;
+  /** Path of the PR body left on disk when no PR was opened, if any. */
+  prBodyPath?: string | undefined;
+}
+
 /** Daemon PID lock on `<daemonDir>/daemon.lock`, reusing the lock.ts pattern. */
 async function acquireDaemonLock(
   daemonDir: string,
@@ -438,21 +453,9 @@ export class AutonomousDaemon {
 
     const now = this.clock.now();
 
-    // 2. Reclaim stale leases: tasks stuck in PLANNING / IMPLEMENTING /
-    //    VERIFYING with no update for longer than the lease go back to QUEUED.
-    //    (The store has no lease concept; staleness is judged by updatedAtMs.)
-    for (const status of ACTIVE_STATUSES) {
-      for (const task of this.store.listTasks(status)) {
-        if (now - task.updatedAtMs > this.staleLeaseMs) {
-          this.store.updateTaskStatus(task.taskId, 'QUEUED');
-          this.store.recordStep(task.taskId, {
-            phase: 'idle',
-            errorSignature: 'stale lease reclaimed on boot',
-          });
-          this.logger.log(`[daemon] reclaimed stale lease on ${task.taskId}`);
-        }
-      }
-    }
+    // 2. Reclaim stale leases (see reclaimStaleLeases for why this runs
+    //    here and at the top of every cycle, not just at boot).
+    this.reclaimStaleLeases(now);
 
     // 3. Verify each active task's worktree tree-hash against its step journal:
     //    resume if clean, reset to the last checkpoint if corrupt.
@@ -507,6 +510,40 @@ export class AutonomousDaemon {
     this.lastHead = await this.currentHead();
     this.booted = true;
     this.logger.log('[daemon] boot reconciliation complete');
+  }
+
+  /**
+   * Stale-lease reclaim: tasks stuck in PLANNING / IMPLEMENTING / VERIFYING
+   * with no update for longer than the lease go back to QUEUED.
+   *
+   * Why this runs at the top of every cycle as well as at boot: reclaim used
+   * to be boot-only, so a task orphaned while the daemon stayed alive — the
+   * ship-failure case, where the daemon moved on to the next task and left
+   * the previous one in VERIFYING — was never reclaimed until the next
+   * restart, however long the daemon ran. At a cycle boundary no task is in
+   * flight (`processTask` is awaited inside `runCycle`), so any ACTIVE task
+   * seen here is necessarily orphaned.
+   *
+   * Staleness is judged by `updatedAtMs`, which the store stamps only on a
+   * status transition — step-journal writes do NOT bump it, so a task goes
+   * stale 30 min after it entered its phase. That also means a phase that
+   * legitimately runs long looks stale by the clock; what protects it is
+   * that reclaim only fires at a cycle boundary, never mid-task, so a live
+   * IMPLEMENT/VERIFY is never interrupted by it.
+   */
+  private reclaimStaleLeases(nowMs: number, context = 'boot'): void {
+    for (const status of ACTIVE_STATUSES) {
+      for (const task of this.store.listTasks(status)) {
+        if (nowMs - task.updatedAtMs > this.staleLeaseMs) {
+          this.store.updateTaskStatus(task.taskId, 'QUEUED');
+          this.store.recordStep(task.taskId, {
+            phase: 'idle',
+            errorSignature: `stale lease reclaimed on ${context}`,
+          });
+          this.logger.log(`[daemon] reclaimed stale lease on ${task.taskId}`);
+        }
+      }
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -619,6 +656,13 @@ export class AutonomousDaemon {
 
   async runCycle(): Promise<void> {
     this.transition('idle');
+
+    // Reclaim orphans left by an earlier cycle (e.g. a crash between cycles
+    // or a task the daemon abandoned) before picking up new work. Skipped
+    // while a task is in flight — runCycle is only re-entered between tasks,
+    // so currentTask is normally undefined here; the guard is belt-and-braces
+    // against a concurrent caller reclaiming the live task.
+    if (!this.currentTask) this.reclaimStaleLeases(this.clock.now(), 'cycle');
 
     // Budget windows gate everything: outside a window we park in BUDGET_PAUSE.
     if (this.budget) {
@@ -977,15 +1021,32 @@ export class AutonomousDaemon {
   /**
    * SHIP: shipping controller (fail-closed when not configured). Commits the
    * worktree first (the shipper pushes HEAD, so uncommitted edits would
-   * never leave the machine), then ships. Returns the shipped commit SHA, or
+   * never leave the machine), then ships. Returns the ship completion, or
    * undefined when the task did not ship.
+   *
+   * The three ship outcomes are handled explicitly — the old code treated
+   * "no PR URL" as "not shipped" and returned undefined, which left the
+   * task stuck in VERIFYING while the daemon moved on to the next task:
+   * - merged / PR created: normal completion, `deliveryMode: 'auto'`.
+   * - branch pushed but PR creation failed: the work IS shipped (branch on
+   *   the remote, PR body on disk, review-queue entry written by the
+   *   shipper). The task is marked done-with-caveat
+   *   (`deliveryMode: 'auto:branch-only'`, branch + prBodyPath recorded in
+   *   the step journal) so it never sits in VERIFYING and is never
+   *   re-proposed — a human still has to open the PR by hand.
+   * - branch push itself failed: nothing reached the remote. The task is
+   *   quarantined (tombstoned, visible in `queue --include-tombstones`),
+   *   not orphaned.
+   * Every path records the task's terminal state durably (markDone /
+   * tombstone) before this returns, so the daemon never picks up the next
+   * task with the current one still unresolved.
    */
   private async shipTask(
     task: QueuedTask,
     plan: TaskExecutionPlan,
     worktree: string,
     revertProof: boolean,
-  ): Promise<string | undefined> {
+  ): Promise<ShipCompletion | undefined> {
     this.transition('ship', task.taskId);
     if (!this.shipper) {
       this.store.recordStep(task.taskId, {
@@ -1025,37 +1086,69 @@ export class AutonomousDaemon {
       title: `${task.sourceCollector}:${task.fingerprint.slice(0, 12)}`,
       verificationReceipt: `verification: ${plan.verificationCommand}`,
     });
+    // Shipped commit: the worktree HEAD at ship time (merge commit / PR head).
+    const shippedCommitSha = (await this.currentHead(worktree)) ?? baseSha;
     this.store.recordStep(task.taskId, {
       phase: 'ship',
       errorSignature:
-        `ship tier ${result.tier} risk ${result.riskScore}` +
-        (result.merged ? ' merged' : result.prUrl ? ` PR ${result.prUrl}` : ' not shipped') +
+        `ship ${result.outcome} tier ${result.tier} risk ${result.riskScore} branch ${result.branch}` +
+        (result.prUrl ? ` PR ${result.prUrl}` : '') +
+        (result.prBodyPath ? ` pr-body ${result.prBodyPath}` : '') +
         (result.note ? ` (${result.note})` : ''),
     });
-    if (!result.merged && !result.prUrl) {
-      await this.releaseWorktree(task);
-      this.transition('idle', task.taskId);
-      return undefined;
+    switch (result.outcome) {
+      case 'merged':
+      case 'pr_created':
+        return { shippedCommitSha, deliveryMode: 'auto', branch: result.branch };
+      case 'branch_pushed_pr_failed':
+        // Branch is on the remote and the review queue already holds the
+        // entry; only the PR is missing. Done-with-caveat, not VERIFYING.
+        this.logger.warn(
+          `[daemon] task ${task.taskId} shipped branch ${result.branch} but no PR was opened` +
+            (result.prBodyPath ? `; PR body at ${result.prBodyPath}` : '') +
+            ' — marking done (branch-only)',
+        );
+        return {
+          shippedCommitSha,
+          deliveryMode: 'auto:branch-only',
+          branch: result.branch,
+          ...(result.prBodyPath ? { prBodyPath: result.prBodyPath } : {}),
+        };
+      case 'push_failed':
+        // Nothing reached the remote; the PR body is on disk for a human.
+        // Quarantine so the failure is visible instead of orphaned.
+        await this.quarantineTask(
+          task,
+          `ship_push_failed: ${result.note ?? 'branch push failed'}`.slice(0, 500),
+        );
+        return undefined;
     }
-    // Shipped commit: the worktree HEAD at ship time (merge commit / PR head).
-    return (await this.currentHead(worktree)) ?? baseSha;
   }
 
   /**
    * LEARN: ≤150-token episodic outcome to learned_patterns, then destroy the
-   * task context, release the worktree, and mark the task done.
+   * task context, release the worktree, and mark the task done. The
+   * delivery mode carries the ship caveat: a branch-only ship is done, but
+   * the outcome text says so and names the branch and PR-body path.
    */
   private async learnTask(
     task: QueuedTask,
     plan: TaskExecutionPlan,
     worktree: string,
-    shippedCommitSha: string,
+    ship: ShipCompletion,
   ): Promise<void> {
     this.transition('learn', task.taskId);
+    const shippedCommitSha = ship.shippedCommitSha;
+    const caveat =
+      ship.deliveryMode === 'auto:branch-only'
+        ? ` Shipped branch-only on ${ship.branch} (no PR opened` +
+          (ship.prBodyPath ? `; PR body at ${ship.prBodyPath}` : '') +
+          ').'
+        : '';
     const outcome = [
       `Task ${task.sourceCollector}:${task.fingerprint.slice(0, 12)} shipped.`,
       `Plan touched ${plan.filesToTouch.length} file(s); verification: ${plan.verificationCommand}.`,
-      `Outcome: shipped as ${shippedCommitSha.slice(0, 12)}.`,
+      `Outcome: shipped as ${shippedCommitSha.slice(0, 12)}.${caveat}`,
     ].join(' ');
     // ≤150 tokens ≈ ≤600 chars (the store also caps the summary length).
     const capped = outcome.length > 600 ? `${outcome.slice(0, 597)}…` : outcome;
@@ -1070,12 +1163,15 @@ export class AutonomousDaemon {
     await this.releaseWorktree(task);
     this.store.markDone(task.taskId, {
       shippedCommitSha,
-      deliveryMode: 'auto',
+      deliveryMode: ship.deliveryMode,
       targetBlobHashes: await this.blobHashesForFiles(worktree, plan.filesToTouch),
     });
     this.store.recordStep(task.taskId, { phase: 'learn', errorSignature: 'learned + done' });
     this.transition('idle', task.taskId);
-    this.logger.log(`[daemon] task ${task.taskId} done (${worktree})`);
+    this.logger.log(
+      `[daemon] task ${task.taskId} done (${worktree})` +
+        (caveat ? ` — branch-only ship on ${ship.branch}` : ''),
+    );
   }
 
   // -------------------------------------------------------------------------

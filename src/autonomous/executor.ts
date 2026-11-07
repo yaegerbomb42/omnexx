@@ -27,11 +27,15 @@
  *    (`checkDaemonCommand`, plus a best-effort redirect/`tee` target check)
  *    for `bash`. A refused call returns an error *result* to the model, so
  *    the turn continues and the circuit breaker sees the error — it never
- *    throws out of `executeTurn`.
+ *    throws out of `executeTurn`. The guard also owns the test-file rule:
+ *    an existing test file is read-only unless the plan explicitly
+ *    authorizes adding tests there, and even then only purely additive
+ *    edits are allowed — never a changed or removed expectation.
  * 4. `PathJail` (the tools' own jail) and the bash command policy confine
  *    every path/command to the worktree; child env is `daemonEnv` (secrets
  *    stripped).
  */
+import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import { decodeJsonStrings, lenientInput } from '../agent/loop.js';
@@ -64,6 +68,7 @@ import {
   type ToolSpec,
 } from '../providers/types.js';
 import { daemonEnv, assertDaemonCommand, assertPathAllowed } from './tool-guard.js';
+import { isTestFilePath } from './ast-analysis.js';
 import type {
   DaemonLogger,
   TaskExecutionPlan,
@@ -312,6 +317,169 @@ function findingText(payload: unknown): string {
   } catch {
     return '(unprintable finding payload)';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Test-file rule (live case 2026-11-06: the executor changed `toBe(5)` →
+// `toBe(6)` in a test 3/3 times and never touched the source).
+//
+// A test file being in the plan's `filesToTouch` does NOT authorize editing
+// it — when the finding IS a failing test, the planner lists the test file
+// as a target, and that alone must never license weakening its assertions.
+// Authorization is an explicit sub-step that says to ADD tests in a named
+// test file ("Add new test(s) in test/adder.test.ts"). The flag lives in
+// `subSteps` text rather than a plan field because `boundPlan` in
+// `daemon.ts` (which this file must not change) rebuilds the plan with only
+// its four known fields, so an extra field would be stripped before it ever
+// reached this guard. The planner prompt (planner.ts) instructs the model
+// to write the sub-step in exactly this form.
+//
+// Rule, in order:
+// - Unauthorized test-file write → refused. Test files are read-only.
+// - Authorized write to a test file that does not exist yet → allowed
+//   (creating the new test file the plan asked for).
+// - Authorized write to an EXISTING test file → allowed only for a purely
+//   additive str_replace/multi_edit: every edit's new text must contain its
+//   old text verbatim (an anchor plus appended tests) and must not introduce
+//   a skip/only marker. Overwrites (`write_file`), range replacements
+//   (`replace_lines`), and shell writes can never prove they only added, so
+//   they are refused on existing test files.
+// - Anything the guard cannot prove additive is refused here; the
+//   verification pipeline is the backstop for what slips through (e.g. an
+//   edit that comments an assertion out still contains the old text —
+//   Stage 0 flags it as a removed expectation / assertion-count drop).
+// ---------------------------------------------------------------------------
+
+/** Sub-step language that authorizes adding tests: an add-test verb + test(s)/assertion(s)/coverage, naming the file. Verbs cover natural planner phrasing ("strengthen the test with a negative case"), not just "add a test". */
+const ADD_TEST_STEP =
+  /\b(add|create|write|strengthen|extend|expand|introduce|include|append)\b[^.\n]{0,120}?\b(tests?|assertions?|coverage)\b/i;
+
+/** Test files the plan explicitly authorizes the executor to ADD tests to. */
+export function authorizedTestFiles(plan: TaskExecutionPlan): Set<string> {
+  const out = new Set<string>();
+  const testFiles = plan.filesToTouch.filter(isTestFilePath);
+  for (const file of testFiles) {
+    const base = file.split('/').pop() ?? file;
+    const named = plan.subSteps.some((step) => {
+      // Strip the file mention before matching, so the word "test" in the
+      // path itself ("Add the missing import in test/adder.test.ts") cannot
+      // count as the "add a test" trigger.
+      const stripped = step.split(file).join(' ').split(base).join(' ');
+      return (step.includes(file) || step.includes(base)) && ADD_TEST_STEP.test(stripped);
+    });
+    if (named) out.add(file);
+  }
+  // Fallback: a step that reads as "add/strengthen tests" but names no file
+  // ("Strengthen the test with a negative case") authorizes the single test
+  // file in scope — unambiguous when exactly one test file is touched, which
+  // is the usual failing-test finding. With several test files in scope the
+  // step is ambiguous and authorizes nothing. The file mention is stripped
+  // before matching here too, so "Add the missing import in
+  // test/adder.test.ts" still does not authorize.
+  const single = testFiles.length === 1 ? testFiles[0] : undefined;
+  if (out.size === 0 && single !== undefined) {
+    const base = single.split('/').pop() ?? single;
+    const generic = plan.subSteps.some((step) => {
+      const stripped = step.split(single).join(' ').split(base).join(' ');
+      return ADD_TEST_STEP.test(stripped);
+    });
+    if (generic) out.add(single);
+  }
+  return out;
+}
+
+/** Skip/only markers an added edit must never introduce. */
+const SKIP_ONLY_IN_EDIT =
+  /\b((it|test|describe|suite)\s*\.\s*(skip|only)|xit|xtest|xdescribe|fit|fdescribe)\b/;
+
+/** True when the edit only inserts text: the new text contains the old text verbatim and adds no skip/only marker. */
+export function isPureInsertion(oldText: string, newText: string): boolean {
+  return newText.includes(oldText) && !SKIP_ONLY_IN_EDIT.test(newText);
+}
+
+const OLD_TEXT_KEYS = [
+  'old_str',
+  'old_text',
+  'old_string',
+  'oldText',
+  'old',
+  'search',
+  'find',
+  'before',
+];
+const NEW_TEXT_KEYS = [
+  'new_str',
+  'new_text',
+  'new_string',
+  'newText',
+  'new',
+  'replace',
+  'replacement',
+  'after',
+];
+
+function pickString(rec: Record<string, unknown>, keys: readonly string[]): string | undefined {
+  for (const k of keys) {
+    const v = rec[k];
+    if (typeof v === 'string') return v;
+  }
+  return undefined;
+}
+
+/** Old/new text pairs of an edit call (`str_replace`, `multi_edit.edits[]`); empty when the call carries no edit text. */
+function editPairs(input: unknown): { oldText: string; newText: string }[] {
+  if (typeof input !== 'object' || input === null) return [];
+  const pairs: { oldText: string; newText: string }[] = [];
+  const one = (o: unknown): void => {
+    if (typeof o !== 'object' || o === null) return;
+    const r = o as Record<string, unknown>;
+    const oldText = pickString(r, OLD_TEXT_KEYS);
+    const newText = pickString(r, NEW_TEXT_KEYS);
+    if (oldText !== undefined && newText !== undefined) pairs.push({ oldText, newText });
+  };
+  one(input);
+  const edits = (input as Record<string, unknown>).edits;
+  if (Array.isArray(edits)) for (const e of edits) one(e);
+  return pairs;
+}
+
+/**
+ * The test-file rule inside `guardCall` (the plan-membership check has
+ * already passed). `input` is the tool call's input, or undefined for a
+ * bash write target, where no edit text exists to prove additivity.
+ * Returns an error string when the write must not run; undefined when it may.
+ */
+function checkTestFileWrite(
+  ctx: TaskAgentContext,
+  worktree: string,
+  rel: string,
+  input: unknown,
+): string | undefined {
+  if (!authorizedTestFiles(ctx.plan).has(rel)) {
+    return (
+      `refused: ${rel} is a test file and the plan does not explicitly authorize adding tests there ` +
+      `— test files are read-only to the executor unless a plan sub-step says to add new tests in that file; ` +
+      `never change or remove an existing test expectation, fix the source instead`
+    );
+  }
+  if (!existsSync(join(worktree, rel))) return undefined; // new test file the plan asked for
+  const pairs = editPairs(input);
+  if (pairs.length === 0) {
+    return (
+      `refused: ${rel} is an existing test file — only str_replace/multi_edit edits that purely ADD new tests are allowed ` +
+      `(no overwrites, no range replacements, no shell writes); the edit must keep every existing line unchanged`
+    );
+  }
+  for (const { oldText, newText } of pairs) {
+    if (!isPureInsertion(oldText, newText)) {
+      return (
+        `refused: ${rel} is an existing test file — the edit changes existing test text; ` +
+        `only adding new tests is allowed, never changing or removing an existing expectation ` +
+        `(use str_replace with an anchor line and append the new test after it)`
+      );
+    }
+  }
+  return undefined;
 }
 
 export class AgentTaskExecutor implements TaskExecutor {
@@ -589,6 +757,7 @@ export class AgentTaskExecutor implements TaskExecutor {
       '- Edit ONLY the files the plan lists:',
       files,
       '- Never touch CI, lockfiles, omnexx.toml, .env, credentials, or anything under .omnexx/ or .git/.',
+      '- Never change an existing test file: test files are read-only unless the plan explicitly says to add new tests there — and even then, only ADD new tests; never change or remove an existing expectation. Fix the source, not the test.',
       '- Never run a command that writes outside the worktree, fetches from the network, or pushes.',
       `- Before you finish, run the verification command with bash: \`${plan.verificationCommand}\``,
       '- When the work is done (or you are blocked), stop calling tools and reply with a short summary: what changed, what you verified, what is left. Do not claim done merely because the verification passed — the harness verifies separately.',
@@ -747,6 +916,9 @@ export class AgentTaskExecutor implements TaskExecutor {
           `refused: ${rel} is not in the task plan's filesToTouch ` +
           `[${ctx.plan.filesToTouch.join(', ')}] — edit only plan files`
         );
+      }
+      if (!tool.readOnly && isTestFilePath(rel)) {
+        return checkTestFileWrite(ctx, worktree, rel, tool.name === 'bash' ? undefined : input);
       }
       return undefined;
     };

@@ -75,6 +75,142 @@ const TEST_FNS = new Set([
 ]);
 const SKIP_ONLY = new Set(['skip', 'only']);
 
+/** A test file: `*.test.*` or `*.spec.*` in any JS/TS flavour. */
+const TEST_FILE_RE = /\.(test|spec)\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/;
+export function isTestFilePath(filePath: string): boolean {
+  return TEST_FILE_RE.test(filePath);
+}
+
+// ---------------------------------------------------------------------------
+// Expected values (`expect(...).toBe/toEqual/toStrictEqual(<literal>)`)
+// ---------------------------------------------------------------------------
+
+export interface ExpectedAssertion {
+  /** Title of the enclosing `it`/`test`, with enclosing `describe` titles joined by ` › `. */
+  testTitle: string;
+  matcher: 'toBe' | 'toEqual' | 'toStrictEqual';
+  /** Source text of the expected value (`toBe(5)` → `5`; `toBe(-1)` → `-1`). */
+  expected: string;
+  /** Source text of the value under test (`expect(add(2, 3))` → `add(2, 3)`). */
+  actual: string;
+}
+
+const EXPECT_MATCHERS = new Set(['toBe', 'toEqual', 'toStrictEqual']);
+
+/** Literal expected values only: a non-literal (`toBe(SOME_CONST)`) cannot be compared by text. */
+function isLiteralExpected(node: ts.Node): boolean {
+  return (
+    ts.isNumericLiteral(node) ||
+    ts.isStringLiteral(node) ||
+    ts.isNoSubstitutionTemplateLiteral(node) ||
+    node.kind === ts.SyntaxKind.TrueKeyword ||
+    node.kind === ts.SyntaxKind.FalseKeyword ||
+    node.kind === ts.SyntaxKind.NullKeyword ||
+    ts.isArrayLiteralExpression(node) ||
+    ts.isObjectLiteralExpression(node) ||
+    (ts.isPrefixUnaryExpression(node) &&
+      (node.operator === ts.SyntaxKind.MinusToken || node.operator === ts.SyntaxKind.PlusToken) &&
+      ts.isNumericLiteral(node.operand))
+  );
+}
+
+/**
+ * The `expect(...)` call a matcher chain hangs off (`expect(x).toBe` /
+ * `expect(x).not.toBe`), or undefined when the chain does not root at one.
+ */
+function expectRoot(node: ts.Node): ts.CallExpression | undefined {
+  if (ts.isCallExpression(node)) {
+    const callee = node.expression;
+    if (ts.isIdentifier(callee) && callee.text === 'expect') return node;
+    return undefined;
+  }
+  if (ts.isPropertyAccessExpression(node)) return expectRoot(node.expression);
+  return undefined;
+}
+
+/**
+ * Extract every `expect(<actual>).toBe/toEqual/toStrictEqual(<literal>)`
+ * assertion, tagged with its enclosing test title. Pure — no filesystem
+ * access. Used by the verification pipeline to tell a weakened expectation
+ * (`toBe(5)` → `toBe(6)`) from an added one: changing an expected value
+ * keeps the assertion count the same, so counting alone cannot see it.
+ *
+ * Known limits: non-literal expected values are skipped (not comparable by
+ * text), and `it.each`/`test.each` titles are not resolved (the title is the
+ * enclosing describe scope, or '' at top level).
+ */
+export function extractExpectations(sourceText: string, fileName = 'file.ts'): ExpectedAssertion[] {
+  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true);
+  const out: ExpectedAssertion[] = [];
+
+  const titleOf = (call: ts.CallExpression): string | undefined => {
+    const first = call.arguments[0];
+    return first && ts.isStringLiteral(first) ? first.text : undefined;
+  };
+
+  const visit = (node: ts.Node, scope: string, testTitle: string): void => {
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      // describe('...', fn): extend the scope for the children.
+      if (ts.isIdentifier(callee) && (callee.text === 'describe' || callee.text === 'xdescribe')) {
+        const title = titleOf(node);
+        const nextScope = title === undefined ? scope : scope ? `${scope} › ${title}` : title;
+        node.forEachChild((child) => {
+          visit(child, nextScope, testTitle);
+        });
+        return;
+      }
+      if (
+        ts.isPropertyAccessExpression(callee) &&
+        ts.isIdentifier(callee.expression) &&
+        callee.expression.text === 'describe' &&
+        (callee.name.text === 'skip' || callee.name.text === 'only')
+      ) {
+        const title = titleOf(node);
+        const nextScope = title === undefined ? scope : scope ? `${scope} › ${title}` : title;
+        node.forEachChild((child) => {
+          visit(child, nextScope, testTitle);
+        });
+        return;
+      }
+      // it('...', fn) / test('...', fn): the callback's assertions belong to this title.
+      if (
+        ts.isIdentifier(callee) &&
+        (callee.text === 'it' ||
+          callee.text === 'test' ||
+          callee.text === 'xit' ||
+          callee.text === 'fit' ||
+          callee.text === 'xtest')
+      ) {
+        const title = titleOf(node);
+        const full = title === undefined ? testTitle : scope ? `${scope} › ${title}` : title;
+        node.forEachChild((child) => {
+          visit(child, scope, full);
+        });
+        return;
+      }
+      // expect(<actual>).toBe/toEqual/toStrictEqual(<literal>)
+      if (ts.isPropertyAccessExpression(callee) && EXPECT_MATCHERS.has(callee.name.text)) {
+        const root = expectRoot(callee.expression);
+        const expectedArg = node.arguments[0];
+        if (root && root.arguments.length > 0 && expectedArg && isLiteralExpected(expectedArg)) {
+          out.push({
+            testTitle,
+            matcher: callee.name.text as ExpectedAssertion['matcher'],
+            expected: expectedArg.getText(sf),
+            actual: (root.arguments[0] as ts.Node).getText(sf),
+          });
+        }
+      }
+    }
+    node.forEachChild((child) => {
+      visit(child, scope, testTitle);
+    });
+  };
+  visit(sf, '', '');
+  return out;
+}
+
 function isDecision(node: ts.Node): boolean {
   if (
     ts.isIfStatement(node) ||

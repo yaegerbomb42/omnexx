@@ -34,7 +34,7 @@
  */
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   AutonomousDaemon,
@@ -444,6 +444,7 @@ class MockShipper extends ShippingController {
     private readonly repoRoot: string,
     private readonly store: AutonomousStateStore,
     private readonly outcomes: HarnessOutcomes,
+    private readonly shipMode: ShipMode = 'merge',
   ) {
     super({ repoRoot });
   }
@@ -460,6 +461,7 @@ class MockShipper extends ShippingController {
         riskScore: 0,
         branch: 'main',
         merged: false,
+        outcome: 'push_failed',
         needsHumanApproval: false,
         note: 'git status failed',
       };
@@ -477,6 +479,7 @@ class MockShipper extends ShippingController {
           riskScore: 0,
           branch: 'main',
           merged: false,
+          outcome: 'push_failed',
           needsHumanApproval: false,
           note: 'nothing to commit',
         };
@@ -506,11 +509,59 @@ class MockShipper extends ShippingController {
           riskScore: 0,
           branch: 'main',
           merged: false,
+          outcome: 'push_failed',
           needsHumanApproval: false,
           note: `commit failed: ${commit.stderr.slice(0, 200)}`,
         };
       }
       sha = (await git(base, ['rev-parse', 'HEAD'])).stdout.trim();
+    }
+    // Failure modes (the live 2026-11-06 ship failure): the commit exists
+    // in the worktree, but the branch never lands the way a merge would.
+    // `branch-pushed-pr-failed` mirrors `gh pr create` failing after a
+    // successful push — branch on the remote, PR body on disk, review-queue
+    // entry written, no merge. `push-failed` mirrors the push itself
+    // failing — nothing reaches the remote, PR body on disk, no queue entry.
+    if (this.shipMode !== 'merge') {
+      const branch = `omnexx/auto/${task.taskId}`;
+      const prBodyPath = join(this.repoRoot, '.omnexx', 'pr-bodies', `${task.taskId}.md`);
+      await mkdir(join(this.repoRoot, '.omnexx', 'pr-bodies'), { recursive: true });
+      await writeFile(prBodyPath, `# ${task.title}\n\n${sha}\n`, 'utf8');
+      if (this.shipMode === 'branch-pushed-pr-failed') {
+        await this.enqueue({
+          taskId: task.taskId,
+          tier: 2,
+          riskScore: 0,
+          branch,
+          merged: false,
+          outcome: 'branch_pushed_pr_failed',
+          prBodyPath,
+          needsHumanApproval: false,
+          note: 'gh pr create failed (mock: no gh auth)',
+        });
+        return {
+          taskId: task.taskId,
+          tier: 2,
+          riskScore: 0,
+          branch,
+          merged: false,
+          outcome: 'branch_pushed_pr_failed',
+          prBodyPath,
+          needsHumanApproval: false,
+          note: 'gh pr create failed (mock: no gh auth)',
+        };
+      }
+      return {
+        taskId: task.taskId,
+        tier: 2,
+        riskScore: 0,
+        branch,
+        merged: false,
+        outcome: 'push_failed',
+        prBodyPath,
+        needsHumanApproval: false,
+        note: 'branch push failed (mock: remote unreachable)',
+      };
     }
     if (base !== this.repoRoot) {
       const merge = await git(this.repoRoot, ['merge', '--ff-only', sha], { allowFailure: true });
@@ -521,6 +572,7 @@ class MockShipper extends ShippingController {
           riskScore: 0,
           branch: 'main',
           merged: false,
+          outcome: 'push_failed',
           needsHumanApproval: false,
           note: `merge failed: ${merge.stderr.slice(0, 200)}`,
         };
@@ -536,10 +588,19 @@ class MockShipper extends ShippingController {
       riskScore: 0,
       branch: 'main',
       merged: true,
+      outcome: 'merged',
       needsHumanApproval: false,
     };
   }
 }
+
+/**
+ * What the harness shipper pretends happened: a normal merge (`merge`), a
+ * branch pushed whose PR creation failed (`branch-pushed-pr-failed` — the
+ * 2026-11-06 live failure), or a branch push that itself failed
+ * (`push-failed`).
+ */
+export type ShipMode = 'merge' | 'branch-pushed-pr-failed' | 'push-failed';
 
 export interface DaemonHarnessOptions {
   repoRoot: string;
@@ -560,6 +621,8 @@ export interface DaemonHarnessOptions {
   provider?: ScriptedMockLLMProvider;
   /** Crash injection: return true to hang forever at that phase for that task. */
   hang?: HangPredicate;
+  /** What the mock shipper pretends happened (default: a normal merge). */
+  shipMode?: ShipMode;
   logger?: DaemonLogger;
   onStateChange?: (from: DaemonState, to: DaemonState, taskId?: string) => void;
 }
@@ -607,7 +670,7 @@ export function createDaemonHarness(opts: DaemonHarnessOptions): DaemonHarness {
   const daemonDir = opts.daemonDir ?? join(opts.repoRoot, '.omnexx');
   const useWorktrees = opts.useWorktrees ?? true;
   const realWorktrees = useWorktrees ? new WorktreeManager({ repoRoot: opts.repoRoot }) : undefined;
-  const shipper = new MockShipper(opts.repoRoot, store, outcomes);
+  const shipper = new MockShipper(opts.repoRoot, store, outcomes, opts.shipMode ?? 'merge');
   const verifier = new MockVerifier(store, outcomes, opts.hang);
   const executor = new MockTaskExecutor(
     opts.repoRoot,

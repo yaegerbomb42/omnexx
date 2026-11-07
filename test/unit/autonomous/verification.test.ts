@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeSourceText, countAssertionsInFiles } from '../../../src/autonomous/ast-analysis.js';
+import {
+  analyzeSourceText,
+  countAssertionsInFiles,
+  extractExpectations,
+  isTestFilePath,
+} from '../../../src/autonomous/ast-analysis.js';
 import {
   assertNonDegradationPure,
   checkBloat,
@@ -7,6 +12,7 @@ import {
 } from '../../../src/autonomous/quality-ratchet.js';
 import {
   checkDiffHygiene,
+  findChangedAssertions,
   gradeCritic,
   SAFETY_DENYLIST,
 } from '../../../src/autonomous/verification-pipeline.js';
@@ -76,6 +82,107 @@ describe('ast-analysis', () => {
 
   it('countAssertionsInFiles returns 0 for missing files', () => {
     expect(countAssertionsInFiles(['/no/such/file.test.ts'])).toBe(0);
+  });
+
+  it('recognises test files across JS/TS flavours and spec files', () => {
+    for (const f of [
+      'test/a.test.ts',
+      'test/a.test.tsx',
+      'test/a.test.js',
+      'test/a.spec.ts',
+      'src/a.spec.tsx',
+    ]) {
+      expect(isTestFilePath(f)).toBe(true);
+    }
+    for (const f of ['src/a.ts', 'test/a.ts', 'test/helper.ts', 'src/a.test.ts.bak']) {
+      expect(isTestFilePath(f)).toBe(false);
+    }
+  });
+});
+
+describe('extractExpectations', () => {
+  it('extracts literal expected values with their test title', () => {
+    const found = extractExpectations(`
+      import { expect, it } from 'vitest';
+      import { add } from '../src/adder.js';
+      describe('adder', () => {
+        it('adds', () => {
+          expect(add(2, 3)).toBe(5);
+          expect(add(2, 3)).not.toBe(4);
+        });
+        it('handles negatives', () => {
+          expect(add(-1, -2)).toBe(-3);
+          expect({ a: 1 }).toEqual({ a: 1 });
+        });
+      });
+    `);
+    expect(found).toEqual([
+      { testTitle: 'adder › adds', matcher: 'toBe', expected: '5', actual: 'add(2, 3)' },
+      { testTitle: 'adder › adds', matcher: 'toBe', expected: '4', actual: 'add(2, 3)' },
+      {
+        testTitle: 'adder › handles negatives',
+        matcher: 'toBe',
+        expected: '-3',
+        actual: 'add(-1, -2)',
+      },
+      {
+        testTitle: 'adder › handles negatives',
+        matcher: 'toEqual',
+        expected: '{ a: 1 }',
+        actual: '{ a: 1 }',
+      },
+    ]);
+  });
+
+  it('skips non-literal expected values', () => {
+    expect(extractExpectations(`it('x', () => { expect(v).toBe(SOME_CONST); });`)).toEqual([]);
+  });
+});
+
+describe('findChangedAssertions', () => {
+  const head = `import { expect, it } from 'vitest';
+import { add } from '../src/adder.js';
+it('adds', () => {
+  expect(add(2, 3)).toBe(5);
+  expect(add(0, 0)).toBe(0);
+});
+`;
+
+  it('flags a changed expected value (the live toBe(5) → toBe(6) case)', () => {
+    const changed = findChangedAssertions(
+      head,
+      head.replace('toBe(5)', 'toBe(6)'),
+      'test/adder.test.ts',
+    );
+    expect(changed).toHaveLength(1);
+    expect(changed[0]).toMatchObject({
+      file: 'test/adder.test.ts',
+      testTitle: 'adds',
+      matcher: 'toBe',
+      before: '5',
+      after: '6',
+    });
+  });
+
+  it('passes identical assertions and ignores added ones', () => {
+    expect(findChangedAssertions(head, head, 'test/adder.test.ts')).toEqual([]);
+    const added = head.replace('});', `  expect(add(1, 1)).toBe(2);\n});`);
+    expect(findChangedAssertions(head, added, 'test/adder.test.ts')).toEqual([]);
+  });
+
+  it('flags a removed assertion and a changed asserted expression', () => {
+    const removed = head.replace('  expect(add(0, 0)).toBe(0);\n', '');
+    const removedChanged = findChangedAssertions(head, removed, 'test/adder.test.ts');
+    expect(removedChanged).toHaveLength(1);
+    expect(removedChanged[0]).toMatchObject({ before: '0', after: null });
+
+    const actualChanged = findChangedAssertions(
+      head,
+      head.replace('add(2, 3)', 'add(3, 3)'),
+      'test/adder.test.ts',
+    );
+    expect(actualChanged).toHaveLength(1);
+    expect(actualChanged[0]).toMatchObject({ beforeActual: 'add(2, 3)', afterActual: 'add(3, 3)' });
   });
 });
 
@@ -149,6 +256,96 @@ describe('checkDiffHygiene (Stage 0)', () => {
     });
     expect(r.clean).toBe(true);
     expect(r.assertionCount).toBe(2);
+  });
+
+  it('fails the live test-gaming case: test-only diff with toBe(5) → toBe(6)', () => {
+    const head = `import { expect, it } from 'vitest';
+import { add } from '../src/adder.js';
+it('adds', () => {
+  expect(add(2, 3)).toBe(5);
+});
+`;
+    const weakened = head.replace('toBe(5)', 'toBe(6)');
+    const r = checkDiffHygiene({
+      diff: '',
+      changedFiles: ['test/adder.test.ts'],
+      readFile: () => weakened,
+      readHeadFile: () => head,
+    });
+    expect(r.clean).toBe(false);
+    expect(r.violations.join(' ')).toMatch(/weakened test expectation.*toBe.*5 → 6/);
+    expect(r.violations.join(' ')).toMatch(/test-only diff/);
+  });
+
+  it('passes a genuine fix: expectation changes together with the source under test', () => {
+    const head = `import { expect, it } from 'vitest';
+import { greet } from '../src/greet.js';
+it('greets', () => {
+  expect(greet()).toBe('hi');
+});
+`;
+    const r = checkDiffHygiene({
+      diff: '',
+      changedFiles: ['src/greet.ts', 'test/greet.test.ts'],
+      readFile: () => head.replace(`toBe('hi')`, `toBe('hello')`),
+      readHeadFile: () => head,
+    });
+    expect(r.clean).toBe(true);
+  });
+
+  it('does not excuse a weakened expectation when only an unrelated source file changed', () => {
+    const head = `import { expect, it } from 'vitest';
+import { add } from '../src/adder.js';
+it('adds', () => {
+  expect(add(2, 3)).toBe(5);
+});
+`;
+    const r = checkDiffHygiene({
+      diff: '',
+      changedFiles: ['src/other.ts', 'test/adder.test.ts'],
+      readFile: () => head.replace('toBe(5)', 'toBe(6)'),
+      readHeadFile: () => head,
+    });
+    expect(r.clean).toBe(false);
+    expect(r.violations.join(' ')).toMatch(/weakened test expectation/);
+  });
+
+  it('passes a test-only diff that only adds tests', () => {
+    const head = `import { expect, it } from 'vitest';
+it('adds', () => {
+  expect(1 + 1).toBe(2);
+});
+`;
+    // New assertion in the existing file, old ones untouched.
+    const added = head.replace('});', `  expect(2 + 2).toBe(4);\n});`);
+    const existingFile = checkDiffHygiene({
+      diff: '',
+      changedFiles: ['test/adder.test.ts'],
+      readFile: () => added,
+      readHeadFile: () => head,
+    });
+    expect(existingFile.clean).toBe(true);
+
+    // Brand-new test file (no HEAD version).
+    const newFile = checkDiffHygiene({
+      diff: '',
+      changedFiles: ['test/new.test.ts'],
+      readFile: () => head,
+      readHeadFile: () => undefined,
+    });
+    expect(newFile.clean).toBe(true);
+  });
+
+  it('flags weakened expectations in .spec files too', () => {
+    const head = `it('adds', () => { expect(1 + 1).toBe(2); });`;
+    const r = checkDiffHygiene({
+      diff: '',
+      changedFiles: ['test/adder.spec.ts'],
+      readFile: () => head.replace('toBe(2)', 'toBe(3)'),
+      readHeadFile: () => head,
+    });
+    expect(r.clean).toBe(false);
+    expect(r.violations.join(' ')).toMatch(/weakened test expectation/);
   });
 });
 

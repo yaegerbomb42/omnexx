@@ -24,11 +24,30 @@ import {
 import type { QueuedTask } from '../../src/autonomous/state-store.js';
 import type { TaskExecutionPlan, ToolCallRecord } from '../../src/autonomous/daemon.js';
 import type { DaemonUsageReport } from '../../src/autonomous/budget-gate.js';
-import { AgentTaskExecutor, createTaskExecutor } from '../../src/autonomous/executor.js';
+import {
+  AgentTaskExecutor,
+  authorizedTestFiles,
+  createTaskExecutor,
+  isPureInsertion,
+} from '../../src/autonomous/executor.js';
 
 const ADDER_BEFORE = 'export const add = (a: number, b: number): number => a - b;\n';
 const ADDER_AFTER = 'export const add = (a: number, b: number): number => a + b;\n';
 const OTHER_BEFORE = 'export const other = 1;\n';
+const ADDER_TEST_BEFORE = `import { expect, it } from 'vitest';
+import { add } from '../src/adder.js';
+
+it('adds', () => {
+  expect(add(2, 3)).toBe(5);
+});
+`;
+const NEW_REGRESSION_TEST = `import { expect, it } from 'vitest';
+import { add } from '../src/adder.js';
+
+it('adds negatives', () => {
+  expect(add(-1, -2)).toBe(-3);
+});
+`;
 
 /** A Provider that answers from a queue and records every request. */
 class ScriptedProvider implements Provider {
@@ -372,5 +391,201 @@ describe('AgentTaskExecutor', () => {
 
     const result = await built.executeTurn(task, plan, 1, signal, onToolCall);
     expect(result.done).toBe(true);
+  });
+
+  describe('test-file guard', () => {
+    const testPlan = (
+      subSteps: string[],
+      files: string[] = ['src/adder.ts', 'test/adder.test.ts'],
+    ): TaskExecutionPlan => ({
+      filesToTouch: files,
+      verificationCommand: 'true',
+      subSteps,
+      summary: 'Fix add()',
+    });
+
+    const seedTestFile = async (): Promise<void> => {
+      await mkdir(join(repo, 'test'), { recursive: true });
+      await writeFile(join(repo, 'test', 'adder.test.ts'), ADDER_TEST_BEFORE, 'utf8');
+    };
+
+    it('refuses an unauthorized edit to an existing test file (the live toBe(5) → toBe(6) case)', async () => {
+      await seedTestFile();
+      withProvider([
+        toolReply([
+          {
+            id: 'c1',
+            name: 'str_replace',
+            input: { path: 'test/adder.test.ts', old_str: 'toBe(5)', new_str: 'toBe(6)' },
+          },
+        ]),
+      ]);
+      const result = await executor.executeTurn(
+        task,
+        testPlan(['Fix add() to add its arguments']),
+        1,
+        signal,
+        onToolCall,
+      );
+
+      expect(result.mutatedFiles).toEqual([]);
+      expect(result.toolCalls[0]?.errorContent).toMatch(/does not explicitly authorize/);
+      expect(await readFile(join(repo, 'test', 'adder.test.ts'), 'utf8')).toBe(ADDER_TEST_BEFORE);
+    });
+
+    it('listing the test file is not authorization: "fix the failing test" still refuses', async () => {
+      await seedTestFile();
+      withProvider([
+        toolReply([
+          {
+            id: 'c1',
+            name: 'str_replace',
+            input: { path: 'test/adder.test.ts', old_str: 'toBe(5)', new_str: 'toBe(6)' },
+          },
+        ]),
+      ]);
+      const result = await executor.executeTurn(
+        task,
+        testPlan(['Fix the failing test in test/adder.test.ts']),
+        1,
+        signal,
+        onToolCall,
+      );
+
+      expect(result.mutatedFiles).toEqual([]);
+      expect(result.toolCalls[0]?.errorContent).toMatch(/does not explicitly authorize/);
+    });
+
+    it('allows an explicitly authorized new test file', async () => {
+      withProvider([
+        toolReply([
+          {
+            id: 'c1',
+            name: 'write_file',
+            input: { path: 'test/adder-regression.test.ts', content: NEW_REGRESSION_TEST },
+          },
+        ]),
+      ]);
+      const result = await executor.executeTurn(
+        task,
+        testPlan(
+          ['Add a new regression test in test/adder-regression.test.ts'],
+          ['src/adder.ts', 'test/adder-regression.test.ts'],
+        ),
+        1,
+        signal,
+        onToolCall,
+      );
+
+      expect(result.toolCalls[0]?.errorContent).toBeUndefined();
+      expect(result.mutatedFiles).toEqual(['test/adder-regression.test.ts']);
+      expect(await readFile(join(repo, 'test', 'adder-regression.test.ts'), 'utf8')).toBe(
+        NEW_REGRESSION_TEST,
+      );
+    });
+
+    it('allows an authorized purely additive append to an existing test file', async () => {
+      await seedTestFile();
+      withProvider([
+        toolReply([
+          {
+            id: 'c1',
+            name: 'str_replace',
+            input: {
+              path: 'test/adder.test.ts',
+              old_str: '});',
+              new_str: `});\n\nit('adds negatives', () => {\n  expect(add(-1, -2)).toBe(-3);\n});`,
+            },
+          },
+        ]),
+      ]);
+      const result = await executor.executeTurn(
+        task,
+        testPlan(['Add a new test for negatives in test/adder.test.ts']),
+        1,
+        signal,
+        onToolCall,
+      );
+
+      expect(result.toolCalls[0]?.errorContent).toBeUndefined();
+      const content = await readFile(join(repo, 'test', 'adder.test.ts'), 'utf8');
+      expect(content).toContain('toBe(5)');
+      expect(content).toContain('adds negatives');
+    });
+
+    it('refuses an authorized-but-replacing edit to an existing test file', async () => {
+      await seedTestFile();
+      withProvider([
+        toolReply([
+          {
+            id: 'c1',
+            name: 'str_replace',
+            input: { path: 'test/adder.test.ts', old_str: 'toBe(5)', new_str: 'toBe(6)' },
+          },
+        ]),
+      ]);
+      const result = await executor.executeTurn(
+        task,
+        testPlan(['Add a new test for negatives in test/adder.test.ts']),
+        1,
+        signal,
+        onToolCall,
+      );
+
+      expect(result.mutatedFiles).toEqual([]);
+      expect(result.toolCalls[0]?.errorContent).toMatch(/changes existing test text/);
+      expect(await readFile(join(repo, 'test', 'adder.test.ts'), 'utf8')).toBe(ADDER_TEST_BEFORE);
+    });
+
+    it('authorizedTestFiles only authorizes explicit add-test sub-steps', () => {
+      const base: TaskExecutionPlan = {
+        filesToTouch: ['src/adder.ts', 'test/adder.test.ts'],
+        verificationCommand: 'true',
+        subSteps: [],
+        summary: 'Fix add()',
+      };
+      expect(authorizedTestFiles({ ...base, subSteps: ['Fix add()'] }).size).toBe(0);
+      expect(
+        authorizedTestFiles({
+          ...base,
+          subSteps: ['Fix the failing test in test/adder.test.ts'],
+        }).size,
+      ).toBe(0);
+      expect(
+        authorizedTestFiles({
+          ...base,
+          subSteps: ['Add the missing import in test/adder.test.ts'],
+        }).size,
+      ).toBe(0);
+      expect(
+        authorizedTestFiles({
+          ...base,
+          subSteps: ['Add a new regression test in test/adder.test.ts'],
+        }),
+      ).toEqual(new Set(['test/adder.test.ts']));
+      // Natural planner phrasing without a file mention ("Strengthen the
+      // test with a negative case") authorizes the single test file in scope.
+      expect(
+        authorizedTestFiles({
+          ...base,
+          subSteps: ['Strengthen the test with a negative case'],
+        }),
+      ).toEqual(new Set(['test/adder.test.ts']));
+      // ... but not when several test files are in scope (ambiguous).
+      expect(
+        authorizedTestFiles({
+          ...base,
+          filesToTouch: ['src/adder.ts', 'test/adder.test.ts', 'test/other.test.ts'],
+          subSteps: ['Strengthen the test with a negative case'],
+        }),
+      ).toEqual(new Set());
+    });
+
+    it('isPureInsertion allows appends and refuses replacements and skip markers', () => {
+      expect(isPureInsertion('});', "});\n\nit('x', () => {});")).toBe(true);
+      expect(isPureInsertion('toBe(5)', 'toBe(6)')).toBe(false);
+      expect(isPureInsertion('it(', 'it.skip(')).toBe(false);
+      expect(isPureInsertion("it('x', () => {", "it.only('x', () => {")).toBe(false);
+    });
   });
 });

@@ -12,7 +12,10 @@ import {
   analyzeSourceText,
   countAssertionsInFiles,
   defaultRunCommand,
+  extractExpectations,
+  isTestFilePath,
   maxComplexityInFiles,
+  type ExpectedAssertion,
   type RunCommand,
 } from './ast-analysis.js';
 import {
@@ -104,6 +107,12 @@ export interface DiffHygieneInput {
   baselineAssertionCount?: number | undefined;
   /** Read a changed file's current content from the worktree. */
   readFile?: (relPath: string) => string | undefined;
+  /**
+   * Read a changed file's HEAD content; undefined when the file is new (no
+   * HEAD version). Without this the weakened-expectation / test-only checks
+   * below cannot compare, so they are skipped — `runStage0` always provides it.
+   */
+  readHeadFile?: (relPath: string) => string | undefined;
 }
 
 export interface DiffHygieneResult {
@@ -114,9 +123,113 @@ export interface DiffHygieneResult {
 }
 
 /**
+ * One `expect(...)` assertion whose expected value, asserted expression, or
+ * matcher changed between two versions of a test file — or that was removed.
+ */
+export interface ChangedAssertion {
+  file: string;
+  testTitle: string;
+  matcher: string;
+  /** Expected value before the change (`toBe(5)` → `5`). */
+  before: string;
+  /** Expected value after the change; null when the assertion was removed. */
+  after: string | null;
+  beforeActual: string;
+  afterActual: string | null;
+}
+
+/** Module path with its code extension (and a trailing `/index`) stripped, so `src/adder.ts` matches an import of `../src/adder.js`. */
+function normalizeModulePath(file: string): string {
+  return file.replace(/\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/, '').replace(/\/index$/, '');
+}
+
+/** Resolve a relative import specifier to a repo-relative module path, or null for bare specifiers. */
+export function resolveTestImport(fromFile: string, spec: string): string | null {
+  if (!spec.startsWith('.')) return null;
+  const parts = fromFile.split('/').slice(0, -1);
+  for (const seg of spec.split('/')) {
+    if (seg === '.' || seg === '') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  const resolved = normalizeModulePath(parts.join('/'));
+  return resolved || null;
+}
+
+/**
+ * Compare the `expect(...).toBe/toEqual/toStrictEqual(<literal>)` assertions
+ * in two versions of a test file. Assertions are keyed by test title plus
+ * their ordinal within that title, so a reordered test still lines up.
+ * Added assertions are NOT reported (adding tests is legitimate); a changed
+ * expected value / asserted expression / matcher, or a removed assertion, is.
+ * Pure and deterministic — no filesystem access.
+ */
+export function findChangedAssertions(
+  headContent: string,
+  currentContent: string,
+  file: string,
+): ChangedAssertion[] {
+  const keyed = (list: ExpectedAssertion[]): Map<string, ExpectedAssertion> => {
+    const seen = new Map<string, number>();
+    const out = new Map<string, ExpectedAssertion>();
+    for (const a of list) {
+      const n = (seen.get(a.testTitle) ?? 0) + 1;
+      seen.set(a.testTitle, n);
+      out.set(`${a.testTitle}\0${n}`, a);
+    }
+    return out;
+  };
+  const before = keyed(extractExpectations(headContent, file));
+  const after = keyed(extractExpectations(currentContent, file));
+  const changed: ChangedAssertion[] = [];
+  for (const [key, b] of before) {
+    const a = after.get(key);
+    if (!a) {
+      changed.push({
+        file,
+        testTitle: b.testTitle,
+        matcher: b.matcher,
+        before: b.expected,
+        after: null,
+        beforeActual: b.actual,
+        afterActual: null,
+      });
+    } else if (a.matcher !== b.matcher || a.expected !== b.expected || a.actual !== b.actual) {
+      changed.push({
+        file,
+        testTitle: b.testTitle,
+        matcher: b.matcher,
+        before: b.expected,
+        after: a.expected,
+        beforeActual: b.actual,
+        afterActual: a.actual,
+      });
+    }
+  }
+  return changed;
+}
+
+/**
  * Forbidden paths, secret scan on added lines, test-file AST checks
  * (assertion count vs baseline, no added `.skip` / `.only`), and the
- * cross-task oscillation check. Pure except for `readFile`.
+ * cross-task oscillation check. Pure except for `readFile` / `readHeadFile`.
+ *
+ * Test-gaming checks (live case 2026-11-06: the executor changed
+ * `toBe(5)` → `toBe(6)` in a test and never touched the source, and the old
+ * checks passed because the assertion count was unchanged):
+ * - **Weakened expectations:** an existing assertion whose expected value,
+ *   asserted expression, or matcher changed (or that was removed) is a
+ *   violation unless the source file under test changed in the same diff
+ *   (resolved through the test file's relative imports; when the test
+ *   imports no repo source, any changed non-test file excuses it).
+ * - **Test-only diff:** when every changed file is a test file, rewriting
+ *   existing expectations without changing any source file is a violation —
+ *   a fix must change source. Pure additions pass: a brand-new test file,
+ *   or new assertions added to an existing test file without touching the
+ *   old ones. Deliberate limit: changing an existing expectation is never
+ *   acceptable from the daemon, even for a "fix the test itself" task —
+ *   that is human work, because no check can tell a corrected expectation
+ *   from a weakened one.
  */
 export function checkDiffHygiene(input: DiffHygieneInput): DiffHygieneResult {
   const violations: string[] = [];
@@ -142,9 +255,9 @@ export function checkDiffHygiene(input: DiffHygieneInput): DiffHygieneResult {
     }
   }
 
-  const changedTestFiles = input.changedFiles.filter(
-    (f) => f.endsWith('.test.ts') || f.endsWith('.test.tsx'),
-  );
+  const changedTestFiles = input.changedFiles.filter(isTestFilePath);
+  const changedSourceFiles = input.changedFiles.filter((f) => !isTestFilePath(f));
+  const changedSourceModules = new Set(changedSourceFiles.map(normalizeModulePath));
   let assertionCount = 0;
   for (const file of changedTestFiles) {
     const content = input.readFile?.(file);
@@ -159,6 +272,47 @@ export function checkDiffHygiene(input: DiffHygieneInput): DiffHygieneResult {
     violations.push(
       `assertion count in changed tests fell ${input.baselineAssertionCount} → ${assertionCount}`,
     );
+  }
+
+  // Weakened expectations + test-only diff (needs HEAD content to compare).
+  if (input.readHeadFile) {
+    let weakenedCount = 0;
+    for (const file of changedTestFiles) {
+      const head = input.readHeadFile(file);
+      const current = input.readFile?.(file);
+      if (head === undefined || current === undefined) continue; // new file or unreadable
+      const changed = findChangedAssertions(head, current, file);
+      if (changed.length === 0) continue;
+      // The source file(s) under test: the test's relative imports, from both
+      // versions (a removed import must not hide the link). No resolvable
+      // import → any changed non-test file excuses the change.
+      const imports = new Set<string>();
+      for (const text of [head, current]) {
+        for (const spec of analyzeSourceText(text, file).relativeImports) {
+          const resolved = resolveTestImport(file, spec);
+          if (resolved !== null) imports.add(resolved);
+        }
+      }
+      const sourceUnderTestChanged =
+        imports.size > 0
+          ? [...imports].some((imp) => changedSourceModules.has(imp))
+          : changedSourceFiles.length > 0;
+      if (sourceUnderTestChanged) continue;
+      weakenedCount += changed.length;
+      for (const c of changed) {
+        violations.push(
+          c.after === null
+            ? `removed test expectation in ${file}: "${c.testTitle}" ${c.matcher} expected ${c.before} — test expectations must not be removed without changing the source under test`
+            : `weakened test expectation in ${file}: "${c.testTitle}" ${c.matcher} expected ${c.before} → ${c.after} with no change to the source under test`,
+        );
+      }
+    }
+    const testOnly = input.changedFiles.length > 0 && input.changedFiles.every(isTestFilePath);
+    if (testOnly && weakenedCount > 0) {
+      violations.push(
+        `test-only diff rewrites ${weakenedCount} existing test expectation(s) without changing any source file — a fix must change source (adding new tests is allowed; changing existing expectations is not)`,
+      );
+    }
   }
 
   return { clean: violations.length === 0, violations, assertionCount, changedTestFiles };
@@ -187,7 +341,7 @@ const criticGradeSchema = z.object({
 export type CriticGrade = z.infer<typeof criticGradeSchema>;
 export type CriticFn = (input: CriticInput) => Promise<unknown>;
 
-export const CRITIC_SYSTEM = `You are an adversarial reviewer with zero history of this change. You get only the task finding, the repo rules, and the diff. Grade strictly: a 5 means you would defend this line in review, a 3 means it works but you would ask for changes, a 1 means it is wrong. Score each dimension 1-5 and give verdict APPROVE only when every dimension is >= 4. Reply with only a JSON object: {"logic_soundness": n, "minimal_diff": n, "convention_compliance": n, "unintended_side_effects": n, "verdict": "APPROVE" | "REJECT", "notes": "..."}.`;
+export const CRITIC_SYSTEM = `You are an adversarial reviewer with zero history of this change. You get only the task finding, the repo rules, and the diff. Grade strictly: a 5 means you would defend this line in review, a 3 means it works but you would ask for changes, a 1 means it is wrong. Score each dimension 1-5 and give verdict APPROVE only when every dimension is >= 4. REJECT any diff that changes test expectations (the expected value in expect(...).toBe/toEqual/toStrictEqual, or the asserted expression) without a corresponding fix in the source file under test: a test-only diff that rewrites expectations is gaming the tests, not fixing the bug. Reply with only a JSON object: {"logic_soundness": n, "minimal_diff": n, "convention_compliance": n, "unintended_side_effects": n, "verdict": "APPROVE" | "REJECT", "notes": "..."}.`;
 
 export function gradeCritic(raw: unknown): CriticGrade | undefined {
   const parsed = criticGradeSchema.safeParse(raw);
@@ -494,7 +648,8 @@ export class VerificationPipeline {
 
     // Baseline assertion count from the HEAD versions of the changed test files.
     let baselineAssertionCount: number | undefined;
-    const testFiles = diff.files.filter((f) => f.endsWith('.test.ts') || f.endsWith('.test.tsx'));
+    const headContents = new Map<string, string>();
+    const testFiles = diff.files.filter(isTestFilePath);
     if (testFiles.length) {
       let baseline = 0;
       let sawHeadVersion = false;
@@ -503,6 +658,7 @@ export class VerificationPipeline {
         if (head.exitCode === 0) {
           sawHeadVersion = true;
           baseline += analyzeSourceText(head.stdout, file).assertionCount;
+          headContents.set(file, head.stdout);
         }
       }
       if (sawHeadVersion) baselineAssertionCount = baseline;
@@ -530,6 +686,7 @@ export class VerificationPipeline {
           return undefined;
         }
       },
+      readHeadFile: (relPath) => headContents.get(relPath),
     });
     diagnostics.push(...hygiene.violations);
     return {
@@ -591,8 +748,13 @@ export class VerificationPipeline {
           lintWarnings += file.warningCount ?? 0;
         }
       } catch {
+        // No working eslint setup in this repo (missing config, missing
+        // binary, npx noise): skip the lint gate, don't fail the stage.
+        // A skip is not a code defect — the executor cannot fix it, and
+        // treating it as a failure burns both repair rounds on every task
+        // before quarantining (found live 2026-11-06: an eslint-less repo
+        // could never ship). Same posture as knip below.
         lintSkipped = true;
-        diagnostics.push('eslint JSON output unparsable — lint gate skipped for changed files');
       }
       if (lintErrors > 0) diagnostics.push(`${lintErrors} eslint error(s) on changed files`);
       const baselineWarnings = options.baselineHealth?.lintWarningCount;
@@ -839,7 +1001,7 @@ export class VerificationPipeline {
         !f.endsWith('.test.ts') &&
         !f.endsWith('.test.tsx'),
     );
-    const testFiles = diff.files.filter((f) => f.endsWith('.test.ts') || f.endsWith('.test.tsx'));
+    const testFiles = diff.files.filter(isTestFilePath);
     if (!testFiles.length) {
       return {
         stage: 3,
@@ -851,6 +1013,40 @@ export class VerificationPipeline {
       };
     }
     if (!srcFiles.length) {
+      // No src change to revert against — but that alone is not a pass: a
+      // test-only diff that REWRITES existing expectations (the 2026-11-06
+      // live case: toBe(5) → toBe(6), src untouched) has nothing to prove
+      // and must fail here as well as in Stage 0. A test-only diff that
+      // only ADDS tests (new files, or new assertions in an existing file)
+      // still skips: there is nothing to revert-prove and nothing weakened.
+      const rewritten: string[] = [];
+      for (const file of testFiles) {
+        if (diff.status.get(file) === 'A') continue; // new test file: pure addition
+        const head = await git(root, ['show', `HEAD:${file}`], { allowFailure: true });
+        if (head.exitCode !== 0) continue;
+        let current: string;
+        try {
+          current = await readFile(join(root, file), 'utf8');
+        } catch {
+          continue;
+        }
+        const changed = findChangedAssertions(head.stdout, current, file);
+        if (changed.length > 0)
+          rewritten.push(`${file} (${changed.length} changed expectation(s))`);
+      }
+      if (rewritten.length > 0) {
+        diagnostics.push(
+          `revert-test proof FAILED: ${rewritten.join(', ')} change test expectations without any source change — there is no src patch to revert against, so the tests prove nothing; test expectations must not change unless the source under test changes too`,
+        );
+        return {
+          stage: 3,
+          name: 'Revert-Test Proof',
+          status: 'fail',
+          durationMs: Date.now() - started,
+          details: 'test-only diff rewrites existing expectations with no src change',
+          diagnostics,
+        };
+      }
       return {
         stage: 3,
         name: 'Revert-Test Proof',

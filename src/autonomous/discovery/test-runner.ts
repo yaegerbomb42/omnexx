@@ -20,6 +20,18 @@ interface VitestJsonReport {
   testResults?: VitestFileResult[];
 }
 
+/**
+ * Vitest reports absolute file paths; findings must carry repo-relative
+ * targets or the planner's `normalizeRepoPath` drops them (absolute paths
+ * normalize to null), which makes every test_runner plan fail validation
+ * with "plan touches no known target file". Same helper as static-analysis.
+ */
+function relativeTo(repoRoot: string, absolutePath: string): string {
+  if (!absolutePath) return '';
+  const prefix = repoRoot.endsWith('/') ? repoRoot : `${repoRoot}/`;
+  return absolutePath.startsWith(prefix) ? absolutePath.slice(prefix.length) : absolutePath;
+}
+
 interface TestHistoryRun {
   at: string;
   failed: string[];
@@ -79,7 +91,7 @@ export class TestRunnerCollector implements DiscoveryCollector {
             makeFinding({
               collector: this.name,
               ruleOrTestId: testId,
-              targetFiles: file.name ? [file.name] : [],
+              targetFiles: file.name ? [relativeTo(repoRoot, file.name)] : [],
               severity: 1.0,
               confidence: 1.0,
               verification: 1.0,

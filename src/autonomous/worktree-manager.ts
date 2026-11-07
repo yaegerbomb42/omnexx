@@ -1,4 +1,5 @@
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, rm, symlink } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { GitError } from '../errors.js';
 import { git } from '../git/git.js';
@@ -35,6 +36,55 @@ export interface WorktreeManagerOptions {
 }
 
 const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
+ * Top-level worktree paths that must never be committed by the ship commit.
+ * Found live 2026-11-06: the shipped branch `omnexx/auto/01a1b2f6-5594…`
+ * contained `coverage/coverage-summary.json` (written into the worktree by
+ * the `--coverage` vitest run) and a `node_modules` symlink pointing at an
+ * absolute VM path — both swept in by a blind `git add -A`. `.omnexx/` is
+ * daemon state (worktrees, the SQLite store, the review queue), never a fix.
+ *
+ * Matched on the FIRST path segment only: verification writes these at the
+ * worktree root, and a nested `coverage/` inside a real package is not ours
+ * to drop. The `node_modules` symlink itself stays on disk — verification
+ * in the worktree resolves deps through it — it is only ever excluded from
+ * staging, never deleted.
+ */
+export const SHIP_EXCLUDED_TOP_LEVEL: ReadonlySet<string> = new Set([
+  'node_modules',
+  'coverage',
+  '.omnexx',
+]);
+
+/** True when `relPath` (worktree-relative, `/`-separated) is ship-excluded. */
+export function isShipExcludedPath(relPath: string): boolean {
+  const first = relPath.split('/')[0];
+  return first !== undefined && SHIP_EXCLUDED_TOP_LEVEL.has(first);
+}
+
+/**
+ * Parse `git status --porcelain=v1 -z` output into worktree-relative paths.
+ * NUL-separated; a rename/copy entry is `XY <orig>\0<new>\0` — the NEW path
+ * is the one to stage (the old one no longer exists on disk).
+ */
+export function parseStatusPaths(zeroSeparated: string): string[] {
+  const paths: string[] = [];
+  const fields = zeroSeparated.split('\0').filter((f) => f !== '');
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i] ?? '';
+    if (!/^.. /.test(field)) continue; // rename target: consumed with its status line
+    const status = field.slice(0, 2);
+    if ((status.includes('R') || status.includes('C')) && i + 1 < fields.length) {
+      const target = fields[i + 1];
+      if (target !== undefined) paths.push(target);
+      i++;
+    } else {
+      paths.push(field.slice(3));
+    }
+  }
+  return paths;
+}
 
 function assertTaskId(taskId: string): void {
   if (!TASK_ID.test(taskId)) throw new GitError(`invalid task id: ${taskId}`);
@@ -77,11 +127,28 @@ export class WorktreeManager {
     const base = await resolveRef(this.repoRoot, baseSha);
     const path = this.pathFor(taskId);
     await mkdir(this.worktreesRoot, { recursive: true });
+    // A previous run may have died mid-task (crash, SIGKILL, restart) and
+    // left this task's worktree behind; `git worktree add` refuses an
+    // existing path, which would fail the retried task before it starts.
+    // Clear the stale worktree first — its edits are checkpointed on the
+    // wip ref when they exist, and a retried task starts from base anyway.
+    await this.destroy(taskId);
     const r = await git(this.repoRoot, ['worktree', 'add', '--detach', path, base], {
       allowFailure: true,
     });
     if (r.exitCode !== 0) {
       throw new GitError(`cannot create worktree for ${taskId}: ${r.stderr.trim()}`);
+    }
+    // Worktrees are bare checkouts — no node_modules — so nothing in them
+    // can run the repo's own tooling (tsc/vitest resolve from the worktree
+    // up). Verification runs `npx vitest --coverage` in the worktree, which
+    // fails outright without @vitest/coverage-v8 and burns both repair
+    // rounds on a defect the executor cannot fix (found live 2026-11-06).
+    // Link the main checkout's node_modules in when it exists; the
+    // worktree's own files (src/test/package.json) still come from git.
+    const repoNodeModules = join(this.repoRoot, 'node_modules');
+    if (existsSync(repoNodeModules)) {
+      await symlink(repoNodeModules, join(path, 'node_modules'), 'dir').catch(() => undefined);
     }
     return { taskId, path, baseSha: base };
   }
@@ -91,10 +158,34 @@ export class WorktreeManager {
    * detached HEAD, for shipping: the shipper pushes HEAD, so uncommitted
    * edits would never leave the machine. Returns the new commit sha.
    * Throws when there is nothing to commit.
+   *
+   * Staging is explicit, never a blind `git add -A`: the file list comes
+   * from `git status` read at stage time — verification runs before this
+   * commit, so anything it wrote (coverage output, the node_modules
+   * symlink) is visible here and filtered out — and only non-excluded
+   * paths are staged. A post-stage check resets anything excluded that
+   * slipped in, so an artifact can never leak into the shipped commit.
+   * The node_modules symlink stays on disk: verification keeps resolving
+   * deps through it; it is only ever kept out of the commit.
    */
   async commit(taskId: string, message: string): Promise<string> {
     const path = this.pathFor(taskId);
-    await git(path, ['add', '-A']);
+    const status = await git(path, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
+    const files = parseStatusPaths(status.stdout).filter((f) => !isShipExcludedPath(f));
+    if (files.length === 0) {
+      throw new GitError(`worktree has no changes to commit for ${taskId}`);
+    }
+    await git(path, ['add', '--', ...files]);
+    // Belt and braces: if anything excluded got staged anyway, unstage it
+    // before the commit rather than shipping it.
+    const staged = await git(path, ['diff', '--cached', '--name-only', '-z']);
+    const leaked = staged.stdout
+      .split('\0')
+      .filter((f) => f !== '')
+      .filter((f) => isShipExcludedPath(f));
+    if (leaked.length > 0) {
+      await git(path, ['reset', '-q', '--', ...leaked]);
+    }
     const r = await git(
       path,
       [

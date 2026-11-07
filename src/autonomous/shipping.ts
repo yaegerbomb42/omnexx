@@ -104,6 +104,14 @@ export interface ShipResult {
   riskScore: number;
   branch: string;
   merged: boolean;
+  /**
+   * What actually happened. The daemon must not infer this from `prUrl` /
+   * `merged` alone: a pushed branch whose `gh pr create` failed looks
+   * identical to a failed push on those two fields, but one is 90% shipped
+   * (branch on the remote, PR body on disk, review-queue entry written)
+   * and the other shipped nothing. Every return below sets this explicitly.
+   */
+  outcome: ShipOutcome;
   prUrl?: string | undefined;
   /** Written when `gh` is unavailable: the PR body for a human to open by hand. */
   prBodyPath?: string | undefined;
@@ -111,6 +119,19 @@ export interface ShipResult {
   /** Set when the run fell back because `gh` (or the push) was unavailable. */
   note?: string | undefined;
 }
+
+/**
+ * Ship outcomes, from the daemon's point of view:
+ * - `merged`: Tier 1 fast-forward push landed.
+ * - `pr_created`: branch pushed and a PR was opened (`prUrl` set).
+ * - `branch_pushed_pr_failed`: branch pushed, but no PR exists (`gh`
+ *   unavailable or `gh pr create` failed). The work is on the remote and
+ *   the PR body is on disk (`prBodyPath`); the daemon marks this
+ *   done-with-caveat, it must never be treated as "not shipped".
+ * - `push_failed`: the branch itself never reached the remote. Nothing
+ *   shipped; the PR body is on disk for a human.
+ */
+export type ShipOutcome = 'merged' | 'pr_created' | 'branch_pushed_pr_failed' | 'push_failed';
 
 export interface ShippingControllerOptions {
   repoRoot: string;
@@ -172,6 +193,8 @@ export class ShippingController {
       riskScore: risk.score,
       branch,
       merged: false,
+      // Default; every return below overrides it with the real outcome.
+      outcome: 'push_failed',
       needsHumanApproval: risk.tier === 3,
     };
 
@@ -187,7 +210,7 @@ export class ShippingController {
         ['push', '-q', this.remote, `${head}:refs/heads/${this.targetBranch}`],
         { allowFailure: true },
       );
-      if (push.exitCode === 0) return { ...base, merged: true };
+      if (push.exitCode === 0) return { ...base, merged: true, outcome: 'merged' };
       // Non-FF (or unreachable remote): ship as a Tier 2 PR instead.
       return this.openPr({ ...base, tier: 2 }, task, branch);
     }
@@ -210,6 +233,7 @@ export class ShippingController {
       const prBodyPath = await this.writePrBody(task.taskId, body);
       return {
         ...base,
+        outcome: 'push_failed',
         prBodyPath,
         note: `branch push failed (${push.stderr.trim().slice(0, 200)}); branch + PR body left on disk`,
       };
@@ -219,6 +243,7 @@ export class ShippingController {
       await this.enqueue({ ...base, prBodyPath });
       return {
         ...base,
+        outcome: 'branch_pushed_pr_failed',
         prBodyPath,
         note: 'gh CLI unavailable; branch pushed, PR body written to disk',
       };
@@ -246,11 +271,12 @@ export class ShippingController {
       await this.enqueue({ ...base, prBodyPath });
       return {
         ...base,
+        outcome: 'branch_pushed_pr_failed',
         prBodyPath,
         note: `gh pr create failed (${created.out.slice(0, 200)}); PR body written to disk`,
       };
     }
-    const result: ShipResult = { ...base, prUrl };
+    const result: ShipResult = { ...base, outcome: 'pr_created', prUrl };
     await this.enqueue(result);
     return result;
   }
