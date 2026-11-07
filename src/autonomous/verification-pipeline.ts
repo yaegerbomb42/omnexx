@@ -231,6 +231,22 @@ export function findChangedAssertions(
  *   that is human work, because no check can tell a corrected expectation
  *   from a weakened one.
  */
+function isTypeScriptProject(root: string): boolean {
+  if (existsSync(join(root, 'tsconfig.json'))) return true;
+  if (existsSync(join(root, 'package.json'))) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+      if (pkg.dependencies?.typescript || pkg.devDependencies?.typescript) return true;
+    } catch {
+      // ignore
+    }
+  }
+  return (
+    listFilesRecursive(join(root, 'src'), ['.ts', '.tsx']).length > 0 ||
+    listFilesRecursive(join(root, 'test'), ['.ts', '.tsx']).length > 0
+  );
+}
+
 export function checkDiffHygiene(input: DiffHygieneInput): DiffHygieneResult {
   const violations: string[] = [];
 
@@ -713,17 +729,21 @@ export class VerificationPipeline {
     const diagnostics: string[] = [];
     const timeoutMs = options.timeouts?.staticMs ?? 120_000;
 
-    const tsc = await this.runCommand('npx', ['tsc', '--noEmit', '--pretty', 'false'], {
-      cwd: root,
-      timeoutMs,
-    });
-    const tscErrors = `${tsc.stdout}\n${tsc.stderr}`
-      .split('\n')
-      .filter((l) => /error TS\d+/.test(l));
-    if (tsc.exitCode !== 0 || tsc.timedOut) {
-      diagnostics.push(
-        `tsc failed (exit ${tsc.exitCode}${tsc.timedOut ? ', timed out' : ''}): ${tscErrors.slice(0, 5).join(' | ') || 'no error lines captured'}`,
-      );
+    const hasTs = isTypeScriptProject(root);
+    let tscErrors: string[] = [];
+    if (hasTs) {
+      const tsc = await this.runCommand('npx', ['tsc', '--noEmit', '--pretty', 'false'], {
+        cwd: root,
+        timeoutMs,
+      });
+      tscErrors = `${tsc.stdout}\n${tsc.stderr}`
+        .split('\n')
+        .filter((l) => /error TS\d+/.test(l));
+      if (tsc.exitCode !== 0 || tsc.timedOut) {
+        diagnostics.push(
+          `tsc failed (exit ${tsc.exitCode}${tsc.timedOut ? ', timed out' : ''}): ${tscErrors.slice(0, 5).join(' | ') || 'no error lines captured'}`,
+        );
+      }
     }
 
     // ESLint on changed files only (fast) — unless a baseline is present, in
@@ -890,13 +910,16 @@ export class VerificationPipeline {
     // this suite run; tsc is re-measured repo-wide; assertion count and
     // complexity are repo-wide AST scans (cheap — no test run); lint counts
     // come from Stage 1, which lints repo-wide whenever a baseline exists.
-    const tsc = await this.runCommand('npx', ['tsc', '--noEmit', '--pretty', 'false'], {
-      cwd: root,
-      timeoutMs: 120_000,
-    });
-    const tscErrorCount = `${tsc.stdout}\n${tsc.stderr}`
-      .split('\n')
-      .filter((l) => /error TS\d+/.test(l)).length;
+    let tscErrorCount = 0;
+    if (isTypeScriptProject(root)) {
+      const tsc = await this.runCommand('npx', ['tsc', '--noEmit', '--pretty', 'false'], {
+        cwd: root,
+        timeoutMs: 120_000,
+      });
+      tscErrorCount = `${tsc.stdout}\n${tsc.stderr}`
+        .split('\n')
+        .filter((l) => /error TS\d+/.test(l)).length;
+    }
     const allTestFiles = [
       ...listFilesRecursive(join(root, 'test'), ['.test.ts', '.test.tsx']),
       ...listFilesRecursive(join(root, 'src'), ['.test.ts', '.test.tsx']),

@@ -58,6 +58,27 @@ export const SECRET_PATTERNS: readonly { readonly name: string; readonly pattern
   },
 ];
 
+/**
+ * Paths where raw entropy scanning causes false positives (package checksums, subresource integrity).
+ * Explicit secret patterns (API keys, private keys, tokens) are still scanned and blocked.
+ */
+export const ENTROPY_EXEMPT_PATHS: readonly string[] = [
+  '**/package-lock.json',
+  '**/pnpm-lock.yaml',
+  '**/yarn.lock',
+  '**/bun.lock',
+  '**/bun.lockb',
+  '**/Cargo.lock',
+  '**/poetry.lock',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+  'Cargo.lock',
+  'poetry.lock',
+];
+
 export interface SecretFinding {
   readonly file: string;
   readonly line: number;
@@ -104,8 +125,11 @@ function isHighEntropySecret(token: string): boolean {
   const uniqueChars = new Set(token).size;
   if (uniqueChars < 16) return false;
 
-  // Ignore git commit SHAs (40 hex chars) or common hex digests (32 hex / md5, 64 hex / sha256)
-  if (/^[0-9a-f]{32}$|^[0-9a-f]{40}$|^[0-9a-f]{64}$/i.test(token)) {
+  // Ignore git commit SHAs (40 hex chars), common hex digests (32/64/128 hex), or integrity prefixes
+  if (/^[0-9a-f]{32}$|^[0-9a-f]{40}$|^[0-9a-f]{64}$|^[0-9a-f]{128}$/i.test(token)) {
+    return false;
+  }
+  if (/^sha(?:512|256|384|1)-/i.test(token)) {
     return false;
   }
 
@@ -179,7 +203,11 @@ export function scanPatchForSecrets(
       }
     }
 
-    // 2. High entropy checks on suspicious tokens in added lines
+    // 2. High entropy checks on suspicious tokens in added lines (skipped on lockfiles/checksums)
+    if (currentFile && matchesAny(currentFile, ENTROPY_EXEMPT_PATHS)) {
+      continue;
+    }
+
     HIGH_ENTROPY_TOKEN.lastIndex = 0;
     let tokenMatch: RegExpExecArray | null;
     while ((tokenMatch = HIGH_ENTROPY_TOKEN.exec(content)) !== null) {
@@ -241,6 +269,11 @@ export function scanTextForSecrets(
           rule: 'regex',
         });
       }
+    }
+
+    // 2. High entropy checks on suspicious tokens (skipped on lockfiles/checksums)
+    if (matchesAny(filePath, ENTROPY_EXEMPT_PATHS)) {
+      continue;
     }
 
     HIGH_ENTROPY_TOKEN.lastIndex = 0;
