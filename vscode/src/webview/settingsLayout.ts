@@ -111,6 +111,11 @@ export const isTabId = (v: unknown): v is TabId =>
 
 export const tabForSection = (id: SectionId): TabId => TAB_FOR_SECTION[id];
 
+/** Return the sections belonging to a specific tab. */
+export function sectionsForTab(tabId: TabId): readonly SectionMeta[] {
+  return SECTIONS.filter((s) => TAB_FOR_SECTION[s.id] === tabId);
+}
+
 /** The tab a key moves to from `current`, or undefined when the key is not a tab key. */
 export function nextTabFor(current: TabId, key: string): TabId | undefined {
   const index = TABS.findIndex((t) => t.id === current);

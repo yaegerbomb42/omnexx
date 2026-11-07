@@ -911,6 +911,16 @@ window.addEventListener('message', (event: MessageEvent<Incoming>) => {
     // A new chat has no memory note yet.
     document.getElementById('memory-note')?.setAttribute('hidden', '');
     agentCard.request(post);
+  } else if (m.type === 'daemonState') {
+    const daemonBtn = document.getElementById('status-daemon');
+    if (daemonBtn) {
+      const running = m.running === true;
+      daemonBtn.textContent = running ? '⚡ 24/7 On' : '⚡ 24/7 Off';
+      daemonBtn.classList.toggle('on', running);
+      daemonBtn.title = running
+        ? 'Omnexx 24/7 Autonomous Daemon is active. Click to stop.'
+        : 'Click to start 24/7 Autonomous Daemon on this project.';
+    }
   } else if (m.type === 'error' || m.type === 'down') {
     const text = typeof m.message === 'string' ? m.message : 'Something went wrong';
     showBanner(text, m.type === 'error' ? 'error' : 'info');

@@ -4,6 +4,22 @@
  * Colors come from each section's --sec (set below) and VS Code theme variables.
  */
 
+.settings {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--vscode-editor-background, var(--bg));
+  color: var(--vscode-editor-foreground, var(--fg));
+  overflow-y: auto;
+  padding: 0 var(--pad-x) 32px;
+  box-sizing: border-box;
+}
+
+body.settings-open .conversation,
+body.settings-open .composer {
+  display: none !important;
+}
+
 /* Section colors also apply to the nav chips. */
 .set-chip[data-sec='agent'] {
   --sec: var(--vscode-charts-purple, #b180d7);

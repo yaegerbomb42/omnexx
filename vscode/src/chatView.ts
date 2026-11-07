@@ -106,6 +106,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.post({ type: 'ui', action });
   }
 
+  updateDaemonState(running: boolean): void {
+    this.post({ type: 'daemonState', running });
+  }
+
   restart(): void {
     this.server.restart();
   }
@@ -171,6 +175,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     else if (type === 'setWorkDomain' && typeof m.domain === 'string')
       await this.setWorkDomain(m.domain);
     else if (type === 'installCli') this.installCli();
+    else if (type === 'toggleDaemon') {
+      await vscode.commands.executeCommand('omnexx.toggleAutonomousDaemon');
+    }
     else if (type === 'editToml')
       await openSettingsFile(join(primaryFolder() ?? homedir(), 'omnexx.toml'), PROJECT_STARTER);
     else if (type === 'editUserConfig') await openSettingsFile(userConfigPath(), USER_STARTER);
@@ -563,7 +570,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     <span class="sep" aria-hidden="true">·</span>
     <span id="status-step" class="status-item">idle</span>
     <span class="grow"></span>
+    <button id="status-daemon" class="status-item as-button" data-action="toggleDaemon" title="Click to start/stop 24/7 Autonomous Daemon">⚡ 24/7 Off</button>
+    <span class="sep" aria-hidden="true">·</span>
     <button id="status-ctx" class="status-item as-button" data-action="inspect" title="Context in use; click to see, edit or delete what the model gets">ctx —</button>
+    <span class="sep" aria-hidden="true">·</span>
+    <button id="status-settings" class="status-item as-button" data-action="settings" title="Settings (Click to configure models, providers & autonomous)">⚙️ Settings</button>
   </div>
   <div class="input-wrap">
     <textarea id="input" rows="1" aria-label="Message omnexx"></textarea>

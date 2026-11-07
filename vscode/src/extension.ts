@@ -62,6 +62,7 @@ export function activate(context: vscode.ExtensionContext): void {
       daemonStatusItem.tooltip = 'Click to launch 24/7 autonomous daemon on this repository';
     }
     daemonStatusItem.show();
+    chat.updateDaemonState(running);
   };
   void paintDaemonStatus();
   const paintStatus = (): void => {
