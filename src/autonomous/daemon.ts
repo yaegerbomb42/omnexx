@@ -195,7 +195,7 @@ export interface AutonomousDaemonOptions {
   idleSleepMaxMs?: number | undefined;
   /** How often to poll `git rev-parse HEAD` while idling. Default 10_000 ms. */
   headPollMs?: number | undefined;
-  /** Watchdog stall threshold. Default 300_000 ms. */
+  /** Watchdog stall threshold. Default 900_000 ms (15 min). */
   watchdogStallMs?: number | undefined;
   /**
    * Active task with no update for longer than this is a stale lease on boot.
@@ -396,7 +396,7 @@ export class AutonomousDaemon {
     this.idleSleepBaseMs = options.idleSleepBaseMs ?? 60_000;
     this.idleSleepMaxMs = options.idleSleepMaxMs ?? 3_600_000;
     this.headPollMs = options.headPollMs ?? 10_000;
-    this.watchdogStallMs = options.watchdogStallMs ?? 300_000;
+    this.watchdogStallMs = options.watchdogStallMs ?? 900_000;
     this.staleLeaseMs = options.staleLeaseMs ?? 1_800_000;
     this.watchdog = new WatchdogMonitor({
       stallMs: this.watchdogStallMs,
@@ -724,12 +724,35 @@ export class AutonomousDaemon {
   // One task through PLAN → IMPLEMENT → VERIFY → SHIP → LEARN
   // -------------------------------------------------------------------------
 
+  /**
+   * Run an asynchronous action while emitting periodic watchdog progress heartbeats
+   * so long-running legitimate operations (like baseline test suite capture, LLM planning,
+   * or full verification) do not trip the stall watchdog.
+   */
+  private async withWatchdogHeartbeat<T>(
+    taskId: string,
+    fn: () => Promise<T>,
+    intervalMs = 15_000,
+  ): Promise<T> {
+    const timer = setInterval(() => {
+      this.watchdog.noteProgress(taskId);
+    }, intervalMs);
+    timer.unref();
+    try {
+      this.watchdog.noteProgress(taskId);
+      return await fn();
+    } finally {
+      clearInterval(timer);
+      this.watchdog.noteProgress(taskId);
+    }
+  }
+
   private async processTask(task: QueuedTask): Promise<void> {
     this.currentTask = task;
     this.watchdog.noteProgress(task.taskId);
     try {
-      const plan = await this.planTask(task);
-      const worktree = await this.prepareWorktree(task);
+      const plan = await this.withWatchdogHeartbeat(task.taskId, () => this.planTask(task));
+      const worktree = await this.withWatchdogHeartbeat(task.taskId, () => this.prepareWorktree(task));
       // IMPLEMENT → VERIFY loop: a REPAIR verdict sends the task back to
       // IMPLEMENT with the verification diagnostics as the opening nudge, up
       // to MAX_REPAIR_ROUNDS (the pipeline FAILs at that round, which ends
@@ -742,7 +765,9 @@ export class AutonomousDaemon {
       for (;;) {
         const implemented = await this.implementTask(task, plan, worktree, repairNudge);
         if (!implemented) return; // tripped / quarantined inside IMPLEMENT.
-        const verification = await this.verifyTask(task, worktree, repairRound);
+        const verification = await this.withWatchdogHeartbeat(task.taskId, () =>
+          this.verifyTask(task, worktree, repairRound),
+        );
         if (verification.outcome === 'PASS') {
           revertProof = verification.revertProof;
           break;
@@ -753,9 +778,13 @@ export class AutonomousDaemon {
           `Verification failed (repair round ${repairRound} of ${MAX_REPAIR_ROUNDS}): ` +
           verification.diagnostics.join('; ');
       }
-      const shipResult = await this.shipTask(task, plan, worktree, revertProof);
+      const shipResult = await this.withWatchdogHeartbeat(task.taskId, () =>
+        this.shipTask(task, plan, worktree, revertProof),
+      );
       if (!shipResult) return;
-      await this.learnTask(task, plan, worktree, shipResult);
+      await this.withWatchdogHeartbeat(task.taskId, () =>
+        this.learnTask(task, plan, worktree, shipResult),
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`[daemon] task ${task.taskId} failed: ${message}`);

@@ -36,7 +36,7 @@
  *    stripped).
  */
 import { existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import { decodeJsonStrings, lenientInput } from '../agent/loop.js';
 import { turnRequest } from '../agent/context.js';
@@ -297,7 +297,18 @@ async function porcelainStatus(worktree: string): Promise<Map<string, string>> {
     if (!line.trim()) continue;
     const pathPart = line.slice(3);
     const arrow = pathPart.indexOf(' -> ');
-    out.set(arrow >= 0 ? pathPart.slice(arrow + 4) : pathPart, line.slice(0, 2));
+    const resolvedPath = arrow >= 0 ? pathPart.slice(arrow + 4) : pathPart;
+    const code = line.slice(0, 2);
+    if (code === '??') {
+      try {
+        const s = await stat(join(worktree, resolvedPath));
+        out.set(resolvedPath, `??:${s.mtimeMs}:${s.size}`);
+      } catch {
+        out.set(resolvedPath, code);
+      }
+    } else {
+      out.set(resolvedPath, code);
+    }
   }
   return out;
 }

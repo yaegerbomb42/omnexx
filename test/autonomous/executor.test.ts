@@ -491,8 +491,8 @@ describe('AgentTaskExecutor', () => {
             name: 'str_replace',
             input: {
               path: 'test/adder-regression.test.ts',
-              old_str: 'toBe(5)',
-              new_str: 'toBe(5); // refined comment',
+              old_str: 'toBe(-3)',
+              new_str: 'toBe(-3); // refined comment',
             },
           },
         ]),

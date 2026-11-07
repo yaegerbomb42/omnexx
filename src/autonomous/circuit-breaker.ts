@@ -105,7 +105,7 @@ export class TaskCircuitBreaker {
   private tripped: CircuitTrip | undefined;
 
   constructor(options: CircuitBreakerOptions = {}) {
-    this.maxTurnsPerTask = options.maxTurnsPerTask ?? 50;
+    this.maxTurnsPerTask = options.maxTurnsPerTask ?? 25;
     this.maxWallClockSec = options.maxWallClockSec ?? 1800;
     this.maxConsecutiveIdenticalErrors = options.maxConsecutiveIdenticalErrors ?? 3;
     this.maxTotalIdenticalErrors = options.maxTotalIdenticalErrors ?? 4;
@@ -391,7 +391,7 @@ export function makeTombstone(
 export interface WatchdogOptions {
   /** How often to check for progress. Default 30_000 ms. */
   intervalMs?: number;
-  /** No state progress for this long triggers the stall path. Default 300_000 ms. */
+  /** No state progress for this long triggers the stall path. Default 900_000 ms (15 min). */
   stallMs?: number;
   /** Time source (wall clock); defaults to Date.now. */
   now?: () => number;
@@ -434,7 +434,7 @@ export class WatchdogMonitor {
 
   constructor(options: WatchdogOptions) {
     this.intervalMs = options.intervalMs ?? 30_000;
-    this.stallMs = options.stallMs ?? 300_000;
+    this.stallMs = options.stallMs ?? 900_000;
     this.now = options.now ?? Date.now;
     this.killProcessGroup = options.killProcessGroup ?? defaultKillProcessGroup;
     this.onStall = options.onStall;
