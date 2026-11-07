@@ -15,7 +15,14 @@ export default async function setup(): Promise<() => Promise<void>> {
     format: 'esm',
     platform: 'node',
     target: 'node22',
-    external: ['node:sqlite'],
+    // `typescript` must stay external: `src/autonomous/ast-analysis.ts`
+    // imports the TS compiler API, and the compiler does a dynamic
+    // `require('fs')` at load that esbuild's ESM bundle cannot satisfy —
+    // bundling it crashes the entry at import time (every CLI invocation
+    // through the entry fails, including `run --detach`). Left external, Node
+    // resolves it from the repo's node_modules at runtime, which works.
+    // (`node:sqlite` is external for the same class of reason.)
+    external: ['node:sqlite', 'typescript'],
     plugins: [
       {
         name: 'mock-react-devtools',

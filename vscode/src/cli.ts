@@ -65,6 +65,37 @@ export async function readPlan(runId: string, cwd: string | undefined): Promise<
   return parsePlan(await call(['plan', checkRunId(runId), '--json'], cwd));
 }
 
+/** The daemon's work queue as JSON (`omnexx queue list --json --include-tombstones`). */
+export async function queueListJson(cwd: string | undefined): Promise<string> {
+  return call(['queue', 'list', '--json', '--include-tombstones'], cwd);
+}
+
+/** One queued task as JSON (`omnexx queue inspect <id> --json`). */
+export async function queueInspectJson(taskId: string, cwd: string | undefined): Promise<string> {
+  return call(['queue', 'inspect', checkTaskId(taskId), '--json'], cwd);
+}
+
+/** Approve a finished daemon task (`omnexx review approve <id>`). */
+export async function reviewApprove(taskId: string, cwd: string | undefined): Promise<string> {
+  return (await call(['review', 'approve', checkTaskId(taskId)], cwd)).trim();
+}
+
+/** Reject a finished daemon task, recording the reason (`omnexx review reject <id>`). */
+export async function reviewReject(
+  taskId: string,
+  reason: string,
+  cwd: string | undefined,
+): Promise<string> {
+  return (await call(['review', 'reject', checkTaskId(taskId), '--reason', reason], cwd)).trim();
+}
+
+const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+export function checkTaskId(taskId: string): string {
+  if (!TASK_ID.test(taskId)) throw new Error(`not a task id: ${taskId}`);
+  return taskId;
+}
+
 export type Control = 'pause' | 'resume' | 'stop';
 
 export async function control(
