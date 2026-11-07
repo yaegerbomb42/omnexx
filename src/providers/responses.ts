@@ -140,6 +140,11 @@ export class ResponsesProvider implements Provider {
     try {
       data = (await res.json()) as ResponsesBody;
     } catch (err) {
+      const isAbort =
+        err instanceof DOMException &&
+        (err.name === 'AbortError' || err.name === 'TimeoutError');
+      if (isAbort)
+        throw new ProviderError(`${this.name} timed out reading the response`, { retryable: true, cause: err });
       throw new ProviderError(`${this.name} returned non-JSON (HTTP ${res.status})`, {
         retryable: res.status >= 500,
         status: res.status,

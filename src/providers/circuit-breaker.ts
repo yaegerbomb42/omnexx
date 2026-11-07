@@ -59,6 +59,11 @@ export class ProviderCircuitBreaker {
   /**
    * Record a successful completion. Closes the circuit and resets backoff.
    */
+  /** Release a half-open probe without counting it as a success or failure (e.g. client error). */
+  releaseProbe(): void {
+    this.probing = false;
+  }
+
   recordSuccess(): void {
     this.consecutiveFailures = 0;
     this.openedAt = undefined;

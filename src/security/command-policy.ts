@@ -149,12 +149,16 @@ class Checker {
     return this.ctx.scratch.some((s) => isInside(s, a) && a !== s);
   }
 
-  private looksLikePath(arg: string): boolean {
-    return arg.includes('/') || arg.startsWith('~') || arg.startsWith('.');
-  }
-
   check(command: string, depth = 0): PolicyVerdict {
     if (depth > 3) return deny('nesting', 'too many nested shells');
+    const lines = command.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    if (lines.length > 1) {
+      for (const line of lines) {
+        const v = this.check(line, depth);
+        if (!v.allowed) return v;
+      }
+      return ALLOW;
+    }
     if (/\$\(|`|<\(|>\(/.test(command)) {
       return deny('substitution', 'command or process substitution is not allowed');
     }
@@ -219,6 +223,42 @@ class Checker {
     // Look through wrappers like `env FOO=1 cmd` or `timeout 30 cmd`.
     for (;;) {
       const head = basename(argv[0] ?? '');
+      if (head === 'env') {
+        if (argv.some((a) => a === '-S' || a === '--split-string' || a.startsWith('-S') || a.startsWith('--split-string')))
+          return deny('wrapper', 'env -S/--split-string is not allowed');
+        argv = argv.slice(1);
+        while (argv.length) {
+          const a = argv[0] ?? '';
+          if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(a)) { argv = argv.slice(1); continue; }
+          if (a === '-u' || a === '--unset' || a === '-C' || a === '--chdir') { argv = argv.slice(2); continue; }
+          if (a.startsWith('-')) { argv = argv.slice(1); continue; }
+          break;
+        }
+        continue;
+      }
+      if (head === 'nice') {
+        argv = argv.slice(1);
+        while (argv.length && (argv[0] ?? '').startsWith('-')) {
+          const a = argv[0] ?? '';
+          if (a === '-n' || a === '--adjustment') { argv = argv.slice(2); continue; }
+          if (a.startsWith('-n') || a.startsWith('--adjustment=')) { argv = argv.slice(1); continue; }
+          argv = argv.slice(1);
+        }
+        while (argv.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[0] ?? '')) argv = argv.slice(1);
+        continue;
+      }
+      if (head === 'timeout') {
+        argv = argv.slice(1);
+        while (argv.length && (argv[0] ?? '').startsWith('-')) {
+          const a = argv[0] ?? '';
+          if (a === '-s' || a === '--signal' || a === '-k' || a === '--kill-after') { argv = argv.slice(2); continue; }
+          if (a.startsWith('--signal=') || a.startsWith('--kill-after=')) { argv = argv.slice(1); continue; }
+          argv = argv.slice(1);
+        }
+        if (/^\d/.test(argv[0] ?? '')) argv = argv.slice(1);
+        while (argv.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[0] ?? '')) argv = argv.slice(1);
+        continue;
+      }
       if (WRAPPERS.has(head)) {
         argv = argv.slice(1);
         while (
@@ -227,11 +267,6 @@ class Checker {
         ) {
           argv = argv.slice(1);
         }
-        continue;
-      }
-      if (head === 'timeout') {
-        argv = argv.slice(1).filter((_, i, a) => i > 0 || !(a[0] ?? '').startsWith('-'));
-        if (/^\d/.test(argv[0] ?? '')) argv = argv.slice(1);
         continue;
       }
       break;
@@ -312,7 +347,7 @@ class Checker {
       }
     }
     for (const a of args) {
-      if (this.looksLikePath(a) && isSecretPath(a.replace(/^~/, ''))) {
+      if (isSecretPath(a.replace(/^~/, ''))) {
         return deny('secret-path', `${a} looks like a credential path`);
       }
     }

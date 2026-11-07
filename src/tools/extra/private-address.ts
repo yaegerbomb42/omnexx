@@ -24,6 +24,12 @@ function privateV6(ip: string): boolean {
   const s = ip.toLowerCase();
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(s)?.[1];
   if (mapped) return privateV4(mapped);
+  const hex = /^(?:::ffff:|::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(s);
+  if (hex) {
+    const hi = parseInt(hex[1] ?? '0', 16);
+    const lo = parseInt(hex[2] ?? '0', 16);
+    return privateV4(`${(hi >> 8) & 255}.${hi & 255}.${(lo >> 8) & 255}.${lo & 255}`);
+  }
   return s === '::' || s === '::1' || /^f[cd]/.test(s) || /^fe[89ab]/.test(s) || s.startsWith('ff');
 }
 

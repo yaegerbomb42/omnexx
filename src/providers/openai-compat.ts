@@ -335,6 +335,14 @@ export class OpenAICompatProvider implements Provider {
         throw new ProviderError('request aborted', { retryable: false, cause: err });
       if (stall?.fired()) throw this.stalled(stall, 'mid-answer', err);
       if (err instanceof ProviderError) throw err;
+      const isAbort =
+        err instanceof DOMException &&
+        (err.name === 'AbortError' || err.name === 'TimeoutError');
+      if (isAbort)
+        throw new ProviderError(`${this.name} timed out reading the response`, {
+          retryable: true,
+          cause: err,
+        });
       throw new ProviderError(`${this.name} returned non-JSON (HTTP ${res.status})`, {
         retryable: res.status >= 500,
         status: res.status,
@@ -526,7 +534,7 @@ async function readStream(
         onDelta({ text: d.content });
       }
       for (const tc of d.tool_calls ?? []) {
-        const i = tc.index ?? calls.length;
+        const i = tc.index ?? (tc.id !== undefined ? calls.length : Math.max(0, calls.length - 1));
         const call = (calls[i] ??= { name: '', args: '' });
         if (tc.id) call.id = tc.id;
         if (tc.function?.name) call.name += tc.function.name;
