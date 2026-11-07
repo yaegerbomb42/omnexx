@@ -8,12 +8,12 @@ import { git } from '../git/git.js';
 import { matchesAny } from '../security/glob.js';
 import { scanPatchForSecrets } from '../security/secret-scan.js';
 import { clipDiff } from '../verify/review.js';
+import { TEST_FILE_PATTERNS } from '../verify/anticheat.js';
 import {
   analyzeSourceText,
   countAssertionsInFiles,
   defaultRunCommand,
   extractExpectations,
-  isTestFilePath,
   maxComplexityInFiles,
   type ExpectedAssertion,
   type RunCommand,
@@ -283,8 +283,8 @@ export function checkDiffHygiene(input: DiffHygieneInput): DiffHygieneResult {
     }
   }
 
-  const changedTestFiles = input.changedFiles.filter(isTestFilePath);
-  const changedSourceFiles = input.changedFiles.filter((f) => !isTestFilePath(f));
+  const changedTestFiles = input.changedFiles.filter(isAnyTestFile);
+  const changedSourceFiles = input.changedFiles.filter((f) => !isAnyTestFile(f));
   const changedSourceModules = new Set(changedSourceFiles.map(normalizeModulePath));
   let assertionCount = 0;
   for (const file of changedTestFiles) {
@@ -335,7 +335,7 @@ export function checkDiffHygiene(input: DiffHygieneInput): DiffHygieneResult {
         );
       }
     }
-    const testOnly = input.changedFiles.length > 0 && input.changedFiles.every(isTestFilePath);
+    const testOnly = input.changedFiles.length > 0 && input.changedFiles.every(isAnyTestFile);
     if (testOnly && weakenedCount > 0) {
       violations.push(
         `test-only diff rewrites ${weakenedCount} existing test expectation(s) without changing any source file — a fix must change source (adding new tests is allowed; changing existing expectations is not)`,
@@ -437,6 +437,8 @@ interface VitestReport {
 interface CoverageSummary {
   total?: { lines?: { pct?: number }; branches?: { pct?: number } };
 }
+
+const isAnyTestFile = (p: string): boolean => matchesAny(p, TEST_FILE_PATTERNS) !== undefined;
 
 export class VerificationPipeline {
   private readonly runCommand: RunCommand;
@@ -681,7 +683,7 @@ export class VerificationPipeline {
     // Baseline assertion count from the HEAD versions of the changed test files.
     let baselineAssertionCount: number | undefined;
     const headContents = new Map<string, string>();
-    const testFiles = diff.files.filter(isTestFilePath);
+    const testFiles = diff.files.filter(isAnyTestFile);
     if (testFiles.length) {
       let baseline = 0;
       let sawHeadVersion = false;
@@ -1041,9 +1043,9 @@ export class VerificationPipeline {
     const srcFiles = diff.files.filter(
       (f) =>
         (f.startsWith('src/') || f.startsWith('test/')) &&
-        !isTestFilePath(f),
+        !isAnyTestFile(f),
     );
-    const testFiles = diff.files.filter(isTestFilePath);
+    const testFiles = diff.files.filter(isAnyTestFile);
     if (!testFiles.length) {
       return {
         stage: 3,

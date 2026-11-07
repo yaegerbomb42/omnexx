@@ -1,5 +1,5 @@
 import { stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pickHighPort } from '../browser/dev-server.js';
 import { parseDuration } from '../config/duration.js';
 import type { GateConfig } from '../config/schema.js';
@@ -81,8 +81,36 @@ export async function runGate(gate: GateConfig, ctx: GateRunContext): Promise<Ga
 async function runExistsGate(gate: GateConfig, ctx: GateRunContext): Promise<GateResult> {
   const logFile = join(ctx.logsDir, `gate-${ctx.label}-${gate.name}.log`);
   const started = Date.now();
-  const rel = gate.path ?? '';
-  const exists = await stat(join(ctx.cwd, rel)).then(
+  const rel = (gate.path ?? '').trim();
+  if (!rel) {
+    await writeFile(logFile, 'missing: (empty path)\\n');
+    return {
+      name: gate.name,
+      level: gate.level,
+      exitCode: 1,
+      timedOut: false,
+      durationMs: Date.now() - started,
+      failures: [{ id: `${gate.name}:exists`, message: 'gate.path is required' }],
+      structured: true,
+      logFile,
+    };
+  }
+  const target = resolve(ctx.cwd, rel);
+  const inside = target === ctx.cwd || target.startsWith(ctx.cwd + '/') || target.startsWith(ctx.cwd + '\\\\');
+  if (!inside) {
+    await writeFile(logFile, `missing: ${rel} (outside worktree)\\n`);
+    return {
+      name: gate.name,
+      level: gate.level,
+      exitCode: 1,
+      timedOut: false,
+      durationMs: Date.now() - started,
+      failures: [{ id: `${gate.name}:exists`, message: `expected ${rel} to exist inside the worktree` }],
+      structured: true,
+      logFile,
+    };
+  }
+  const exists = await stat(target).then(
     () => true,
     () => false,
   );

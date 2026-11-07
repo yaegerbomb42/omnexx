@@ -1159,13 +1159,14 @@ export class AutonomousDaemon {
       confidence: 0.7,
       createdFromTaskId: task.taskId,
     });
+    const targetBlobHashes = await this.blobHashesForFiles(worktree, plan.filesToTouch);
     await Promise.resolve(this.executor?.disposeTaskContext?.(task.taskId)).catch(() => undefined);
-    await this.releaseWorktree(task);
     this.store.markDone(task.taskId, {
       shippedCommitSha,
       deliveryMode: ship.deliveryMode,
-      targetBlobHashes: await this.blobHashesForFiles(worktree, plan.filesToTouch),
+      targetBlobHashes,
     });
+    await this.releaseWorktree(task);
     this.store.recordStep(task.taskId, { phase: 'learn', errorSignature: 'learned + done' });
     this.transition('idle', task.taskId);
     this.logger.log(
