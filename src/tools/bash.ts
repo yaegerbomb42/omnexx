@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { z } from 'zod';
 import { pickHighPort } from '../browser/dev-server.js';
 import { parseDuration } from '../config/duration.js';
@@ -69,6 +69,8 @@ const HEREDOC =
  * Models write `python3 - <<'EOF' … EOF`; the policy refuses `<<` (its body would parse as shell
  * words). The body becomes the command's stdin and only the command line is checked.
  */
+const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'csh', 'tcsh']);
+
 export function splitHeredoc(command: string): { command: string; stdin: string } | undefined {
   const m = HEREDOC.exec(command);
   if (!m?.[1]) return undefined;
@@ -222,7 +224,12 @@ export const bashTool: Tool<typeof schema> = {
   async run(input, ctx) {
     const heredoc = splitHeredoc(input.command);
     const command = heredoc?.command ?? input.command;
-    const verdict = checkCommand(command, ctx.policy);
+    let verdict = checkCommand(command, ctx.policy);
+    // A heredoc feeding a shell runs its body as a script, so the body must also pass policy.
+    if (verdict.allowed && heredoc && SHELLS.has(basename(command.trim())) && heredoc.stdin) {
+      const bodyVerdict = checkCommand(heredoc.stdin, ctx.policy);
+      if (!bodyVerdict.allowed) verdict = bodyVerdict;
+    }
     const allowed =
       verdict.allowed ||
       (ctx.ask !== undefined &&

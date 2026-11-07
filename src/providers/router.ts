@@ -82,7 +82,7 @@ export class ProviderRouter implements Provider {
 
     let lastError: unknown;
     for (const route of order) {
-      if (this.quota?.isOut(route)) continue;
+      if (this.quota?.isOut(`${route}:${req.model}`)) continue;
       const cb = this.circuit(route);
       if (!cb.allow()) {
         lastError = new ProviderError(`provider "${route}" is cooling down`, {
@@ -99,7 +99,10 @@ export class ProviderRouter implements Provider {
         return res;
       } catch (err) {
         lastError = err;
-        if (!shouldFailover(err)) throw err;
+        if (!shouldFailover(err)) {
+          cb.releaseProbe();
+          throw err;
+        }
         cb.recordFailure();
         if (isQuotaError(err)) {
           this.quota?.mark(`${route}:${req.model}`);

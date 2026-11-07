@@ -34,6 +34,13 @@ interface GeminiResponse {
 }
 
 function toContents(req: CompletionRequest): GeminiContent[] {
+  const nameForId = new Map<string, string>();
+  for (const m of req.messages) {
+    if (m.role !== 'assistant') continue;
+    for (const b of m.content) {
+      if (b.type === 'tool_use') nameForId.set(b.id, b.name ?? '');
+    }
+  }
   const out: GeminiContent[] = [];
   for (const m of req.messages) {
     if (m.role === 'assistant') {
@@ -50,7 +57,7 @@ function toContents(req: CompletionRequest): GeminiContent[] {
     for (const b of m.content) {
       if (b.type === 'tool_result')
         parts.push({
-          functionResponse: { name: b.toolUseId, response: { result: b.content } },
+          functionResponse: { name: nameForId.get(b.toolUseId) ?? b.toolUseId, response: { result: b.content } },
         });
       else if (b.type === 'text') parts.push({ text: b.text });
       else if (b.type === 'image')
@@ -130,6 +137,11 @@ export class GeminiProvider implements Provider {
     try {
       data = (await res.json()) as GeminiResponse;
     } catch (err) {
+      const isAbort =
+        err instanceof DOMException &&
+        (err.name === 'AbortError' || err.name === 'TimeoutError');
+      if (isAbort)
+        throw new ProviderError('gemini timed out reading the response', { retryable: true, cause: err });
       throw new ProviderError(`gemini returned non-JSON (HTTP ${res.status})`, {
         retryable: res.status >= 500,
         status: res.status,
