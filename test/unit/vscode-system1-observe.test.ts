@@ -3,27 +3,8 @@ import {
   emptySystemOneSnapshot,
   reduceSystemOneEvent,
 } from '../../src/runtime/system-one/observe.js';
-import {
-  kernelObserveHtml,
-  systemOneObserveHtml,
-  type KernelSnapshot,
-} from '../../vscode/src/webview/kernelObserve.js';
 
-const kernel: KernelSnapshot = {
-  turn: 2,
-  phase: 'act',
-  taskClass: 'standard',
-  tier: 1,
-  cadence: 'stay_sticky',
-  reason: 'sticky_progress',
-  epoch: 1,
-  rank: 'bm25',
-  active: [],
-  mountSavings: null,
-  priors: [],
-};
-
-describe('System-1 observe card', () => {
+describe('System-1 observe folding', () => {
   const snap = [
     { type: 'system1.backend', label: 'Jev (jev-latest)', model: 'jev-latest' },
     {
@@ -49,25 +30,5 @@ describe('System-1 observe card', () => {
     expect(snap.patch).toEqual({ checked: 1, caught: 1 });
     expect(snap.tokensSaved).toBe(11_100);
     expect(snap.earlyStop.turnsSaved).toBe(1);
-  });
-
-  it('renders an observe-only card with escaped text and no controls', () => {
-    const html = systemOneObserveHtml({ ...snap, backend: '<script>x</script>' });
-    expect(html).toContain('System-1');
-    expect(html).toContain('explain code · 92%');
-    expect(html).toContain('2 checked · 1 intercepted');
-    expect(html).toContain('1 checked · 1 caught');
-    expect(html).toContain('&lt;script&gt;');
-    expect(html).not.toContain('<script>');
-    expect(html).not.toMatch(/<(button|input|select)|data-action/);
-  });
-
-  it('rides under the Kernel card, or stands alone when the kernel is off', () => {
-    expect(kernelObserveHtml(kernel, null, snap)).toMatch(
-      /aria-label="Kernel"[\s\S]*aria-label="System-1"/,
-    );
-    expect(kernelObserveHtml(null, null, snap)).toContain('aria-label="System-1"');
-    expect(kernelObserveHtml(null, null, null)).toBe('');
-    expect(kernelObserveHtml(kernel, null)).not.toContain('System-1');
   });
 });

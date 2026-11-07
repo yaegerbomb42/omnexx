@@ -111,7 +111,8 @@ type Incoming =
         | 'agentSettings'
         | 'executionMode'
         | 'workDomain'
-        | 'contextItems';
+        | 'contextItems'
+        | 'daemonState';
     } & Record<string, unknown>)
   | ({ type: 'browserFrame' } & browserCockpit.BrowserFrameMsg)
   | ({ type: 'browserDiagnostics' } & browserCockpit.BrowserDiagnosticsMsg)

@@ -140,7 +140,7 @@ export class JsonFileBudgetLedger implements BudgetLedger {
       const parsed: unknown = JSON.parse(readFileSync(this.path, 'utf8'));
       if (!Array.isArray(parsed)) return [];
       return (parsed as LedgerEntry[]).filter(
-        (e) => typeof e?.at === 'number' && typeof e?.usd === 'number',
+        (e) => typeof e.at === 'number' && typeof e.usd === 'number',
       );
     } catch {
       return [];
@@ -452,7 +452,7 @@ export class DaemonBudgetGovernor {
   /** Restore a frozen context exactly as {@link freezeTask} wrote it. */
   async thawTask(taskId: string, contextPath: string): Promise<FrozenContext> {
     const frozen = (await readJson(contextPath)) as FrozenContext;
-    if (frozen.taskId !== taskId || frozen.status !== 'PAUSED_BUDGET') {
+    if (frozen.taskId !== taskId || (frozen.status as unknown as string) !== 'PAUSED_BUDGET') {
       throw new Error(`no PAUSED_BUDGET context for ${taskId} at ${contextPath}`);
     }
     this.pausedUntil.delete(taskId);
