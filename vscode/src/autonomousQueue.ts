@@ -10,7 +10,7 @@
 import * as vscode from 'vscode';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { queueListJson } from './cli.js';
+import { daemonStatus, queueListJson } from './cli.js';
 import { primaryFolder } from './tree.js';
 
 export interface QueueTask {
@@ -43,6 +43,7 @@ export interface QueueSnapshot {
 }
 
 export type QueueNode =
+  | { kind: 'action'; label: string; description: string; tooltip: string; icon: string; command: string }
   | { kind: 'task'; task: QueueTask }
   | { kind: 'tombstones'; items: QueueTombstone[] }
   | { kind: 'tombstone'; item: QueueTombstone }
@@ -230,6 +231,17 @@ export class AutonomousQueueProvider implements vscode.TreeDataProvider<QueueNod
   }
 
   getTreeItem(node: QueueNode): vscode.TreeItem {
+    if (node.kind === 'action') {
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+      item.description = node.description;
+      item.tooltip = node.tooltip;
+      item.iconPath = new vscode.ThemeIcon(node.icon);
+      item.command = {
+        command: node.command,
+        title: node.label,
+      };
+      return item;
+    }
     if (node.kind === 'task') {
       const t = node.task;
       const item = new vscode.TreeItem(
@@ -275,9 +287,21 @@ export class AutonomousQueueProvider implements vscode.TreeDataProvider<QueueNod
   async getChildren(node?: QueueNode): Promise<QueueNode[]> {
     if (node?.kind === 'tombstones') return node.items.map((item) => ({ kind: 'tombstone', item }));
     if (node) return [];
-    this.snapshot ??= await readAutonomousQueue(primaryFolder());
+    const folder = primaryFolder();
+    const running = await daemonStatus(folder);
+    this.snapshot ??= await readAutonomousQueue(folder);
     const snap = this.snapshot;
     const children: QueueNode[] = [];
+    children.push({
+      kind: 'action',
+      label: running ? 'Stop 24/7 Daemon' : 'Start 24/7 Daemon',
+      description: running ? 'Running · Click to Stop' : 'Click to Start',
+      tooltip: running
+        ? 'Click to stop the 24/7 autonomous daemon'
+        : 'Click to start 24/7 autonomous daemon on this repository',
+      icon: running ? 'debug-stop' : 'play',
+      command: 'omnexx.toggleAutonomousDaemon',
+    });
     if (snap.note) children.push({ kind: 'message', text: snap.note });
     if (snap.tasks.length === 0 && !snap.note)
       children.push({ kind: 'message', text: 'Queue is empty.' });
