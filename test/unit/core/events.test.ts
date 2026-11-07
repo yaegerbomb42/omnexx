@@ -84,6 +84,23 @@ describe('EventLog', () => {
     }
   });
 
+  it('reads segments in rotation order, not directory order, past ten rotations', async () => {
+    const root = await dir();
+    const logPath = join(root, 'events.jsonl');
+
+    // `readdir` sorts names as strings: `events.jsonl.10` comes before `events.jsonl.2`.
+    const emit = (seg: number, i: number): string =>
+      `${JSON.stringify({ ts: seg, runId: 'run-1', cycle: 0, type: 'test', i })}\n`;
+    for (let seg = 1; seg <= 11; seg++) {
+      const name = seg === 11 ? 'events.jsonl' : `events.jsonl.${seg}`;
+      await writeFile(join(root, name), emit(seg, seg));
+    }
+
+    const log = new EventLog(logPath, 'run-1', redactor, clock);
+    const all = await log.getAllEvents();
+    expect(all.map((e) => e.i)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  });
+
   it('drops stale segments on construction', async () => {
     const root = await dir();
     const logPath = join(root, 'events.jsonl');

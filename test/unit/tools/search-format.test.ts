@@ -69,6 +69,11 @@ describe('formatHits', () => {
     expect(out).toBe('src/a.ts\n  2-ctx:9:x\n  3:hit:7:y');
   });
 
+  it('ignores a NUL-mode line that has no path separator instead of mangling a file name', () => {
+    const out = formatHits(['./src/a.ts\x003:hit', '12:stray-without-nul']);
+    expect(out).toBe('src/a.ts\n  3:hit');
+  });
+
   it('keeps colons in matched text intact', () => {
     const out = formatHits(['src/a.ts:3:const url = "http://x:8080";']);
     expect(out).toBe('src/a.ts\n  3:const url = "http://x:8080";');

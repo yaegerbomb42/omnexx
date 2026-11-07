@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { tmpdir } from 'node:os';
 import { defaultSessionPool, runDisposableShell, ShellSession } from '../../../src/core/exec.js';
@@ -41,6 +42,24 @@ describe('runDisposableShell timeout / abort', () => {
     ac.abort();
     const r = await p;
     expect(r.aborted).toBe(true);
+  });
+
+  it('honours a signal that was already aborted before the command started', async () => {
+    const ac = new AbortController();
+    ac.abort();
+    const marker = `${tmpdir()}/omnexx-aborted-${String(process.pid)}-${String(Date.now())}`;
+    const r = await runDisposableShell(`touch '${marker}'`, {
+      cwd: tmpdir(),
+      env,
+      signal: ac.signal,
+      timeoutMs: 10_000,
+      killGraceMs: 50,
+    });
+    expect(r.aborted).toBe(true);
+    expect(r.timedOut).toBe(false);
+    // Give the shell every chance to run the command if it survived the kill.
+    await new Promise((res) => setTimeout(res, 150));
+    expect(existsSync(marker)).toBe(false);
   });
 });
 

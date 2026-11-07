@@ -49,7 +49,9 @@ export function isInside(root: string, target: string): boolean {
   const b = caseInsensitive ? target.toLowerCase() : target;
   if (a === b) return true;
   const rel = relative(a, b);
-  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+  // A child called `..foo` is inside the root: only the parent itself (`..`) and true ancestors
+  // (`../bar`) escape, and `relative` spells those with a `..` path segment.
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
 /** A path outside the root: the one jail refusal a person may override in interactive chat. */

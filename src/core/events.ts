@@ -89,10 +89,15 @@ export class EventLog {
     const base = basename(this.path);
     if (!existsSync(dir)) return [];
     try {
-      return readdirSync(dir)
-        .filter((f) => f.startsWith(`${base}.`) && f !== base)
-        .map((f) => parseInt(f.slice(base.length + 1), 10))
-        .filter((n) => !isNaN(n));
+      return (
+        readdirSync(dir)
+          .filter((f) => f.startsWith(`${base}.`) && f !== base)
+          .map((f) => parseInt(f.slice(base.length + 1), 10))
+          .filter((n) => !isNaN(n))
+          // Numeric order is rotation order: readdir gives `base.10` before `base.2`, which would
+          // hand back the history out of sequence once more than nine segments exist.
+          .sort((a, b) => a - b)
+      );
     } catch {
       return [];
     }

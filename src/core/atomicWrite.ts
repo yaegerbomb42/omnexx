@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { open, readFile, rename, rm } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 function sha256Hex(data: string): string {
@@ -16,13 +16,18 @@ function sha256Hex(data: string): string {
 export async function writeFileAtomic(path: string, data: string): Promise<string> {
   const intended = sha256Hex(data);
   const dir = dirname(path);
+  await mkdir(dir, { recursive: true });
   const tmp = join(dir, `.${randomBytes(6).toString('hex')}.tmp`);
   const fh = await open(tmp, 'w', 0o600);
+  let staged = false;
   try {
     await fh.writeFile(data, 'utf8');
     await fh.sync();
+    staged = true;
   } finally {
     await fh.close();
+    // A failed write/sync must not leave the temp file behind.
+    if (!staged) await rm(tmp, { force: true });
   }
 
   if (sha256Hex(await readFile(tmp, 'utf8')) !== intended) {

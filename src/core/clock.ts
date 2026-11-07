@@ -12,20 +12,20 @@ export const realClock: Clock = {
         const r = signal?.reason as unknown;
         return r instanceof Error ? r : new Error(String(r));
       };
-      const onAbort = (): void => {
-        clearTimeout(timer);
-        reject(reasonOf());
-      };
-      if (signal) {
-        signal.addEventListener('abort', onAbort, { once: true });
-      }
+      // An already-aborted signal never fires 'abort' again: reject now, and never leave a
+      // listener behind on a long-lived signal that outlives this sleep.
       if (signal?.aborted) {
         reject(reasonOf());
         return;
       }
+      const onAbort = (): void => {
+        clearTimeout(timer);
+        reject(reasonOf());
+      };
       const timer = setTimeout(() => {
         signal?.removeEventListener('abort', onAbort);
         resolve();
       }, ms);
+      signal?.addEventListener('abort', onAbort, { once: true });
     }),
 };

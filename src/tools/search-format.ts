@@ -37,6 +37,9 @@ function parseContext(raw: string, files: ReadonlySet<string>): Hit | undefined 
 /** `path\0` + `12:text` / `12-text` (rg --null): no ambiguity about where the path ends. */
 function parseNul(raw: string): Hit | undefined {
   const at = raw.indexOf('\0');
+  // No separator (a stray line in mixed output): `raw.slice(0, -1)` would invent a file name by
+  // dropping the line's last character, so refuse it instead.
+  if (at < 0) return undefined;
   const m = /^(\d+)([:-])(.*)$/.exec(raw.slice(at + 1));
   if (!m) return undefined;
   return { file: raw.slice(0, at), line: Number(m[1]), text: m[3] ?? '', match: m[2] === ':' };

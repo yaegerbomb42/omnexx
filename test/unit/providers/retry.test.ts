@@ -51,6 +51,29 @@ describe('withRetry deadline clamping', () => {
     expect(clock.sleeps).toEqual([2_000, 3_000]);
   });
 
+  it('never waits less than the server Retry-After, even past maxDelayMs', async () => {
+    const clock = new FakeClock();
+    let calls = 0;
+    const out = await withRetry(
+      () => {
+        calls++;
+        return calls === 1
+          ? Promise.reject(
+              new ProviderError('429 too many', {
+                retryable: true,
+                status: 429,
+                retryAfterMs: 60_000,
+              }),
+            )
+          : Promise.resolve('ok');
+      },
+      { clock, baseDelayMs: 1_000, maxDelayMs: 5_000 },
+    );
+    expect(out).toBe('ok');
+    // maxDelayMs caps our own backoff; the server's floor is 60 s, not 5 s.
+    expect(clock.sleeps).toEqual([60_000]);
+  });
+
   it('ignores negative retryAfterMs and falls back to normal backoff', async () => {
     const clock = new FakeClock();
     const err = new ProviderError('429 too many', {

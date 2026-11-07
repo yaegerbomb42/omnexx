@@ -40,6 +40,18 @@ describe('quota ledger', () => {
     expect(ledger.isOut('groq:fast')).toBe(false);
     expect(ledger.isOut('groq:dry')).toBe(true);
   });
+
+  it('lists a ref once, available when its quota window resets', async () => {
+    const t = 1_000;
+    const ledger = new QuotaLedger(`${await tempDir()}/quota.json`, () => t);
+    // Rate-limited first, then out of quota: the stronger mark replaces the other one.
+    ledger.mark('groq:fast', 60_000);
+    ledger.mark('groq:fast');
+    expect(ledger.isLimited('groq:fast')).toBe(false);
+    expect(ledger.sortedByAvailability()).toEqual([
+      { ref: 'groq:fast', availableAt: 1_000 + EXHAUSTED_FOR_MS },
+    ]);
+  });
 });
 
 describe('model pool', () => {

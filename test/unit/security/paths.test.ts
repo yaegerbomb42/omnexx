@@ -57,6 +57,9 @@ describe('PathJail', () => {
       expect(isInside('/Users/A/Repo', '/users/a/repo/x')).toBe(true);
     expect(isInside('/a/b', '/a/bc')).toBe(false);
     expect(isInside('/a/b', '/a/b')).toBe(true);
+    // A child whose own name starts with two dots is inside; a real `..` segment is not.
+    expect(isInside('/a/b', '/a/b/..cache/file.ts')).toBe(true);
+    expect(isInside('/a/b', '/a/b/../c')).toBe(false);
     expect(isSecretPath('.ENV')).toBe(true);
     expect(isSecretPath('.SSH/x')).toBe(true);
   });

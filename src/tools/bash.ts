@@ -315,6 +315,9 @@ export const readLogTool: Tool<typeof readLogSchema> = {
     }
     const lines = text.split('\n');
     const start = input.start ?? 1;
+    if (start > lines.length) return fail(`log ${input.id} has only ${lines.length} lines`);
+    if (input.end !== undefined && input.end < start)
+      return fail(`start (${start}) cannot be greater than end (${input.end})`);
     const end = Math.min(input.end ?? start + 399, start + 399, lines.length);
     return ok(
       `${lines

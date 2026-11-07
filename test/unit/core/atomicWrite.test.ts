@@ -52,6 +52,16 @@ describe('writeFileAtomic', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('creates a missing parent directory instead of failing with ENOENT', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'atomicwrite-'));
+    const target = join(dir, 'nested', 'deeper', 'out.txt');
+
+    await writeFileAtomic(target, 'nested write');
+
+    expect(await readFile(target, 'utf8')).toBe('nested write');
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('throws on a checksum mismatch and leaves no partial write when the target was absent', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'atomicwrite-'));
     const target = join(dir, 'out.txt');
