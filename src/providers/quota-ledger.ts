@@ -71,24 +71,38 @@ export class QuotaLedger {
     return this.read().exhausted;
   }
 
-  /** All refs sorted by when they become available (most available first). */
+  /** All refs sorted by when they become available again (soonest first). */
   sortedByAvailability(): { ref: string; availableAt: number }[] {
     const r = this.read();
-    const all: { ref: string; availableAt: number }[] = [
-      ...Object.entries(r.exhausted).map(([ref, at]) => ({ ref, availableAt: at })),
-      ...Object.entries(r.limited).map(([ref, until]) => ({ ref, availableAt: until })),
-    ];
-    return all.sort((a, b) => a.availableAt - b.availableAt);
+    // Exhausted marks are stored as when the ref ran out; it is back once the reset window ends.
+    // A ref can carry both kinds of mark (an older file, or two sessions racing), and it stays
+    // out until the later of the two expires.
+    const byRef = new Map<string, number>();
+    const keep = (ref: string, availableAt: number): void => {
+      const prev = byRef.get(ref);
+      byRef.set(ref, prev === undefined ? availableAt : Math.max(prev, availableAt));
+    };
+    for (const [ref, at] of Object.entries(r.exhausted)) keep(ref, at + EXHAUSTED_FOR_MS);
+    for (const [ref, until] of Object.entries(r.limited)) keep(ref, until);
+    return [...byRef.entries()]
+      .map(([ref, availableAt]) => ({ ref, availableAt }))
+      .sort((a, b) => a.availableAt - b.availableAt);
   }
 
   /** Mark `ref` out of quota, or rate-limited for `forMs` when given. */
   mark(ref: string, forMs?: number): void {
     const r = this.read();
-    this.write(
-      forMs === undefined
-        ? { ...r, exhausted: { ...r.exhausted, [ref]: this.now() } }
-        : { ...r, limited: { ...r.limited, [ref]: this.now() + forMs } },
-    );
+    if (forMs === undefined) {
+      // Out of quota subsumes a shorter rate-limit mark: leaving it would keep the ref listed
+      // as briefly limited long after the quota mark says it is gone for the day.
+      const limited = Object.fromEntries(Object.entries(r.limited).filter(([key]) => key !== ref));
+      this.write({ exhausted: { ...r.exhausted, [ref]: this.now() }, limited });
+      return;
+    }
+    this.write({
+      exhausted: r.exhausted,
+      limited: { ...r.limited, [ref]: this.now() + forMs },
+    });
   }
 
   clear(ref?: string): void {

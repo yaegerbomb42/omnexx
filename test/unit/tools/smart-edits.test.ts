@@ -106,6 +106,12 @@ describe('whitespace-tolerant str_replace', () => {
     expect(r.found === 1 && r.text).toContain('  if (x) {\n    return 3;\n  }\n}');
   });
 
+  it('does not add a blank line when only new_str ends with a newline', () => {
+    const r = fuzzyReplace('a\nb\nc', 'b', 'B\n');
+    expect(r.found).toBe(1);
+    if (r.found === 1) expect(r.text).toBe('a\nB\nc');
+  });
+
   it('reports every place when the loose match is ambiguous', () => {
     expect(fuzzyReplace('  x\ny\n x\n', 'x', 'z')).toEqual({ found: 'many', lines: [1, 3] });
     expect(fuzzyReplace('a\n', 'nope', 'z')).toEqual({ found: 0 });

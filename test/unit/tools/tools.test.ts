@@ -363,6 +363,13 @@ describe('bash + read_log', () => {
     const page = await readLogTool.run({ id, start: 500, end: 501 }, ctx);
     expect(page.content).toContain('   500  500');
     expect((await readLogTool.run({ id: 'cmd-9-9' }, ctx)).isError).toBe(true);
+    // A reversed or past-the-end page is an error, not a silently empty log.
+    const backwards = await readLogTool.run({ id, start: 500, end: 499 }, ctx);
+    expect(backwards.isError).toBe(true);
+    expect(backwards.content).toMatch(/cannot be greater than end/);
+    const pastEnd = await readLogTool.run({ id, start: 99_999 }, ctx);
+    expect(pastEnd.isError).toBe(true);
+    expect(pastEnd.content).toMatch(/has only \d+ lines/);
     expect(trimOutput('a\nb', 'x')).toBe('a\nb');
     const t = trimOutput(
       [

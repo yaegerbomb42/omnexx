@@ -529,7 +529,10 @@ export async function runDisposableShell(command: string, opts: ExecOptions): Pr
     aborted = true;
     stop();
   };
-  opts.signal?.addEventListener('abort', onAbort, { once: true });
+  // A signal that is already aborted never fires 'abort': without this check the command would
+  // run to completion even though the run it belongs to has been stopped.
+  if (opts.signal?.aborted) onAbort();
+  else opts.signal?.addEventListener('abort', onAbort, { once: true });
   const result = await child;
   clearTimeout(timer);
   if (graceTimer) clearTimeout(graceTimer);

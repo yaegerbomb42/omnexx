@@ -77,10 +77,10 @@ export async function withRetry<T>(fn: () => Promise<T>, hooks: RetryHooks): Pro
       ) {
         throw new ProvidersUnavailable(err.message, outageMs);
       }
-      let delayMs = Math.min(
-        max,
-        validRetryAfter !== undefined ? Math.max(backoff, validRetryAfter) : backoff,
-      );
+      // maxDelayMs caps our own exponential backoff only: a Retry-After the server asked for is
+      // a floor, so short-circuiting it with `max` would call back before the server allows.
+      let delayMs =
+        validRetryAfter !== undefined ? Math.max(backoff, validRetryAfter) : Math.min(max, backoff);
       // Clamp the sleep so we never overshoot giveUpAfterMs.
       if (hooks.giveUpAfterMs !== undefined && outageMs < hooks.giveUpAfterMs) {
         const remainingMs = hooks.giveUpAfterMs - outageMs;

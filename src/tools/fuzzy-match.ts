@@ -40,7 +40,9 @@ export function fuzzyReplace(text: string, oldStr: string, newStr: string): Fuzz
   if (hits.length > 1) return { found: 'many', lines: hits.slice(0, 10) };
   const from = indentOf(needle[0] ?? '');
   const to = indentOf(fileLines[s - 1] ?? '');
-  const body = oldStr.endsWith('\n') && newStr.endsWith('\n') ? newStr.slice(0, -1) : newStr;
+  // The replacement is a block of whole lines, so a newline at the end of new_str would become an
+  // extra empty line when the old text did not carry one.
+  const body = newStr.endsWith('\n') ? newStr.slice(0, -1) : newStr;
   const replacement = body
     .split('\n')
     .map((l) => (from !== to && l.startsWith(from) && l.trim() ? to + l.slice(from.length) : l));
