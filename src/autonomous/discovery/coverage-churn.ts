@@ -40,9 +40,11 @@ export class CoverageChurnCollector implements DiscoveryCollector {
       'src',
     ]);
     const churn = parseNumstat(churnLog);
+    const repoPrefix = repoRoot.endsWith('/') ? repoRoot : `${repoRoot}/`;
 
-    for (const [file, fileSummary] of Object.entries(summary)) {
-      if (file === 'total' || !fileSummary) continue;
+    for (const [rawFile, fileSummary] of Object.entries(summary)) {
+      if (rawFile === 'total' || !fileSummary) continue;
+      const file = rawFile.startsWith(repoPrefix) ? rawFile.slice(repoPrefix.length) : rawFile;
       if (!file.startsWith('src/')) continue; // core files only
       const linesPct = fileSummary.lines?.pct;
       const branchesPct = fileSummary.branches?.pct;

@@ -26,7 +26,7 @@ export interface CircuitTrip {
 }
 
 export interface CircuitBreakerOptions {
-  /** Max turns per task (IMPLEMENT loop ceiling). Default 25. */
+  /** Max turns per task (IMPLEMENT loop ceiling). Default 50. */
   maxTurnsPerTask?: number;
   /** Max wall-clock seconds per task lease. Default 1800 (30 min). */
   maxWallClockSec?: number;
@@ -105,7 +105,7 @@ export class TaskCircuitBreaker {
   private tripped: CircuitTrip | undefined;
 
   constructor(options: CircuitBreakerOptions = {}) {
-    this.maxTurnsPerTask = options.maxTurnsPerTask ?? 25;
+    this.maxTurnsPerTask = options.maxTurnsPerTask ?? 50;
     this.maxWallClockSec = options.maxWallClockSec ?? 1800;
     this.maxConsecutiveIdenticalErrors = options.maxConsecutiveIdenticalErrors ?? 3;
     this.maxTotalIdenticalErrors = options.maxTotalIdenticalErrors ?? 4;

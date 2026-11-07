@@ -8,6 +8,7 @@ import { StaticAnalysisCollector } from './static-analysis.js';
 import { TelemetryCollector } from './telemetry.js';
 import { TestRunnerCollector } from './test-runner.js';
 import { TodoMiningCollector } from './todo-mining.js';
+import { FeatureOpportunityCollector } from './feature-opportunity.js';
 
 /**
  * One raw, unverified observation from a discovery collector.
@@ -81,6 +82,7 @@ export const ALL_COLLECTORS: DiscoveryCollector[] = [
   new TestRunnerCollector(),
   new StaticAnalysisCollector(),
   new SelfReviewCollector(),
+  new FeatureOpportunityCollector(),
   new CoverageChurnCollector(),
   new DependencyCollector(),
   new TelemetryCollector(),

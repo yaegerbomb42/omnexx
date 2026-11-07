@@ -28,6 +28,7 @@ import type { DaemonUsageRecorder } from './budget-gate.js';
 import { usageTokenTotals } from './budget-gate.js';
 import { boundPlan, type ArchitectPlanner, type TaskExecutionPlan } from './daemon.js';
 import type { QueuedTask } from './state-store.js';
+import { isTestFilePath } from './ast-analysis.js';
 
 export type PlannerLogger = Pick<Console, 'log' | 'warn' | 'error'>;
 
@@ -333,10 +334,15 @@ export function validatePlan(parsed: unknown, task: QueuedTask): TaskExecutionPl
     const file = normalizeRepoPath(raw);
     if (file === null || seen.has(file)) continue;
     seen.add(file);
-    if (known !== null && !known.has(file)) continue; // never invent files
+    // Allow known target files as well as authorized test files needed to verify the task
+    if (known !== null && !known.has(file) && !isTestFilePath(file)) continue;
     filesToTouch.push(file);
   }
-  if (filesToTouch.length === 0) {
+  const touchesKnown =
+    known === null ||
+    filesToTouch.some((f) => known.has(f)) ||
+    filesToTouch.some(isTestFilePath);
+  if (filesToTouch.length === 0 || !touchesKnown) {
     throw new Error(
       known !== null ? 'plan touches no known target file' : 'plan has no filesToTouch',
     );

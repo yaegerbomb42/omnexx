@@ -187,7 +187,7 @@ export interface AutonomousDaemonOptions {
   qualityRatchet?: QualityRatchet | undefined;
   logger?: DaemonLogger | undefined;
   onStateChange?: ((from: DaemonState, to: DaemonState, taskId?: string) => void) | undefined;
-  /** Max IMPLEMENT turns per task. Default 25. */
+  /** Max IMPLEMENT turns per task. Default 50. */
   maxTurnsPerTask?: number | undefined;
   /** Base IDLE sleep; doubled per empty streak up to max. Default 60_000 ms. */
   idleSleepBaseMs?: number | undefined;
@@ -392,7 +392,7 @@ export class AutonomousDaemon {
     this.qualityRatchet = options.qualityRatchet;
     this.logger = options.logger ?? console;
     this.onStateChange = options.onStateChange;
-    this.maxTurnsPerTask = options.maxTurnsPerTask ?? 25;
+    this.maxTurnsPerTask = options.maxTurnsPerTask ?? 50;
     this.idleSleepBaseMs = options.idleSleepBaseMs ?? 60_000;
     this.idleSleepMaxMs = options.idleSleepMaxMs ?? 3_600_000;
     this.headPollMs = options.headPollMs ?? 10_000;

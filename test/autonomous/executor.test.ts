@@ -482,6 +482,33 @@ describe('AgentTaskExecutor', () => {
       expect(await readFile(join(repo, 'test', 'adder-regression.test.ts'), 'utf8')).toBe(
         NEW_REGRESSION_TEST,
       );
+
+      // Subsequent turn editing the newly created draft test file:
+      withProvider([
+        toolReply([
+          {
+            id: 'c2',
+            name: 'str_replace',
+            input: {
+              path: 'test/adder-regression.test.ts',
+              old_str: 'toBe(5)',
+              new_str: 'toBe(5); // refined comment',
+            },
+          },
+        ]),
+      ]);
+      const turn2 = await executor.executeTurn(
+        task,
+        testPlan(
+          ['Add a new regression test in test/adder-regression.test.ts'],
+          ['src/adder.ts', 'test/adder-regression.test.ts'],
+        ),
+        2,
+        signal,
+        onToolCall,
+      );
+      expect(turn2.toolCalls[0]?.errorContent).toBeUndefined();
+      expect(turn2.mutatedFiles).toEqual(['test/adder-regression.test.ts']);
     });
 
     it('allows an authorized purely additive append to an existing test file', async () => {

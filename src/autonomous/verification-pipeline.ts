@@ -51,8 +51,23 @@ const BLOAT_EXEMPT_NAMES = new Set([
 ]);
 
 function isBloatExempt(filePath: string): boolean {
-  const name = filePath.split('/').pop() ?? filePath;
-  return BLOAT_EXEMPT_NAMES.has(name) || name.endsWith('.min.js') || name.endsWith('.map');
+  const norm = filePath.replace(/\\/g, '/');
+  const name = norm.split('/').pop() ?? norm;
+  if (BLOAT_EXEMPT_NAMES.has(name) || name.endsWith('.min.js') || name.endsWith('.map')) {
+    return true;
+  }
+  if (
+    norm.startsWith('.omnexx/') ||
+    norm.startsWith('.vitest/') ||
+    norm.startsWith('coverage/') ||
+    norm.startsWith('.nyc_output/') ||
+    norm.includes('/coverage/') ||
+    norm.endsWith('.lcov') ||
+    norm.endsWith('.json') && norm.includes('coverage')
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export const SAFETY_DENYLIST: readonly string[] = [

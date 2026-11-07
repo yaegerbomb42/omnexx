@@ -17,7 +17,16 @@ export class TodoMiningCollector implements DiscoveryCollector {
 
   async collect(repoRoot: string): Promise<RawFinding[]> {
     const findings: RawFinding[] = [];
-    const grep = await git(repoRoot, ['grep', '-nE', '(FIXME|BUG)', '--', '*.ts', '*.tsx', '*.js']);
+    const grep = await git(repoRoot, [
+      'grep',
+      '-nE',
+      '(FIXME|BUG)',
+      '--',
+      ':/*.ts',
+      ':/*.tsx',
+      ':/*.js',
+      ':/*.jsx',
+    ]);
     if (!grep) return findings;
 
     const now = Date.now();

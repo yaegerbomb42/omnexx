@@ -196,7 +196,7 @@ describe('VerificationPipeline.verify (stubbed commands, real git repo)', () => 
 
     const pipeline = new VerificationPipeline({ runCommand: () => Promise.resolve(ok('[]')) });
     const result = await pipeline.verify(
-      { id: 't5', title: 'bump deps', kind: 'patch-dependency' },
+      { id: 't5', title: 'bump deps', kind: 'other' },
       repo,
       { runStage3: false },
     );

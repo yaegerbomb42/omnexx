@@ -170,6 +170,7 @@ interface TaskAgentContext {
   taskId: string;
   plan: TaskExecutionPlan;
   worktree: string;
+  initialTestFiles: ReadonlySet<string>;
   messages: Message[];
   system: SystemBlock[];
   tools: readonly Tool[];
@@ -451,7 +452,7 @@ function editPairs(input: unknown): { oldText: string; newText: string }[] {
  */
 function checkTestFileWrite(
   ctx: TaskAgentContext,
-  worktree: string,
+  _worktree: string,
   rel: string,
   input: unknown,
 ): string | undefined {
@@ -462,7 +463,10 @@ function checkTestFileWrite(
       `never change or remove an existing test expectation, fix the source instead`
     );
   }
-  if (!existsSync(join(worktree, rel))) return undefined; // new test file the plan asked for
+  // A test file that did not exist when this task started is the agent's own draft;
+  // allow writing and refining it freely during implementation.
+  if (!ctx.initialTestFiles.has(rel)) return undefined;
+
   const pairs = editPairs(input);
   if (pairs.length === 0) {
     return (
@@ -724,10 +728,17 @@ export class AgentTaskExecutor implements TaskExecutor {
       reads: new Map(),
       contractGate: gate,
     };
+    const initialTestFiles = new Set<string>();
+    for (const file of plan.filesToTouch) {
+      if (isTestFilePath(file) && existsSync(join(worktree, file))) {
+        initialTestFiles.add(file.split('/').filter(Boolean).join('/'));
+      }
+    }
     const ctx: TaskAgentContext = {
       taskId: task.taskId,
       plan,
       worktree,
+      initialTestFiles,
       messages: [],
       system: [
         { text: getWorkerPrompt(workModeOf(this.config)) },

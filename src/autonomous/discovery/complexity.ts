@@ -55,7 +55,7 @@ export class ComplexityCollector implements DiscoveryCollector {
     const coverageUnknown = !summary;
 
     for (const file of gated) {
-      if (!/\.(?:ts|tsx)$/.test(file) || /test|spec/i.test(file)) continue;
+      if (!/\.(?:ts|tsx|js|jsx|mjs|cjs)$/.test(file) || /test|spec/i.test(file)) continue;
       if (summary) {
         const pct = summary[file]?.lines?.pct;
         if (pct !== undefined && pct < MIN_COVERAGE_PCT) continue;
@@ -127,7 +127,7 @@ export class ComplexityCollector implements DiscoveryCollector {
     const findings: RawFinding[] = [];
     const seen = new Map<string, { file: string; start: number }>();
     for (const file of files) {
-      if (!/\.(?:ts|tsx)$/.test(file)) continue;
+      if (!/\.(?:ts|tsx|js|jsx|mjs|cjs)$/.test(file)) continue;
       let content: string;
       try {
         content = await readFile(`${repoRoot}/${file}`, 'utf8');

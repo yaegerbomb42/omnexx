@@ -165,6 +165,16 @@ describe('LlmArchitectPlanner.plan', () => {
     const plan = await planner.plan(makeTask());
     expect(plan.filesToTouch).toEqual(['src/adder.ts']);
 
+    const withTest = JSON.stringify({
+      filesToTouch: ['src/adder.ts', 'test/adder.test.ts', 'src/invented.ts'],
+      verificationCommand: 'npx vitest run test/adder.test.ts',
+      subSteps: ['Add new test in test/adder.test.ts'],
+      summary: 'Add test for adder',
+    });
+    const { planner: plannerWithTest } = plannerFor([withTest]);
+    const planWithTest = await plannerWithTest.plan(makeTask());
+    expect(planWithTest.filesToTouch).toEqual(['src/adder.ts', 'test/adder.test.ts']);
+
     const allInvented = JSON.stringify({
       filesToTouch: ['src/nope.ts'],
       verificationCommand: 'npm run typecheck',
