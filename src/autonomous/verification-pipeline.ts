@@ -43,6 +43,18 @@ import {
 // lives here. Keep in sync with the daemon's tool guard when one lands.
 // ---------------------------------------------------------------------------
 
+const BLOAT_EXEMPT_NAMES = new Set([
+  'package-lock.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+  'bun.lockb',
+]);
+
+function isBloatExempt(filePath: string): boolean {
+  const name = filePath.split('/').pop() ?? filePath;
+  return BLOAT_EXEMPT_NAMES.has(name) || name.endsWith('.min.js') || name.endsWith('.map');
+}
+
 export const SAFETY_DENYLIST: readonly string[] = [
   'omnexx.toml',
   '.omnexx/**',
@@ -636,12 +648,16 @@ export class VerificationPipeline {
     let linesAdded = 0;
     let linesDeleted = 0;
     for (const line of numstat.stdout.split('\n')) {
-      const [added, deleted] = line.split('\t');
+      const parts = line.split('\t');
+      if (parts.length < 3) continue;
+      const [added, deleted, filePath] = parts;
+      if (filePath && isBloatExempt(filePath.trim())) continue;
       linesAdded += Number.parseInt(added ?? '0', 10) || 0;
       linesDeleted += Number.parseInt(deleted ?? '0', 10) || 0;
     }
     // Untracked files count toward the bloat cap too.
     for (const file of untracked.stdout.split('\n').filter(Boolean)) {
+      if (isBloatExempt(file.trim())) continue;
       try {
         linesAdded += (await readFile(join(root, file), 'utf8')).split('\n').length;
       } catch {
@@ -837,7 +853,7 @@ export class VerificationPipeline {
 
     // Related tests first: the test files the task touched.
     const touchedTests = diff.files.filter(
-      (f) => (f.endsWith('.test.ts') || f.endsWith('.test.tsx')) && existsSync(join(root, f)),
+      (f) => /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(f) && existsSync(join(root, f)),
     );
     if (touchedTests.length) {
       const related = await this.runCommand('npx', ['vitest', 'run', ...touchedTests], {
@@ -877,7 +893,9 @@ export class VerificationPipeline {
     try {
       report = JSON.parse(await readFile(reportPath, 'utf8')) as VitestReport;
     } catch {
-      diagnostics.push('vitest JSON report missing/unparsable — full suite result unknown');
+      const errDetail = (suite.stderr || suite.stdout).trim();
+      const snippet = errDetail ? `: ${errDetail.slice(-500)}` : '';
+      diagnostics.push(`vitest JSON report missing/unparsable — full suite result unknown${snippet}`);
     }
     const failedIds: string[] = [];
     for (const fileResult of report.testResults ?? []) {
@@ -967,8 +985,10 @@ export class VerificationPipeline {
 
     if (suite.timedOut) diagnostics.push('full test suite timed out');
     if (suite.exitCode !== 0 && failedIds.length === 0) {
+      const errDetail = (suite.stderr || suite.stdout).trim();
+      const snippet = errDetail ? `: ${errDetail.slice(-500)}` : '';
       diagnostics.push(
-        `full test suite exited ${suite.exitCode} with no parseable test failures — see suite output`,
+        `full test suite exited ${suite.exitCode} with no parseable test failures${snippet}`,
       );
     }
     if (blockingFailures.length) {
@@ -1021,8 +1041,7 @@ export class VerificationPipeline {
     const srcFiles = diff.files.filter(
       (f) =>
         (f.startsWith('src/') || f.startsWith('test/')) &&
-        !f.endsWith('.test.ts') &&
-        !f.endsWith('.test.tsx'),
+        !isTestFilePath(f),
     );
     const testFiles = diff.files.filter(isTestFilePath);
     if (!testFiles.length) {
