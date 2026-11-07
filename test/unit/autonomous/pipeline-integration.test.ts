@@ -185,6 +185,24 @@ describe('VerificationPipeline.verify (stubbed commands, real git repo)', () => 
     expect(result.bloatNeedsHumanReview).toBe(true);
     expect(result.netLoc).toBeGreaterThan(150);
   });
+
+  it('exempts lockfiles from net-LoC bloat calculation', async () => {
+    const repo = await tempRepo();
+    await mkdir(join(repo, 'src'), { recursive: true });
+    await writeFile(join(repo, 'package-lock.json'), `{\n  "name": "root",\n  "version": "1.0.0"\n}\n`);
+    await commitAll(repo, 'baseline');
+    const bigLock = Array.from({ length: 500 }, (_, i) => `    "dep-${i}": { "version": "1.0.0" },`).join('\n');
+    await writeFile(join(repo, 'package-lock.json'), `{\n${bigLock}\n}\n`);
+
+    const pipeline = new VerificationPipeline({ runCommand: () => Promise.resolve(ok('[]')) });
+    const result = await pipeline.verify(
+      { id: 't5', title: 'bump deps', kind: 'patch-dependency' },
+      repo,
+      { runStage3: false },
+    );
+    expect(result.bloatNeedsHumanReview).toBe(false);
+    expect(result.netLoc).toBe(0);
+  });
 });
 
 describe('VerificationPipeline: test-gaming (live case 2026-11-06)', () => {

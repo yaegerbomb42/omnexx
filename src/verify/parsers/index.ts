@@ -302,7 +302,7 @@ export function parseCargo(output: string, ctx: ParseContext): ParsedOutput {
       sawResult = true;
       counts.passed += Number(result[1]);
       counts.failed += Number(result[2]);
-      counts.skipped += Number(result[3]) + Number(result[4] ?? 0);
+      counts.skipped += Number(result[3]);
       block = undefined;
       continue;
     }

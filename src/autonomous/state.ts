@@ -14,7 +14,7 @@
  * burn windows).
  */
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { AutonomousConfig } from '../config/sections/autonomous.js';
@@ -406,7 +406,9 @@ export function readReviewQueue(reviewQueuePath: string): ReviewQueueEntry[] {
 
 export function writeReviewQueue(reviewQueuePath: string, entries: ReviewQueueEntry[]): void {
   mkdirSync(dirname(reviewQueuePath), { recursive: true });
-  writeFileSync(reviewQueuePath, JSON.stringify(entries, null, 2) + '\n');
+  const tmp = `${reviewQueuePath}.tmp-${process.pid}`;
+  writeFileSync(tmp, JSON.stringify(entries, null, 2) + '\n');
+  renameSync(tmp, reviewQueuePath);
 }
 
 /**
@@ -442,50 +444,52 @@ export async function rejectTask(
   const before = readReviewQueue(paths.reviewQueuePath);
   const inReview = before.some((e) => e.taskId === taskId);
   if (!inReview && !fingerprint) return false;
+
+  // Persist store-side effects first so a failure leaves the review queue intact.
+  if (fingerprint) {
+    const store = await openStore(paths);
+    if (!store) return inReview;
+    try {
+      const existing: TombstoneEntry | null = store.getTombstone(fingerprint);
+      store.tombstone({
+        taskId,
+        fingerprint,
+        failure: {
+          failureStage: 'REVIEW_REJECTED',
+          failureReason: reason,
+          ...(existing?.lastDiffHash ? { lastDiffHash: existing.lastDiffHash } : {}),
+          targetBlobHashes: existing?.targetBlobHashes ?? {},
+          ...(existing?.quarantineGitRef ? { quarantineGitRef: existing.quarantineGitRef } : {}),
+        },
+      });
+      store.recordPattern({
+        scopeGlob: '**',
+        patternType: 'ANTI_PATTERN',
+        ruleSummary: `rejected in review (${taskId}): ${reason}`,
+        confidence: 0.9,
+        createdFromTaskId: taskId,
+      });
+    } catch {
+      return inReview;
+    } finally {
+      store.close();
+    }
+    const store2 = await openStore(paths);
+    if (store2) {
+      try {
+        store2.makeTombstonePermanent(fingerprint);
+      } catch {
+        // The tombstone and pattern are recorded; only the permanence stamp failed.
+      } finally {
+        store2.close();
+      }
+    }
+  }
+
   writeReviewQueue(
     paths.reviewQueuePath,
     before.filter((e) => e.taskId !== taskId),
   );
-  if (!fingerprint) return true;
-  const store = await openStore(paths);
-  if (!store) return inReview;
-  try {
-    const existing: TombstoneEntry | null = store.getTombstone(fingerprint);
-    store.tombstone({
-      taskId,
-      fingerprint,
-      failure: {
-        failureStage: 'REVIEW_REJECTED',
-        failureReason: reason,
-        ...(existing?.lastDiffHash ? { lastDiffHash: existing.lastDiffHash } : {}),
-        targetBlobHashes: existing?.targetBlobHashes ?? {},
-        ...(existing?.quarantineGitRef ? { quarantineGitRef: existing.quarantineGitRef } : {}),
-      },
-    });
-    store.recordPattern({
-      scopeGlob: '**',
-      patternType: 'ANTI_PATTERN',
-      ruleSummary: `rejected in review (${taskId}): ${reason}`,
-      confidence: 0.9,
-      createdFromTaskId: taskId,
-    });
-  } catch {
-    return inReview;
-  } finally {
-    store.close();
-  }
-  // Stamp the tombstone permanent: a human rejection stands until the target
-  // blobs change.
-  const store2 = await openStore(paths);
-  if (store2) {
-    try {
-      store2.makeTombstonePermanent(fingerprint);
-    } catch {
-      // The tombstone and pattern are recorded; only the permanence stamp failed.
-    } finally {
-      store2.close();
-    }
-  }
   return true;
 }
 
@@ -520,7 +524,7 @@ export async function getTaskDiff(
         () => '',
       );
       const uncommitted = await runGit(['diff'], task.worktreePath).catch(() => '');
-      const diff = [committed.trim(), uncommitted.trim()].filter(Boolean).join('\n');
+      const diff = [committed.trim(), uncommitted.trim()].filter(Boolean).join('\\n');
       return diff === '' ? null : diff;
     }
     return null;
